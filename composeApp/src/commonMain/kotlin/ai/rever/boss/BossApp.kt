@@ -1046,6 +1046,9 @@ fun ComponentContext.BossApp(
         // Initialize TerminalAPIAccess so host code can access terminal via the plugin system
         TerminalAPIAccess.initialize(plugin)
 
+        // Initialize EditorAPIAccess so host code can access editor settings via the plugin system
+        ai.rever.boss.services.editor.EditorAPIAccess.initialize(plugin)
+
         onDispose {
             // NOTE: Browser disposal moved to main.kt onCloseRequest handler
             // Browsers must be disposed BEFORE Compose disposal begins, not during it

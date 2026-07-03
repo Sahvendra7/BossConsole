@@ -208,6 +208,14 @@ class DefaultPlugin(
      * Register a plugin API for other plugins to consume.
      * The API is registered under all interfaces it implements.
      */
+    /**
+     * Bumped whenever a plugin API registers. Compose UI that gates on
+     * [getPluginAPI] availability observes this to self-heal once the
+     * (asynchronously loading) plugin registers its API.
+     */
+    private val _apiRegistryVersion = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val apiRegistryVersion: StateFlow<Int> get() = _apiRegistryVersion
+
     override fun registerPluginAPI(api: Any) {
         // Register under all interfaces implemented by the API
         api::class.java.interfaces.forEach { iface ->
@@ -217,6 +225,10 @@ class DefaultPlugin(
                 "implementation" to api::class.java.name
             ))
         }
+        // Registration happens asynchronously during plugin startup; bump the
+        // observable version so Compose readers (EditorAPIAccess.rememberProvider)
+        // re-check availability instead of staying on their "not loaded" branch.
+        _apiRegistryVersion.value += 1
 
         // Also register under the concrete class for direct lookups
         apiRegistry[api::class.java] = api

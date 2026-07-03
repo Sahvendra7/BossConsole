@@ -23,7 +23,6 @@ kotlinx-datetime = "0.8.0-0.6.x-compat"
 kotlinx-serialization = "1.9.0"
 ktor = "3.4.3"
 logback = "1.5.34"
-bosseditor = "1.0.4"
 foundationLayoutAndroid = "1.8.2"
 precompose = "1.6.2"
 slf4j = "2.0.18"
@@ -56,7 +55,6 @@ kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-co
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
-bosseditor-compose-desktop = { module = "com.risaboss:bosseditor-compose-desktop", version.ref = "bosseditor" }
 ktor-server-core = { module = "io.ktor:ktor-server-core-jvm", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "ktor" }
 ktor-server-tests = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
@@ -114,7 +112,6 @@ netty-transport-native-kqueue = { module = "io.netty:netty-transport-native-kque
 netty-transport-native-unix-common = { module = "io.netty:netty-transport-native-unix-common", version = "4.2.15.Final" }
 
 # K1 PSI dependencies for code navigation
-kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
 intellij-platform-core = { module = "com.jetbrains.intellij.platform:core", version.ref = "intellij-platform" }
 intellij-platform-core-impl = { module = "com.jetbrains.intellij.platform:core-impl", version.ref = "intellij-platform" }
 intellij-java-psi = { module = "com.jetbrains.intellij.java:java-psi", version.ref = "intellij-platform" }

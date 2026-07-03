@@ -34,15 +34,14 @@ BOSS (Business Operating System Service) is a desktop application built with Kot
 - **`supabase/`** - Database migrations and Edge Functions
 
 ### External Dependencies
-- **BossEditor** (`com.risaboss:bosseditor-compose-desktop`) - Standalone code editor with LSP and PSI support (see [docs/BOSSEDITOR.md](docs/BOSSEDITOR.md))
+- **BossEditor** (`com.risaboss:bosseditor-compose-desktop`) - Standalone code editor with LSP and PSI support. **Not a host dependency** — bundled privately inside the `editor-tab` plugin, like BossTerm inside `terminal-tab` (see [docs/BOSSEDITOR.md](docs/BOSSEDITOR.md))
 
 ### Key Technologies
 - Kotlin Multiplatform + Compose Multiplatform
 - JxBrowser 8.15.0 (with BOSS-branded Chromium)
 - Decompose for navigation
 - Supabase + Edge Functions
-- BossTerm for terminal integration
-- kotlin-compiler-embeddable for PSI code analysis
+- BossTerm for terminal integration (bundled in the `terminal-tab` plugin)
 
 ## Configuration
 
@@ -102,7 +101,6 @@ logger.error(LogCategory.NETWORK, "Request failed", error = exception)
 **Known Issues**:
 - Issue #33: Remove hardcoded credential fallbacks after testing
 - Issue #34: Use JxBrowser for login instead of system browser
-- K1 API warnings in PSIBootstrap.kt (intentional - awaiting K2 stability)
 
 ## Key Files
 

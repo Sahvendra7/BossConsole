@@ -10,9 +10,6 @@ import BossDarkBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import ai.rever.bosseditor.psi.PSIBootstrap
-import ai.rever.bosseditor.psi.PSIThreadBridge
-import ai.rever.bosseditor.psi.ProjectIndexer
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.SingleInstanceManager
 import ai.rever.boss.utils.logging.BossLogger
@@ -186,21 +183,6 @@ fun main(args: Array<String>) {
             System.err.println("Error closing browser engine: ${e.message}")
         }
         try {
-            // Shutdown project indexer
-            ProjectIndexer.shutdownGlobal()
-        } catch (e: Exception) {
-            System.err.println("Error shutting down project indexer: ${e.message}")
-        }
-        try {
-            // Shutdown PSI to prevent memory leaks
-            if (PSIBootstrap.isInitialized) {
-                PSIBootstrap.shutdown()
-                PSIThreadBridge.shutdown()
-            }
-        } catch (e: Exception) {
-            System.err.println("Error shutting down PSI: ${e.message}")
-        }
-        try {
             // Close HTTP client for high-quality favicon service
             ai.rever.boss.cache.HighQualityFaviconService.close()
         } catch (e: Exception) {
@@ -308,21 +290,11 @@ fun main(args: Array<String>) {
         PluginStoreSetup.loadPersistedPlugins(manager)
     }
 
-    // Warm up PSI for Kotlin code navigation in the background. Editors
-    // initialize PSI lazily on open, so this must not block first paint.
-    //
-    // Note: no ProjectIndexer.initialize() here. Indexing user.dir was
-    // actively harmful: for a packaged app launched from Finder, user.dir
-    // is "/", so the indexer walked the entire disk at 100% CPU. Editors
-    // initialize the indexer with the real project root when they open.
-    startupScope.launch {
-        try {
-            PSIBootstrap.initialize()
-        } catch (e: Exception) {
-            logger.warn(LogCategory.SYSTEM, "PSI initialization failed", error = e)
-            // Continue - navigation will just be disabled
-        }
-    }
+    // Note: no PSI or ProjectIndexer lifecycle here. The PSI stack lives in
+    // the editor-tab plugin's bundled BossEditor now — the plugin warms it up
+    // on register and shuts it down on dispose. (Indexing user.dir at startup
+    // was also actively harmful: for a packaged app launched from Finder,
+    // user.dir is "/", so the indexer walked the entire disk at 100% CPU.)
 
     // Start global log capture from app startup
     GlobalLogCapture.start()

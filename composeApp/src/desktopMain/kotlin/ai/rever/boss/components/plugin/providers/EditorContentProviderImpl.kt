@@ -1,8 +1,7 @@
 package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.components.events.FileEventBus
-import ai.rever.boss.components.plugin.tab_types.DesktopCodeEditorUI
-import ai.rever.boss.components.plugin.tab_types.EditorSearchEventBus
+import ai.rever.boss.components.plugin.tab_types.CodeEditorUI
 import ai.rever.boss.components.plugin.tab_types.readFileContentSafe
 import ai.rever.boss.components.plugin.tab_types.writeFileContent
 import ai.rever.boss.font.FontManager
@@ -15,8 +14,8 @@ import ai.rever.boss.plugin.run.RunConfigurationType
 import ai.rever.boss.plugin.run.RunConfiguration
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.run.MainFunctionDetectorProvider
-import ai.rever.bosseditor.settings.EditorSettings
-import ai.rever.bosseditor.settings.EditorSettingsManager
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.Dispatchers
@@ -24,16 +23,25 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import ai.rever.boss.components.plugin.tab_types.FileReadResult as InternalFileReadResult
 
+private val logger = BossLogger.forComponent("EditorContentProvider")
+
 /**
  * Desktop implementation of EditorContentProvider.
  *
- * This provider wraps the existing PlatformCodeEditorUI (DesktopCodeEditorUI) and
- * file I/O functions to enable dynamic editor plugins to access editor functionality.
+ * Exposes the editor capabilities the HOST still owns after BossEditor moved
+ * into the editor-tab plugin: file I/O, language detection, file-open routing,
+ * run-configuration integration, and font enumeration. Everything editor-
+ * internal (settings, themes, search state, completion, undo/redo) lives in
+ * the plugin's bundled BossEditor now — those interface methods fall back to
+ * their plugin-api defaults here.
+ *
+ * CodeEditorContent only backs the basic shared fallback editor; the editor-tab
+ * plugin renders its own BossEditor and doesn't call it. Note the fallback is
+ * effectively VIEW-ONLY: CodeEditorUI has no save/modified/run-gutter wiring,
+ * so the onSaveRequested/onModifiedStateChange/onRunFunction callbacks are
+ * accepted but discarded.
  */
 class EditorContentProviderImpl : EditorContentProvider {
-
-    private val mgr get() = EditorSettingsManager.instance
-    private val settings get() = mgr.settings.value
 
     @Composable
     override fun CodeEditorContent(
@@ -50,19 +58,13 @@ class EditorContentProviderImpl : EditorContentProvider {
         onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)?,
         showRunGutter: Boolean
     ) {
-        DesktopCodeEditorUI(
+        CodeEditorUI(
             content = content,
             onContentChange = onContentChange,
             language = language,
             filePath = filePath,
             projectPath = projectPath,
-            modifier = modifier,
-            onModifiedStateChange = onModifiedStateChange,
-            onSaveRequested = onSaveRequested,
-            onCursorPositionChange = onCursorPositionChange,
-            onRunFunction = onRunFunction,
-            onNavigate = onNavigate,
-            showRunGutter = showRunGutter
+            modifier = modifier
         )
     }
 
@@ -110,57 +112,7 @@ class EditorContentProviderImpl : EditorContentProvider {
         }
     }
 
-    // ============ Phase 1: Find/Replace and Navigation APIs ============
-
-    override fun showFindDialog() {
-        EditorSearchEventBus.triggerFind()
-    }
-
-    override fun showReplaceDialog() {
-        EditorSearchEventBus.triggerReplace()
-    }
-
-    override fun goToLine(line: Int) {
-        EditorSearchEventBus.triggerGoToLine()
-    }
-
-    override fun findNext() {
-        EditorSearchEventBus.triggerFindNext()
-    }
-
-    override fun findPrevious() {
-        EditorSearchEventBus.triggerFindPrevious()
-    }
-
-    // ============ Phase 1: Editor Feature Toggles ============
-
-    override fun isCodeFoldingEnabled(): Boolean = settings.foldingEnabled
-
-    override fun setCodeFoldingEnabled(enabled: Boolean) {
-        mgr.updateSetting { it.copy(foldingEnabled = enabled) }
-    }
-
-    override fun isBracketMatchingEnabled(): Boolean = settings.bracketMatchingEnabled
-
-    override fun setBracketMatchingEnabled(enabled: Boolean) {
-        mgr.updateSetting { it.copy(bracketMatchingEnabled = enabled) }
-    }
-
-    // ============ Phase 1: Advanced Editor Toggles ============
-
-    override fun isMarkOccurrencesEnabled(): Boolean = settings.markOccurrencesEnabled
-
-    override fun setMarkOccurrencesEnabled(enabled: Boolean) {
-        mgr.updateSetting { it.copy(markOccurrencesEnabled = enabled) }
-    }
-
-    override fun isCurrentLineHighlightEnabled(): Boolean = settings.highlightCurrentLine
-
-    override fun setCurrentLineHighlightEnabled(enabled: Boolean) {
-        mgr.updateSetting { it.copy(highlightCurrentLine = enabled) }
-    }
-
-    // ============ Phase 1: PSI Navigation APIs ============
+    // ============ PSI Navigation APIs ============
 
     override fun isNavigationEnabled(): Boolean = navigationEnabled
 
@@ -177,7 +129,7 @@ class EditorContentProviderImpl : EditorContentProvider {
         }
     }
 
-    // ============ Phase 2: Main Function Detection ============
+    // ============ Main Function Detection ============
 
     override fun detectMainFunctions(filePath: String, content: String): List<MainFunctionInfo> {
         return try {
@@ -186,6 +138,9 @@ class EditorContentProviderImpl : EditorContentProvider {
             val detected = detector.detectInFile(filePath, content, langEnum)
             detected.map { it.toMainFunctionInfo() }
         } catch (e: Exception) {
+            logger.warn(LogCategory.EDITOR, "Main-function detection failed", mapOf(
+                "filePath" to filePath
+            ), e)
             emptyList()
         }
     }
@@ -227,142 +182,19 @@ class EditorContentProviderImpl : EditorContentProvider {
 
                 RunEventBus.execute(config, sourceWindowId = windowId)
             } catch (e: Exception) {
-                // Log error but don't crash
+                logger.warn(LogCategory.EDITOR, "Failed to execute main function", mapOf(
+                    "filePath" to mainFunction.filePath
+                ), e)
             }
         }
     }
 
-    // ============ Phase 2: Theme Integration ============
-
-    override fun getAvailableThemes(): List<String> = EditorSettings.availableThemes
-
-    override fun getCurrentTheme(): String = settings.themeName
-
-    override fun setTheme(theme: String) {
-        if (theme in getAvailableThemes()) {
-            mgr.updateSetting { it.copy(themeName = theme) }
-        }
-    }
-
-    // ============ Phase 3: Font Customization ============
-
-    override fun getFontSize(): Int = settings.fontSize.toInt()
-
-    override fun setFontSize(size: Int) {
-        if (size in 8..72) {
-            mgr.updateSetting { it.copy(fontSize = size.toFloat()) }
-        }
-    }
-
-    override fun getFontFamily(): String = settings.fontFamily ?: FontManager.BUNDLED_JETBRAINS_MONO
-
-    override fun setFontFamily(family: String) {
-        mgr.updateSetting { it.copy(fontFamily = family) }
-    }
+    // ============ Font Enumeration ============
 
     override fun getAvailableFonts(): List<String> = FontManager.getAvailableMonospaceFonts()
 
-    // ============ Phase 3: Minimap Settings ============
-
-    override fun isMinimapVisible(): Boolean = settings.showMinimap
-
-    override fun setMinimapVisible(visible: Boolean) {
-        mgr.updateSetting { it.copy(showMinimap = visible) }
-    }
-
-    override fun getMinimapWidth(): Int = settings.minimapWidth
-
-    override fun setMinimapWidth(width: Int) {
-        if (width in 40..300) {
-            mgr.updateSetting { it.copy(minimapWidth = width) }
-        }
-    }
-
-    // ============ Phase 3: Line Spacing ============
-
-    override fun getLineSpacing(): Float = settings.lineSpacing
-
-    override fun setLineSpacing(spacing: Float) {
-        if (spacing in 1.0f..3.0f) {
-            mgr.updateSetting { it.copy(lineSpacing = spacing) }
-        }
-    }
-
-    // ============ Phase 3: Undo/Redo ============
-
-    override fun undo(): Boolean = EditorSearchEventBus.undo()
-
-    override fun redo(): Boolean = EditorSearchEventBus.redo()
-
-    override fun canUndo(): Boolean = EditorSearchEventBus.canUndo()
-
-    override fun canRedo(): Boolean = EditorSearchEventBus.canRedo()
-
-    // ============ Phase 3: Search State ============
-
-    override fun getSearchQuery(): String? = EditorSearchEventBus.getSearchQuery()
-
-    override fun getSearchMatchCount(): Int = EditorSearchEventBus.getSearchMatchCount()
-
-    override fun getCurrentSearchMatchIndex(): Int = EditorSearchEventBus.getCurrentSearchMatchIndex()
-
-    // ============ Phase 4: Code Completion (E13) ============
-
-    override fun registerCompletionProvider(id: String, provider: Any) {
-        if (provider is ai.rever.bosseditor.features.CompletionProvider) {
-            ai.rever.bosseditor.features.CompletionProviderRegistry.register(id, provider)
-        }
-    }
-
-    override fun unregisterCompletionProvider(id: String): Boolean {
-        return ai.rever.bosseditor.features.CompletionProviderRegistry.unregister(id)
-    }
-
-    // ============ Phase 4: Custom Color Schemes (E15) ============
-
-    override fun registerColorScheme(name: String, baseTheme: String, colorOverrides: Map<String, String>): Boolean {
-        return try {
-            val base = ai.rever.bosseditor.theme.EditorTheme.forName(baseTheme)
-            val builder = ai.rever.bosseditor.theme.EditorThemeBuilder(name, base)
-
-            for ((key, hexValue) in colorOverrides) {
-                val color = try {
-                    val hex = hexValue.removePrefix("#")
-                    androidx.compose.ui.graphics.Color(hex.toLong(16) or 0xFF000000)
-                } catch (e: Exception) { continue }
-
-                when (key.lowercase()) {
-                    "background" -> builder.background(color)
-                    "text" -> builder.text(color)
-                    "caret" -> builder.caret(color)
-                    "keyword" -> builder.keyword(color)
-                    "function" -> builder.function(color)
-                    "string" -> builder.string(color)
-                    "number" -> builder.number(color)
-                    "comment" -> builder.comment(color)
-                    "annotation" -> builder.annotation(color)
-                    "variable" -> builder.variable(color)
-                    "property" -> builder.property(color)
-                    "operator" -> builder.operator(color)
-                    "error" -> builder.error(color)
-                    "datatype" -> builder.dataType(color)
-                    "doccomment" -> builder.docComment(color)
-                }
-            }
-
-            ai.rever.bosseditor.theme.EditorTheme.registerTheme(builder.build())
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    override fun unregisterColorScheme(name: String): Boolean {
-        return ai.rever.bosseditor.theme.EditorTheme.unregisterTheme(name)
-    }
-
     companion object {
-        // Runtime toggle for PSI navigation (not a BossEditor setting)
+        // Runtime toggle for PSI navigation (not an editor setting)
         private var navigationEnabled: Boolean = true
     }
 }

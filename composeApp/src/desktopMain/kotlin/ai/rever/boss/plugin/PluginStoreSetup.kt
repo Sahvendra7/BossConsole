@@ -40,7 +40,14 @@ data class SystemPluginInfo(
     /** If true, the JAR is downloaded but not registered for plugin loading.
      *  Used for runtime dependencies (e.g., microkernel runtime) that live in
      *  the plugins directory but are not loadable UI/service plugins. */
-    val downloadOnly: Boolean = false
+    val downloadOnly: Boolean = false,
+    /** Minimum plugin version this host build requires. When the installed JAR
+     *  is older (or its version can't be determined), it is updated
+     *  synchronously BEFORE load instead of via the usual background
+     *  check-for-next-launch. Set this when a host release changes the
+     *  host↔plugin contract — e.g. editor-tab 1.4.0 bundles BossEditor after
+     *  the host dropped it, so older plugin JARs cannot run on this host. */
+    val minVersion: String? = null
 )
 
 /**
@@ -163,7 +170,12 @@ object PluginStoreSetup {
                 pluginId = "ai.rever.boss.plugin.dynamic.editortab",
                 githubRepo = "risa-labs-inc/boss-plugin-editor-tab",
                 artifactPrefix = "boss-plugin-editor-tab",
-                loadPriority = 10
+                loadPriority = 10,
+                // 1.4.0 bundles BossEditor privately; this host no longer has
+                // bosseditor on its classpath, so older plugin JARs (compileOnly
+                // bosseditor, resolved from the host) throw NoClassDefFoundError
+                // when an editor tab opens. Force-update before first load.
+                minVersion = "1.4.0"
             ))
         }
     }
@@ -436,17 +448,34 @@ object PluginStoreSetup {
                     val jarExists = existingEntry?.let { File(it.jarPath).exists() } ?: false
 
                     if (installedIds.contains(systemPlugin.pluginId) && jarExists) {
-                        // Plugin is on disk — proceed with startup using the
-                        // current JAR. Kick off a background update check so
-                        // newer releases are pulled in for the *next* launch
-                        // (the running session keeps its already-loaded
-                        // classloader — replacing on the fly would break
-                        // anything currently holding a class reference).
-                        scheduleBackgroundUpdateCheck(systemPlugin, File(existingEntry.jarPath))
-                        logger.debug(LogCategory.SYSTEM, "System plugin already installed", mapOf(
-                            "pluginId" to systemPlugin.pluginId
+                        val jarFile = File(existingEntry.jarPath)
+                        val installedVersion = extractVersionFromJarFileName(jarFile.name, systemPlugin.artifactPrefix)
+                            ?: runCatching { readPluginManifest(jarFile)?.version }.getOrNull()
+                        // Installed JAR is older than this host requires (or its
+                        // version is unreadable, which only very old JARs are):
+                        // fall through to the synchronous download below so the
+                        // contract-breaking version is never loaded. If the
+                        // download fails (offline), the old JAR still loads and
+                        // the update is retried next launch.
+                        val tooOldForHost = isTooOldForHost(installedVersion, systemPlugin.minVersion)
+                        if (!tooOldForHost) {
+                            // Plugin is on disk — proceed with startup using the
+                            // current JAR. Kick off a background update check so
+                            // newer releases are pulled in for the *next* launch
+                            // (the running session keeps its already-loaded
+                            // classloader — replacing on the fly would break
+                            // anything currently holding a class reference).
+                            scheduleBackgroundUpdateCheck(systemPlugin, jarFile)
+                            logger.debug(LogCategory.SYSTEM, "System plugin already installed", mapOf(
+                                "pluginId" to systemPlugin.pluginId
+                            ))
+                            continue
+                        }
+                        logger.info(LogCategory.SYSTEM, "System plugin older than this host requires - updating before load", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "installedVersion" to (installedVersion ?: "unknown"),
+                            "minVersion" to (systemPlugin.minVersion ?: "")
                         ))
-                        continue
                     }
                 }
 
@@ -644,7 +673,7 @@ object PluginStoreSetup {
      * Handles the `{prefix}-{version}.jar` and `{prefix}-{version}-all.jar`
      * patterns produced by Gradle. Returns null if the filename doesn't match.
      */
-    private fun extractVersionFromJarFileName(fileName: String, artifactPrefix: String): String? {
+    internal fun extractVersionFromJarFileName(fileName: String, artifactPrefix: String): String? {
         val withoutPrefix = fileName.removePrefix("$artifactPrefix-")
         if (withoutPrefix == fileName) return null
         val version = withoutPrefix
@@ -700,11 +729,28 @@ object PluginStoreSetup {
                 val tagNameMatch = Regex(""""tag_name"\s*:\s*"([^"]+)"""").find(responseText)
                 val tagName = tagNameMatch?.groupValues?.get(1) ?: "unknown"
 
-                // Find the JAR download URL
-                val jarUrlMatch = Regex(""""browser_download_url"\s*:\s*"([^"]+${plugin.artifactPrefix}[^"]*\.jar)"""")
-                    .find(responseText)
+                // The host's minimum must hold for the release we are about to
+                // INSTALL, not just trigger the download: if the repo's latest
+                // release still predates minVersion (release-order violation,
+                // yanked release), installing it would persist the exact
+                // contract-breaking JAR the gate exists to prevent. Keep
+                // whatever is on disk and retry next launch instead.
+                val requiredMin = plugin.minVersion
+                if (requiredMin != null && isTooOldForHost(tagName.removePrefix("v"), requiredMin)) {
+                    logger.error(LogCategory.SYSTEM, "Latest GitHub release is older than this host requires - not installing", mapOf(
+                        "pluginId" to plugin.pluginId,
+                        "repo" to plugin.githubRepo,
+                        "latestTag" to tagName,
+                        "minVersion" to requiredMin
+                    ))
+                    return@withContext false
+                }
 
-                if (jarUrlMatch == null) {
+                // Find the JAR download URL (skips "-thin.jar" assets — see
+                // pickPluginJarUrl).
+                val jarUrl = pickPluginJarUrl(responseText, plugin.artifactPrefix)
+
+                if (jarUrl == null) {
                     logger.warn(LogCategory.SYSTEM, "No JAR asset found in GitHub release", mapOf(
                         "pluginId" to plugin.pluginId,
                         "repo" to plugin.githubRepo,
@@ -712,8 +758,6 @@ object PluginStoreSetup {
                     ))
                     return@withContext false
                 }
-
-                val jarUrl = jarUrlMatch.groupValues[1]
                 val jarFileName = jarUrl.substringAfterLast("/")
                 val destFile = File(_pluginDir, jarFileName)
                 // Stage the download in a sibling `.tmp` file and atomic-rename
@@ -1207,11 +1251,22 @@ object PluginStoreSetup {
 
     /**
      * Check if version1 is newer than version2.
-     * Simple semver comparison (major.minor.patch).
+     *
+     * Numeric major.minor.patch comparison; a segment's non-numeric suffix
+     * counts only as its numeric prefix ("0-rc1" -> 0). On a numeric tie, a
+     * version WITH a pre-release suffix is OLDER than one without
+     * (1.4.0-rc1 < 1.4.0) — this comparator gates whether a system plugin
+     * satisfies the host's [SystemPluginInfo.minVersion], and a pre-release
+     * must not pass for its release. Internal for test access.
      */
-    private fun isNewerVersion(version1: String, version2: String): Boolean {
-        val v1Parts = version1.split(".").mapNotNull { it.toIntOrNull() }
-        val v2Parts = version2.split(".").mapNotNull { it.toIntOrNull() }
+    internal fun isNewerVersion(version1: String, version2: String): Boolean {
+        fun numericParts(v: String) =
+            v.split(".").map { seg -> seg.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
+        fun hasPreReleaseSuffix(v: String) =
+            v.split(".").any { seg -> seg.any { !it.isDigit() } }
+
+        val v1Parts = numericParts(version1)
+        val v2Parts = numericParts(version2)
 
         for (i in 0 until maxOf(v1Parts.size, v2Parts.size)) {
             val v1 = v1Parts.getOrElse(i) { 0 }
@@ -1219,6 +1274,30 @@ object PluginStoreSetup {
             if (v1 > v2) return true
             if (v1 < v2) return false
         }
-        return false
+        // Numeric tie: a release is newer than its own pre-release.
+        return hasPreReleaseSuffix(version2) && !hasPreReleaseSuffix(version1)
     }
+
+    /**
+     * True when the host mandates a minimum plugin version and the installed
+     * version is below it — or can't be determined at all (only very old JARs
+     * lack a readable version). Internal for test access.
+     */
+    internal fun isTooOldForHost(installedVersion: String?, minVersion: String?): Boolean {
+        if (minVersion == null) return false
+        return installedVersion == null || isNewerVersion(minVersion, installedVersion)
+    }
+
+    /**
+     * Pick the plugin JAR asset URL from a GitHub release JSON payload.
+     * Skips "-thin.jar" assets — a module's default :jar output, missing
+     * everything buildPluginJar bundles (editor-tab's BossEditor,
+     * fluck-browser's tunnel deps, …) — which GitHub can list first.
+     * Internal for test access.
+     */
+    internal fun pickPluginJarUrl(releaseJson: String, artifactPrefix: String): String? =
+        Regex(""""browser_download_url"\s*:\s*"([^"]+${Regex.escape(artifactPrefix)}[^"]*\.jar)"""")
+            .findAll(releaseJson)
+            .map { it.groupValues[1] }
+            .firstOrNull { !it.endsWith("-thin.jar") }
 }

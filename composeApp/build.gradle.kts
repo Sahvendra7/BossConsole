@@ -577,8 +577,12 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
-            // BossEditor: external code editor library (resolves from Maven Central)
-            implementation(libs.bosseditor.compose.desktop)
+            // NOTE: BossEditor is not a host dependency. The editor-tab plugin
+            // bundles bosseditor-compose-desktop (and its kotlin-compiler-embeddable
+            // PSI stack) privately inside its own JAR; the plugin's classloader
+            // resolves bosseditor classes from its own URLs while sharing the
+            // host's Compose runtime via parent classloader delegation.
+            // Same arrangement as BossTerm/terminal-tab (see the note below).
             // Minimal plugin-api-core (PluginContext, DynamicPlugin, PluginManifest)
             // Everything else comes from boss-plugin-api bundled plugin
             implementation(projects.plugins.pluginApiCore)
@@ -684,12 +688,6 @@ kotlin {
 
             // CLI argument parsing
             implementation("com.github.ajalt.clikt:clikt:5.1.0")
-
-            // Kotlin PSI - Code navigation with go-to-definition for Kotlin files
-            // Uses kotlin-compiler-embeddable which includes shaded IntelliJ PSI classes
-            // at org.jetbrains.kotlin.com.intellij.* (not com.intellij.*)
-            // Java PSI support can be added later with separate non-conflicting dependencies
-            implementation(libs.kotlin.compiler.embeddable)
         }
 
         desktopTest.dependencies {
