@@ -347,6 +347,25 @@ jobs:
           CHANNEL="stable"
         fi
 
+        # The auto-generated GitHub release body (downloads table + install
+        # steps) is only a placeholder — the update dialog renders
+        # release_notes as its "What's new". Prefer the curated notes the
+        # release-notes workflow commits to main; read them from a fresh
+        # origin/main because that commit usually lands after this job's
+        # checkout. For a brand-new release the file may not exist yet — the
+        # release-notes workflow then patches the row itself once it does
+        # (scripts/sync-supabase-release-notes.sh).
+        # Best-effort refresh: origin/main already exists from the
+        # fetch-depth-0 checkout, so a transient fetch failure must not
+        # abort the publish (and its Realtime push) over notes freshness.
+        git fetch origin main || echo "⚠️  git fetch failed; using origin/main from checkout"
+        if git cat-file -e "origin/main:docs/release-notes/v${VERSION}.md" 2>/dev/null; then
+          git show "origin/main:docs/release-notes/v${VERSION}.md" > release-assets/release-body.txt
+          echo "📝 Using curated release notes from docs/release-notes/v${VERSION}.md"
+        else
+          echo "ℹ️  docs/release-notes/v${VERSION}.md not on origin/main yet; keeping GitHub release body"
+        fi
+
         echo "📤 Publishing BOSS $VERSION (channel=$CHANNEL) to Supabase bucket '$BUCKET'"
         bash scripts/publish-supabase-release.sh boss "$VERSION" "$CHANNEL" release-assets "$BUCKET"
 
