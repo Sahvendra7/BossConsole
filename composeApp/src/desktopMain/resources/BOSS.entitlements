@@ -58,8 +58,8 @@
          Until then ASAuthorizationWebBrowserPublicKeyCredentialManager reports
          .denied and the fluck browser falls back to Chromium's own WebAuthn.
 
-         BUILD REQUIREMENT (managed capability): listing the key here + codesign
-         --entitlements is NOT sufficient for a Developer ID app. The runtime only
+         BUILD REQUIREMENT (managed capability): listing the key here plus codesign's
+         entitlements flag is NOT sufficient for a Developer ID app. The runtime only
          grants this capability when a matching provisioning profile is embedded at
          Contents/embedded.provisionprofile BEFORE codesign. The release build must
          fetch the granted profile and embed it; see PR follow-ups. (codesign does
