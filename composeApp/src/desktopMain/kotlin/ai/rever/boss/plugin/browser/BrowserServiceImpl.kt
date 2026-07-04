@@ -163,6 +163,10 @@ object BrowserServiceImpl : BrowserService {
             // Enable swipe navigation for touchscreen devices
             browser.settings().enableOverscrollHistoryNavigation()
 
+            // Route platform-passkey WebAuthn ceremonies to the native macOS
+            // authenticator (iCloud Keychain). No-op / graceful fallback elsewhere.
+            WebAuthnBridge.install(browser)
+
             val generation = FluckEngine.currentEngineGeneration
 
             // If a popup handed off a POST body for this URL (form-submit target="_blank"),

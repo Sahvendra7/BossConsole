@@ -217,7 +217,10 @@ jobs:
       - name: 🟩 Setup Supabase CLI
         uses: supabase/setup-cli@v2
         with:
-          version: latest
+          # Pinned (not "latest"): resolving "latest" hits the unauthenticated GitHub
+          # API from shared runners and intermittently fails with "rate limit exceeded".
+          # Pinning skips that lookup. Bump as needed.
+          version: 2.109.0
 
       - name: 🚀 Start local Postgres (applies migrations)
         run: supabase db start

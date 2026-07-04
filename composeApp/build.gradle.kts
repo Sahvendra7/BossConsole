@@ -410,6 +410,71 @@ val prepareBundledPluginsResources = tasks.register<Copy>("prepareBundledPlugins
     into(layout.buildDirectory.dir("bundled-plugins-resources/common/bundled-plugins"))
 }
 
+// --- Native macOS platform-passkey helper (BossWebAuthn.swift) ---
+// Compiles the Swift WebAuthn bridge to a universal libBossWebAuthn.dylib and drops
+// it into the macOS app resources so MacPlatformPasskeys can load it in-process.
+// macOS-only; every step is skipped on other platforms (feature degrades to Chromium
+// WebAuthn / USB security keys).
+// Scoping block (kotlin.run, NOT the Gradle `run` task): keeps the shared vals/helper
+// LOCAL to this lambda. That is load-bearing for the configuration cache — hoisting
+// them to script top-level makes the task closures below capture script-object
+// references, which the config cache cannot serialize.
+kotlin.run {
+    val isMac = System.getProperty("os.name").lowercase().contains("mac")
+    val webAuthnSrc = project.file("src/desktopMain/native/webauthn/BossWebAuthn.swift")
+    val armDylib = layout.buildDirectory.file("webauthn/arm64/libBossWebAuthn.dylib").get().asFile
+    val x64Dylib = layout.buildDirectory.file("webauthn/x86_64/libBossWebAuthn.dylib").get().asFile
+    val universalDylib = layout.buildDirectory.file("webauthn/libBossWebAuthn.dylib").get().asFile
+
+    fun swiftcArgs(target: String, out: java.io.File) = listOf(
+        "swiftc", "-emit-library", "-O", "-target", target,
+        "-framework", "AuthenticationServices", "-framework", "AppKit",
+        "-o", out.absolutePath, webAuthnSrc.absolutePath
+    )
+
+    val compileWebAuthnArm64 = tasks.register<Exec>("compileWebAuthnArm64") {
+        onlyIf { isMac }
+        inputs.file(webAuthnSrc)
+        outputs.file(armDylib)
+        doFirst { armDylib.parentFile.mkdirs() }
+        commandLine(swiftcArgs("arm64-apple-macos12.0", armDylib))
+    }
+    val compileWebAuthnX64 = tasks.register<Exec>("compileWebAuthnX64") {
+        onlyIf { isMac }
+        inputs.file(webAuthnSrc)
+        outputs.file(x64Dylib)
+        doFirst { x64Dylib.parentFile.mkdirs() }
+        commandLine(swiftcArgs("x86_64-apple-macos12.0", x64Dylib))
+    }
+    val lipoWebAuthn = tasks.register<Exec>("lipoWebAuthn") {
+        onlyIf { isMac }
+        dependsOn(compileWebAuthnArm64, compileWebAuthnX64)
+        inputs.files(armDylib, x64Dylib)
+        outputs.file(universalDylib)
+        doFirst { universalDylib.parentFile.mkdirs() }
+        commandLine("lipo", "-create", armDylib.absolutePath, x64Dylib.absolutePath,
+            "-output", universalDylib.absolutePath)
+    }
+    val bundleWebAuthnArm = tasks.register<Copy>("bundleWebAuthnDylibArm64") {
+        onlyIf { isMac }
+        dependsOn(lipoWebAuthn)
+        from(universalDylib)
+        into(layout.buildDirectory.dir("bundled-plugins-resources/macos-arm64"))
+    }
+    val bundleWebAuthnX64 = tasks.register<Copy>("bundleWebAuthnDylibX64") {
+        onlyIf { isMac }
+        dependsOn(lipoWebAuthn)
+        from(universalDylib)
+        into(layout.buildDirectory.dir("bundled-plugins-resources/macos-x64"))
+    }
+    tasks.register("compileWebAuthnDylib") {
+        group = "build"
+        description = "Compiles the native macOS WebAuthn platform-authenticator dylib"
+        onlyIf { isMac }
+        dependsOn(bundleWebAuthnArm, bundleWebAuthnX64)
+    }
+}
+
 // Task to generate versioned CLI scripts from templates
 val generateVersionedCLIScripts = tasks.register("generateVersionedCLIScripts") {
     val sourceDir = layout.projectDirectory.dir("../scripts")
@@ -676,6 +741,11 @@ kotlin {
             // JNA for native platform API access (macOS screen capture permissions)
             implementation(libs.jna)
             implementation(libs.jna.platform)
+
+            // Guava — bundled Public Suffix List (InternetDomainName) used to enforce
+            // WebAuthn rpId registrable-domain scoping (WebAuthnOrigin). Declared
+            // explicitly (was transitive) so the security check can't lose its PSL.
+            implementation(libs.guava)
 
             // JavaCV for video recording - removed due to notarization issues
             // implementation("org.bytedeco:javacv-platform:1.5.11")
@@ -1401,7 +1471,11 @@ afterEvaluate {
     // Ensure prepareAppResources depends on prepareBundledPluginsResources
     tasks.findByName("prepareAppResources")?.apply {
         dependsOn("prepareBundledPluginsResources")
+        // Bundle the native macOS passkey dylib into app resources (macOS-only).
+        dependsOn("compileWebAuthnDylib")
     }
+    // Dev run also needs the dylib staged into resources.
+    tasks.findByName("run")?.dependsOn("compileWebAuthnDylib")
 
     val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
     val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
@@ -1412,6 +1486,8 @@ afterEvaluate {
         dependsOn("generateVersionedCLIScripts")
         // Ensure bundled plugins are prepared
         dependsOn("prepareBundledPluginsResources")
+        // Ensure the native macOS passkey dylib is compiled + bundled
+        dependsOn("compileWebAuthnDylib")
 
         // On macOS with signing enabled, PTY4J signing must happen after createDistributable
         // Task chain: createDistributable → signPty4jBinaries → extractCLIToAppResources
