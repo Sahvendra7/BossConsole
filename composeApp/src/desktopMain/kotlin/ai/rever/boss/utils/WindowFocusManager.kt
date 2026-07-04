@@ -107,6 +107,19 @@ actual object WindowFocusManager {
     }
 
     /**
+     * Best-effort window id for actions that need "the" active window but may run
+     * before a real OS focus-gained event has fired for it — e.g. a deep link
+     * dispatched by an MCP tool while the caller's own window (not BOSS) has OS
+     * focus. Prefers [focusedWindowId] (set at registration and on every focus
+     * gain) over [focusedWindowFlow] (only ever set inside the focus-gained
+     * listener, so it can lag or stay null even once a window is plainly
+     * available), falling back to any registered window. Returns null only if no
+     * window is registered at all.
+     */
+    fun resolveActionableWindowId(): String? =
+        focusedWindowId ?: focusedWindowFlow.value ?: windows.keys.firstOrNull()
+
+    /**
      * Bring a specific window to front by its ID
      *
      * @param windowId The ID of the window to focus
