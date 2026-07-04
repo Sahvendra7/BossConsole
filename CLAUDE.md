@@ -23,7 +23,16 @@ BOSS (Business Operating System Service) is a desktop application built with Kot
 
 ## Workflow Rules
 
-**IMPORTANT**: Do NOT run `./gradlew run` to test the application. The user will run and test the app themselves.
+**IMPORTANT**: Do NOT run `./gradlew run` in a blocking/foreground way just to test — the user runs and tests the app themselves. **Exception:** launching the app **in a dedicated bottom split pane is allowed** (backgrounded so it doesn't wedge the pane).
+
+### Running commands in a visible terminal pane
+
+When a terminal MCP server is available, prefer it over the plain `Bash` tool for commands worth showing — it runs in a visible BossTerm pane and still returns stdout/stderr/exit code. Two servers may be present depending on which app hosts the session; use whichever the session's `SessionStart` hook designates:
+
+- **`mcp__boss__*`** — exposed by the `terminal-tab` plugin inside BossConsole (e.g. `mcp__boss__run_command`, `run_in_sidebar`).
+- **`mcp__bossterm__*`** — exposed by the standalone BossTerm app.
+
+For a bottom split use `panel: horizontal_split`. Reuse a pane across calls by passing back its `pane_id`. Keep plain `Bash` for trivial read-only commands where opening a visible pane is churn. (Do not mix the two servers in one session — they target different app instances.)
 
 ## Architecture
 
