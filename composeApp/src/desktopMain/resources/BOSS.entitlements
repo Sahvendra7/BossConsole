@@ -52,19 +52,16 @@
     <key>com.apple.security.inherit</key>
     <true/>
 
-    <!-- Access the person's iCloud Keychain passkeys as a web browser.
-         REQUIRES Apple approval: this entitlement only activates once the App ID's
-         provisioning profile is granted "WebBrowserPublicKeyCredential" by Apple.
-         Until then ASAuthorizationWebBrowserPublicKeyCredentialManager reports
-         .denied and the fluck browser falls back to Chromium's own WebAuthn.
-
-         BUILD REQUIREMENT (managed capability): listing the key here plus codesign's
-         entitlements flag is NOT sufficient for a Developer ID app. The runtime only
-         grants this capability when a matching provisioning profile is embedded at
-         Contents/embedded.provisionprofile BEFORE codesign. The release build must
-         fetch the granted profile and embed it; see PR follow-ups. (codesign does
-         not fail on the extra entitlement, so releases are unaffected until then.) -->
-    <key>com.apple.developer.web-browser.public-key-credential</key>
-    <true/>
+    <!-- The iCloud Keychain passkey-as-web-browser entitlement
+         (com.apple.developer.web-browser.public-key-credential) is intentionally NOT
+         listed here. It's a managed capability: macOS's launch-time validation refuses
+         to open a Developer ID app carrying it unless a matching provisioning profile
+         is embedded at Contents/embedded.provisionprofile, and Apple's approval for
+         this capability (entitlement request YWD6D3446V) is still pending — no such
+         profile exists yet, so declaring the key here breaks every macOS launch with
+         a generic "can't be opened" error. WebAuthnBridge/BossWebAuthn.swift already
+         handle its absence gracefully (falls back to Chromium's own WebAuthn); re-add
+         the key only once Apple grants the capability and the release build embeds the
+         granted profile before codesign. -->
 </dict>
 </plist>
