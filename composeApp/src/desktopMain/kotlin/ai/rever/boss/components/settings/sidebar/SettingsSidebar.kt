@@ -36,6 +36,11 @@ enum class SettingsSection(
         description = "Configure browser behavior, user agent, and link handling",
         icon = Icons.Outlined.Language
     ),
+    BROWSER_ENGINE(
+        displayName = "Browser Engine",
+        description = "Chromium engine version, downloads, and reinstall",
+        icon = Icons.Outlined.Memory
+    ),
     BOSS_EDITOR(
         displayName = "BossEditor",
         description = "Scroll behavior, code folding, and bracket matching",

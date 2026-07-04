@@ -12,6 +12,7 @@ import ai.rever.boss.components.settings.shared.SettingsTheme.SurfaceColor
 import ai.rever.boss.components.settings.shared.SettingsTheme.TextMuted
 import ai.rever.boss.components.settings.shared.SettingsTheme.TextPrimary
 import ai.rever.boss.components.settings.shared.SettingsTheme.TextSecondary
+import ai.rever.boss.config.BrowserEngineSettingsManager
 import ai.rever.boss.updater.UpdateSettingsSection
 import ai.rever.boss.utils.DisplayUtils
 import ai.rever.boss.performance.PerformanceSettingsManager
@@ -147,6 +148,7 @@ private fun SettingsContent(initialSection: String? = null) {
                     onClick = {
                         coroutineScope.launch {
                             // Reset all settings managers to defaults
+                            BrowserEngineSettingsManager.resetToDefault()
                             PerformanceSettingsManager.resetToDefault()
                             FocusModeSettingsManager.resetToDefault()
                             RunnerSettingsManager.resetToDefault()
@@ -248,7 +250,8 @@ private fun SettingsContentArea(
             // Category-specific content
             when (section) {
                 SettingsSection.FLUCK -> FluckBrowserSettings()
-SettingsSection.RUNNER -> RunnerSettings()
+                SettingsSection.BROWSER_ENGINE -> BrowserEngineSettings()
+                SettingsSection.RUNNER -> RunnerSettings()
                 SettingsSection.WORKSPACE -> WorkspaceSettings()
                 SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
                 SettingsSection.UPDATES -> UpdatesSettings()

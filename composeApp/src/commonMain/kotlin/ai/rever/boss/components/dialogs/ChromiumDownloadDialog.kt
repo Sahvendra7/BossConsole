@@ -7,7 +7,9 @@ import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,10 +62,15 @@ private fun DownloadSurface(
                     fontWeight = FontWeight.Medium
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+                // Bound the error message height so a long failure reason scrolls
+                // instead of pushing the Retry/Exit buttons out of the window.
                 Text(
                     text = error,
                     fontSize = 13.sp,
-                    color = BossDarkTextSecondary
+                    color = BossDarkTextSecondary,
+                    modifier = Modifier
+                        .heightIn(max = 120.dp)
+                        .verticalScroll(rememberScrollState())
                 )
             } else {
                 // Status message

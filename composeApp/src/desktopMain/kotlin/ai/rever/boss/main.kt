@@ -36,6 +36,7 @@ import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.github.ajalt.clikt.core.main
 import java.io.File
@@ -319,6 +320,9 @@ fun main(args: Array<String>) {
     )
     logger.debug(LogCategory.SYSTEM, "API key availability", apiKeyStatus.mapValues { if (it.value) "set" else "not set" })
 
+    // Apply any engine install staged from Settings before validating/creating the engine
+    ChromiumAutoDownloader.promotePendingInstall()
+
     // Check if Chromium needs to be downloaded (for debug/dev builds)
     val chromiumNeedsDownload = !ChromiumAutoDownloader.isChromiumInstalled()
     if (chromiumNeedsDownload) {
@@ -384,6 +388,15 @@ fun main(args: Array<String>) {
                 width = 500.dp,
                 height = 220.dp
             )
+
+            // The error state adds a failure message plus Retry/Exit buttons; grow the
+            // window so they aren't clipped by the fixed 220dp height.
+            LaunchedEffect(downloadProgress.error != null) {
+                downloadWindowState.size = DpSize(
+                    500.dp,
+                    if (downloadProgress.error != null) 360.dp else 220.dp
+                )
+            }
 
             Window(
                 onCloseRequest = { exitApplication() },

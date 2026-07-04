@@ -21,11 +21,16 @@
 # Example:
 #   publish-supabase-release.sh boss 9.2.17 stable release-assets app-releases
 #
+# Also used for the BOSS-branded Chromium engine archives (app id "boss-chromium",
+# version = JxBrowser version, .zip assets) — published by build-chromium-branding.yml
+# and consumed by the client's ChromiumReleaseSource:
+#   publish-supabase-release.sh boss-chromium 9.1.2 stable chromium-assets app-releases
+#
 # Required environment:
 #   SUPABASE_URL                e.g. https://api.risaboss.com
 #   SUPABASE_SERVICE_ROLE_KEY   service-role key (CI secret; bypasses RLS). Never ship in the client.
 #
-# Only files with known installer extensions (.dmg .msi .deb .rpm .jar) in
+# Only files with known asset extensions (.dmg .msi .deb .rpm .jar .zip) in
 # <asset_dir> are uploaded. Re-running for the same (app, version) upserts.
 
 set -euo pipefail
@@ -61,6 +66,7 @@ content_type_of() {
     *.deb) echo "application/vnd.debian.binary-package" ;;
     *.rpm) echo "application/x-rpm" ;;
     *.jar) echo "application/java-archive" ;;
+    *.zip) echo "application/zip" ;;
     *)     echo "application/octet-stream" ;;
   esac
 }
@@ -213,7 +219,7 @@ assets_json="[]"
 uploaded=0
 
 shopt -s nullglob
-for file in "$ASSET_DIR"/*.dmg "$ASSET_DIR"/*.msi "$ASSET_DIR"/*.deb "$ASSET_DIR"/*.rpm "$ASSET_DIR"/*.jar; do
+for file in "$ASSET_DIR"/*.dmg "$ASSET_DIR"/*.msi "$ASSET_DIR"/*.deb "$ASSET_DIR"/*.rpm "$ASSET_DIR"/*.jar "$ASSET_DIR"/*.zip; do
   [[ -f "$file" ]] || continue
   name="$(basename "$file")"
   size="$(wc -c < "$file" | tr -d '[:space:]')"
@@ -239,7 +245,7 @@ for file in "$ASSET_DIR"/*.dmg "$ASSET_DIR"/*.msi "$ASSET_DIR"/*.deb "$ASSET_DIR
 done
 
 if [[ "$uploaded" -eq 0 ]]; then
-  echo "ERROR: no installer assets (.dmg/.msi/.deb/.rpm/.jar) found in '$ASSET_DIR'" >&2
+  echo "ERROR: no release assets (.dmg/.msi/.deb/.rpm/.jar/.zip) found in '$ASSET_DIR'" >&2
   exit 1
 fi
 

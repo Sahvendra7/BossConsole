@@ -8,6 +8,7 @@ import ai.rever.boss.updater.source.UpdateSource
 import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.Version
+import ai.rever.boss.utils.sha256Of
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import io.ktor.client.*
@@ -23,7 +24,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.security.MessageDigest
 
 actual class UpdateService {
 
@@ -244,19 +244,6 @@ actual class UpdateService {
     }
 
     /** Compute the lowercase hex SHA-256 of [file]. */
-    private fun sha256Of(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(8192)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
-
     /**
      * Stream a download to [destFile], reporting throttled progress.
      *

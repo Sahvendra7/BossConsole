@@ -918,6 +918,11 @@ jobs:
     if: ${{ needs.build-macos-arm64.result == 'success' && needs.build-macos-x64.result == 'success' && needs.build-windows-x64.result == 'success' && needs.build-linux-x64.result == 'success' && needs.build-linux-arm64.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      # Checkout first: actions/checkout cleans the workspace, so it must run
+      # before artifacts are downloaded into it.
+      - name: Checkout (for publish script)
+        uses: actions/checkout@v7
+
       - name: Download All Artifacts
         uses: actions/download-artifact@v8
         with:
@@ -973,3 +978,25 @@ jobs:
           done
 
           echo "Release URL: https://github.com/risa-labs-inc/BossConsole-Releases/releases/tag/$TAG"
+
+      # Mirror the engine archives to Supabase (app id "boss-chromium" in the shared
+      # app_releases table/bucket) so clients download from Supabase first with the
+      # GitHub release above as backup. Large zips go via TUS chunks inside the script
+      # (Cloudflare caps single requests at ~100 MB).
+      - name: Publish to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [[ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+            echo "ℹ️  SUPABASE_SERVICE_ROLE_KEY not set; skipping Supabase publish."
+            exit 0
+          fi
+          export SUPABASE_URL="${SUPABASE_URL:-https://api.risaboss.com}"
+
+          mkdir -p chromium-assets
+          find artifacts -type f -name 'boss-chromium-*.zip' -exec cp {} chromium-assets/ \;
+          ls -la chromium-assets
+
+          bash scripts/publish-supabase-release.sh \
+            boss-chromium "$JXBROWSER_VERSION" stable chromium-assets app-releases
