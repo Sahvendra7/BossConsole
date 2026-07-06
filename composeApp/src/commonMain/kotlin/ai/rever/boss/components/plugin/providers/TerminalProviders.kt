@@ -7,6 +7,10 @@ class PanelEventProviderImpl : ai.rever.boss.plugin.api.PanelEventProvider {
     override suspend fun closePanel(panelId: ai.rever.boss.plugin.api.PanelId, windowId: String) {
         PanelEventBus.closePanel(panelId, sourceWindowId = windowId)
     }
+
+    override suspend fun openPanel(panelId: ai.rever.boss.plugin.api.PanelId, windowId: String) {
+        PanelEventBus.openPanel(panelId, sourceWindowId = windowId)
+    }
 }
 
 class SettingsProviderImpl : ai.rever.boss.plugin.api.SettingsProvider {

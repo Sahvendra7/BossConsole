@@ -30,4 +30,17 @@ class PanelEventProviderProxy(
             )
         } catch (_: Exception) {}
     }
+
+    override suspend fun openPanel(panelId: PanelId, windowId: String) {
+        try {
+            stub.openPanel(
+                OpenPanelRequest.newBuilder()
+                    .setPanelId(panelId.panelId)
+                    .setPluginId(panelId.pluginId)
+                    .setDefaultOrder(panelId.defaultOrder)
+                    .setWindowId(windowId)
+                    .build()
+            )
+        } catch (_: Exception) {}
+    }
 }
