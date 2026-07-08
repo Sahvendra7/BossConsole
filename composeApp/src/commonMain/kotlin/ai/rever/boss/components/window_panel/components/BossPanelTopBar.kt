@@ -17,6 +17,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Remove
@@ -44,6 +46,8 @@ fun BossPanelTopBar(
     onReloadPlugin: (() -> Unit)? = null,
     onOpenAsTab: (() -> Unit)? = null,
     onCheckForUpdates: (() -> Unit)? = null,
+    onOpenEvolver: (() -> Unit)? = null,
+    onReportIssue: (() -> Unit)? = null,
     onMinimize: () -> Unit,
     updateAvailable: AvailablePluginUpdate? = null,
     onUpdateClick: (() -> Unit)? = null,
@@ -56,6 +60,8 @@ fun BossPanelTopBar(
         onReset?.let { cb -> add(ContextMenuItem(text = "Restart Panel", icon = Icons.Outlined.RestartAlt, onClick = cb)) }
         onReloadPlugin?.let { cb -> add(ContextMenuItem(text = "Reload Plugin", icon = Icons.Outlined.Refresh, onClick = cb)) }
         onCheckForUpdates?.let { cb -> add(ContextMenuItem(text = "Check for Updates", icon = Icons.Outlined.Upgrade, onClick = cb)) }
+        onOpenEvolver?.let { cb -> add(ContextMenuItem(text = "Open Evolver", icon = Icons.Outlined.MonitorHeart, onClick = cb)) }
+        onReportIssue?.let { cb -> add(ContextMenuItem(text = "Report Issue", icon = Icons.Outlined.BugReport, onClick = cb)) }
         onOpenAsTab?.let { cb -> add(ContextMenuItem(text = "Open as Tab", icon = Icons.Outlined.Tab, onClick = cb)) }
         add(ContextMenuItem(text = "Minimize", icon = Icons.Outlined.Remove, onClick = onMinimize))
     }

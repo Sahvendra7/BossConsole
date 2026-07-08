@@ -70,9 +70,53 @@ object CrashHandler {
     }
 
     /**
+     * Whether [throwable] (or anything in its cause chain) is a benign, expected
+     * exception that should be logged and swallowed rather than reported as a
+     * crash: dropped network sockets (broken pipe / connection reset), closed
+     * ktor channels, and coroutine cancellations. Matched by class-name suffix +
+     * message so we don't need a compile dependency on ktor/coroutines here.
+     */
+    private fun isIgnorable(throwable: Throwable): Boolean {
+        var t: Throwable? = throwable
+        var depth = 0
+        while (t != null && depth < 12) {
+            val name = t.javaClass.name
+            val msg = t.message ?: ""
+            val benign =
+                name.endsWith("ClosedWriteChannelException") ||
+                name.endsWith("ClosedReceiveChannelException") ||
+                name.endsWith("ClosedChannelException") ||
+                name.endsWith("CancellationException") ||
+                (t is java.io.IOException && (
+                    msg.contains("Broken pipe", ignoreCase = true) ||
+                    msg.contains("Connection reset", ignoreCase = true) ||
+                    msg.contains("Socket closed", ignoreCase = true) ||
+                    msg.contains("Stream closed", ignoreCase = true) ||
+                    msg.contains("Connection refused", ignoreCase = true)
+                ))
+            if (benign) return true
+            t = t.cause
+            depth++
+        }
+        return false
+    }
+
+    /**
      * Handle an uncaught exception.
      */
     private fun handleCrash(thread: Thread, throwable: Throwable) {
+        // Benign, non-fatal exceptions (dropped sockets, cancellations) reach the
+        // global handler routinely — e.g. hot-swapping a plugin jar drops the MCP
+        // server's ktor writer with a "Broken pipe". These must NOT pop the crash
+        // dialog or terminate the app; log and swallow so the app keeps running.
+        if (isIgnorable(throwable)) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Ignoring benign uncaught exception on thread ${thread.name}: " +
+                    "${throwable.javaClass.simpleName}: ${throwable.message}"
+            )
+            return
+        }
         try {
             logger.error(
                 LogCategory.SYSTEM,

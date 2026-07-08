@@ -361,6 +361,14 @@ class TrackingPluginContext(
     // File picker provider - delegate to underlying context
     override val filePickerProvider: FilePickerProvider? get() = delegate.filePickerProvider
 
+    // Directory picker + project data providers — previously omitted here, so
+    // every plugin saw the interface default null (the codebase panel's "Open
+    // Project" and the Tool Evolver's Evolve "Browse" silently did nothing).
+    override val directoryPickerProvider: ai.rever.boss.plugin.api.DirectoryPickerProvider?
+        get() = delegate.directoryPickerProvider
+    override val projectDataProvider: ai.rever.boss.plugin.api.ProjectDataProvider?
+        get() = delegate.projectDataProvider
+
     // Keyboard shortcut provider - delegate to underlying context
     override val keyboardShortcutProvider: KeyboardShortcutProvider? get() = delegate.keyboardShortcutProvider
 

@@ -8,6 +8,8 @@ import ai.rever.boss.components.plugin.PluginUpdateRegistry
 import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.components.registery.PanelComponentStore
 import ai.rever.boss.components.window_panel.components.BossPanelTopBar
+import ai.rever.boss.mcp.McpToolRegistryImpl
+import ai.rever.boss.mcp.EvolverContract
 import ai.rever.boss.plugin.sandbox.PanelSandboxRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginErrorBoundary
@@ -39,6 +41,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Composable
 fun BossDraggableComponent.SidePanel(
@@ -77,6 +81,45 @@ fun BossDraggableComponent.SidePanel(
             if (pluginContentId != null && windowId != null) {
                 { MenuActionsHandler.triggerCheckPluginUpdates(windowId, pluginContentId) }
             } else null
+
+        // Tool Evolver menu items, gated via the (RBAC-filtered) MCP registry —
+        // no compile-time coupling to the plugin. "Report Issue" shows whenever the
+        // plugin is active (evolver_open is ungated). "Open Evolver" shows only when
+        // the permission-gated evolver_evolve tool is exposed — i.e. the current
+        // user may evolve (holds the permission, or is admin). Both dispatch
+        // evolver_open with the right section.
+        val registeredMcpTools by McpToolRegistryImpl.tools.collectAsState()
+        val menuScope = rememberCoroutineScope()
+        val evolverLogger = remember { BossLogger.forComponent("SidePanel") }
+        val evolverOpenAvailable = pluginId != null &&
+            registeredMcpTools.any { it.definition.name == EvolverContract.OPEN_TOOL }
+        val evolveAvailable = pluginId != null &&
+            registeredMcpTools.any { it.definition.name == EvolverContract.EVOLVE_TOOL }
+        val dispatchEvolverOpen: (String?, String) -> Unit = { section, failLabel ->
+            val id = pluginId
+            if (id != null) {
+                menuScope.launch {
+                    val args = buildJsonObject {
+                        put(EvolverContract.ARG_PLUGIN_ID, id)
+                        if (section != null) put(EvolverContract.ARG_SECTION, section)
+                    }.toString()
+                    val result = McpToolRegistryImpl.invoke(EvolverContract.OPEN_TOOL, args)
+                    if (result.isError) {
+                        evolverLogger.warn(
+                            LogCategory.UI,
+                            "$failLabel failed",
+                            mapOf("pluginId" to id, "error" to result.text)
+                        )
+                        StatusMessageManager.showMessage("$failLabel failed: ${result.text}", durationMs = 5000)
+                    }
+                }
+                Unit
+            }
+        }
+        val openEvolver: (() -> Unit)? =
+            if (evolveAvailable) { { dispatchEvolverOpen(null, "Open Evolver") } } else null
+        val reportIssue: (() -> Unit)? =
+            if (evolverOpenAvailable) { { dispatchEvolverOpen(EvolverContract.SECTION_ISSUE, "Report Issue") } } else null
 
         // Drag the panel by its header: reorder/move between sidebar slots, or drop on
         // the central area to open it as a main tab. Reuses the sidebar drag system.
@@ -121,6 +164,8 @@ fun BossDraggableComponent.SidePanel(
                 { requestPromoteToTab(panelId) }
             },
             onCheckForUpdates = checkForUpdates,
+            onOpenEvolver = openEvolver,
+            onReportIssue = reportIssue,
             onMinimize = {
                 setPanelVisible(panel, false)
             },

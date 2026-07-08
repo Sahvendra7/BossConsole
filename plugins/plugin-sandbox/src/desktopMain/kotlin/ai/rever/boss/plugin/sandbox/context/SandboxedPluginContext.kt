@@ -229,6 +229,15 @@ class SandboxedPluginContext(
     override val filePickerProvider: FilePickerProvider?
         get() = delegate.filePickerProvider
 
+    // Directory picker + project data providers - delegate to underlying context.
+    // (Sandboxed plugins wrap TrackingPluginContext; both wrappers must forward
+    // these or a sandboxed plugin's directory "Browse" gets the interface-default
+    // null even though the host provides one.)
+    override val directoryPickerProvider: ai.rever.boss.plugin.api.DirectoryPickerProvider?
+        get() = delegate.directoryPickerProvider
+    override val projectDataProvider: ai.rever.boss.plugin.api.ProjectDataProvider?
+        get() = delegate.projectDataProvider
+
     // Keyboard shortcut provider - delegate to underlying context
     override val keyboardShortcutProvider: KeyboardShortcutProvider?
         get() = delegate.keyboardShortcutProvider
