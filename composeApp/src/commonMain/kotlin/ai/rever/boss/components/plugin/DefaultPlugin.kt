@@ -885,6 +885,31 @@ class DefaultPlugin(
     }
 
     /**
+     * The in-flight external-plugins directory scan launched from init via
+     * [loadExternalPlugins]; null when the scan was skipped (no plugin dir or
+     * no jars). Joined by [awaitInitialPluginLoad].
+     */
+    @Volatile
+    private var externalPluginsScanJob: Job? = null
+
+    /**
+     * Suspends until startup plugin loading has finished: the persisted-plugins
+     * pass and the external directory scan (which itself sequences after the
+     * persisted pass). Both are launched asynchronously from init, so an early
+     * read of [DynamicPluginManager.getInstalledPlugins] sees an empty registry
+     * on every startup — callers that treat "no plugins installed" as meaningful
+     * (e.g. the Toolbox setup wizard) must await this first.
+     */
+    suspend fun awaitInitialPluginLoad() {
+        // Force the lazy manager so the persisted load is guaranteed to have been
+        // kicked off before we join — keeps this method correct even if init's own
+        // eager touch of dynamicPluginManager is ever refactored away.
+        dynamicPluginManager
+        persistedPluginsLoadJob?.join()
+        externalPluginsScanJob?.join()
+    }
+
+    /**
      * Load external plugins from the local plugins directory (~/.boss/plugins/).
      *
      * This scans for JAR files and installs them via DynamicPluginManager.
@@ -922,7 +947,7 @@ class DefaultPlugin(
         // pass lost log "Plugin already loaded" as a failure for most plugins
         // every startup — and let this scan force-load (enabled=true) plugins
         // whose persisted entry said enabled=false.
-        pluginScope.launch {
+        externalPluginsScanJob = pluginScope.launch {
             val manager = dynamicPluginManager // first access starts the persisted load
             persistedPluginsLoadJob?.join()
 

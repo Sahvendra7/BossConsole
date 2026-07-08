@@ -159,6 +159,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
@@ -1123,6 +1124,22 @@ fun ComponentContext.BossApp(
             // Check if wizard was already completed
             val wizardCompleted = withContext(Dispatchers.IO) {
                 UserDataStorage.isPluginWizardCompleted()
+            }
+
+            // Startup plugin loading (persisted pass + external directory scan) is
+            // asynchronous, so "no plugins installed" is only meaningful once it
+            // finishes — checking mid-load read an empty registry and re-showed the
+            // wizard on every restart. First run (!wizardCompleted) shows the wizard
+            // regardless, so only the completed case needs to wait.
+            if (wizardCompleted) {
+                val loadFinished = withTimeoutOrNull(30_000) {
+                    defaultPlugin.awaitInitialPluginLoad()
+                }
+                if (loadFinished == null) {
+                    logger.warn(LogCategory.SYSTEM, "Startup plugin load still running after 30s; skipping wizard check")
+                    pluginWizardChecked = true
+                    return@LaunchedEffect
+                }
             }
 
             // Check if any plugins are installed (in-memory operation, no IO needed)
