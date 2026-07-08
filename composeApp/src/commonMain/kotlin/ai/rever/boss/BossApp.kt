@@ -2874,7 +2874,17 @@ fun ComponentContext.BossApp(
                         // Reset the initial type after tab creation
                         newTabDialogInitialType = null
                     },
-                    initialTabType = newTabDialogInitialType
+                    initialTabType = newTabDialogInitialType,
+                    // Plugin tab types build their own TabInfo; open it in the
+                    // same target component as the built-in types.
+                    onCreateTabInfo = { tabInfo ->
+                        val targetComponent = splitViewState.getActiveTabsComponent()
+                            ?: splitViewState.getLastInteractedTabComponent()
+                            ?: tabsComponent
+                        targetComponent.addTab(tabInfo)
+                        newTabDialogInitialType = null
+                    },
+                    projectPath = windowProjectState.selectedProject.value.path.ifEmpty { null }
                 )
             }
 

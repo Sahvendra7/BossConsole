@@ -9,8 +9,11 @@ import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ContextMenuBackground
 import ContextMenuBorder
+import ai.rever.boss.plugin.api.NewTabContext
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
+import ai.rever.boss.plugin.api.TabTypeInfo
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
@@ -157,12 +160,61 @@ fun NewTabDialog(
     onDismiss: () -> Unit,
     onCreateTab: (type: TabType, path: String) -> Unit,
     tabRegistry: TabRegistry,
-    initialTabType: TabType? = null
+    initialTabType: TabType? = null,
+    /**
+     * Opens a [TabInfo] built by a plugin tab type's [TabTypeInfo.createTabInfo].
+     * When null, plugin-registered tab types are not offered (legacy callers).
+     */
+    onCreateTabInfo: ((TabInfo) -> Unit)? = null,
+    projectPath: String? = null,
+    windowId: String? = null
 ) {
     val availableTypes = TabType.entries.filter { tabRegistry.isRegistered(it.tabTypeId) }
+    // Plugin-registered tab types that opted into the dialog (newTabSpec).
+    // TabRegistry is state-backed, so this recomposes on (un)registration.
+    val builtinTypeIds = TabType.entries.map { it.tabTypeId }.toSet()
+    val pluginTypes = if (onCreateTabInfo != null) {
+        tabRegistry.getAllTabTypes()
+            .filter { it.newTabSpec != null && it.typeId !in builtinTypeIds }
+            .sortedWith(compareBy({ it.newTabSpec!!.order }, { it.displayName }))
+    } else {
+        emptyList()
+    }
     val defaultType = if (initialTabType != null && initialTabType in availableTypes) initialTabType
         else availableTypes.firstOrNull() ?: TabType.URL
     var selectedType by remember { mutableStateOf(defaultType) }
+    // Non-null when a plugin tab type is selected; built-in selection then
+    // idles. Defaults to the first plugin type when no built-ins are
+    // available. Keyed on availableTypes/pluginTypes so the default is
+    // (re)applied if the registry populates after the dialog first composes
+    // (built-ins are async-loaded plugins — an unkeyed remember would leave
+    // nothing selected). Once the user picks a type the key is stable, so
+    // their choice sticks.
+    var selectedPluginType by remember(availableTypes.isEmpty(), pluginTypes.firstOrNull()?.typeId) {
+        mutableStateOf(if (availableTypes.isEmpty()) pluginTypes.firstOrNull()?.typeId else null)
+    }
+    val selectedPluginTypeInfo = selectedPluginType?.let { id -> pluginTypes.firstOrNull { it.typeId == id } }
+    var pluginInput by remember(selectedPluginType) { mutableStateOf("") }
+
+    // Confirm a plugin tab type: the plugin builds the TabInfo (null = input
+    // rejected, dialog stays open). Crash-isolated — plugin code.
+    val confirmPluginTab: () -> Unit = confirm@{
+        val typeInfo = selectedPluginTypeInfo ?: return@confirm
+        val spec = typeInfo.newTabSpec ?: return@confirm
+        if (!spec.inputOptional && pluginInput.isBlank()) return@confirm
+        val tabInfo = try {
+            typeInfo.createTabInfo(pluginInput.trim(), NewTabContext(projectPath = projectPath, windowId = windowId))
+        } catch (e: Exception) {
+            newTabDialogLogger.warn(LogCategory.UI, "Plugin createTabInfo failed", mapOf(
+                "typeId" to typeInfo.typeId.typeId
+            ), e)
+            null
+        }
+        if (tabInfo != null) {
+            onCreateTabInfo?.invoke(tabInfo)
+            onDismiss()
+        }
+    }
     var urlText by remember { mutableStateOf("") }
     var fileText by remember { mutableStateOf("") }
     var terminalCommand by remember { mutableStateOf("") }
@@ -265,7 +317,7 @@ fun NewTabDialog(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 
-                if (availableTypes.isEmpty()) {
+                if (availableTypes.isEmpty() && pluginTypes.isEmpty()) {
                     // Empty state when no tab plugins are enabled
                     Box(
                         modifier = Modifier
@@ -289,13 +341,14 @@ fun NewTabDialog(
                     TabTypeOption(
                         icon = Icons.Default.Language,
                         label = "URL",
-                        isSelected = selectedType == TabType.URL,
+                        isSelected = selectedPluginType == null && selectedType == TabType.URL,
                         onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.FILE -> fileText = inputText
                                 else -> {}
                             }
+                            selectedPluginType = null
                             selectedType = TabType.URL
                             inputText = urlText
                         },
@@ -307,13 +360,14 @@ fun NewTabDialog(
                     TabTypeOption(
                         icon = Icons.AutoMirrored.Filled.InsertDriveFile,
                         label = "File",
-                        isSelected = selectedType == TabType.FILE,
+                        isSelected = selectedPluginType == null && selectedType == TabType.FILE,
                         onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.URL -> urlText = inputText
                                 else -> {}
                             }
+                            selectedPluginType = null
                             selectedType = TabType.FILE
                             inputText = fileText
                         },
@@ -325,7 +379,7 @@ fun NewTabDialog(
                     TabTypeOption(
                         icon = Icons.Outlined.Terminal,
                         label = "Terminal",
-                        isSelected = selectedType == TabType.TERMINAL,
+                        isSelected = selectedPluginType == null && selectedType == TabType.TERMINAL,
                         onClick = {
                             // Save current text before switching
                             when (selectedType) {
@@ -333,11 +387,32 @@ fun NewTabDialog(
                                 TabType.FILE -> fileText = inputText
                                 else -> {}
                             }
+                            selectedPluginType = null
                             selectedType = TabType.TERMINAL
                             inputText = terminalCommand
                         },
                         modifier = Modifier.weight(1f)
                     )
+                    }
+
+                    // Plugin-registered tab types that opted into the dialog
+                    // via TabTypeInfo.newTabSpec — fully dynamic, no host
+                    // change needed for a new tab type to appear here.
+                    for (pluginType in pluginTypes) {
+                        TabTypeOption(
+                            icon = pluginType.icon,
+                            label = pluginType.displayName,
+                            isSelected = selectedPluginType == pluginType.typeId,
+                            onClick = {
+                                when (selectedType) {
+                                    TabType.URL -> urlText = inputText
+                                    TabType.FILE -> fileText = inputText
+                                    else -> {}
+                                }
+                                selectedPluginType = pluginType.typeId
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
 
@@ -345,8 +420,50 @@ fun NewTabDialog(
 
                 // Input field
                 Column {
-                    // Show terminal command input or URL/File input
-                    if (selectedType == TabType.TERMINAL) {
+                    // Plugin tab type input — one generic field driven by the
+                    // type's NewTabSpec; the plugin validates via createTabInfo.
+                    if (selectedPluginTypeInfo != null) {
+                        val spec = selectedPluginTypeInfo.newTabSpec!!
+                        val pluginFocusRequester = remember { FocusRequester() }
+                        LaunchedEffect(selectedPluginType) {
+                            pluginFocusRequester.requestFocus()
+                        }
+                        OutlinedTextField(
+                            value = pluginInput,
+                            onValueChange = { pluginInput = it },
+                            label = {
+                                Text(
+                                    spec.inputLabel + if (spec.inputOptional) " (optional)" else "",
+                                    color = BossDarkTextSecondary
+                                )
+                            },
+                            placeholder = {
+                                Text(
+                                    spec.inputPlaceholder,
+                                    color = BossDarkTextMuted
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(pluginFocusRequester)
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                        confirmPluginTab()
+                                        true
+                                    } else false
+                                },
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { confirmPluginTab() })
+                        )
+                    } else if (selectedType == TabType.TERMINAL) {
                         // Terminal command input
                         LaunchedEffect(selectedType) {
                             if (selectedType == TabType.TERMINAL) {
@@ -926,10 +1043,18 @@ fun NewTabDialog(
 
                     Button(
                         onClick = {
-                            val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
-                            handleCreateTab(selectedType, input, onCreateTab, onDismiss)
+                            if (selectedPluginTypeInfo != null) {
+                                confirmPluginTab()
+                            } else {
+                                val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
+                                handleCreateTab(selectedType, input, onCreateTab, onDismiss)
+                            }
                         },
-                        enabled = availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || inputText.isNotBlank()),
+                        enabled = if (selectedPluginTypeInfo != null) {
+                            selectedPluginTypeInfo.newTabSpec!!.inputOptional || pluginInput.isNotBlank()
+                        } else {
+                            availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || inputText.isNotBlank())
+                        },
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = BossDarkAccent,
                             contentColor = BossDarkTextPrimary,
@@ -938,10 +1063,14 @@ fun NewTabDialog(
                         )
                     ) {
                         Text(
-                            when (selectedType) {
-                                TabType.URL -> "Fluck it"
-                                TabType.FILE -> "Open"
-                                TabType.TERMINAL -> "Open Terminal"
+                            if (selectedPluginTypeInfo != null) {
+                                selectedPluginTypeInfo.newTabSpec!!.confirmLabel
+                            } else {
+                                when (selectedType) {
+                                    TabType.URL -> "Fluck it"
+                                    TabType.FILE -> "Open"
+                                    TabType.TERMINAL -> "Open Terminal"
+                                }
                             }
                         )
                     }

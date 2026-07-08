@@ -103,7 +103,13 @@ data class IncompatibleNotice(
     val requiredBossVersion: String = "",
     /** The running host application version. */
     @SerialName("hostBossVersion")
-    val hostBossVersion: String = ""
+    val hostBossVersion: String = "",
+    /** Minimum boss-plugin-api (runtime API layer) version that [advertisedLatest] requires. */
+    @SerialName("requiredApiVersion")
+    val requiredApiVersion: String = "",
+    /** The installed runtime API layer version. */
+    @SerialName("hostApiVersion")
+    val hostApiVersion: String = ""
 )
 
 /**

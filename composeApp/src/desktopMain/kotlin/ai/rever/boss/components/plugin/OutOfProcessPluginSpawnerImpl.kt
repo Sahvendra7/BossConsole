@@ -106,8 +106,16 @@ class OutOfProcessPluginSpawnerImpl(
                     }
                 }
 
-                // Build classpath: runtime JAR + plugin JAR
-                val classpath = "$runtimeClasspath${File.pathSeparator}$jarPath"
+                // Build classpath: runtime JAR + plugin JAR + (when resolved)
+                // the runtime API layer jar. The api jar goes LAST so runtime
+                // and plugin classes win and it only fills in types the
+                // runtime predates — the flat-classpath analogue of the
+                // in-process ApiClassLoader's parent-first position. Without
+                // it, a plugin using an api-jar-only type (ConsoleLogsAPI
+                // pattern) dies in the child with NoClassDefFoundError.
+                val apiJar = System.getProperty("boss.api.jar")?.takeIf { it.isNotBlank() }
+                val classpath = listOfNotNull(runtimeClasspath, jarPath, apiJar)
+                    .joinToString(File.pathSeparator)
 
                 val config = ProcessConfig(
                     processId = "plugin-$pluginId",
@@ -236,6 +244,13 @@ class OutOfProcessPluginSpawnerImpl(
         val heapInit = settings?.pluginJvmInitialHeapMb ?: 64
         add("-Xmx${heapMax}m")
         add("-Xms${heapInit}m")
+        // System properties are not inherited across processes: without this
+        // the child's BossApiRuntime reads no boss.api.version, reports
+        // "0.0.0" (which PARSES, so isAtLeast does not fail open) and the
+        // plugin wrongly concludes the API layer is ancient.
+        System.getProperty("boss.api.version")?.takeIf { it.isNotBlank() }?.let {
+            add("-Dboss.api.version=$it")
+        }
     }
 
     private fun buildEnvironment(pluginId: String, jarPath: String): Map<String, String> = buildMap {

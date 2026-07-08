@@ -3,6 +3,7 @@ package ai.rever.boss.components.windows
 import BossDarkError
 import ai.rever.boss.components.settings.sections.*
 import ai.rever.boss.components.settings.keymap.EditableKeymapSettings
+import ai.rever.boss.components.plugin.registries.SettingsPageRegistryImpl
 import ai.rever.boss.components.settings.sidebar.SettingsSection
 import ai.rever.boss.components.settings.sidebar.SettingsSidebar
 import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
@@ -68,7 +69,9 @@ actual fun SettingsWindow(
 
 @Composable
 private fun SettingsContent(initialSection: String? = null) {
-    // Convert initial section string to enum, defaulting to FLUCK
+    // Convert initial section string to enum, defaulting to FLUCK. A string
+    // that instead matches a plugin page id (SettingsPageRegistry) deep-
+    // navigates to that page.
     val startSection = remember(initialSection) {
         initialSection?.let { name ->
             SettingsSection.entries.find { it.name.equals(name, ignoreCase = true) }
@@ -77,6 +80,27 @@ private fun SettingsContent(initialSection: String? = null) {
     var selectedSection by remember { mutableStateOf(startSection) }
     var showResetConfirmation by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    // Plugin-contributed settings pages: reactive to plugin lifecycle + RBAC.
+    val registryPages by SettingsPageRegistryImpl.pages.collectAsState()
+    val registryAccess by SettingsPageRegistryImpl.access.collectAsState()
+    val pluginPages = remember(registryPages, registryAccess) {
+        SettingsPageRegistryImpl.visiblePages()
+    }
+    var selectedPluginPageId by remember(initialSection) {
+        mutableStateOf(
+            initialSection?.takeIf { candidate ->
+                SettingsSection.entries.none { it.name.equals(candidate, ignoreCase = true) } &&
+                    SettingsPageRegistryImpl.visiblePage(candidate) != null
+            }
+        )
+    }
+    // If the selected page's plugin is disabled/unloaded, fall back to sections.
+    LaunchedEffect(pluginPages) {
+        if (selectedPluginPageId != null && pluginPages.none { it.pageId == selectedPluginPageId }) {
+            selectedPluginPageId = null
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -88,7 +112,13 @@ private fun SettingsContent(initialSection: String? = null) {
             // Left navigation rail
             SettingsSidebar(
                 selectedSection = selectedSection,
-                onSectionChange = { selectedSection = it }
+                onSectionChange = {
+                    selectedPluginPageId = null
+                    selectedSection = it
+                },
+                pluginPages = pluginPages,
+                selectedPluginPageId = selectedPluginPageId,
+                onPluginPageChange = { selectedPluginPageId = it }
             )
 
             // Divider
@@ -112,10 +142,18 @@ private fun SettingsContent(initialSection: String? = null) {
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    SettingsContentArea(
-                        section = selectedSection,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    val pluginPage = selectedPluginPageId?.let { id -> pluginPages.firstOrNull { it.pageId == id } }
+                    if (pluginPage != null) {
+                        PluginSettingsPageArea(
+                            page = pluginPage,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        SettingsContentArea(
+                            section = selectedSection,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
 
                 // Footer with auto-save message and reset button
@@ -175,6 +213,71 @@ private fun SettingsContent(initialSection: String? = null) {
             backgroundColor = SurfaceColor,
             contentColor = TextPrimary
         )
+    }
+}
+
+/**
+ * Content area for a plugin-contributed settings page: same header treatment
+ * as built-in sections. Page content renders inside a
+ * [ai.rever.boss.plugin.sandbox.ui.PluginExtensionBoundary] — a crash
+ * attributed to the owning plugin replaces the page with an error notice
+ * instead of killing the settings window. Pages with [SettingsPageProvider
+ * .selfScrolling] own their scrolling (LazyColumn-friendly, mirroring the
+ * embedded built-in sections); others get the host's vertical scroll.
+ */
+@Composable
+private fun PluginSettingsPageArea(
+    page: ai.rever.boss.plugin.api.SettingsPageProvider,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+
+    val columnModifier = if (page.selfScrolling) {
+        modifier.padding(20.dp)
+    } else {
+        modifier
+            .verticalScroll(scrollState)
+            .padding(20.dp)
+    }
+    Column(modifier = columnModifier) {
+        Text(
+            text = page.displayName,
+            color = TextPrimary,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Text(
+            text = page.description,
+            color = TextMuted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(bottom = 20.dp)
+        )
+
+        val pageBoundary: @Composable () -> Unit = {
+            ai.rever.boss.plugin.sandbox.ui.PluginExtensionBoundary(
+                pluginId = ai.rever.boss.components.plugin.registries.owningPluginId(page),
+                surface = "settings page ${page.pageId}",
+                fallback = { error ->
+                    Text(
+                        text = "This settings page crashed: ${error.message ?: error::class.simpleName}. " +
+                            "Reload the plugin to try again.",
+                        color = BossDarkError,
+                        fontSize = 13.sp
+                    )
+                }
+            ) {
+                page.Content()
+            }
+        }
+        if (page.selfScrolling) {
+            // Bounded height so the page's own LazyColumn/scroll can fill it.
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                pageBoundary()
+            }
+        } else {
+            pageBoundary()
+        }
     }
 }
 

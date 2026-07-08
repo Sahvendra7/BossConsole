@@ -132,7 +132,10 @@ private val NavRailWidth = 180.dp
 @Composable
 fun SettingsSidebar(
     selectedSection: SettingsSection,
-    onSectionChange: (SettingsSection) -> Unit
+    onSectionChange: (SettingsSection) -> Unit,
+    pluginPages: List<ai.rever.boss.plugin.api.SettingsPageProvider> = emptyList(),
+    selectedPluginPageId: String? = null,
+    onPluginPageChange: (String) -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
 
@@ -145,12 +148,37 @@ fun SettingsSidebar(
             .padding(vertical = 8.dp)
     ) {
         SettingsSection.entries.forEach { section ->
-            val isSelected = section == selectedSection
+            val isSelected = selectedPluginPageId == null && section == selectedSection
             NavigationRailItem(
-                section = section,
+                displayName = section.displayName,
+                icon = section.icon,
                 isSelected = isSelected,
                 onClick = { onSectionChange(section) }
             )
+        }
+
+        // Plugin-contributed settings pages (SettingsPageRegistry) under a
+        // "Plugins" divider — fully dynamic, appear/disappear with plugins.
+        if (pluginPages.isNotEmpty()) {
+            Divider(
+                color = TextSecondary.copy(alpha = 0.2f),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+            Text(
+                text = "PLUGINS",
+                color = TextSecondary,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+            pluginPages.forEach { page ->
+                NavigationRailItem(
+                    displayName = page.displayName,
+                    icon = page.icon,
+                    isSelected = page.pageId == selectedPluginPageId,
+                    onClick = { onPluginPageChange(page.pageId) }
+                )
+            }
         }
     }
 }
@@ -160,7 +188,8 @@ fun SettingsSidebar(
  */
 @Composable
 private fun NavigationRailItem(
-    section: SettingsSection,
+    displayName: String,
+    icon: ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -184,14 +213,14 @@ private fun NavigationRailItem(
         )
 
         Icon(
-            imageVector = section.icon,
-            contentDescription = section.displayName,
+            imageVector = icon,
+            contentDescription = displayName,
             tint = if (isSelected) AccentColor else TextSecondary,
             modifier = Modifier.size(18.dp)
         )
 
         Text(
-            text = section.displayName,
+            text = displayName,
             color = if (isSelected) AccentColor else TextPrimary,
             fontSize = 13.sp,
             fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal

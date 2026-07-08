@@ -614,7 +614,15 @@ fun BossTabsComponent.BossMainTabBar(
                         }
                     }
                 }
-            }
+            },
+            // Plugin tab types build their own TabInfo; open it the same way.
+            onCreateTabInfo = { tabInfo ->
+                val tabIndex = addTab(tabInfo)
+                if (tabIndex >= 0) {
+                    selectTab(tabIndex)
+                }
+            },
+            projectPath = windowProjectState?.selectedProject?.value?.path
         )
     }
 
@@ -981,7 +989,15 @@ fun BossTabsComponent.BossMainPanelContent(
                         }
                     }
                 }
-            }
+            },
+            // Plugin tab types build their own TabInfo; open it the same way.
+            onCreateTabInfo = { tabInfo ->
+                val tabIndex = addTab(tabInfo)
+                if (tabIndex >= 0) {
+                    selectTab(tabIndex)
+                }
+            },
+            projectPath = selectedProject.path.ifEmpty { null }
         )
     }
 }

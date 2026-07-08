@@ -83,6 +83,8 @@ jobs:
           echo "🧪 Running tests on ${{ matrix.os }}"
           ./gradlew test --continue
         env:
+          # boss-plugin-api-core resolution from GitHub Packages (settings/composeApp repos)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Windows-specific: disable daemon to avoid file handle issues (KT-55959)
           GRADLE_OPTS: ${{ matrix.os == 'windows-latest' && '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.caching=true -Dkotlin.daemon.jvm.options=-Xmx2g' || '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true' }}
 
@@ -91,6 +93,8 @@ jobs:
           echo "🔨 Building application for ${{ matrix.os }}"
           ./gradlew build --stacktrace
         env:
+          # boss-plugin-api-core resolution from GitHub Packages (settings/composeApp repos)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Windows-specific: disable daemon to avoid file handle issues (KT-55959)
           GRADLE_OPTS: ${{ matrix.os == 'windows-latest' && '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.caching=true -Dkotlin.daemon.jvm.options=-Xmx2g' || '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true' }}
 
@@ -99,6 +103,8 @@ jobs:
         run: |
           echo "🏗️ Creating executable JAR"
           ./gradlew createExecutableJar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📊 Upload Test Results
         uses: actions/upload-artifact@v7
@@ -148,6 +154,8 @@ jobs:
         run: |
           echo "🔒 Checking dependencies"
           ./gradlew :composeApp:dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📊 Generate Build Report
         run: |

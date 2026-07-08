@@ -210,6 +210,27 @@ class PluginClassLoader(
     }
 
     /**
+     * Enumerate resources mirroring [getResource]'s strategy: shared paths
+     * parent-first, everything else child-first. URLClassLoader's inherited
+     * plural enumeration is always parent-first, and with the ApiClassLoader
+     * in the parent chain (whose jar carries its own
+     * META-INF/boss-plugin/plugin.json and jar manifest) that would surface
+     * the api jar's copy of non-shared resources ahead of the plugin's own.
+     */
+    override fun getResources(name: String): java.util.Enumeration<URL> {
+        val isSharedResource = sharedPackages.any {
+            name.startsWith(it.replace('.', '/'))
+        }
+        if (isSharedResource) {
+            return super.getResources(name)
+        }
+        val own = java.util.Collections.list(findResources(name))
+        val fromParents = java.util.Collections.list(parent.getResources(name))
+            .filterNot { it in own }
+        return java.util.Collections.enumeration(own + fromParents)
+    }
+
+    /**
      * Close this classloader and release resources.
      */
     override fun close() {

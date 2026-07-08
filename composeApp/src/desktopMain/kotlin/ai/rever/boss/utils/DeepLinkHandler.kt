@@ -244,11 +244,13 @@ actual object DeepLinkHandler {
 
     /**
      * Handle boss://plugin deep links
-     * Opens any panel by its panel ID.
+     * Opens any panel by its panel ID, or — with an `action` parameter —
+     * routes to the plugin's registered DeepLinkActionHandler.
      * Examples:
      *   boss://plugin?id=bookmarks
      *   boss://plugin?id=terminal
      *   boss://plugin?id=secret-manager
+     *   boss://plugin?id=my.plugin&action=sync&scope=all
      */
     private fun handlePluginLink(uri: String) {
         logger.debug(LogCategory.UI, "Handling plugin link")
@@ -258,6 +260,22 @@ actual object DeepLinkHandler {
 
         if (panelIdStr == null) {
             logger.warn(LogCategory.UI, "Missing 'id' parameter in plugin deep link")
+            return
+        }
+
+        // Action links dispatch to the plugin's DeepLinkActionHandler and do
+        // NOT fall through to opening a panel — the two are distinct verbs
+        // sharing the `plugin` scheme. Unhandled actions just log (registry
+        // warns); external input, so handlers own validation.
+        val action = params["action"]?.urlDecode()
+        if (action != null) {
+            val actionParams = params
+                .filterKeys { it != "id" && it != "action" }
+                .mapValues { (_, value) -> value.urlDecode() }
+            scope.launch(Dispatchers.Main) {
+                ai.rever.boss.components.plugin.registries.DeepLinkActionRegistryImpl
+                    .dispatch(panelIdStr, action, actionParams)
+            }
             return
         }
 

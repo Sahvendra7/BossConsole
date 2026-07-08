@@ -526,6 +526,9 @@ repositories {
     // JetBrains IntelliJ Platform repositories for PSI code navigation
     maven("https://www.jetbrains.com/intellij-repository/releases")
     maven("https://cache-redirector.jetbrains.com/intellij-dependencies")
+    // NOTE: the boss-plugin-api contract is deliberately NOT resolved from any
+    // Maven registry — its distribution is store/GitHub-releases only. See
+    // plugins/plugin-api-core/build.gradle.kts (fetchApiPluginJar).
 }
 
 jxbrowser {

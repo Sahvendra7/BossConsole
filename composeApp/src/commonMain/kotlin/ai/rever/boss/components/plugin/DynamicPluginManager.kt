@@ -127,6 +127,25 @@ class DynamicPluginManager(
     }
 
     /**
+     * Resolve the runtime API layer (newest installed boss-plugin-api jar in
+     * [pluginDir]) into the shared ApiClassLoader that parents every plugin
+     * classloader, and publish its version as the `boss.api.version` system
+     * property (read by plugins via BossApiRuntime). Must run after the
+     * plugin dir is reconciled and before any plugin loads; idempotent.
+     */
+    fun initializeApiLayer(pluginDir: java.io.File) {
+        val apiLoader = pluginLoader.initializeApiLayer(pluginDir)
+        System.setProperty("boss.api.version", apiLoader.apiVersion ?: "")
+        // Published for the out-of-process spawner (child-JVM classpaths).
+        System.setProperty("boss.api.jar", apiLoader.apiJarPath ?: "")
+        // fromPluginDir already logs the resolved jar + version at INFO;
+        // keep this at debug to avoid triple-logging one init.
+        logger.debug(LogCategory.SYSTEM, "Runtime API layer initialized", mapOf(
+            "apiVersion" to (apiLoader.apiVersion ?: "none")
+        ))
+    }
+
+    /**
      * Tracks registrations by plugin for cleanup.
      */
     private val registrationTracker = PluginRegistrationTracker()
@@ -171,7 +190,132 @@ class DynamicPluginManager(
      */
     private val hiddenPlugins = ConcurrentHashMap<String, DynamicPluginInfo>()
 
+    companion object {
+        private val companionLogger = BossLogger.forComponent("DynamicPluginManager")
+
+        /**
+         * Live manager instances (one per window), tracked so the api-plugin
+         * hot swap can unload/reload plugins EVERYWHERE — the ApiClassLoader
+         * is process-wide, so a swap that missed a window would leave its
+         * plugins parented to the closed old loader.
+         */
+        private val liveManagers = CopyOnWriteArrayList<WeakReference<DynamicPluginManager>>()
+
+        /** Re-entry guard: the swap's own reload calls installPlugin. */
+        private val apiSwapInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        private fun activeManagers(): List<DynamicPluginManager> {
+            liveManagers.removeIf { it.get() == null }
+            return liveManagers.mapNotNull { it.get() }
+        }
+
+        /**
+         * HOT-SWAP the runtime API layer: unload every plugin in every
+         * window's manager, swap the process-wide ApiClassLoader to the
+         * newest api jar in [pluginDir] (closing the old one), refresh the
+         * boss.api.* properties, then reload everything. A full plugin
+         * reload is the accepted cost of upgrading the api plugin without an
+         * app restart.
+         *
+         * @return the number of plugins successfully reloaded
+         */
+        suspend fun hotSwapApiLayer(pluginDir: java.io.File): Result<Int> {
+            if (!apiSwapInProgress.compareAndSet(false, true)) {
+                return Result.failure(IllegalStateException("API layer hot swap already in progress"))
+            }
+            try {
+                val managers = activeManagers()
+                if (managers.isEmpty()) {
+                    return Result.failure(IllegalStateException("No live plugin managers to swap"))
+                }
+
+                companionLogger.info(LogCategory.SYSTEM, "API layer hot swap: unloading all plugins", mapOf(
+                    "managers" to managers.size
+                ))
+
+                // Snapshot then unload everything (force bypasses canUnload —
+                // this is a controlled, restorative operation).
+                val snapshots = managers.map { manager ->
+                    manager to manager.getInstalledPlugins()
+                        .sortedBy { it.manifest.loadPriority }
+                }
+                for ((manager, snapshot) in snapshots) {
+                    for (info in snapshot) {
+                        manager.uninstallPlugin(info.manifest.pluginId, force = true).onFailure { e ->
+                            companionLogger.warn(LogCategory.SYSTEM, "Hot swap: unload failed (continuing)", mapOf(
+                                "pluginId" to info.manifest.pluginId,
+                                "error" to (e.message ?: "unknown")
+                            ))
+                        }
+                    }
+                }
+
+                // All plugin classloaders are closed: swap the shared layer.
+                // If the swap itself throws, DON'T leave the app pluginless —
+                // reload the snapshots against whatever layer is installed and
+                // report the failure.
+                val fresh = try {
+                    managers.first().pluginLoader.swapApiLayer(pluginDir)
+                } catch (t: Throwable) {
+                    companionLogger.error(LogCategory.SYSTEM, "API layer swap failed; reloading plugins on the current layer", mapOf(
+                        "error" to (t.message ?: t::class.simpleName)
+                    ), t)
+                    for ((manager, snapshot) in snapshots) {
+                        for (info in snapshot) {
+                            if (java.io.File(info.jarPath).isFile) {
+                                manager.installPlugin(info.jarPath, enabled = info.enabled)
+                            }
+                        }
+                    }
+                    return Result.failure(t)
+                }
+                System.setProperty("boss.api.version", fresh.apiVersion ?: "")
+                System.setProperty("boss.api.jar", fresh.apiJarPath ?: "")
+
+                // Reload every plugin against the new layer. The api plugin's
+                // own entry reloads from the freshly resolved jar (its old
+                // jar may have been superseded/deleted).
+                var reloaded = 0
+                for ((manager, snapshot) in snapshots) {
+                    for (info in snapshot) {
+                        val pluginId = info.manifest.pluginId
+                        val jarPath = if (pluginId == ai.rever.boss.plugin.loader.ApiClassLoader.API_PLUGIN_ID) {
+                            fresh.apiJarPath ?: info.jarPath
+                        } else {
+                            info.jarPath
+                        }
+                        if (!java.io.File(jarPath).isFile) {
+                            companionLogger.warn(LogCategory.SYSTEM, "Hot swap: jar missing, plugin skipped until next launch", mapOf(
+                                "pluginId" to pluginId,
+                                "jarPath" to jarPath
+                            ))
+                            continue
+                        }
+                        manager.installPlugin(jarPath, enabled = info.enabled)
+                            .onSuccess { reloaded++ }
+                            .onFailure { e ->
+                                companionLogger.warn(LogCategory.SYSTEM, "Hot swap: reload failed", mapOf(
+                                    "pluginId" to pluginId,
+                                    "error" to (e.message ?: "unknown")
+                                ))
+                            }
+                    }
+                }
+
+                companionLogger.info(LogCategory.SYSTEM, "API layer hot swap complete", mapOf(
+                    "apiVersion" to (fresh.apiVersion ?: "unknown"),
+                    "reloaded" to reloaded
+                ))
+                return Result.success(reloaded)
+            } finally {
+                apiSwapInProgress.set(false)
+            }
+        }
+    }
+
     init {
+        liveManagers.add(WeakReference(this))
+
         // Observe access changes (admin status + effective permissions) and
         // reconcile plugin visibility whenever either changes.
         managerScope.launch(Dispatchers.Main) {
@@ -186,6 +330,12 @@ class DynamicPluginManager(
                     // Keep the MCP tool registry's RBAC view in sync so permission-gated
                     // tools appear/disappear with the user's admin status and permissions.
                     ai.rever.boss.mcp.McpToolRegistryImpl.updateAccess(access.isAdmin, access.permissions)
+
+                    // Same push for every RBAC-gated UI extension registry — a
+                    // new one added to ACCESS_GATED is wired here automatically.
+                    ai.rever.boss.components.plugin.registries.AccessGatedRegistry.ACCESS_GATED.forEach {
+                        it.updateAccess(access.isAdmin, access.permissions)
+                    }
 
                     if (changed) {
                         handleAccessChange()
@@ -263,6 +413,40 @@ class DynamicPluginManager(
      * @return Result containing the plugin info or an error
      */
     suspend fun installPlugin(jarPath: String, enabled: Boolean = true): Result<DynamicPluginInfo> {
+        // A NEWER boss-plugin-api jar arriving at runtime (store update,
+        // Toolbox install, hot-reload) can't be applied by a normal plugin
+        // (re)load — every plugin classloader parents to the CURRENT
+        // ApiClassLoader. Route it through the hot swap: unload everything,
+        // swap the layer, reload everything. Runs BEFORE this manager's
+        // mutex (the swap's reload re-enters installPlugin) and never during
+        // a swap (the guard) or at startup (equal version → normal install).
+        if (!apiSwapInProgress.get()) {
+            val incoming = runCatching {
+                ai.rever.boss.plugin.loader.PluginManifestReader.readFromJar(jarPath)
+            }.getOrNull()
+            if (incoming?.pluginId == ai.rever.boss.plugin.loader.ApiClassLoader.API_PLUGIN_ID) {
+                val installed = pluginLoader.getClassLoaderManager().getApiClassLoader()?.apiVersion
+                    ?.let { ai.rever.boss.plugin.api.Version.parse(it) }
+                val candidate = ai.rever.boss.plugin.api.Version.parse(incoming.version)
+                if (installed != null && candidate != null && candidate > installed) {
+                    logger.info(LogCategory.SYSTEM, "Newer api plugin installed — hot-swapping the API layer", mapOf(
+                        "from" to installed.toString(),
+                        "to" to candidate.toString()
+                    ))
+                    hotSwapApiLayer(java.io.File(jarPath).parentFile ?: java.io.File(".")).onFailure {
+                        return Result.failure(it)
+                    }
+                    // If the swap's snapshot contained the api plugin, it was
+                    // already reloaded — return that entry. The update bridge
+                    // however UNINSTALLS the api plugin before handing us the
+                    // new jar, so the snapshot may have lacked it: fall through
+                    // to a normal install (versions are now equal, so the
+                    // trigger won't re-fire) to (re)create the plugin entry.
+                    getPluginInfo(ai.rever.boss.plugin.loader.ApiClassLoader.API_PLUGIN_ID)
+                        ?.let { return Result.success(it) }
+                }
+            }
+        }
         return mutex.withLock {
             try {
                 logger.info(LogCategory.SYSTEM, "Installing plugin", mapOf(

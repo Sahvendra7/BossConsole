@@ -64,6 +64,7 @@ export const PluginVersionSchema = z.object({
   changelog: z.string(),
   minBossVersion: z.string(),
   minIpcVersion: z.string().default('1.0.0'),
+  minApiVersion: z.string().default(''),
   jarSize: z.number(),
   sha256: z.string(),
   dependencies: z.array(z.object({
@@ -164,6 +165,7 @@ export const PublishVersionRequestSchema = z.object({
   changelog: z.string().max(5000).optional().default(''),
   minBossVersion: z.string().optional().default('1.0.0'),
   minIpcVersion: z.string().optional().default('1.0.0'),
+  minApiVersion: z.string().optional().default(''),
   dependencies: z.array(z.object({
     pluginId: z.string(),
     versionRange: z.string()

@@ -7,6 +7,7 @@ import ai.rever.boss.plugin.api.McpToolRegistry
 import ai.rever.boss.plugin.api.McpToolResult
 import ai.rever.boss.plugin.api.RegisteredMcpTool
 import ai.rever.boss.plugin.pathutils.BossDirectories
+import ai.rever.boss.utils.atomicWriteText
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CancellationException
@@ -308,17 +309,10 @@ internal class McpToolRegistryCore(
     private fun saveDisabled(set: Set<String>) {
         if (disabledFile == null) return
         try {
-            disabledFile.parentFile?.mkdirs()
-            // Write-temp-then-rename so a crash mid-write can't corrupt the file
-            // (loadDisabled fails open to emptySet — silently re-enabling tools).
-            val tmp = File(disabledFile.parentFile, disabledFile.name + ".tmp")
-            tmp.writeText(json.encodeToString(set.toList().sorted()))
-            if (!tmp.renameTo(disabledFile)) {
-                disabledFile.delete()
-                if (!tmp.renameTo(disabledFile)) {
-                    throw IOException("rename ${tmp.name} -> ${disabledFile.name} failed")
-                }
-            }
+            // Unique-temp atomic write so a crash mid-write can't corrupt the
+            // file (loadDisabled fails open to emptySet — silently re-enabling
+            // tools) and concurrent writers can't clobber each other.
+            disabledFile.atomicWriteText(json.encodeToString(set.toList().sorted()))
         } catch (t: Throwable) {
             logger.warn(LogCategory.SYSTEM, "Failed to persist disabled MCP tools", mapOf("error" to (t.message ?: "")))
         }

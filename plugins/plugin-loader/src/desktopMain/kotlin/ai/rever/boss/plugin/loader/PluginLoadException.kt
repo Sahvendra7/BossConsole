@@ -90,6 +90,22 @@ class PluginBossVersionException(
 ) : PluginLoadException(message, pluginId, cause)
 
 /**
+ * Exception thrown when a plugin requires a newer boss-plugin-api layer
+ * (manifest minApiVersion) than the one installed. Distinct from
+ * [PluginApiVersionException] (the legacy coarse apiVersion check) and from
+ * [PluginBossVersionException] (host app version): this gates on the version
+ * of the runtime-updatable api jar resolved by the ApiClassLoader, turning
+ * "class not found" validator noise into an actionable requirement.
+ */
+class PluginApiLevelException(
+    message: String,
+    pluginId: String? = null,
+    val requiredVersion: String? = null,
+    val installedVersion: String? = null,
+    cause: Throwable? = null
+) : PluginLoadException(message, pluginId, cause)
+
+/**
  * Exception thrown when a plugin JAR has binary incompatibilities with the current API.
  */
 class PluginBinaryIncompatibilityException(

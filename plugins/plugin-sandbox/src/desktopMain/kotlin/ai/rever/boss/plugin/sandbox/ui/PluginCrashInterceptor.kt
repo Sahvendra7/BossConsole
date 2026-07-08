@@ -29,11 +29,16 @@ object PluginCrashInterceptor {
     private val logger = BossLogger.forComponent("PluginCrashInterceptor")
 
     /**
-     * Registered interceptors: pluginId -> error callback.
-     * When multiple composables for the same plugin are active, the most recent
-     * registration wins (last-writer-wins via ConcurrentHashMap).
+     * Registered interceptors: pluginId -> error callbacks.
+     * A plugin can have several active boundaries at once (panel error
+     * boundary + status-bar / settings-page extension boundaries); ALL of
+     * them are notified on a crash so each surface can swap to its fallback.
+     * Registration/unregistration is per-callback — one boundary leaving
+     * composition no longer clobbers the others (the old single-slot map was
+     * last-writer-wins).
      */
-    private val interceptors = ConcurrentHashMap<String, (Throwable) -> Unit>()
+    private val interceptors =
+        ConcurrentHashMap<String, java.util.concurrent.CopyOnWriteArrayList<(Throwable) -> Unit>>()
 
     /**
      * Cached classloader-to-pluginId mapping, populated at registration time.
@@ -85,7 +90,7 @@ object PluginCrashInterceptor {
      * @return A [Registration] that should be disposed when the composable leaves composition
      */
     fun register(pluginId: String, onError: (Throwable) -> Unit): Registration {
-        interceptors[pluginId] = onError
+        interceptors.getOrPut(pluginId) { java.util.concurrent.CopyOnWriteArrayList() }.add(onError)
 
         // Cache classloader mapping at registration time so we don't need
         // Class.forName() during exception handling (which risks masking errors).
@@ -113,7 +118,7 @@ object PluginCrashInterceptor {
             "pluginId" to pluginId,
             "activeInterceptors" to interceptors.size
         ))
-        return Registration(pluginId)
+        return Registration(pluginId, onError)
     }
 
     /**
@@ -123,7 +128,7 @@ object PluginCrashInterceptor {
      */
     private fun tryHandlePluginCrash(thread: Thread, throwable: Throwable): Boolean {
         val pluginId = attributeToPlugin(throwable, thread) ?: return false
-        val callback = interceptors[pluginId] ?: return false
+        val callbacks = interceptors[pluginId]?.takeIf { it.isNotEmpty() } ?: return false
 
         logger.warn(LogCategory.SYSTEM, "Intercepted plugin crash during composition", mapOf(
             "pluginId" to pluginId,
@@ -132,15 +137,7 @@ object PluginCrashInterceptor {
             "message" to (throwable.message ?: "no message")
         ))
 
-        return try {
-            callback(throwable)
-            true
-        } catch (e: Exception) {
-            logger.error(LogCategory.SYSTEM, "Error in plugin crash callback", mapOf(
-                "pluginId" to pluginId
-            ), e)
-            false
-        }
+        return invokeAll(pluginId, callbacks, throwable)
     }
 
     /**
@@ -152,7 +149,7 @@ object PluginCrashInterceptor {
      * @return true if the callback was invoked successfully
      */
     fun tryHandle(pluginId: String, throwable: Throwable): Boolean {
-        val callback = interceptors[pluginId] ?: return false
+        val callbacks = interceptors[pluginId]?.takeIf { it.isNotEmpty() } ?: return false
 
         logger.warn(LogCategory.SYSTEM, "Handling plugin crash via WindowExceptionHandler", mapOf(
             "pluginId" to pluginId,
@@ -160,15 +157,31 @@ object PluginCrashInterceptor {
             "message" to (throwable.message ?: "no message")
         ))
 
-        return try {
-            callback(throwable)
-            true
-        } catch (e: Exception) {
-            logger.error(LogCategory.SYSTEM, "Error in plugin crash callback", mapOf(
-                "pluginId" to pluginId
-            ), e)
-            false
+        return invokeAll(pluginId, callbacks, throwable)
+    }
+
+    /**
+     * Notify every registered boundary for [pluginId]. Handled when at least
+     * one callback ran without throwing — each surface (panel boundary,
+     * extension boundaries) flips to its own fallback independently.
+     */
+    private fun invokeAll(
+        pluginId: String,
+        callbacks: List<(Throwable) -> Unit>,
+        throwable: Throwable
+    ): Boolean {
+        var handled = false
+        for (callback in callbacks) {
+            try {
+                callback(throwable)
+                handled = true
+            } catch (e: Exception) {
+                logger.error(LogCategory.SYSTEM, "Error in plugin crash callback", mapOf(
+                    "pluginId" to pluginId
+                ), e)
+            }
         }
+        return handled
     }
 
     /**
@@ -248,13 +261,23 @@ object PluginCrashInterceptor {
     }
 
     /**
-     * Handle representing a registered interceptor. Call [unregister] to remove.
+     * Handle representing a registered interceptor. Call [unregister] to
+     * remove ONLY this registration's callback — other boundaries of the same
+     * plugin stay registered.
      */
-    class Registration(private val pluginId: String) {
+    class Registration(
+        private val pluginId: String,
+        private val callback: (Throwable) -> Unit
+    ) {
         fun unregister() {
-            interceptors.remove(pluginId)
-            // Clean up cached classloader entries for this plugin
-            classLoaderToPluginId.entries.removeIf { it.value == pluginId }
+            val callbacks = interceptors[pluginId]
+            callbacks?.remove(callback)
+            if (callbacks != null && callbacks.isEmpty()) {
+                interceptors.remove(pluginId, callbacks)
+                // Clean up cached classloader entries only once no boundary
+                // for this plugin remains.
+                classLoaderToPluginId.entries.removeIf { it.value == pluginId }
+            }
             logger.debug(LogCategory.SYSTEM, "Unregistered crash interceptor", mapOf(
                 "pluginId" to pluginId,
                 "activeInterceptors" to interceptors.size

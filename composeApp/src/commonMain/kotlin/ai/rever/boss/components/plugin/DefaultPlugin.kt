@@ -499,6 +499,54 @@ class DefaultPlugin(
     override val mcpToolRegistry: ai.rever.boss.plugin.api.McpToolRegistry
         get() = ai.rever.boss.mcp.McpToolRegistryImpl
 
+    // ============================================================
+    // UI EXTENSION REGISTRIES
+    // Panel top-bar menus, settings pages, deep-link actions, global
+    // shortcuts, status-bar widgets. Backed by the process-wide
+    // registries in ai.rever.boss.components.plugin.registries;
+    // TrackingPluginContext auto-unregisters on disable/unload.
+    // ============================================================
+
+    override fun registerPanelMenuContribution(contribution: ai.rever.boss.plugin.api.PanelMenuContribution) {
+        ai.rever.boss.components.plugin.registries.PanelMenuRegistryImpl.register(contribution)
+    }
+
+    override fun unregisterPanelMenuContribution(contributionId: String) {
+        ai.rever.boss.components.plugin.registries.PanelMenuRegistryImpl.unregister(contributionId)
+    }
+
+    override fun registerSettingsPage(provider: ai.rever.boss.plugin.api.SettingsPageProvider) {
+        ai.rever.boss.components.plugin.registries.SettingsPageRegistryImpl.register(provider)
+    }
+
+    override fun unregisterSettingsPage(pageId: String) {
+        ai.rever.boss.components.plugin.registries.SettingsPageRegistryImpl.unregister(pageId)
+    }
+
+    override fun registerDeepLinkActionHandler(handler: ai.rever.boss.plugin.api.DeepLinkActionHandler) {
+        ai.rever.boss.components.plugin.registries.DeepLinkActionRegistryImpl.register(handler)
+    }
+
+    override fun unregisterDeepLinkActionHandler(handlerId: String) {
+        ai.rever.boss.components.plugin.registries.DeepLinkActionRegistryImpl.unregister(handlerId)
+    }
+
+    override fun registerShortcutActionProvider(provider: ai.rever.boss.plugin.api.ShortcutActionProvider) {
+        ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl.register(provider)
+    }
+
+    override fun unregisterShortcutActionProvider(providerId: String) {
+        ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl.unregister(providerId)
+    }
+
+    override fun registerStatusBarItem(provider: ai.rever.boss.plugin.api.StatusBarItemProvider) {
+        ai.rever.boss.components.plugin.registries.StatusBarRegistryImpl.register(provider)
+    }
+
+    override fun unregisterStatusBarItem(itemId: String) {
+        ai.rever.boss.components.plugin.registries.StatusBarRegistryImpl.unregister(itemId)
+    }
+
     // Split view operations for plugins that need tab/panel operations
     override val splitViewOperations: SplitViewOperations? by lazy {
         if (splitViewState != null && _windowId != null) {

@@ -124,62 +124,15 @@ object PluginStoreSetup {
      * List of system plugins that must always be installed.
      * These are auto-downloaded from GitHub releases if missing.
      * Ordered by load priority (lower = loads first).
+     *
+     * Sourced from the remote manifest (system_plugins table) via
+     * [SystemPluginManifestService]: cache → built-in fallback, with startup
+     * catch-up + Realtime sync. A live getter (not lazy) so system plugins
+     * pushed mid-session are seen by later [ensureSystemPluginsInstalled]
+     * runs; version-floor changes apply on next launch.
      */
-    private val systemPlugins: List<SystemPluginInfo> by lazy {
-        buildList {
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.api",
-                githubRepo = "risa-labs-inc/boss-plugin-api",
-                artifactPrefix = "boss-plugin-api",
-                loadPriority = 0
-            ))
-            // Microkernel runtime JAR is only needed when kernel mode is active (OOP plugins)
-            if (isKernelMode) {
-                add(SystemPluginInfo(
-                    pluginId = ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID,
-                    githubRepo = ai.rever.boss.components.plugin.MicrokernelRuntime.GITHUB_REPO,
-                    artifactPrefix = ai.rever.boss.components.plugin.MicrokernelRuntime.ARTIFACT_PREFIX,
-                    loadPriority = 1,
-                    downloadOnly = true
-                ))
-            }
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.pluginmanager",
-                githubRepo = "risa-labs-inc/boss-plugin-plugin-manager",
-                artifactPrefix = "boss-plugin-plugin-manager",
-                loadPriority = 5
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.terminaltab",
-                githubRepo = "risa-labs-inc/boss-plugin-terminal-tab",
-                artifactPrefix = "boss-plugin-terminal-tab",
-                loadPriority = 10
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.terminal",
-                githubRepo = "risa-labs-inc/boss-plugin-terminal",
-                artifactPrefix = "boss-plugin-terminal",
-                loadPriority = 10
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
-                githubRepo = "risa-labs-inc/boss-plugin-fluck-browser",
-                artifactPrefix = "boss-plugin-fluck-browser",
-                loadPriority = 10
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.editortab",
-                githubRepo = "risa-labs-inc/boss-plugin-editor-tab",
-                artifactPrefix = "boss-plugin-editor-tab",
-                loadPriority = 10,
-                // 1.4.0 bundles BossEditor privately; this host no longer has
-                // bosseditor on its classpath, so older plugin JARs (compileOnly
-                // bosseditor, resolved from the host) throw NoClassDefFoundError
-                // when an editor tab opens. Force-update before first load.
-                minVersion = "1.4.0"
-            ))
-        }
-    }
+    private val systemPlugins: List<SystemPluginInfo>
+        get() = SystemPluginManifestService.currentList(isKernelMode)
 
     // Plugin infrastructure components
     private var _downloadCache: PluginDownloadCache? = null
@@ -272,11 +225,20 @@ object PluginStoreSetup {
                 // Gate by minBossVersion too: without this, an update built
                 // against a newer host replaces the working jar and only THEN
                 // gets rejected by the loader (Toolbox 1.8.4 on BOSS 9.2.25).
-                hostBossVersion = AppVersion.currentVersionString()
+                hostBossVersion = AppVersion.currentVersionString(),
+                // Gate by minApiVersion: lambda because the api layer resolves
+                // later in startup (initializeApiLayer publishes the property).
+                hostApiVersion = { System.getProperty("boss.api.version") ?: "" }
             )
 
             // Create and start realtime service for live updates
             _realtimeService = PluginStoreRealtimeService()
+
+            // Sync the system-plugins manifest (startup catch-up + Realtime).
+            // New rows install live; min_version bumps apply next launch.
+            SystemPluginManifestService.startSync {
+                ensureSystemPluginsInstalled()
+            }
 
             initialized = true
             logger.info(LogCategory.SYSTEM, "Plugin store initialization complete", mapOf(
@@ -955,6 +917,11 @@ object PluginStoreSetup {
                         "error" to (e.message ?: "unknown")
                     ))
                 }
+
+            // 3b. Resolve the runtime API layer from the reconciled dir: the
+            //     shared ApiClassLoader must parent every plugin classloader
+            //     created below, so this has to precede all plugin loads.
+            dynamicPluginManager.initializeApiLayer(_pluginDir)
 
             // 4. Read persisted plugins (including bundled ones now in plugin dir)
             PluginPersistence.getInstalledPlugins()

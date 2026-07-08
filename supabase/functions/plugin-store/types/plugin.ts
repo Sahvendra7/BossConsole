@@ -28,6 +28,8 @@ export interface PluginVersion {
   changelog: string
   minBossVersion: string
   minIpcVersion: string
+  /** Minimum boss-plugin-api (runtime API layer) version; '' = no requirement. */
+  minApiVersion: string
   jarPath: string
   jarSize: number
   sha256: string
@@ -125,6 +127,7 @@ export interface PluginManifest {
   tags?: string[]
   minBossVersion?: string
   minIpcVersion?: string
+  minApiVersion?: string
   dependencies?: PluginDependency[]
   sandbox?: {
     maxThreads?: number

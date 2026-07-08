@@ -60,9 +60,32 @@ fun EditableKeymapSettings() {
         KeymapValidator.validate(keymapSettings)
     }
 
+    // Plugin-contributed shortcuts (PluginShortcutRegistry) not yet overridden
+    // by the user, shown as synthetic "Plugins" rows. Rebinding one persists a
+    // real entry under its actionId (withBinding), which then supersedes the
+    // plugin default everywhere — including the interceptor.
+    val registeredPluginShortcuts by ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl
+        .shortcuts.collectAsState()
+    val pluginDefaultRows = remember(registeredPluginShortcuts, keymapSettings) {
+        registeredPluginShortcuts
+            .filter { it.spec.actionId !in keymapSettings.shortcuts }
+            .map { registered ->
+                val spec = registered.spec
+                KeyBinding(
+                    actionId = spec.actionId,
+                    key = spec.defaultBinding?.key ?: "",
+                    modifiers = spec.defaultBinding?.modifiers?.toList() ?: emptyList(),
+                    context = ai.rever.boss.keymap.model.ShortcutContext.GLOBAL,
+                    enabled = spec.defaultBinding != null,
+                    category = "Plugins",
+                    description = spec.displayName + (spec.description.takeIf { it.isNotBlank() }?.let { " — $it" } ?: "")
+                )
+            }
+    }
+
     // Filter shortcuts based on search and category
-    val filteredShortcuts = remember(keymapSettings, searchQuery, selectedCategory) {
-        val shortcuts = keymapSettings.shortcuts.values.toList()
+    val filteredShortcuts = remember(keymapSettings, pluginDefaultRows, searchQuery, selectedCategory) {
+        val shortcuts = keymapSettings.shortcuts.values.toList() + pluginDefaultRows
         shortcuts.filter { binding ->
             val matchesSearch = searchQuery.isBlank() ||
                     binding.description.contains(searchQuery, ignoreCase = true) ||
@@ -79,8 +102,9 @@ fun EditableKeymapSettings() {
     val groupedShortcuts = filteredShortcuts.groupBy { it.category }
 
     // Get all available categories
-    val allCategories = remember(keymapSettings) {
-        listOf("All") + keymapSettings.shortcuts.values.map { it.category }.distinct().sorted()
+    val allCategories = remember(keymapSettings, pluginDefaultRows) {
+        listOf("All") + (keymapSettings.shortcuts.values.map { it.category } + pluginDefaultRows.map { it.category })
+            .distinct().sorted()
     }
 
     // Make entire content scrollable by putting everything in LazyColumn

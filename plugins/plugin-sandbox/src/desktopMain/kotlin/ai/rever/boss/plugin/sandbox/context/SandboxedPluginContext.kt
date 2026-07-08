@@ -260,6 +260,30 @@ class SandboxedPluginContext(
     override fun unregisterMcpToolProvider(providerId: String) = delegate.unregisterMcpToolProvider(providerId)
     override val mcpToolRegistry: McpToolRegistry? get() = delegate.mcpToolRegistry
 
+    // UI extension registries - delegate to underlying context. Without these
+    // overrides the PluginContext interface defaults (no-ops) would swallow
+    // plugin registrations silently.
+    override fun registerPanelMenuContribution(contribution: ai.rever.boss.plugin.api.PanelMenuContribution) =
+        delegate.registerPanelMenuContribution(contribution)
+    override fun unregisterPanelMenuContribution(contributionId: String) =
+        delegate.unregisterPanelMenuContribution(contributionId)
+    override fun registerSettingsPage(provider: ai.rever.boss.plugin.api.SettingsPageProvider) =
+        delegate.registerSettingsPage(provider)
+    override fun unregisterSettingsPage(pageId: String) =
+        delegate.unregisterSettingsPage(pageId)
+    override fun registerDeepLinkActionHandler(handler: ai.rever.boss.plugin.api.DeepLinkActionHandler) =
+        delegate.registerDeepLinkActionHandler(handler)
+    override fun unregisterDeepLinkActionHandler(handlerId: String) =
+        delegate.unregisterDeepLinkActionHandler(handlerId)
+    override fun registerShortcutActionProvider(provider: ai.rever.boss.plugin.api.ShortcutActionProvider) =
+        delegate.registerShortcutActionProvider(provider)
+    override fun unregisterShortcutActionProvider(providerId: String) =
+        delegate.unregisterShortcutActionProvider(providerId)
+    override fun registerStatusBarItem(provider: ai.rever.boss.plugin.api.StatusBarItemProvider) =
+        delegate.registerStatusBarItem(provider)
+    override fun unregisterStatusBarItem(itemId: String) =
+        delegate.unregisterStatusBarItem(itemId)
+
     // Plugin-to-plugin API access - delegate to underlying context
     override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)
     override fun registerPluginAPI(api: Any) = delegate.registerPluginAPI(api)

@@ -82,7 +82,16 @@ class PluginUpdateManager(
      * reject it AFTER the jar swap, leaving the plugin broken — how Toolbox
      * 1.8.4 on BOSS 9.2.25 died). Blank ("") disables the gate.
      */
-    private val hostBossVersion: String = ""
+    private val hostBossVersion: String = "",
+    /**
+     * Returns the installed boss-plugin-api (runtime API layer) version,
+     * compared against each candidate's `minApiVersion`. A lambda because the
+     * manager is constructed before the api layer resolves at startup — the
+     * host passes `{ System.getProperty("boss.api.version") ?: "" }` so the
+     * value is read at check time. Blank disables the gate (fail-open); the
+     * loader's own minApiVersion check remains the backstop.
+     */
+    private val hostApiVersion: () -> String = { "" }
 ) {
     private val logger = BossLogger.forComponent("PluginUpdateManager")
 
@@ -207,6 +216,26 @@ class PluginUpdateManager(
                                 "advertisedLatest" to candidate.version,
                                 "requiredBossVersion" to candidate.minBossVersion,
                                 "hostBossVersion" to hostBossVersion
+                            ))
+                            listeners.forEach { it.onUpdateRejectedAsIncompatible(notice) }
+                        } else if (!satisfiesMinApiVersion(candidate.minApiVersion)) {
+                            // Newer version exists but requires a newer runtime
+                            // API layer (boss-plugin-api jar) than installed.
+                            // Report it as an advisory; never auto-install.
+                            val notice = IncompatibleNotice(
+                                pluginId = pluginId,
+                                displayName = candidate.displayName,
+                                currentVersion = installedVersion,
+                                advertisedLatest = candidate.version,
+                                requiredApiVersion = candidate.minApiVersion,
+                                hostApiVersion = hostApiVersion()
+                            )
+                            notices.add(notice)
+                            logger.info(LogCategory.SYSTEM, "Skipping plugin update requiring newer API layer", mapOf(
+                                "pluginId" to pluginId,
+                                "advertisedLatest" to candidate.version,
+                                "requiredApiVersion" to candidate.minApiVersion,
+                                "hostApiVersion" to hostApiVersion()
                             ))
                             listeners.forEach { it.onUpdateRejectedAsIncompatible(notice) }
                         } else if (isIpcCompatible(candidate.minIpcVersion)) {
@@ -464,18 +493,33 @@ class PluginUpdateManager(
      * without the field must not block every update — the loader's own
      * minBossVersion check remains the backstop for anything let through.
      */
-    private fun satisfiesMinBossVersion(minBossVersion: String): Boolean {
-        if (minBossVersion.isBlank() || hostBossVersion.isBlank()) return true
-        val required = SemanticVersion.parse(minBossVersion) ?: return true
-        val host = SemanticVersion.parse(hostBossVersion) ?: return true
-        // Compare the release core only, ignoring prerelease: a host at
-        // 9.2.27-alpha.1 is built from the same source as 9.2.27 and carries
-        // the same plugin API, but semver precedence would rank it BELOW the
-        // requirement and spuriously gate every exact-version update on
-        // prerelease hosts.
-        if (host.major != required.major) return host.major > required.major
-        if (host.minor != required.minor) return host.minor > required.minor
-        return host.patch >= required.patch
+    private fun satisfiesMinBossVersion(minBossVersion: String): Boolean =
+        satisfiesFloor(required = minBossVersion, installed = hostBossVersion)
+
+    /**
+     * True when the installed runtime API layer satisfies a candidate's
+     * `minApiVersion`. Same helper as [satisfiesMinBossVersion]; the loader's
+     * own minApiVersion check is the backstop.
+     */
+    private fun satisfiesMinApiVersion(minApiVersion: String): Boolean =
+        satisfiesFloor(required = minApiVersion, installed = hostApiVersion())
+
+    /**
+     * True when [installed] satisfies the [required] floor. Fails OPEN on
+     * missing/unparseable versions (dev builds, pre-field candidates) — the
+     * loader's own gate is the backstop. Compares the release core only,
+     * ignoring prerelease: a host at 9.2.27-alpha.1 is built from the same
+     * source as 9.2.27 and carries the same API, but semver precedence would
+     * rank it below the requirement and spuriously gate every exact-version
+     * update on prerelease hosts.
+     */
+    private fun satisfiesFloor(required: String, installed: String): Boolean {
+        if (required.isBlank() || installed.isBlank()) return true
+        val req = SemanticVersion.parse(required) ?: return true
+        val cur = SemanticVersion.parse(installed) ?: return true
+        if (cur.major != req.major) return cur.major > req.major
+        if (cur.minor != req.minor) return cur.minor > req.minor
+        return cur.patch >= req.patch
     }
 
     /**

@@ -79,6 +79,40 @@ class DynamicPluginLoaderImpl(
      */
     var currentBossVersion: String? = null
 
+    /**
+     * Version of the runtime API layer (the newest installed boss-plugin-api
+     * jar). Falls back to the PROCESS-WIDE ApiClassLoader's version so a
+     * loader whose own [initializeApiLayer] never ran (per-window managers
+     * after the first window) still enforces the minApiVersion gate. The
+     * setter remains for tests and explicit overrides.
+     */
+    var currentApiVersion: String? = null
+        get() = field ?: classLoaderManager.getApiClassLoader()?.apiVersion
+
+    /**
+     * Resolve and install the shared API layer from [pluginDir]: the
+     * resulting [ApiClassLoader] parents all subsequently created plugin
+     * classloaders, and its version is compared against manifest
+     * minApiVersion. Call after the plugin dir is reconciled and before any
+     * plugin loads.
+     */
+    fun initializeApiLayer(pluginDir: java.io.File): ApiClassLoader {
+        // Deliberately does NOT set the currentApiVersion override field: the
+        // getter falls back to the shared loader, so a later hot-swap (from
+        // any manager) is reflected here without a stale per-instance copy.
+        return classLoaderManager.initializeApiLayer(pluginDir)
+    }
+
+    /**
+     * Hot-swap the process-wide API layer (see
+     * [PluginClassLoaderManager.swapApiLayer]). Caller must have closed all
+     * plugin classloaders first.
+     */
+    fun swapApiLayer(pluginDir: java.io.File): ApiClassLoader {
+        currentApiVersion = null // drop any stale override; getter follows the shared loader
+        return classLoaderManager.swapApiLayer(pluginDir)
+    }
+
     // JAR reading, bytecode validation, classloading, and instantiation are
     // heavy; callers typically run on Dispatchers.Main, so keep it all on IO.
     override suspend fun loadPlugin(jarPath: String): Result<LoadedPlugin> = withContext(Dispatchers.IO) {
@@ -124,6 +158,26 @@ class DynamicPluginLoaderImpl(
                         pluginId,
                         minBossVersion,
                         currentVersion
+                    ))
+                }
+            }
+
+            // Check minimum API-layer version compatibility (the runtime
+            // boss-plugin-api jar; same fail-open semantics as minBossVersion)
+            val minApiVersion = manifest.minApiVersion
+            if (minApiVersion.isNotBlank()) {
+                val installedApiVersion = currentApiVersion
+                if (installedApiVersion == null) {
+                    logger.warn(LogCategory.SYSTEM, "Skipping minApiVersion validation - currentApiVersion not set", mapOf(
+                        "pluginId" to pluginId,
+                        "requiredVersion" to minApiVersion
+                    ))
+                } else if (!isBossVersionCompatible(minApiVersion, installedApiVersion)) {
+                    return@withContext Result.failure(PluginApiLevelException(
+                        "Plugin requires boss-plugin-api $minApiVersion or later, but installed API layer is $installedApiVersion",
+                        pluginId,
+                        minApiVersion,
+                        installedApiVersion
                     ))
                 }
             }

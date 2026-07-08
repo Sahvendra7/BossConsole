@@ -64,6 +64,13 @@ data class PluginInfo(
     val minBossVersion: String = "",
 
     /**
+     * Minimum boss-plugin-api (runtime API layer) version required.
+     * Blank means no requirement / predates the field (fail-open).
+     */
+    @SerialName("minApiVersion")
+    val minApiVersion: String = "",
+
+    /**
      * Minimum host IPC contract version required to load this version.
      * Blank/"1.0.0" means broadly compatible. See IpcVersion in :boss-ipc.
      */

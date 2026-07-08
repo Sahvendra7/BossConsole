@@ -27,6 +27,10 @@ dependencyResolutionManagement {
         }
         maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
         mavenCentral()
+        // NOTE: the boss-plugin-api contract is deliberately NOT resolved from
+        // any Maven registry — its distribution is store/GitHub-releases only.
+        // plugins/plugin-api-core downloads the pinned release jar (the same
+        // asset the Plugin Store serves) and filters the api package locally.
     }
 }
 

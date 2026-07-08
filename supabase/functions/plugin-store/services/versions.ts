@@ -25,6 +25,7 @@ export async function getPluginVersions(
     changelog: row.changelog as string,
     minBossVersion: row.min_boss_version as string,
     minIpcVersion: (row.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (row.min_api_version as string) ?? '',
     jarPath: row.jar_path as string,
     jarSize: Number(row.jar_size) || 0,
     sha256: row.sha256 as string,
@@ -62,6 +63,7 @@ export async function getLatestVersion(
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
     minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (data.min_api_version as string) ?? '',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
@@ -98,6 +100,7 @@ export async function getVersion(
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
     minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (data.min_api_version as string) ?? '',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
@@ -132,6 +135,7 @@ export async function getVersionById(
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
     minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (data.min_api_version as string) ?? '',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
@@ -151,7 +155,8 @@ export async function createVersion(
   minBossVersion: string,
   minIpcVersion: string,
   dependencies: PluginDependency[],
-  jarPath: string
+  jarPath: string,
+  minApiVersion: string = ''
 ): Promise<{ id: string }> {
   const { data, error } = await supabase
     .from('plugin_versions')
@@ -161,6 +166,7 @@ export async function createVersion(
       changelog,
       min_boss_version: minBossVersion,
       min_ipc_version: minIpcVersion,
+      min_api_version: minApiVersion,
       dependencies,
       jar_path: jarPath,
       sha256: 'pending', // Will be updated after upload

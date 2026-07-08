@@ -74,6 +74,9 @@ env:
   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_FUNCTION_URL: ${{ secrets.SUPABASE_FUNCTION_URL }}
+  # boss-plugin-api-core resolves from GitHub Packages during every gradle
+  # invocation; step-level GITHUB_TOKEN assignments still override this.
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   prepare-version:

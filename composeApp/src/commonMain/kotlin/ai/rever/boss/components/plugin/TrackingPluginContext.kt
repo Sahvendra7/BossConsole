@@ -80,6 +80,38 @@ class PluginRegistrationTracker {
     private val mcpToolProvidersByPlugin = ConcurrentHashMap<String, MutableSet<String>>()
 
     /**
+     * UI extension teardown callbacks by plugin — panel menus, settings
+     * pages, deep-link handlers, shortcut providers, status-bar items. Each
+     * registration records the exact undo action captured at register time,
+     * so [unregisterAll] is one loop and a NEW extension kind needs no edit
+     * here (the old per-kind enum + per-kind teardown loop meant a forgotten
+     * loop would leak a kind past unload).
+     */
+    private val uiExtensionUndoByPlugin = ConcurrentHashMap<String, MutableList<() -> Unit>>()
+
+    /**
+     * Record a UI extension registration with the action that undoes it.
+     */
+    fun recordUiExtensionRegistration(pluginId: String, undo: () -> Unit) {
+        uiExtensionUndoByPlugin
+            .getOrPut(pluginId) { java.util.concurrent.CopyOnWriteArrayList() }
+            .add(undo)
+    }
+
+    /**
+     * Run and clear all recorded UI extension teardown callbacks for a plugin.
+     */
+    fun unregisterUiExtensions(pluginId: String) {
+        uiExtensionUndoByPlugin.remove(pluginId)?.forEach { undo ->
+            try {
+                undo()
+            } catch (_: Throwable) {
+                // Teardown of one extension must not block the others.
+            }
+        }
+    }
+
+    /**
      * Record a panel registration.
      */
     fun recordPanelRegistration(pluginId: String, panelId: PanelId) {
@@ -130,6 +162,7 @@ class PluginRegistrationTracker {
         panelsByPlugin.remove(pluginId)
         tabTypesByPlugin.remove(pluginId)
         mcpToolProvidersByPlugin.remove(pluginId)
+        uiExtensionUndoByPlugin.remove(pluginId)
     }
 
     /**
@@ -400,6 +433,61 @@ class TrackingPluginContext(
 
     override val mcpToolRegistry: McpToolRegistry? get() = delegate.mcpToolRegistry
 
+    // UI extension registrations — each records the exact undo action, so
+    // unregisterAll tears them all down in one loop (see the tracker). Same
+    // convention as MCP providers: an explicit unregister call doesn't remove
+    // the tracked undo, so unregisterAll may call the (idempotent) registry
+    // unregister a second time — harmless.
+    override fun registerPanelMenuContribution(contribution: ai.rever.boss.plugin.api.PanelMenuContribution) {
+        val id = contribution.contributionId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterPanelMenuContribution(id) }
+        delegate.registerPanelMenuContribution(contribution)
+    }
+
+    override fun unregisterPanelMenuContribution(contributionId: String) {
+        delegate.unregisterPanelMenuContribution(contributionId)
+    }
+
+    override fun registerSettingsPage(provider: ai.rever.boss.plugin.api.SettingsPageProvider) {
+        val id = provider.pageId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterSettingsPage(id) }
+        delegate.registerSettingsPage(provider)
+    }
+
+    override fun unregisterSettingsPage(pageId: String) {
+        delegate.unregisterSettingsPage(pageId)
+    }
+
+    override fun registerDeepLinkActionHandler(handler: ai.rever.boss.plugin.api.DeepLinkActionHandler) {
+        val id = handler.handlerId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterDeepLinkActionHandler(id) }
+        delegate.registerDeepLinkActionHandler(handler)
+    }
+
+    override fun unregisterDeepLinkActionHandler(handlerId: String) {
+        delegate.unregisterDeepLinkActionHandler(handlerId)
+    }
+
+    override fun registerShortcutActionProvider(provider: ai.rever.boss.plugin.api.ShortcutActionProvider) {
+        val id = provider.providerId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterShortcutActionProvider(id) }
+        delegate.registerShortcutActionProvider(provider)
+    }
+
+    override fun unregisterShortcutActionProvider(providerId: String) {
+        delegate.unregisterShortcutActionProvider(providerId)
+    }
+
+    override fun registerStatusBarItem(provider: ai.rever.boss.plugin.api.StatusBarItemProvider) {
+        val id = provider.itemId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterStatusBarItem(id) }
+        delegate.registerStatusBarItem(provider)
+    }
+
+    override fun unregisterStatusBarItem(itemId: String) {
+        delegate.unregisterStatusBarItem(itemId)
+    }
+
     // Plugin-to-plugin API access - delegate to underlying context
     override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)
     override fun registerPluginAPI(api: Any) = delegate.registerPluginAPI(api)
@@ -441,6 +529,12 @@ class TrackingPluginContext(
         for (providerId in toolProviders) {
             delegate.unregisterMcpToolProvider(providerId)
         }
+
+        // Unregister all UI extensions (panel menu items, settings pages,
+        // deep-link handlers, shortcuts, status-bar widgets) — same lifecycle
+        // guarantee as MCP tools: gone the moment the plugin is disabled. One
+        // loop over the recorded undo callbacks; new kinds need no edit here.
+        tracker.unregisterUiExtensions(pluginId)
 
         // Clear tracking records
         tracker.clearPlugin(pluginId)

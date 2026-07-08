@@ -590,6 +590,7 @@ data class PluginDetailResponse(
         type = parsePluginType(type),
         apiVersion = apiVersion,
         minBossVersion = versions.firstOrNull { it.version == latestVersion }?.minBossVersion ?: "",
+        minApiVersion = versions.firstOrNull { it.version == latestVersion }?.minApiVersion ?: "",
         minIpcVersion = versions.firstOrNull { it.version == latestVersion }?.minIpcVersion ?: "1.0.0",
         iconUrl = iconUrl,
         screenshots = screenshots.map { it.url },
@@ -630,6 +631,7 @@ data class VersionInfo(
     val version: String,
     val changelog: String = "",
     val minBossVersion: String = "1.0.0",
+    val minApiVersion: String = "",
     val minIpcVersion: String = "1.0.0",
     val jarSize: Long = 0,
     val sha256: String = "",
@@ -704,6 +706,7 @@ data class PublishVersionRequest(
     val version: String,
     val changelog: String = "",
     val minBossVersion: String = "1.0.0",
+    val minApiVersion: String = "",
     val dependencies: List<DependencyInfo> = emptyList()
 )
 

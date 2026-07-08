@@ -171,6 +171,8 @@ fun BossDraggableComponent.SidePanel(
             },
             updateAvailable = updateForPlugin,
             onUpdateClick = checkForUpdates,
+            panelId = pluginContentId,
+            windowId = windowId,
             dragModifier = headerDragModifier
         )
         Divider(color = BossDarkBorder)

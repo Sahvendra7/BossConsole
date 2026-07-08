@@ -24,6 +24,111 @@ class PluginClassLoaderManager(
 ) {
     private val logger = BossLogger.forComponent("PluginClassLoaderManager")
 
+    companion object {
+        private val companionLogger = BossLogger.forComponent("PluginClassLoaderManager")
+
+        /**
+         * Shared API layer inserted between each manager's parent classloader
+         * and every plugin classloader once installed. PROCESS-WIDE on
+         * purpose: managers are per-window (each window's DynamicPluginManager
+         * owns one), but api-jar-only classes must have ONE identity across
+         * all windows and the minApiVersion gate must apply everywhere — a
+         * per-instance field would leave every window after the first without
+         * the API layer. Never closed — see [ApiClassLoader].
+         */
+        @Volatile
+        private var sharedApiClassLoader: ApiClassLoader? = null
+
+        private val apiLayerLock = Any()
+
+        /**
+         * Test-only: clear the process-wide API layer between tests.
+         */
+        internal fun resetSharedApiLayerForTests() {
+            synchronized(apiLayerLock) { sharedApiClassLoader = null }
+        }
+    }
+
+    /**
+     * Install the shared [ApiClassLoader] (process-wide). Must happen before
+     * plugin loading; plugins already loaded keep their original parent chain
+     * (warned) until the next app restart.
+     */
+    fun installApiClassLoader(loader: ApiClassLoader) {
+        synchronized(apiLayerLock) {
+            if (sharedApiClassLoader != null) {
+                logger.warn(LogCategory.SYSTEM, "ApiClassLoader already installed; ignoring re-install", mapOf(
+                    "existing" to sharedApiClassLoader.toString()
+                ))
+                return
+            }
+            if (activeClassLoaders.isNotEmpty()) {
+                logger.warn(LogCategory.SYSTEM, "Installing ApiClassLoader after plugins already loaded", mapOf(
+                    "loadedCount" to activeClassLoaders.size
+                ))
+            }
+            sharedApiClassLoader = loader
+        }
+        logger.debug(LogCategory.SYSTEM, "ApiClassLoader installed", mapOf(
+            "apiVersion" to (loader.apiVersion ?: "unknown")
+        ))
+    }
+
+    /**
+     * The installed API layer, or null before [installApiClassLoader].
+     */
+    fun getApiClassLoader(): ApiClassLoader? = sharedApiClassLoader
+
+    /**
+     * Resolve the newest boss-plugin-api jar in [pluginDir] into the shared
+     * [ApiClassLoader] (parented to this manager's [parentClassLoader]) and
+     * install it process-wide. Idempotent: a second call — from this or any
+     * other manager instance — returns the installed loader.
+     */
+    fun initializeApiLayer(pluginDir: File): ApiClassLoader {
+        sharedApiClassLoader?.let { return it }
+        synchronized(apiLayerLock) {
+            sharedApiClassLoader?.let { return it }
+            val loader = ApiClassLoader.fromPluginDir(pluginDir, parentClassLoader)
+            sharedApiClassLoader = loader
+            logger.debug(LogCategory.SYSTEM, "ApiClassLoader installed", mapOf(
+                "apiVersion" to (loader.apiVersion ?: "unknown")
+            ))
+            return loader
+        }
+    }
+
+    /**
+     * HOT-SWAP the process-wide API layer: re-resolve the newest
+     * boss-plugin-api jar in [pluginDir] into a NEW [ApiClassLoader] and
+     * close the old one (releasing its jar file handle so the superseded jar
+     * can be deleted, e.g. on Windows).
+     *
+     * MUST only be called by the api-plugin hot-swap orchestrator
+     * (DynamicPluginManager.hotSwapApiLayer) AFTER every plugin classloader
+     * has been closed — live plugin classloaders keep the old loader as their
+     * parent and would break once it closes.
+     */
+    fun swapApiLayer(pluginDir: File): ApiClassLoader {
+        synchronized(apiLayerLock) {
+            val old = sharedApiClassLoader
+            val fresh = ApiClassLoader.fromPluginDir(pluginDir, parentClassLoader)
+            sharedApiClassLoader = fresh
+            try {
+                old?.close()
+            } catch (e: Exception) {
+                logger.warn(LogCategory.SYSTEM, "Failed to close superseded ApiClassLoader", mapOf(
+                    "error" to (e.message ?: "unknown")
+                ))
+            }
+            logger.info(LogCategory.SYSTEM, "API layer hot-swapped", mapOf(
+                "from" to (old?.apiVersion ?: "none"),
+                "to" to (fresh.apiVersion ?: "unknown")
+            ))
+            return fresh
+        }
+    }
+
     /**
      * Active classloaders by plugin ID.
      */
@@ -103,11 +208,13 @@ class PluginClassLoaderManager(
         val sharedPackages = PluginClassLoader.defaultSharedPackages +
             manifest.sharedPackages.map { if (it.endsWith(".")) it else "$it." }.toSet()
 
-        // Create the classloader
+        // Create the classloader. The shared ApiClassLoader (when installed)
+        // sits between the plugin and the host so API types absent from the
+        // host resolve from the newest api jar with one shared identity.
         val classLoader = PluginClassLoader(
             pluginId = pluginId,
             urls = urls.toTypedArray(),
-            parent = parentClassLoader,
+            parent = sharedApiClassLoader ?: parentClassLoader,
             sharedPackages = sharedPackages
         )
 

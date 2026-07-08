@@ -1,5 +1,6 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.KeymapMatcher
 import ai.rever.boss.keymap.model.KeyBinding
@@ -220,6 +221,21 @@ object AWTKeyboardInterceptor {
                 }
             }
 
+            // Plugin-contributed GLOBAL shortcuts (PluginShortcutRegistry).
+            // Host bindings always win — this pass only runs when no host
+            // binding matched. User rebinds live in the keymap settings under
+            // the plugin actionId (matched by the pass above); a spec's
+            // defaultBinding applies only while the keymap has no entry for
+            // that actionId.
+            val pluginActionId = findMatchingPluginDefault(event)
+            if (pluginActionId != null) {
+                val handled = PluginShortcutRegistryImpl.dispatch(pluginActionId, windowId)
+                if (handled) {
+                    event.consume()
+                    return@KeyEventDispatcher true
+                }
+            }
+
             false // Let event propagate normally
         }
 
@@ -356,25 +372,7 @@ object AWTKeyboardInterceptor {
             // Check if key matches
             if (!binding.key.equals(keyName, ignoreCase = true)) continue
 
-            // Check modifiers
-            val hasCmd = binding.modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
-            val hasCtrl = binding.modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) }
-            val hasShift = binding.modifiers.any { it.equals("Shift", true) }
-            val hasAlt = binding.modifiers.any { it.equals("Alt", true) || it.equals("Option", true) }
-
-            // Platform-aware modifier matching
-            val isMacOS = SystemUtils.isMacOS
-            val primaryMatch = if (hasCmd || hasCtrl) {
-                if (isMacOS) {
-                    (hasCmd && event.isMetaDown) || (hasCtrl && event.isControlDown)
-                } else {
-                    (hasCmd && event.isControlDown) || (hasCtrl && event.isMetaDown)
-                }
-            } else {
-                !event.isMetaDown && !event.isControlDown
-            }
-
-            if (primaryMatch && hasShift == event.isShiftDown && hasAlt == event.isAltDown) {
+            if (chordMatchesEvent(binding.modifiers, event)) {
                 // Skip bindings whose context doesn't match
                 if (!isContextEligible(binding.context, currentContext)) continue
 
@@ -394,6 +392,56 @@ object AWTKeyboardInterceptor {
         }
 
         return bestMatch
+    }
+
+    /**
+     * Match the event against plugin shortcut DEFAULT bindings. Only specs
+     * whose actionId has no entry in the keymap settings participate — a user
+     * rebind (or explicit unbind) always supersedes the plugin default. Note
+     * the dispatcher's early modifier gate applies: plugin defaults must
+     * include Cmd/Ctrl/Alt to be reachable.
+     */
+    private fun findMatchingPluginDefault(event: KeyEvent): String? {
+        val pluginShortcuts = PluginShortcutRegistryImpl.shortcuts.value
+        if (pluginShortcuts.isEmpty()) return null
+
+        val keyName = getKeyName(event.keyCode)
+        val userShortcuts = KeymapSettingsManager.currentSettings.value.shortcuts
+
+        for (registered in pluginShortcuts) {
+            val spec = registered.spec
+            val default = spec.defaultBinding ?: continue
+            if (userShortcuts.containsKey(spec.actionId)) continue
+            if (!default.key.equals(keyName, ignoreCase = true)) continue
+            if (chordMatchesEvent(default.modifiers, event)) {
+                return spec.actionId
+            }
+        }
+        return null
+    }
+
+    /**
+     * Platform-aware modifier match shared by the host-binding pass and the
+     * plugin-default pass, so both agree on Cmd/Ctrl handling (on non-mac,
+     * "Cmd" maps to the Control key). [modifiers] is the binding's modifier
+     * name list; the caller has already matched the key.
+     */
+    private fun chordMatchesEvent(modifiers: Collection<String>, event: KeyEvent): Boolean {
+        val hasCmd = modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
+        val hasCtrl = modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) }
+        val hasShift = modifiers.any { it.equals("Shift", true) }
+        val hasAlt = modifiers.any { it.equals("Alt", true) || it.equals("Option", true) }
+
+        val primaryMatch = if (hasCmd || hasCtrl) {
+            if (SystemUtils.isMacOS) {
+                (hasCmd && event.isMetaDown) || (hasCtrl && event.isControlDown)
+            } else {
+                (hasCmd && event.isControlDown) || (hasCtrl && event.isMetaDown)
+            }
+        } else {
+            !event.isMetaDown && !event.isControlDown
+        }
+        return primaryMatch && hasShift == event.isShiftDown && hasAlt == event.isAltDown
     }
 
     /**
@@ -601,7 +649,16 @@ object AWTKeyboardInterceptor {
                 true
             }
 
-            else -> false
+            else -> {
+                // Plugin-contributed actions ("plugin.<pluginId>.<name>") —
+                // reached when the user rebound a plugin shortcut (the binding
+                // then lives in the keymap settings and matches the main pass).
+                if (actionId.startsWith(PluginShortcutRegistryImpl.ACTION_ID_PREFIX)) {
+                    PluginShortcutRegistryImpl.dispatch(actionId, windowId)
+                } else {
+                    false
+                }
+            }
         }
     }
 }

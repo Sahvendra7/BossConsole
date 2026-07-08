@@ -287,7 +287,8 @@ publish.openapi(publishVersionRoute, async (ctx) => {
       body.minBossVersion,
       body.minIpcVersion,
       body.dependencies,
-      jarPath
+      jarPath,
+      body.minApiVersion
     )
 
     // Generate upload URL
@@ -636,7 +637,8 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
       manifest.minBossVersion || '1.0.0',
       manifest.minIpcVersion || '1.0.0',
       manifest.dependencies || [],
-      jarPath
+      jarPath,
+      manifest.minApiVersion || ''
     )
 
     // Finalize version with SHA256 and size
@@ -885,7 +887,8 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       manifest.minBossVersion || '1.0.0',
       manifest.minIpcVersion || '1.0.0',
       manifest.dependencies || [],
-      jarPath
+      jarPath,
+      manifest.minApiVersion || ''
     )
 
     // Persist the server-computed SHA-256 as the integrity anchor, paired
