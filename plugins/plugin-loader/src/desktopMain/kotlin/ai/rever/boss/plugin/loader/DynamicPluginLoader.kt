@@ -30,9 +30,13 @@ interface DynamicPluginLoader {
      *
      * @param pluginId The ID of the plugin to unload
      * @param waitForGC Whether to wait and verify classloader garbage collection
+     * @param force Bypass the canUnload=false protection. Used by controlled,
+     *   restorative operations (plugin reload/upgrade, the API-layer hot swap)
+     *   that unload-then-reload — without it, system plugins keep classloaders
+     *   parented to a superseded (closed) ApiClassLoader after a swap.
      * @return Result indicating success or failure
      */
-    suspend fun unloadPlugin(pluginId: String, waitForGC: Boolean = false): Result<Unit>
+    suspend fun unloadPlugin(pluginId: String, waitForGC: Boolean = false, force: Boolean = false): Result<Unit>
 
     /**
      * Get a loaded plugin by ID.
@@ -280,11 +284,12 @@ class DynamicPluginLoaderImpl(
         }
     }
 
-    override suspend fun unloadPlugin(pluginId: String, waitForGC: Boolean): Result<Unit> {
+    override suspend fun unloadPlugin(pluginId: String, waitForGC: Boolean, force: Boolean): Result<Unit> {
         return try {
             logger.info(LogCategory.SYSTEM, "Unloading plugin", mapOf(
                 "pluginId" to pluginId,
-                "waitForGC" to waitForGC
+                "waitForGC" to waitForGC,
+                "force" to force
             ))
 
             val loadedPlugin = loadedPlugins[pluginId]
@@ -293,8 +298,9 @@ class DynamicPluginLoaderImpl(
                     pluginId
                 ))
 
-            // Check if the plugin can be unloaded (system plugins may be protected)
-            if (!loadedPlugin.manifest.canUnload) {
+            // Check if the plugin can be unloaded (system plugins may be
+            // protected); force bypasses for reload/upgrade/hot-swap flows.
+            if (!loadedPlugin.manifest.canUnload && !force) {
                 logger.warn(LogCategory.SYSTEM, "Cannot unload system plugin", mapOf(
                     "pluginId" to pluginId,
                     "systemPlugin" to loadedPlugin.manifest.systemPlugin
@@ -509,9 +515,11 @@ class DynamicPluginLoaderImpl(
             "count" to loadedPlugins.size
         ))
 
-        // Unload all plugins
+        // Unload all plugins. force: disposeAll() closes every classloader
+        // below regardless, so refusing canUnload=false system plugins here
+        // would only skip their dispose() and log a misleading warning.
         for (pluginId in loadedPlugins.keys.toList()) {
-            unloadPlugin(pluginId, waitForGC = false)
+            unloadPlugin(pluginId, waitForGC = false, force = true)
         }
 
         classLoaderManager.disposeAll()

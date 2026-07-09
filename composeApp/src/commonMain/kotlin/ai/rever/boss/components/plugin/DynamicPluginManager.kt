@@ -26,6 +26,7 @@ import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import ai.rever.boss.services.auth.AuthStateManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -204,6 +205,39 @@ class DynamicPluginManager(
         /** Re-entry guard: the swap's own reload calls installPlugin. */
         private val apiSwapInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
 
+        /**
+         * Tears down all plugin-hosting UI (open plugin tabs across every
+         * window) on the UI thread and waits for disposal — invoked by the
+         * hot swap BEFORE any classloader closes, so Compose's onDispose runs
+         * against still-open loaders. Set once by the desktop layer
+         * (PluginLoaderDelegateSetup); null in headless/test contexts, where
+         * the swap simply skips teardown.
+         */
+        @Volatile
+        var pluginUiTeardown: (suspend () -> Unit)? = null
+
+        /**
+         * Tears down ONE plugin's open tabs (across all windows) on the UI
+         * thread and waits — invoked by [uninstallPlugin] before the loader
+         * closes that plugin's classloader, so an update/reload/remove of a
+         * tab-hosting plugin (terminal-tab, editor-tab, fluck-browser) from
+         * the plugin manager or an update notification disposes its tab UI
+         * cleanly instead of crashing Compose against a closed loader. Set
+         * once by the desktop layer; null in headless/test contexts.
+         */
+        @Volatile
+        var pluginTabsTeardown: (suspend (pluginId: String) -> Unit)? = null
+
+        /**
+         * Runs swaps decoupled from the caller. The trigger usually fires
+         * from a PLUGIN's own coroutine (Toolbox update runs on
+         * plugin-manager's scope, evolver hot-reload on terminal-tab's) and
+         * the swap unloads that very plugin — cancelling the caller's scope
+         * mid-orchestration would otherwise abort the swap with everything
+         * unloaded and nothing reloaded.
+         */
+        private val swapScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
         private fun activeManagers(): List<DynamicPluginManager> {
             liveManagers.removeIf { it.get() == null }
             return liveManagers.mapNotNull { it.get() }
@@ -217,9 +251,38 @@ class DynamicPluginManager(
          * reload is the accepted cost of upgrading the api plugin without an
          * app restart.
          *
-         * @return the number of plugins successfully reloaded
+         * @return the number of plugins successfully reloaded. NOTE: if the
+         * swap unloads the CALLER's own plugin, the caller's scope is
+         * cancelled and this Result is never observed — the detached
+         * orchestration still runs to completion, with the logs as the only
+         * record of its outcome.
          */
         suspend fun hotSwapApiLayer(pluginDir: java.io.File): Result<Int> {
+            // Detach from the caller (see swapScope): the orchestration is
+            // NOT a child of the calling coroutine, so when the swap unloads
+            // the caller's own plugin (cancelling its scope), the swap runs
+            // to completion anyway — the caller merely gets the cancellation
+            // at await.
+            val detached = swapScope.async { hotSwapApiLayerOrchestration(pluginDir) }
+            return try {
+                detached.await()
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                // Caller cancelled (typically the swap unloaded the caller's
+                // own plugin) — the detached job runs on with nobody left to
+                // observe it. If it then THROWS (not Result.failure), log it
+                // here so the "logs are the only record" promise above holds.
+                // Registered only on this path: a live caller sees the throw
+                // from await() itself, and logging here too would duplicate it.
+                detached.invokeOnCompletion { cause ->
+                    if (cause != null && cause !is kotlinx.coroutines.CancellationException) {
+                        companionLogger.error(LogCategory.SYSTEM, "API-layer hot swap orchestration threw after caller cancellation", error = cause)
+                    }
+                }
+                throw ce
+            }
+        }
+
+        private suspend fun hotSwapApiLayerOrchestration(pluginDir: java.io.File): Result<Int> {
             if (!apiSwapInProgress.compareAndSet(false, true)) {
                 return Result.failure(IllegalStateException("API layer hot swap already in progress"))
             }
@@ -232,6 +295,20 @@ class DynamicPluginManager(
                 companionLogger.info(LogCategory.SYSTEM, "API layer hot swap: unloading all plugins", mapOf(
                     "managers" to managers.size
                 ))
+
+                // Tear down plugin-hosting UI FIRST, while every classloader is
+                // still open, so Compose disposal (onDispose effects) resolves
+                // its lazily-loaded lambdas instead of crashing against a
+                // closed loader. Must complete before the unload loop below.
+                pluginUiTeardown?.let { teardown ->
+                    try {
+                        teardown()
+                    } catch (t: Throwable) {
+                        companionLogger.warn(LogCategory.SYSTEM, "Plugin UI teardown before swap failed (continuing)", mapOf(
+                            "error" to (t.message ?: t::class.simpleName)
+                        ), t)
+                    }
+                }
 
                 // Snapshot then unload everything (force bypasses canUnload —
                 // this is a controlled, restorative operation).
@@ -606,12 +683,15 @@ class DynamicPluginManager(
 
                             trackingContext.unregisterAll()
                             trackingContexts.remove(manifest.pluginId)
-                            pluginLoader.unloadPlugin(manifest.pluginId)
+                            // force: this is cleanup of a plugin we just loaded and
+                            // failed to register — canUnload=false must not strand it
+                            // in the classloader unregistered.
+                            pluginLoader.unloadPlugin(manifest.pluginId, force = true)
                         } else {
                             // Recoverable error — cleanup and report failure
                             trackingContext.unregisterAll()
                             trackingContexts.remove(manifest.pluginId)
-                            pluginLoader.unloadPlugin(manifest.pluginId)
+                            pluginLoader.unloadPlugin(manifest.pluginId, force = true)
 
                             notifyListeners { it.pluginLoadFailed(manifest, e) }
                             return@withLock Result.failure(e)
@@ -719,6 +799,44 @@ class DynamicPluginManager(
         force: Boolean = false,
         waitForGC: Boolean = false
     ): Result<Unit> {
+        // Close this plugin's open tabs on the UI thread FIRST, while its
+        // classloader is still open, so Compose disposal resolves its
+        // lazily-loaded onDispose lambdas instead of crashing against a
+        // closed loader (the ProperTerminal NoClassDefFound class of bug).
+        // Covers update/reload/remove from the plugin manager and update
+        // notifications. Deliberately BEFORE the mutex — the teardown blocks
+        // on the EDT (invokeAndWait), and EDT-side disposal may re-enter
+        // manager operations that need this mutex; holding it across the
+        // round-trip risks deadlock (mirrors the swap orchestration, which
+        // tears down all tabs before its unload loop, and resetPluginInstances).
+        // Runs during the API swap too — usually a no-op there (teardown-all
+        // already emptied every plugin tab at swap start, so the rescan finds
+        // nothing and never touches the EDT), but it catches a tab the user
+        // opened mid-swap before that plugin's loader closes. The pre-checks
+        // are best-effort reads outside the lock — if the uninstall below
+        // still refuses, we closed tabs unnecessarily, which is a minor UX
+        // cost, not a correctness one. For non-forced uninstalls the
+        // pre-check mirrors BOTH refusal paths the locked section applies
+        // (manifest.canUnload and checkCanUnload's dependents/unload-aware
+        // vetoes), so a depended-upon plugin's tabs survive a remove that
+        // will be refused anyway. (checkCanUnload runs again inside the lock;
+        // the doubled O(plugins) scan is the price of keeping the locked
+        // check authoritative.)
+        val candidate = pluginLoader.getPlugin(pluginId)
+        if (candidate != null &&
+            (force || (candidate.manifest.canUnload && checkCanUnload(pluginId).isAllowed))
+        ) {
+            pluginTabsTeardown?.let { teardown ->
+                try {
+                    teardown(pluginId)
+                } catch (t: Throwable) {
+                    logger.warn(LogCategory.SYSTEM, "Plugin tab teardown before unload failed (continuing)", mapOf(
+                        "pluginId" to pluginId,
+                        "error" to (t.message ?: t::class.simpleName)
+                    ))
+                }
+            }
+        }
         return mutex.withLock {
             try {
                 logger.info(LogCategory.SYSTEM, "Uninstalling plugin", mapOf(
@@ -812,7 +930,10 @@ class DynamicPluginManager(
                 }
 
                 // Unload the plugin
-                val unloadResult = pluginLoader.unloadPlugin(pluginId, waitForGC)
+                // force flows through: without it the loader re-blocks
+                // canUnload=false system plugins, leaving their classloaders
+                // parented to a superseded ApiClassLoader after a hot swap.
+                val unloadResult = pluginLoader.unloadPlugin(pluginId, waitForGC, force)
                 if (unloadResult.isFailure) {
                     notifyListeners { it.pluginUnloadFailed(manifest, unloadResult.exceptionOrNull()!!) }
                     return@withLock unloadResult

@@ -30,6 +30,19 @@ actual object PluginLoaderDelegateSetup {
         val delegate = PluginLoaderDelegateImpl(dynamicPluginManager)
         context.registerPluginAPI(delegate)
 
+        // Give the API-layer hot swap a way to tear down plugin-hosting UI
+        // before it closes any classloader (avoids NoClassDefFoundError from
+        // Compose disposing a plugin's UI against a closed loader). Process-
+        // wide + spans all windows, so set once; register() runs per window.
+        if (DynamicPluginManager.pluginUiTeardown == null) {
+            DynamicPluginManager.pluginUiTeardown = { delegate.teardownAllPluginTabs() }
+        }
+        // Per-plugin teardown for the shared uninstall path, so plugin-manager
+        // updates and update notifications reload tab-hosting plugins cleanly.
+        if (DynamicPluginManager.pluginTabsTeardown == null) {
+            DynamicPluginManager.pluginTabsTeardown = { id -> delegate.teardownPluginTabs(id) }
+        }
+
         logger.debug(LogCategory.SYSTEM, "PluginLoaderDelegate registered successfully")
     }
 }

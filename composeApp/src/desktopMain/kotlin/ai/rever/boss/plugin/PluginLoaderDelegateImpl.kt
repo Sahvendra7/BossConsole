@@ -226,21 +226,7 @@ class PluginLoaderDelegateImpl(
             ))
             // Close the stale tab UIs on the EDT and wait for them to detach, then reload
             // so the freshly-installed version is what's loaded when the user reopens.
-            // removeTabById is host-side and doesn't touch plugin classes.
-            if (tabs.isNotEmpty()) {
-                runOnEdtAndWait {
-                    tabs.forEach { (component, tabId) ->
-                        try {
-                            component.removeTabById(tabId)
-                        } catch (e: Throwable) {
-                            logger.warn(LogCategory.SYSTEM, "removeTabById threw during reset", mapOf(
-                                "pluginId" to pluginId,
-                                "tabId" to tabId
-                            ), e)
-                        }
-                    }
-                }
-            }
+            closeTabsOnEdt(pluginId, tabs)
             reloadPlugin(pluginId)
             tabs.size
         } catch (e: Exception) {
@@ -252,6 +238,67 @@ class PluginLoaderDelegateImpl(
     override fun restartApplication() {
         logger.info(LogCategory.SYSTEM, "Restarting application to apply plugin update")
         ApplicationRestarter.scheduleRestart()
+    }
+
+    /**
+     * Close EVERY open plugin tab across all windows on the EDT and wait for
+     * them to detach. Used by the API-layer hot swap BEFORE any plugin
+     * classloader is closed: Compose runs each tab's `onDispose` cleanup
+     * synchronously here while its classloader is still open, so lazily-loaded
+     * disposal lambdas (e.g. BossTerm's ProperTerminal onDispose) resolve
+     * instead of throwing NoClassDefFoundError against a closed loader.
+     * Sidebar panels re-register on reload; open tabs do not reopen.
+     */
+    suspend fun teardownAllPluginTabs(): Int {
+        val tabs = SplitViewStateRegistry.getAllStates().values.flatMap { state ->
+            state.getAllPanels().flatMap { panel ->
+                val component = panel.tabsComponent
+                component.tabsState.value.tabs
+                    .filter { tab -> TabSandboxRegistry.getSandbox(tab.typeId) != null }
+                    .map { tab -> component to tab.id }
+            }
+        }
+        if (tabs.isEmpty()) return 0
+        logger.info(LogCategory.SYSTEM, "Tearing down plugin tabs before API-layer swap", mapOf(
+            "tabs" to tabs.size.toString()
+        ))
+        closeTabsOnEdt(pluginId = null, tabs = tabs)
+        return tabs.size
+    }
+
+    /**
+     * Close ONE plugin's open tabs across all windows on the EDT and wait.
+     * Invoked by the shared uninstall path (DynamicPluginManager) before the
+     * classloader closes, so update/reload/remove of a tab-hosting plugin
+     * (terminal-tab, editor-tab, fluck-browser) disposes its tab UI cleanly —
+     * same NoClassDefFoundError-avoidance as the API swap, one plugin at a time.
+     */
+    suspend fun teardownPluginTabs(pluginId: String): Int {
+        val tabs = findOpenTabs(pluginId)
+        if (tabs.isEmpty()) return 0
+        logger.info(LogCategory.SYSTEM, "Tearing down plugin tabs before unload", mapOf(
+            "pluginId" to pluginId,
+            "tabs" to tabs.size.toString()
+        ))
+        closeTabsOnEdt(pluginId, tabs)
+        return tabs.size
+    }
+
+    /** Remove the given tabs on the EDT and block until they detach. [pluginId] is null for the all-plugins (API-swap) teardown. */
+    private suspend fun closeTabsOnEdt(pluginId: String?, tabs: List<Pair<BossTabsComponent, String>>) {
+        if (tabs.isEmpty()) return
+        runOnEdtAndWait {
+            tabs.forEach { (component, tabId) ->
+                try {
+                    component.removeTabById(tabId)
+                } catch (e: Throwable) {
+                    logger.warn(LogCategory.SYSTEM, "removeTabById threw during tab teardown", mapOf(
+                        "pluginId" to (pluginId ?: "all"),
+                        "tabId" to tabId
+                    ), e)
+                }
+            }
+        }
     }
 
     override fun getInaccessiblePlugins(): List<InaccessiblePluginInfo> {
