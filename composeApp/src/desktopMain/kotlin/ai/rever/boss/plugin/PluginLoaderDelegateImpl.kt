@@ -16,6 +16,10 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Implementation of PluginLoaderDelegate that wraps DynamicPluginManager.
@@ -28,6 +32,23 @@ class PluginLoaderDelegateImpl(
 ) : PluginLoaderDelegate {
 
     private val logger = BossLogger.forComponent("PluginLoaderDelegate")
+
+    /**
+     * Owner of detached reload jobs (see [reloadPlugin]) — deliberately never
+     * cancelled: an in-flight reload must run to completion even if the
+     * initiating plugin (or this delegate's window) is torn down mid-reload.
+     * No leak either way: idle, the scope holds no threads and becomes
+     * unreachable together with this delegate if its window closes; a running
+     * job is held by the dispatcher only until it completes.
+     */
+    private val reloadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    /**
+     * Detaches reloads from their callers and coalesces them per pluginId.
+     * Per-delegate (= per-window) on purpose, matching the manager it guards —
+     * same-plugin reloads in different windows target different managers.
+     */
+    private val detachedReloads = KeyedDetachedJobs<String, LoadedPluginInfo?>(reloadScope)
 
     override suspend fun loadPlugin(jarPath: String): LoadedPluginInfo? {
         // Never try to load the microkernel runtime via the plugin-install
@@ -103,6 +124,27 @@ class PluginLoaderDelegateImpl(
     }
 
     override suspend fun reloadPlugin(pluginId: String): LoadedPluginInfo? {
+        // Detached from the caller (mirroring DynamicPluginManager.swapScope):
+        // reloads are driven from a PLUGIN's own coroutine (Toolbox update
+        // flow, evolver hot-reload), and reloading the caller's OWN plugin
+        // force-unloads it — cancelling its scope between unload and load
+        // would otherwise leave the plugin unloaded and never reloaded.
+        //
+        // Coalescing trade-off: a call that joins an in-flight reload gets
+        // THAT job's result — a jar replaced on disk mid-reload is not picked
+        // up; call again after completion to load it.
+        return detachedReloads.run(pluginId, onDetachedFailure = { cause ->
+            // Only non-Exception Throwables can land here (doReloadPlugin
+            // swallows Exceptions into null) — e.g. a NoClassDefFoundError
+            // from a closed classloader, exactly the failure that must not
+            // vanish when the caller was torn down by its own reload.
+            logger.error(LogCategory.SYSTEM, "Detached plugin reload threw after caller cancellation", error = cause)
+        }) {
+            doReloadPlugin(pluginId)
+        }
+    }
+
+    private suspend fun doReloadPlugin(pluginId: String): LoadedPluginInfo? {
         return try {
             logger.info(LogCategory.SYSTEM, "Reloading plugin via delegate", mapOf("pluginId" to pluginId))
 
@@ -229,6 +271,11 @@ class PluginLoaderDelegateImpl(
             closeTabsOnEdt(pluginId, tabs)
             reloadPlugin(pluginId)
             tabs.size
+        } catch (ce: CancellationException) {
+            // Self-reset: the detached reload just unloaded the CALLER's own
+            // plugin and cancelled its scope. The reload completes on the
+            // detached scope — propagate instead of logging a spurious error.
+            throw ce
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Exception resetting plugin instances", error = e)
             0
