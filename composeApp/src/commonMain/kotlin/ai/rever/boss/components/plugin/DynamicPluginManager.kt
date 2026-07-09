@@ -1179,17 +1179,31 @@ class DynamicPluginManager(
 
         for (entry in plugins) {
             try {
-                val jarFile = java.io.File(entry.jarPath)
+                var jarFile = java.io.File(entry.jarPath)
                 if (!jarFile.exists()) {
-                    logger.warn(LogCategory.SYSTEM, "Persisted plugin JAR not found", mapOf(
+                    // The background system-plugin updater can replace a JAR
+                    // (new versioned filename, old file deleted) between the
+                    // persisted snapshot being read and this entry's turn —
+                    // the path goes stale while the plugin sits right there
+                    // under a new name. Re-resolve by pluginId before giving up.
+                    val relocated = findRelocatedPluginJar(jarFile.parentFile, entry.pluginId)
+                    if (relocated == null) {
+                        logger.warn(LogCategory.SYSTEM, "Persisted plugin JAR not found", mapOf(
+                            "pluginId" to entry.pluginId,
+                            "jarPath" to entry.jarPath
+                        ))
+                        results[entry.pluginId] = Result.failure(Exception("JAR file not found: ${entry.jarPath}"))
+                        continue
+                    }
+                    logger.info(LogCategory.SYSTEM, "Persisted JAR path stale — loading relocated jar", mapOf(
                         "pluginId" to entry.pluginId,
-                        "jarPath" to entry.jarPath
+                        "staleJarPath" to entry.jarPath,
+                        "jarPath" to relocated.absolutePath
                     ))
-                    results[entry.pluginId] = Result.failure(Exception("JAR file not found: ${entry.jarPath}"))
-                    continue
+                    jarFile = relocated
                 }
 
-                val result = installPlugin(entry.jarPath, enabled = entry.enabled)
+                val result = installPlugin(jarFile.absolutePath, enabled = entry.enabled)
                 results[entry.pluginId] = result
 
                 if (result.isSuccess) {
@@ -1480,3 +1494,34 @@ internal fun pluginAccessAllowed(
     if (isAdmin) return true
     return userPermissions.containsAll(requiredPermissions)
 }
+
+/**
+ * The best jar in [dir] whose manifest pluginId matches [pluginId], or null.
+ * Fallback for a persisted jar path gone stale because a background update
+ * replaced the file under a new versioned name: highest parseable manifest
+ * version wins, newest file breaks ties. Top-level so it can be unit-tested
+ * (see [pluginAccessAllowed] for the same pattern).
+ *
+ * Highest-version assumption: this path only triggers when the persisted
+ * file is GONE — i.e. after a delete-and-replace, where highest == intended.
+ * A pinned/downgraded version keeps its file and never gets here; and the
+ * startup reconciler dedupes multi-version leftovers before the persisted
+ * pass, so ambiguity is transient. Cost (opens every jar's manifest) is
+ * fine because this is the exceptional path — hoist a single dir-wide
+ * manifest map if it ever runs per-entry at scale.
+ */
+internal fun findRelocatedPluginJar(dir: java.io.File?, pluginId: String): java.io.File? =
+    dir?.listFiles { f -> f.isFile && f.extension == "jar" }
+        ?.mapNotNull { jar ->
+            val manifest = runCatching {
+                ai.rever.boss.plugin.loader.PluginManifestReader.readFromJar(jar.absolutePath)
+            }.getOrNull() ?: return@mapNotNull null
+            if (manifest.pluginId != pluginId) return@mapNotNull null
+            jar to ai.rever.boss.plugin.api.Version.parse(manifest.version)
+        }
+        ?.maxWithOrNull(
+            compareBy<Pair<java.io.File, ai.rever.boss.plugin.api.Version?>, ai.rever.boss.plugin.api.Version?>(
+                nullsFirst()
+            ) { it.second }.thenBy { it.first.lastModified() }
+        )
+        ?.first

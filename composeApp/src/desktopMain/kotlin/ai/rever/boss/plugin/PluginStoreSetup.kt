@@ -947,6 +947,32 @@ object PluginStoreSetup {
         val persistedResults = dynamicPluginManager.loadPersistedPlugins(entries)
         results.putAll(persistedResults)
 
+        // Repoint installed.json at what actually loaded: a stale persisted
+        // path that got re-resolved by pluginId (see DynamicPluginManager.
+        // loadPersistedPlugins) would otherwise re-trigger the fallback on
+        // every startup until something else re-persisted the entry. No-op
+        // when paths already agree (the common case).
+        withContext(Dispatchers.IO) {
+            val persistedById = persistedPlugins.associateBy { it.pluginId }
+            for ((pluginId, result) in persistedResults) {
+                val loaded = result.getOrNull() ?: continue
+                val persisted = persistedById[pluginId] ?: continue
+                if (persisted.jarPath != loaded.jarPath) {
+                    PluginPersistence.addInstalledPlugin(
+                        pluginId = pluginId,
+                        jarPath = loaded.jarPath,
+                        enabled = persisted.enabled,
+                        sourceUrl = persisted.sourceUrl,
+                        installedVersion = loaded.manifest.version
+                    )
+                    logger.info(LogCategory.SYSTEM, "Repointed persisted jar path at loaded jar", mapOf(
+                        "pluginId" to pluginId,
+                        "jarPath" to loaded.jarPath
+                    ))
+                }
+            }
+        }
+
         logger.info(LogCategory.SYSTEM, "Persisted plugin load complete", mapOf(
             "count" to results.size.toString(),
             "elapsedMs" to (System.currentTimeMillis() - loadBeganMs).toString()

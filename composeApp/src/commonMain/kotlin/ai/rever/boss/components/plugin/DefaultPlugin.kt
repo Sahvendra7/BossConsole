@@ -934,8 +934,8 @@ class DefaultPlugin(
 
     /**
      * The in-flight external-plugins directory scan launched from init via
-     * [loadExternalPlugins]; null when the scan was skipped (no plugin dir or
-     * no jars). Joined by [awaitInitialPluginLoad].
+     * [loadExternalPlugins]; null when the scan was skipped (no plugin dir).
+     * Joined by [awaitInitialPluginLoad].
      */
     @Volatile
     private var externalPluginsScanJob: Job? = null
@@ -972,24 +972,6 @@ class DefaultPlugin(
             return
         }
 
-        val jarFiles = pluginDir.listFiles { file ->
-            file.isFile && file.extension == "jar"
-                    // Skip microkernel runtime — it's a classpath dependency for OOP plugins, not a loadable plugin
-                    && !file.name.startsWith(MicrokernelRuntime.ARTIFACT_PREFIX)
-        } ?: emptyArray()
-
-        if (jarFiles.isEmpty()) {
-            logger.debug(LogCategory.SYSTEM, "No external plugins found", mapOf(
-                "path" to pluginDir.absolutePath
-            ))
-            return
-        }
-
-        logger.info(LogCategory.SYSTEM, "Loading external plugins", mapOf(
-            "count" to jarFiles.size,
-            "path" to pluginDir.absolutePath
-        ))
-
         // Scan asynchronously, but strictly AFTER the persisted pass: the two
         // passes cover overlapping jar sets, and racing them made whichever
         // pass lost log "Plugin already loaded" as a failure for most plugins
@@ -998,6 +980,28 @@ class DefaultPlugin(
         externalPluginsScanJob = pluginScope.launch {
             val manager = dynamicPluginManager // first access starts the persisted load
             persistedPluginsLoadJob?.join()
+
+            // List the directory only NOW: the background system-plugin
+            // updater can replace jars while startup is in flight — a listing
+            // captured at init would try already-deleted files and never see
+            // freshly downloaded ones.
+            val jarFiles = pluginDir.listFiles { file ->
+                file.isFile && file.extension == "jar"
+                        // Skip microkernel runtime — it's a classpath dependency for OOP plugins, not a loadable plugin
+                        && !file.name.startsWith(MicrokernelRuntime.ARTIFACT_PREFIX)
+            } ?: emptyArray()
+
+            if (jarFiles.isEmpty()) {
+                logger.debug(LogCategory.SYSTEM, "No external plugins found", mapOf(
+                    "path" to pluginDir.absolutePath
+                ))
+                return@launch
+            }
+
+            logger.info(LogCategory.SYSTEM, "Loading external plugins", mapOf(
+                "count" to jarFiles.size,
+                "path" to pluginDir.absolutePath
+            ))
 
             // The persisted pass is authoritative for every jar it got into
             // pluginStates — loaded ones and binary-incompatibility rejections
