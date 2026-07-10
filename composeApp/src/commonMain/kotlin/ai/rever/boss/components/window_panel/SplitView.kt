@@ -446,13 +446,46 @@ class SplitViewState(
     fun splitPanel(
         panelId: String,
         orientation: SplitOrientation,
-        tabToMove: TabInfo? = null
+        tabToMove: TabInfo? = null,
+        detachedTab: BossTabsComponent.DetachedTab? = null
     ): String {
-        findPanel(panelId) ?: return panelId
+        // Mutually exclusive by contract: passing both would adopt the live component AND
+        // add a copy of the same tab, duplicating it across the two panels.
+        require(tabToMove == null || detachedTab == null) {
+            "splitPanel: pass either tabToMove (copy) or detachedTab (move), not both"
+        }
+        if (findPanel(panelId) == null) {
+            // A detached tab is already out of its source panel: silently returning would
+            // lose it from the UI while its live component (e.g. a Chromium process) keeps
+            // running — the leak this mechanism exists to eliminate. Rescue it into the
+            // first available panel instead ("main" always exists).
+            detachedTab?.let { detached ->
+                splitViewLogger.warn(LogCategory.UI, "splitPanel target panel missing; rescuing detached tab", mapOf(
+                    "targetPanelId" to panelId,
+                    "tabId" to detached.config.id
+                ))
+                val rescue = getAllPanels().firstOrNull()
+                if (rescue != null) {
+                    val index = rescue.tabsComponent.adoptTab(detached)
+                    if (index >= 0) rescue.tabsComponent.selectTab(index)
+                    setActivePanel(rescue.id)
+                } else {
+                    detached.destroy()
+                }
+            }
+            return panelId
+        }
 
         // Create new panel with copied tab
         val newPanelId = "split-${Random.nextLong()}"
         val newComponent = BossTabsComponent(createBossAppContext, tabRegistry, windowId)
+
+        // A tab detached from another panel (cross-panel edge drag) transfers its live
+        // component instance — no copy, no reload, and nothing left behind to leak.
+        detachedTab?.let { detached ->
+            val newIndex = newComponent.adoptTab(detached)
+            if (newIndex >= 0) newComponent.selectTab(newIndex)
+        }
 
         // Copy tab if specified
         tabToMove?.let { tab ->

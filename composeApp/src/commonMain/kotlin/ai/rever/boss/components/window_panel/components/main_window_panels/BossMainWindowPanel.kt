@@ -106,6 +106,8 @@ import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
+import com.arkivanov.essenty.lifecycle.destroy
+import com.arkivanov.essenty.lifecycle.resume
 import kotlin.time.Clock
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1140,6 +1142,18 @@ class BossTabsComponent(
     private val componentId = "${windowId}_${System.identityHashCode(this)}"
 
     private val tabComponents = mutableStateMapOf<String, TabComponentWithUI>()
+
+    // Per-tab lifecycle registries. Each tab component gets its own ComponentContext whose
+    // lifecycle is destroyed when the tab is closed, so components that clean up in
+    // lifecycle.onDestroy (e.g. the fluck-browser plugin disposing its JxBrowser handle)
+    // actually get destroyed. Previously all tab components shared this panel's context,
+    // whose LifecycleRegistry is never destroyed — closing or moving a browser tab leaked
+    // a live Chromium process (audio kept playing in the background).
+    //
+    // Plain map on purpose (tabComponents is a state map only because composition reads
+    // it): all tab mutations happen on the UI thread, matching Essenty's lifecycle
+    // threading expectations.
+    private val tabLifecycles = mutableMapOf<String, LifecycleRegistry>()
     private val tabsNavigation = TabsNavigation<TabInfo>()
 
     // Expose tab state for UI
@@ -1373,12 +1387,20 @@ class BossTabsComponent(
 
     // Add a new tab
     fun addTab(config: TabInfo): Int {
-        // Create component for this tab
-        val component = tabRegistry.createTabComponent(config, this)
+        // Create component for this tab, with its own lifecycle so tab close can destroy it
+        // (fires the component's lifecycle.onDestroy — see tabLifecycles).
+        val tabLifecycle = LifecycleRegistry()
+        val component = tabRegistry.createTabComponent(config, DefaultComponentContext(tabLifecycle))
 
         if (component != null) {
+            // Drive the lifecycle to RESUMED: subscribers added in the component's init get
+            // their up-callbacks replayed, and destroy() below CREATED would otherwise be a
+            // silent no-op (Essenty only fires onDestroy from CREATED or above).
+            tabLifecycle.resume()
+
             // Store component
             tabComponents[config.id] = component
+            tabLifecycles[config.id] = tabLifecycle
 
             // Register tab with TabUpdateRegistry for plugin updates
             TabUpdateRegistry.registerTab(config.id, componentId)
@@ -1396,6 +1418,7 @@ class BossTabsComponent(
         // No factory for this type — usually the owning plugin hasn't finished
         // loading. The tab is dropped; workspace restore gates on tab-type
         // registration to avoid hitting this, so reaching here is worth a log.
+        // (tabLifecycle stays INITIALIZED with no subscribers and no references — GC'd.)
         bossMainWindowPanelLogger.warn(LogCategory.UI, "Dropped tab - no factory registered for its type", mapOf(
             "typeId" to config.typeId.typeId,
             "title" to config.title
@@ -1417,7 +1440,12 @@ class BossTabsComponent(
             if (component is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
                 component.dispose()
             }
-            // Panel-host tabs share the window lifecycle, so notify on close explicitly:
+            // Destroy the tab's own lifecycle so components that clean up in
+            // lifecycle.onDestroy (dynamic plugin tabs like fluck-browser) release their
+            // resources — without this a closed browser tab's Chromium process lives on.
+            tabLifecycles.remove(it.id)?.destroy()
+            // Panel-host tabs keep an explicit close signal (the hosted panel component is
+            // owned by PanelComponentStore, not the tab lifecycle — see PanelHostTab.kt):
             // decrements the hosted-as-tab count so the sidebar icon reopens the plugin
             // in its sidebar location once the last hosting tab is closed.
             if (component is ai.rever.boss.components.plugin.tab_types.PanelHostTabComponent) {
@@ -1436,12 +1464,79 @@ class BossTabsComponent(
         tabsNavigation.removeTab(index)
     }
 
-    // Remove a tab by ID - safer than index-based removal when state may have changed
-    fun removeTabById(tabId: String) {
+    // Remove a tab by ID - safer than index-based removal when state may have changed.
+    // Returns true if a tab with that id existed and was removed.
+    fun removeTabById(tabId: String): Boolean {
         val index = tabsState.value.tabs.indexOfFirst { it.id == tabId }
         if (index >= 0) {
             removeTab(index)
+            return true
         }
+        return false
+    }
+
+    /**
+     * A tab lifted out of one panel for adoption by another (see [detachTab]/[adoptTab]).
+     * Carries the live component instance and its lifecycle so a cross-panel move transfers
+     * the running tab instead of destroy-and-recreate — a moved browser tab keeps its page
+     * (and playing media) instead of reloading and leaking the old browser instance.
+     *
+     * Contract: the caller MUST hand a non-null DetachedTab to [adoptTab] or call
+     * [destroy] on it. Dropping it on the floor keeps the component running (its
+     * lifecycle stays RESUMED) with no panel showing it and no cleanup path — the
+     * exact leak the detach/adopt mechanism exists to eliminate.
+     */
+    class DetachedTab internal constructor(
+        val config: TabInfo,
+        internal val component: TabComponentWithUI,
+        internal val lifecycle: LifecycleRegistry?
+    ) {
+        /** Destroy the detached component instead of adopting it (fires its onDestroy cleanup). */
+        fun destroy() {
+            lifecycle?.destroy()
+        }
+    }
+
+    /**
+     * Detach a tab for a move: remove it from this panel WITHOUT destroying its component or
+     * publishing a CLOSED event. Returns null if the tab or its component is unknown (caller
+     * should fall back to remove+add). The returned [DetachedTab.config] is the panel's
+     * CURRENT TabInfo (fresh navigation state), not whatever the caller captured at drag start.
+     */
+    fun detachTab(tabId: String): DetachedTab? {
+        val index = tabsState.value.tabs.indexOfFirst { it.id == tabId }
+        if (index < 0) return null
+        val config = tabsState.value.tabs[index]
+        val component = tabComponents.remove(tabId) ?: return null
+        val lifecycle = tabLifecycles.remove(tabId)
+
+        // Ownership-checked: no-op if the destination already re-registered this id.
+        TabUpdateRegistry.unregisterTab(tabId, componentId)
+        mruTabIds.remove(tabId)
+        tabCycleOrder = null
+        tabsNavigation.removeTab(index)
+        return DetachedTab(config, component, lifecycle)
+    }
+
+    /**
+     * Adopt a tab detached from another panel: the component instance (and its lifecycle)
+     * transfer as-is, so the tab keeps running across the move. Counterpart of [detachTab].
+     */
+    fun adoptTab(detached: DetachedTab): Int {
+        // Tab ids are unique across a window, but guard anyway: silently overwriting an
+        // existing entry would orphan its component without destroy — the leak shape this
+        // change exists to eliminate. Close the stale holder first.
+        if (tabComponents.containsKey(detached.config.id)) {
+            removeTabById(detached.config.id)
+        }
+        tabComponents[detached.config.id] = detached.component
+        detached.lifecycle?.let { tabLifecycles[detached.config.id] = it }
+        TabUpdateRegistry.registerTab(detached.config.id, componentId)
+        val index = tabsNavigation.addTab(detached.config)
+        recordTabUsage(detached.config.id)
+        tabCycleOrder = null
+        publishSystemEvent(TabEvent(tabId = detached.config.id, tabType = TabEventType.MOVED, windowId = windowId))
+        return index
     }
 
     // Select a tab
@@ -1651,6 +1746,11 @@ class BossTabsComponent(
             }
         }
         tabComponents.clear()
+        // Destroy the per-tab lifecycles so plugin components that clean up in
+        // lifecycle.onDestroy release their resources on window close too — same
+        // contract as removeTab, without relying on the disposeAll() hammer below.
+        tabLifecycles.values.toList().forEach { it.destroy() }
+        tabLifecycles.clear()
         // Also dispose any browsers created by dynamic plugins via BrowserService
         ai.rever.boss.components.plugin.disposePluginBrowsers()
     }
