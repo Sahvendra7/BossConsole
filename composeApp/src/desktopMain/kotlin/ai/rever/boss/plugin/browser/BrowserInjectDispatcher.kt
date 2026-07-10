@@ -13,15 +13,16 @@ import java.util.WeakHashMap
  *
  * JxBrowser allows exactly ONE `InjectJsCallback` per [Browser]; a second
  * `browser.set(InjectJsCallback…)` silently replaces the first. More than one feature
- * wants document-start injection (the WebAuthn shim here; the co-browse rrweb recorder
- * on the `feat/cobrowse-tab-sharing` branch registers its own), so calling
- * `browser.set` directly makes whichever registers second clobber the other — e.g.
- * starting co-browse would stop injecting `window.__bossWebAuthn` and silently break
- * platform passkeys.
+ * can want document-start injection (e.g. the co-browse rrweb recorder on the
+ * `feat/cobrowse-tab-sharing` branch), so calling `browser.set` directly makes
+ * whichever registers second clobber the other.
  *
  * This dispatcher claims the slot once per browser and fans each document-start event
  * out to every registered injector. **Every** document-start injector must go through
  * [register] instead of `browser.set(InjectJsCallback…)`, or the clobber returns.
+ * (No injector is registered on main right now — the former WebAuthn shim was removed
+ * when JxBrowser 9.3.0 gained native macOS Touch ID — but the co-browse branch
+ * depends on this seam.)
  */
 internal object BrowserInjectDispatcher {
     private val logger = BossLogger.forComponent("BrowserInjectDispatcher")

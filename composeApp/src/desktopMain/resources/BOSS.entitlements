@@ -52,16 +52,12 @@
     <key>com.apple.security.inherit</key>
     <true/>
 
-    <!-- The iCloud Keychain passkey-as-web-browser entitlement
-         (com.apple.developer.web-browser.public-key-credential) is intentionally NOT
-         listed here. It's a managed capability: macOS's launch-time validation refuses
-         to open a Developer ID app carrying it unless a matching provisioning profile
-         is embedded at Contents/embedded.provisionprofile, and Apple's approval for
-         this capability (entitlement request YWD6D3446V) is still pending — no such
-         profile exists yet, so declaring the key here breaks every macOS launch with
-         a generic "can't be opened" error. WebAuthnBridge/BossWebAuthn.swift already
-         handle its absence gracefully (falls back to Chromium's own WebAuthn); re-add
-         the key only once Apple grants the capability and the release build embeds the
-         granted profile before codesign. -->
+    <!-- Platform passkeys (Touch ID) are handled natively by JxBrowser 9.3.0+ inside
+         the (branded) Chromium processes, so the app itself needs no WebAuthn
+         entitlement. Historical note: the custom in-process authenticator removed in
+         July 2026 would have required com.apple.developer.web-browser.public-key-credential
+         (Apple entitlement request YWD6D3446V) — a managed capability that must never
+         be declared here without an embedded provisioning profile, or macOS refuses
+         to launch the app. -->
 </dict>
 </plist>

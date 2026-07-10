@@ -547,7 +547,8 @@ object FluckEngine {
             "SingletonSocket",
             "SingletonCookie",
             "lockfile",
-            ".org.chromium.Chromium.lock"  // Some versions use this
+            ".org.chromium.Chromium.lock",  // legacy Chromium bundle id (pre-9.3.0 engines)
+            ".com.teamdev.Platinum.lock"    // JxBrowser 9.3.0+ renamed the Chromium bundle id
         )
 
         lockFiles.forEach { fileName ->

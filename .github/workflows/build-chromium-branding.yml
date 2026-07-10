@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       jxbrowser_version:
-        description: 'JxBrowser version (e.g., 9.0.2)'
+        description: 'JxBrowser version (e.g., 9.3.0)'
         required: true
-        default: '9.0.2'
+        default: '9.3.0'
 
 env:
-  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '9.0.2' }}
+  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '9.3.0' }}
 
 jobs:
   # Build the Chromium branding tool first
@@ -171,6 +171,27 @@ jobs:
           sed -i '' "s|\${MACOS_DEVELOPER_ID}|$MACOS_DEVELOPER_ID|g" params.json
           sed -i '' "s|\${MACOS_TEAM_ID}|$MACOS_TEAM_ID|g" params.json
 
+          # Touch ID: when an Apple Developer ID provisioning profile is present,
+          # sign with the keychain-access-groups entitlement it backs (see
+          # Chromium-Branding README, "Enabling Touch ID on macOS"). Without the
+          # profile, macOS refuses to LAUNCH a bundle carrying that entitlement,
+          # so fall back to the base entitlements file.
+          if [ -f "entitlements/boss-browser.provisionprofile" ]; then
+            sed -i '' "s|\${MACOS_TEAM_ID}|$MACOS_TEAM_ID|g" entitlements/boss-chromium-touchid.entitlements
+            python3 -c "
+          import json
+          with open('params.json', 'r') as f:
+              params = json.load(f)
+          params['mac']['codesignEntitlements'] = 'entitlements/boss-chromium-touchid.entitlements'
+          params['mac']['provisioningProfile'] = 'entitlements/boss-browser.provisionprofile'
+          with open('params.json', 'w') as f:
+              json.dump(params, f, indent=2)
+          "
+            echo "Touch ID signing enabled (provisioning profile found)"
+          else
+            echo "::notice::No entitlements/boss-browser.provisionprofile — Touch ID keychain entitlement skipped"
+          fi
+
           # If signing is not available, remove the signCommand from params.json
           if [ "$SIGNING_AVAILABLE" != "true" ]; then
             echo "::warning::Signing not available, removing signCommand from params.json"
@@ -228,18 +249,71 @@ jobs:
             echo "Removed CFBundleIconName from Alerts helper"
           fi
 
-          # Re-sign all helpers after modifications
-          echo "Re-signing helpers..."
+          # Chromium's WebAuthn hybrid transport ("use your phone as a passkey")
+          # probes Bluetooth via CoreBluetooth when a passkey ceremony starts.
+          # macOS TCC hard-crashes (SIGABRT, "privacy-sensitive data without a
+          # usage description") any process whose responsible bundle lacks
+          # NSBluetoothAlwaysUsageDescription — and neither the stock JxBrowser
+          # 9.3.0 bundle nor the branding tool ships one (Chrome does). Must be
+          # added BEFORE the re-sign below or the plist edit breaks the seal.
+          MAIN_PLIST="output/BOSS.app/Contents/Info.plist"
+          BT_USAGE="BOSS uses Bluetooth to let you sign in with a passkey stored on your phone or tablet."
+          /usr/libexec/PlistBuddy -c "Add :NSBluetoothAlwaysUsageDescription string $BT_USAGE" "$MAIN_PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :NSBluetoothAlwaysUsageDescription $BT_USAGE" "$MAIN_PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSBluetoothPeripheralUsageDescription string $BT_USAGE" "$MAIN_PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :NSBluetoothPeripheralUsageDescription $BT_USAGE" "$MAIN_PLIST"
+          echo "Added Bluetooth usage descriptions to Info.plist"
+
+          # Re-sign after modifications, PRESERVING identity + entitlements. A
+          # bare ad-hoc `codesign --force --sign -` here used to strip the
+          # Developer ID identity and every entitlement (JIT,
+          # keychain-access-groups) from the shipped engine — which silently
+          # disabled the Touch ID platform authenticator.
+          if [ "$SIGNING_AVAILABLE" = "true" ]; then
+            SIGN_ID="$MACOS_DEVELOPER_ID"
+          else
+            SIGN_ID="-"
+          fi
+          echo "Re-signing with identity: $SIGN_ID"
           for helper in "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers"/*.app; do
             if [ -d "$helper" ]; then
-              codesign --force --sign - "$helper" 2>/dev/null || true
+              codesign --force --preserve-metadata=entitlements --sign "$SIGN_ID" "$helper" || true
             fi
           done
-
-          # Re-sign framework and main app
-          codesign --force --sign - "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
-          codesign --force --sign - "output/BOSS.app" 2>/dev/null || true
+          codesign --force --preserve-metadata=entitlements --sign "$SIGN_ID" "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" || true
+          ENTITLEMENTS_FILE=$(python3 -c "import json; print(json.load(open('params.json'))['mac'].get('codesignEntitlements',''))")
+          if [ -n "$ENTITLEMENTS_FILE" ] && [ -f "$ENTITLEMENTS_FILE" ]; then
+            codesign --force --entitlements "$ENTITLEMENTS_FILE" --sign "$SIGN_ID" "output/BOSS.app" || true
+          else
+            codesign --force --preserve-metadata=entitlements --sign "$SIGN_ID" "output/BOSS.app" || true
+          fi
           echo "Re-signing complete"
+
+          # Guard the load-bearing re-sign. Every codesign above ends in `|| true`
+          # (a helper failing shouldn't abort mid-bundle), so a stripped entitlement
+          # or failed sign would otherwise ship SILENTLY — the exact failure this
+          # step exists to prevent (PR #852 review). Assert the END STATE and fail
+          # the job instead of publishing a mis-signed engine.
+          if [ "$SIGNING_AVAILABLE" = "true" ]; then
+            if ! codesign --verify --deep --strict "output/BOSS.app"; then
+              echo "::error::Re-signed BOSS.app fails codesign --verify --deep --strict"
+              exit 1
+            fi
+            # When the Touch ID profile is present the engine MUST end up with the
+            # embedded profile + keychain-access-groups, or the platform
+            # authenticator silently disappears (isUVPAA=false) on the shipped build.
+            if [ -f "entitlements/boss-browser.provisionprofile" ]; then
+              if [ ! -f "output/BOSS.app/Contents/embedded.provisionprofile" ]; then
+                echo "::error::Touch ID enabled but embedded.provisionprofile missing after signing"
+                exit 1
+              fi
+              if ! codesign -d --entitlements :- "output/BOSS.app" 2>/dev/null | grep -q "keychain-access-groups"; then
+                echo "::error::keychain-access-groups stripped by re-sign — Touch ID would silently break"
+                exit 1
+              fi
+              echo "✓ Verified Touch ID signing: valid signature + embedded profile + keychain-access-groups"
+            fi
+          fi
 
           # Create executable.name if not present (required by JxBrowser)
           if [ ! -f "output/executable.name" ]; then
@@ -277,7 +351,15 @@ jobs:
       - name: Create Archive
         run: |
           cd output
-          zip -r ../boss-chromium-macos-arm64.zip .
+          # -y/--symlinks STORES symlinks as symlinks. Without it, plain `zip -r`
+          # FOLLOWS them and writes the target's bytes, which flattens the macOS
+          # "Chromium Framework.framework" bundle: Versions/Current stops being a
+          # symlink to the versioned dir and the 238 MB framework binary + all of
+          # Resources/Libraries get duplicated at the top level. That breaks the
+          # code-signed bundle layout, and JxBrowser 9.3.0's new
+          # ChromiumProcessMac.isInAppleSandbox toolkit load then fails with
+          # UnsatisfiedLinkError ("Can't load library: …Framework.framework…").
+          zip -y -r ../boss-chromium-macos-arm64.zip .
           cd ..
           echo "Archive created:"
           ls -la boss-chromium-macos-arm64.zip
@@ -371,6 +453,27 @@ jobs:
           sed -i '' "s|\${MACOS_DEVELOPER_ID}|$MACOS_DEVELOPER_ID|g" params.json
           sed -i '' "s|\${MACOS_TEAM_ID}|$MACOS_TEAM_ID|g" params.json
 
+          # Touch ID: when an Apple Developer ID provisioning profile is present,
+          # sign with the keychain-access-groups entitlement it backs (see
+          # Chromium-Branding README, "Enabling Touch ID on macOS"). Without the
+          # profile, macOS refuses to LAUNCH a bundle carrying that entitlement,
+          # so fall back to the base entitlements file.
+          if [ -f "entitlements/boss-browser.provisionprofile" ]; then
+            sed -i '' "s|\${MACOS_TEAM_ID}|$MACOS_TEAM_ID|g" entitlements/boss-chromium-touchid.entitlements
+            python3 -c "
+          import json
+          with open('params.json', 'r') as f:
+              params = json.load(f)
+          params['mac']['codesignEntitlements'] = 'entitlements/boss-chromium-touchid.entitlements'
+          params['mac']['provisioningProfile'] = 'entitlements/boss-browser.provisionprofile'
+          with open('params.json', 'w') as f:
+              json.dump(params, f, indent=2)
+          "
+            echo "Touch ID signing enabled (provisioning profile found)"
+          else
+            echo "::notice::No entitlements/boss-browser.provisionprofile — Touch ID keychain entitlement skipped"
+          fi
+
           # If signing is not available, remove the signCommand from params.json
           if [ "$SIGNING_AVAILABLE" != "true" ]; then
             echo "::warning::Signing not available, removing signCommand from params.json"
@@ -424,18 +527,71 @@ jobs:
             echo "Removed CFBundleIconName from Alerts helper"
           fi
 
-          # Re-sign all helpers after modifications
-          echo "Re-signing helpers..."
+          # Chromium's WebAuthn hybrid transport ("use your phone as a passkey")
+          # probes Bluetooth via CoreBluetooth when a passkey ceremony starts.
+          # macOS TCC hard-crashes (SIGABRT, "privacy-sensitive data without a
+          # usage description") any process whose responsible bundle lacks
+          # NSBluetoothAlwaysUsageDescription — and neither the stock JxBrowser
+          # 9.3.0 bundle nor the branding tool ships one (Chrome does). Must be
+          # added BEFORE the re-sign below or the plist edit breaks the seal.
+          MAIN_PLIST="output/BOSS.app/Contents/Info.plist"
+          BT_USAGE="BOSS uses Bluetooth to let you sign in with a passkey stored on your phone or tablet."
+          /usr/libexec/PlistBuddy -c "Add :NSBluetoothAlwaysUsageDescription string $BT_USAGE" "$MAIN_PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :NSBluetoothAlwaysUsageDescription $BT_USAGE" "$MAIN_PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSBluetoothPeripheralUsageDescription string $BT_USAGE" "$MAIN_PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :NSBluetoothPeripheralUsageDescription $BT_USAGE" "$MAIN_PLIST"
+          echo "Added Bluetooth usage descriptions to Info.plist"
+
+          # Re-sign after modifications, PRESERVING identity + entitlements. A
+          # bare ad-hoc `codesign --force --sign -` here used to strip the
+          # Developer ID identity and every entitlement (JIT,
+          # keychain-access-groups) from the shipped engine — which silently
+          # disabled the Touch ID platform authenticator.
+          if [ "$SIGNING_AVAILABLE" = "true" ]; then
+            SIGN_ID="$MACOS_DEVELOPER_ID"
+          else
+            SIGN_ID="-"
+          fi
+          echo "Re-signing with identity: $SIGN_ID"
           for helper in "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers"/*.app; do
             if [ -d "$helper" ]; then
-              codesign --force --sign - "$helper" 2>/dev/null || true
+              codesign --force --preserve-metadata=entitlements --sign "$SIGN_ID" "$helper" || true
             fi
           done
-
-          # Re-sign framework and main app
-          codesign --force --sign - "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
-          codesign --force --sign - "output/BOSS.app" 2>/dev/null || true
+          codesign --force --preserve-metadata=entitlements --sign "$SIGN_ID" "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" || true
+          ENTITLEMENTS_FILE=$(python3 -c "import json; print(json.load(open('params.json'))['mac'].get('codesignEntitlements',''))")
+          if [ -n "$ENTITLEMENTS_FILE" ] && [ -f "$ENTITLEMENTS_FILE" ]; then
+            codesign --force --entitlements "$ENTITLEMENTS_FILE" --sign "$SIGN_ID" "output/BOSS.app" || true
+          else
+            codesign --force --preserve-metadata=entitlements --sign "$SIGN_ID" "output/BOSS.app" || true
+          fi
           echo "Re-signing complete"
+
+          # Guard the load-bearing re-sign. Every codesign above ends in `|| true`
+          # (a helper failing shouldn't abort mid-bundle), so a stripped entitlement
+          # or failed sign would otherwise ship SILENTLY — the exact failure this
+          # step exists to prevent (PR #852 review). Assert the END STATE and fail
+          # the job instead of publishing a mis-signed engine.
+          if [ "$SIGNING_AVAILABLE" = "true" ]; then
+            if ! codesign --verify --deep --strict "output/BOSS.app"; then
+              echo "::error::Re-signed BOSS.app fails codesign --verify --deep --strict"
+              exit 1
+            fi
+            # When the Touch ID profile is present the engine MUST end up with the
+            # embedded profile + keychain-access-groups, or the platform
+            # authenticator silently disappears (isUVPAA=false) on the shipped build.
+            if [ -f "entitlements/boss-browser.provisionprofile" ]; then
+              if [ ! -f "output/BOSS.app/Contents/embedded.provisionprofile" ]; then
+                echo "::error::Touch ID enabled but embedded.provisionprofile missing after signing"
+                exit 1
+              fi
+              if ! codesign -d --entitlements :- "output/BOSS.app" 2>/dev/null | grep -q "keychain-access-groups"; then
+                echo "::error::keychain-access-groups stripped by re-sign — Touch ID would silently break"
+                exit 1
+              fi
+              echo "✓ Verified Touch ID signing: valid signature + embedded profile + keychain-access-groups"
+            fi
+          fi
 
           # Create executable.name if not present (required by JxBrowser)
           if [ ! -f "output/executable.name" ]; then
@@ -469,7 +625,10 @@ jobs:
       - name: Create Archive
         run: |
           cd output
-          zip -r ../boss-chromium-macos-x64.zip .
+          # -y preserves symlinks so the code-signed Chromium Framework.framework
+          # bundle isn't flattened (see the arm64 job for the full rationale —
+          # flattening breaks JxBrowser 9.3.0's isInAppleSandbox toolkit load).
+          zip -y -r ../boss-chromium-macos-x64.zip .
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v7

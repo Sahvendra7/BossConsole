@@ -236,13 +236,6 @@ private fun configureBrowserPopupHandler(
                         frame.setLocation(initialBounds.origin().x(), initialBounds.origin().y())
                         frame.setSize(initialBounds.size().width(), initialBounds.size().height())
 
-                        // Persistent popup windows (e.g. OAuth) can run their own passkey
-                        // ceremony, so route them through the native authenticator too.
-                        // (The empty-bounds branch above forwards the URL to onOpenInNewTab,
-                        // which opens an already-shimmed browser — only a ceremony inside the
-                        // transient pre-handoff popup is uncovered, an accepted edge case.)
-                        ai.rever.boss.plugin.browser.WebAuthnBridge.install(popupBrowser)
-
                         val browserView = BrowserView.newInstance(popupBrowser)
                         frame.contentPane.add(browserView)
 
@@ -397,10 +390,6 @@ actual fun getBrowserState(
 
         // Configure JS dialog handlers to prevent UI freeze (Issue #369)
         setupBrowserDialogHandlers(browser)
-
-        // Route platform-passkey WebAuthn ceremonies to the native macOS
-        // authenticator (iCloud Keychain). No-op / graceful fallback elsewhere.
-        ai.rever.boss.plugin.browser.WebAuthnBridge.install(browser)
 
         // Configure popup handler: OAuth popups → real windows, regular links → tabs
         if (onOpenInNewTab != null) {

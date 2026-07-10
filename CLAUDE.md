@@ -47,7 +47,7 @@ For a bottom split use `panel: horizontal_split`. Reuse a pane across calls by p
 
 ### Key Technologies
 - Kotlin Multiplatform + Compose Multiplatform
-- JxBrowser 8.15.0 (with BOSS-branded Chromium)
+- JxBrowser (version pinned in `gradle/libs.versions.toml`, with BOSS-branded Chromium)
 - Decompose for navigation
 - Supabase + Edge Functions
 - BossTerm for terminal integration (bundled in the `terminal-tab` plugin)

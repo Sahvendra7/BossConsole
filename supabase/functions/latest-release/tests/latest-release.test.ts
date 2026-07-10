@@ -197,3 +197,72 @@ Deno.test("empty catalog returns 404", async () => {
     assertEquals(res.status, 404)
   })
 })
+
+// (c) boss-chromium engine: &platform= selection over boss-chromium-<platform>.zip.
+
+const ENGINE_ASSETS = [
+  "boss-chromium-macos-arm64.zip",
+  "boss-chromium-macos-x64.zip",
+  "boss-chromium-windows-x64.zip",
+  "boss-chromium-windows-arm64.zip",
+  "boss-chromium-linux-x64.zip",
+  "boss-chromium-linux-arm64.zip",
+].map(asset)
+
+const ENGINE_ROW = {
+  app: "boss-chromium",
+  version: "9.3.0",
+  channel: "stable",
+  prerelease: false,
+  release_notes: "engine",
+  assets: ENGINE_ASSETS,
+  published_at: "2026-07-10T09:39:00.000000+00:00",
+}
+
+Deno.test("?app=boss-chromium returns engine JSON and queries app=eq.boss-chromium", async () => {
+  await withPostgrest([ENGINE_ROW], async (requested) => {
+    const res = await app.request("/latest-release?app=boss-chromium")
+    assertEquals(res.status, 200)
+    assertEquals(res.headers.get("Cache-Control"), "no-store")
+    const body = await res.json()
+    assertEquals(body.version, "9.3.0")
+    assertEquals(body.assets.length, ENGINE_ASSETS.length)
+    assert(requested[0].search.includes("app=eq.boss-chromium"))
+  })
+})
+
+Deno.test("?app=boss-chromium&platform=macos-arm64 302s to that platform's zip", async () => {
+  await withPostgrest([ENGINE_ROW], async () => {
+    const res = await app.request("/latest-release?app=boss-chromium&platform=macos-arm64")
+    assertEquals(res.status, 302)
+    assert(res.headers.get("Location")!.endsWith("/boss-chromium-macos-arm64.zip"))
+    assertEquals(res.headers.get("X-App-Version"), "9.3.0")
+    assertEquals(res.headers.get("Cache-Control"), "no-store")
+  })
+})
+
+Deno.test("engine rejects the apps' download/arch model and apps reject platform", async () => {
+  await withPostgrest([ENGINE_ROW], async () => {
+    for (
+      const path of [
+        "/latest-release?app=boss-chromium&platform=solaris-sparc", // unknown platform
+        "/latest-release?app=boss-chromium&download=zip", // wrong model for engine
+        "/latest-release?app=boss-chromium&arch=arm64", // wrong model for engine
+        "/latest-release?app=boss&platform=macos-arm64", // platform not valid for apps
+      ]
+    ) {
+      const res = await app.request(path)
+      assertEquals(res.status, 400, path)
+      assert((await res.json()).usage)
+    }
+  })
+})
+
+Deno.test("engine platform miss returns 404 listing available names", async () => {
+  await withPostgrest([{ ...ENGINE_ROW, assets: [asset("boss-chromium-linux-x64.zip")] }], async () => {
+    const res = await app.request("/latest-release?app=boss-chromium&platform=macos-arm64")
+    assertEquals(res.status, 404)
+    const body = await res.json()
+    assertEquals(body.available, ["boss-chromium-linux-x64.zip"])
+  })
+})

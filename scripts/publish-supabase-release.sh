@@ -125,6 +125,25 @@ upload_resumable() {
   local meta="bucketName $(b64 "$BUCKET"),objectName $(b64 "$object_path"),contentType $(b64 "$ctype"),cacheControl $(b64 '3600')"
   local body="$TMP_DIR/resp_body" chunk="$TMP_DIR/chunk.bin" attempt
 
+  # Re-publishing the same (app, version): when an object already exists at the
+  # key, the fresh tus upload's first PATCH 409s at offset 0, which is how the
+  # 9.3.0 engine re-publish died. Deleting the object first clears the conflict.
+  #
+  # This DELETE is deliberately non-atomic: there's a brief window with no object
+  # on Supabase, and if the ensuing upload fails the object is gone rather than
+  # left stale-but-valid. Accepted because it only affects RE-publishes and the
+  # GitHub release remains the backup download source (clients fall back to it),
+  # so the blast radius is small. (DELETE of a missing object → harmless 404.)
+  #
+  # No metadata salting is needed to avoid a stale-upload-id collision: Supabase
+  # mints a fresh upload-id version UUID on every create
+  # (https://supabase.com/blog/storage-v3-resumable-uploads), so the id is
+  # already unique per run — a nonce in Upload-Metadata would be a no-op.
+  curl -sS -o /dev/null \
+    -X DELETE "$SUPABASE_URL/storage/v1/object/$BUCKET/$object_path" \
+    -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" || true
+
   # 1) Create the upload; capture its per-upload Location URL. x-upsert overwrites on re-runs.
   local create_hdrs code=""
   for (( attempt = 1; attempt <= MAX_ATTEMPTS; attempt++ )); do
@@ -261,8 +280,12 @@ row="$(jq -nc \
   '{app: $app, version: $version, channel: $channel, prerelease: $prerelease, release_notes: $notes, assets: $assets}')"
 
 echo "Upserting app_releases row for $APP $VERSION ($uploaded asset(s))"
+# on_conflict is required: merge-duplicates alone resolves only against the
+# primary key, so a re-publish of the same (app, version) 409s on the
+# app_releases_app_version_key unique constraint (23505) — which is how the
+# second 9.3.0 engine publish died after its asset uploads succeeded.
 http_code="$(curl -sS -o "$TMP_DIR/app_releases_resp.txt" -w '%{http_code}' \
-  -X POST "$SUPABASE_URL/rest/v1/app_releases" \
+  -X POST "$SUPABASE_URL/rest/v1/app_releases?on_conflict=app,version" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
   -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
   -H "Content-Type: application/json" \

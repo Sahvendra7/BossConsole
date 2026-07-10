@@ -8,16 +8,20 @@
  * requirement so the links work in a bare browser, curl, or a website button.
  *
  * Routes (deployed with verify_jwt=false, like the sibling `redirect` function):
- * - GET /?app=boss                          → JSON of the latest release row
- * - GET /?app=bossterm&download=dmg         → 302 to the newest matching installer
- * - GET /?app=boss&download=deb&arch=arm64  → arch-disambiguated 302
- * - GET /health                             → health check
+ * - GET /?app=boss                              → JSON of the latest release row
+ * - GET /?app=bossterm&download=dmg             → 302 to the newest matching installer
+ * - GET /?app=boss&download=deb&arch=arm64      → arch-disambiguated 302
+ * - GET /?app=boss-chromium                     → JSON of the latest engine row
+ * - GET /?app=boss-chromium&platform=macos-arm64 → 302 to that platform's engine zip
+ * - GET /health                                 → health check
  *
  * Query params:
- * - app        (required) 'boss' | 'bossterm'
- * - download   (optional) installer extension: dmg | msi | deb | rpm | jar
- * - arch       (optional, only meaningful with download) arm64|aarch64 or
+ * - app        (required) 'boss' | 'bossterm' | 'boss-chromium'
+ * - download   (optional, apps only) installer extension: dmg | msi | deb | rpm | jar
+ * - arch       (optional, apps only, meaningful with download) arm64|aarch64 or
  *              amd64|x86_64|x64 or universal; still validated without it
+ * - platform   (optional, boss-chromium only) macos-arm64 | macos-x64 |
+ *              windows-x64 | windows-arm64 | linux-x64 | linux-arm64
  * - channel    (optional) filter by release channel (stable | alpha | beta | rc)
  * - prerelease (optional) 'true' to include prereleases (excluded by default)
  *
@@ -41,10 +45,25 @@ app.use("*", cors({
   maxAge: 600,
 }))
 
-const KNOWN_APPS = ["boss", "bossterm"] as const
+const KNOWN_APPS = ["boss", "bossterm", "boss-chromium"] as const
 type AppId = typeof KNOWN_APPS[number]
 
 const DOWNLOAD_EXTENSIONS = ["dmg", "msi", "deb", "rpm", "jar"] as const
+
+// The BOSS-branded Chromium engine (app="boss-chromium") is published as
+// boss-chromium-<platform>.zip, where <platform> is EXACTLY the client's
+// ChromiumAutoDownloader.detectPlatform() output. Unlike the desktop apps it
+// carries no version or arch-only spelling in the filename, so it's selected by
+// an explicit &platform= rather than the installer download=/arch= model.
+const ENGINE_APP = "boss-chromium"
+const ENGINE_PLATFORMS = [
+  "macos-arm64",
+  "macos-x64",
+  "windows-x64",
+  "windows-arm64",
+  "linux-x64",
+  "linux-arm64",
+] as const
 
 // Channel values reach the PostgREST filter string — whitelist the charset so a
 // crafted channel can't smuggle extra `&order=`/`&select=` filter clauses.
@@ -181,11 +200,13 @@ async function fetchLatest(
 }
 
 const USAGE = {
-  usage: "/?app=<boss|bossterm>[&download=<dmg|msi|deb|rpm|jar>][&arch=<arm64|amd64|universal>][&channel=<channel>][&prerelease=true]",
+  usage: "/?app=<boss|bossterm>[&download=<dmg|msi|deb|rpm|jar>][&arch=<arm64|amd64|universal>][&channel=<channel>][&prerelease=true]  |  /?app=boss-chromium[&platform=<macos-arm64|macos-x64|windows-x64|windows-arm64|linux-x64|linux-arm64>]",
   examples: [
     "/latest-release?app=boss",
     "/latest-release?app=bossterm&download=dmg",
     "/latest-release?app=boss&download=deb&arch=arm64",
+    "/latest-release?app=boss-chromium",
+    "/latest-release?app=boss-chromium&platform=macos-arm64",
   ],
 }
 
@@ -216,10 +237,42 @@ app.get("/", async (c) => {
     return c.json({ error: "Invalid 'arch' parameter", ...USAGE }, 400)
   }
 
+  // Keep the engine and app download models from being mixed: boss-chromium uses
+  // &platform=, the apps use &download=/&arch=.
+  const platformParam = c.req.query("platform") ?? null
+  if (appId === ENGINE_APP) {
+    if (download !== null || archParam !== null) {
+      return c.json({ error: "app=boss-chromium selects builds with &platform=, not download/arch", ...USAGE }, 400)
+    }
+    if (platformParam !== null && !(ENGINE_PLATFORMS as readonly string[]).includes(platformParam)) {
+      return c.json({ error: "Invalid 'platform' parameter", ...USAGE }, 400)
+    }
+  } else if (platformParam !== null) {
+    return c.json({ error: "'platform' is only valid for app=boss-chromium", ...USAGE }, 400)
+  }
+
   const release = await fetchLatest(appId, channel, c.req.query("prerelease") === "true")
   if (!release) {
     return c.json({ error: `No release found for '${appId}'` }, 404, {
       "Cache-Control": "no-store",
+    })
+  }
+
+  // Engine download: the asset name is deterministic (boss-chromium-<platform>.zip),
+  // so match it exactly rather than through the apps' version/arch heuristics.
+  if (appId === ENGINE_APP && platformParam) {
+    const name = `boss-chromium-${platformParam}.zip`
+    const asset = release.assets.find((a) => a.name === name)
+    if (!asset) {
+      return c.json({
+        error: `No ${name} in boss-chromium ${release.version}`,
+        available: release.assets.map((a) => a.name),
+      }, 404, { "Cache-Control": "no-store" })
+    }
+    return c.body(null, 302, {
+      Location: asset.url,
+      "Cache-Control": "no-store",
+      "X-App-Version": release.version,
     })
   }
 
