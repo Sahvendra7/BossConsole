@@ -632,6 +632,19 @@ fun ComponentContext.BossApp(
         SplitViewStateRegistry.register(windowId, splitViewState)
     }
 
+    // Register this window's panel component store so the plugin reload path can
+    // reset open sidebar panel slots across all windows (see PanelComponentStoreRegistry).
+    // DisposableEffect (not LaunchedEffect like the registries below): a store
+    // leaked past its window would keep pinning unloaded plugin classloaders —
+    // the very leak #856 is about — so unregistration is tied to composition
+    // teardown as well as the explicit window-close cleanup.
+    DisposableEffect(panelComponentStore, windowId) {
+        PanelComponentStoreRegistry.register(windowId, panelComponentStore)
+        onDispose {
+            PanelComponentStoreRegistry.unregister(windowId)
+        }
+    }
+
     // Register callback for FluckEngine to auto-close download redirect tabs (desktop only)
     LaunchedEffect(splitViewState) {
         setupDownloadTabCloseCallback(splitViewState)
@@ -1105,6 +1118,9 @@ fun ComponentContext.BossApp(
 
             // Unregister this window's state from the global registry
             SplitViewStateRegistry.unregister(windowId)
+
+            // Unregister this window's panel component store from the registry
+            PanelComponentStoreRegistry.unregister(windowId)
 
             // Unregister this window's project state from the registry
             WindowProjectStateRegistry.unregister(windowId)

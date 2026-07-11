@@ -2,10 +2,12 @@ package ai.rever.boss.plugin
 
 import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MicrokernelRuntime
+import ai.rever.boss.components.registery.PanelComponentStoreRegistry
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.plugin.api.InaccessiblePluginInfo
 import ai.rever.boss.plugin.api.LoadedPluginInfo
+import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.plugin.api.PluginLoaderDelegate
 import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.repository.remote.PluginStoreConfig
@@ -329,6 +331,30 @@ class PluginLoaderDelegateImpl(
         ))
         closeTabsOnEdt(pluginId, tabs)
         return tabs.size
+    }
+
+    /**
+     * Reset any OPEN sidebar panel slots showing one of [panelIds] across all
+     * windows, so they re-create from the plugin's just-registered factories.
+     * The panel counterpart of [teardownPluginTabs], on the other side of the
+     * swap: tabs must close BEFORE the old classloader does, while panels stay
+     * open and swap to the new build once it's registered — a hot reload is
+     * then truly live for panels too, and the stale component stops pinning
+     * the pre-reload classloader (#856). Invoked by the shared (re)install
+     * path via [DynamicPluginManager.pluginPanelsRefresh]. Fire-and-forget on
+     * the EDT, matching the manual ⋮ → Restart Panel path.
+     */
+    fun refreshPluginPanels(pluginId: String, panelIds: Set<PanelId>) {
+        if (panelIds.isEmpty()) return
+        SwingUtilities.invokeLater {
+            val reset = PanelComponentStoreRegistry.resetPanels(panelIds)
+            if (reset > 0) {
+                logger.info(LogCategory.SYSTEM, "Refreshed open sidebar panels after plugin (re)registration", mapOf(
+                    "pluginId" to pluginId,
+                    "panels" to reset.toString()
+                ))
+            }
+        }
     }
 
     /** Remove the given tabs on the EDT and block until they detach. [pluginId] is null for the all-plugins (API-swap) teardown. */

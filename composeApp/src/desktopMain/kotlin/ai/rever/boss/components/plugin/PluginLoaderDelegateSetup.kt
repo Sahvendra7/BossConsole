@@ -42,6 +42,13 @@ actual object PluginLoaderDelegateSetup {
         if (DynamicPluginManager.pluginTabsTeardown == null) {
             DynamicPluginManager.pluginTabsTeardown = { id -> delegate.teardownPluginTabs(id) }
         }
+        // Panel counterpart, on the (re)register side: after a plugin's panel
+        // factories are re-registered (reload/update/enable), reset its open
+        // sidebar panel slots so they pick up the new build instead of keeping
+        // the pre-reload component (#856).
+        if (DynamicPluginManager.pluginPanelsRefresh == null) {
+            DynamicPluginManager.pluginPanelsRefresh = { id, panelIds -> delegate.refreshPluginPanels(id, panelIds) }
+        }
 
         logger.debug(LogCategory.SYSTEM, "PluginLoaderDelegate registered successfully")
     }

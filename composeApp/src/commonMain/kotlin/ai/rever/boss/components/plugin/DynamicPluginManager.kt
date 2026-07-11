@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin
 import ai.rever.boss.plugin.api.CanUnloadResult
 import ai.rever.boss.plugin.api.DynamicPluginListener
 import ai.rever.boss.plugin.api.LoadedPlugin
+import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginManifest
@@ -227,6 +228,21 @@ class DynamicPluginManager(
          */
         @Volatile
         var pluginTabsTeardown: (suspend (pluginId: String) -> Unit)? = null
+
+        /**
+         * Resets ONE plugin's open sidebar panel slots (across all windows)
+         * after its panel factories were (re)registered — invoked by
+         * [installPlugin] and [enablePlugin] AFTER their mutex releases, so a
+         * hot reload is live for already-open panels too: the slot's cached
+         * component (which pins the pre-reload classloader) is dropped and
+         * re-created from the new registration (#856). Receives the plugin's
+         * freshly-registered panel ids from the registering manager's own
+         * tracker, since plugins rarely set [PanelId.pluginId]. Fire-and-forget
+         * on the UI thread. Set once by the desktop layer; null in
+         * headless/test contexts, where no panel is open.
+         */
+        @Volatile
+        var pluginPanelsRefresh: ((pluginId: String, panelIds: Set<PanelId>) -> Unit)? = null
 
         /**
          * Runs swaps decoupled from the caller. The trigger usually fires
@@ -524,7 +540,7 @@ class DynamicPluginManager(
                 }
             }
         }
-        return mutex.withLock {
+        val result = mutex.withLock {
             try {
                 logger.info(LogCategory.SYSTEM, "Installing plugin", mapOf(
                     "jarPath" to jarPath
@@ -750,6 +766,16 @@ class DynamicPluginManager(
                 Result.failure(e)
             }
         }
+        // The registration above swapped this plugin's panel factories, but an
+        // open sidebar panel slot keeps its already-created component (old
+        // classloader and all) until reset — refresh those slots now that the
+        // new factories are in place. Outside the mutex because the refresh
+        // hops to the UI thread, which may re-enter manager operations (same
+        // reasoning as pluginTabsTeardown in uninstallPlugin).
+        result.getOrNull()?.takeIf { it.state == PluginState.LOADED }?.let { info ->
+            notifyPanelsRefresh(info.manifest.pluginId)
+        }
+        return result
     }
 
     /**
@@ -967,13 +993,16 @@ class DynamicPluginManager(
      * @return Result indicating success or failure
      */
     suspend fun enablePlugin(pluginId: String): Result<Unit> {
-        return mutex.withLock {
+        var wasAlreadyEnabled = false
+        val result = mutex.withLock {
             try {
                 val loadedPlugin = pluginLoader.getPlugin(pluginId)
                     ?: return@withLock Result.failure(Exception("Plugin not found: $pluginId"))
 
                 val trackingContext = trackingContexts[pluginId]
                     ?: return@withLock Result.failure(Exception("No context for plugin: $pluginId"))
+
+                wasAlreadyEnabled = _pluginStates.value[pluginId]?.enabled == true
 
                 // Register the plugin
                 loadedPlugin.instance.register(trackingContext)
@@ -1005,6 +1034,30 @@ class DynamicPluginManager(
                 runCatching { trackingContexts[pluginId]?.unregisterAll() }
                 Result.failure(e)
             }
+        }
+        // A panel left open across disable→enable holds the pre-disable
+        // component — refresh it from the just-re-registered factories.
+        // Outside the mutex, same as installPlugin. Skipped when the plugin
+        // was already enabled: a redundant enable must not discard an open
+        // panel's in-memory state (resetComponent loses it by design).
+        if (result.isSuccess && !wasAlreadyEnabled) notifyPanelsRefresh(pluginId)
+        return result
+    }
+
+    /** Invoke [pluginPanelsRefresh] with [pluginId]'s currently-registered panels; never throws. */
+    private fun notifyPanelsRefresh(pluginId: String) {
+        val refresh = pluginPanelsRefresh ?: return
+        try {
+            // Tracker read outside the mutex on purpose — racy against a
+            // concurrent uninstall/reload of the same plugin, which is fine
+            // for a best-effort fire-and-forget refresh: worst case a slot is
+            // missed and shows the old build until the next reload.
+            refresh(pluginId, registrationTracker.getPanelsForPlugin(pluginId))
+        } catch (t: Throwable) {
+            logger.warn(LogCategory.SYSTEM, "Panel refresh after plugin (re)registration failed", mapOf(
+                "pluginId" to pluginId,
+                "error" to (t.message ?: t::class.simpleName)
+            ))
         }
     }
 
