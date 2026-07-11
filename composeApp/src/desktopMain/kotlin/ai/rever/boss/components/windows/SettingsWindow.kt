@@ -365,6 +365,7 @@ private fun SettingsContentArea(
                 SettingsSection.PERFORMANCE -> PerformanceSettings()
                 SettingsSection.STARTUP -> StartupSettingsSection()
                 SettingsSection.SCROLLBAR -> ScrollbarSettings()
+                SettingsSection.SIDEBAR -> SidebarSettings()
                 SettingsSection.ADVANCED -> AdvancedSettings()
                 SettingsSection.THEME -> ThemeSettings()
                 else -> {}

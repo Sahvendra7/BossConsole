@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ViewSidebar
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -100,6 +101,11 @@ enum class SettingsSection(
         displayName = "Appearance",
         description = "Title bar, window decorations, and theming",
         icon = Icons.Outlined.DesktopWindows
+    ),
+    SIDEBAR(
+        displayName = "Sidebar",
+        description = "Plugin icon limits and overflow behavior",
+        icon = Icons.AutoMirrored.Outlined.ViewSidebar
     ),
     PERFORMANCE(
         displayName = "Performance",
