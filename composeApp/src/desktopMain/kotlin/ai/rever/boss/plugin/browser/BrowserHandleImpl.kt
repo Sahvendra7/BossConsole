@@ -8,7 +8,6 @@ import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +59,9 @@ import com.teamdev.jxbrowser.net.HttpHeader
 import com.teamdev.jxbrowser.net.callback.BeforeSendUploadDataCallback
 import com.teamdev.jxbrowser.ui.Rect
 import com.teamdev.jxbrowser.zoom.ZoomLevel
+import com.teamdev.jxbrowser.zoom.ZoomMode
+import ai.rever.boss.plugin.window.LocalWindowId
+import ai.rever.boss.utils.WindowFocusManager
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import java.awt.Toolkit
@@ -126,6 +128,27 @@ internal class BrowserHandleImpl(
     // BrowserViewState for Compose rendering - managed per Content() call
     private var currentViewState: BrowserViewState? = null
 
+    // True while the pointer hovers this handle's rendered BrowserView. Gates the
+    // window-wide macOS pinch listener so a pinch only zooms the browser under the
+    // cursor, not one sitting in a background tab or another split.
+    @Volatile private var pointerOverBrowserView = false
+
+    // Runs a pinch-triggered zoom only when the pointer hovers this view and the
+    // handle is alive; logs suppressions since the hover flag depends on Compose
+    // Enter/Exit events reaching the view — a stuck flag would otherwise present
+    // as pinch silently not working (or zooming a non-hovered view).
+    private inline fun gatedPinchZoom(direction: String, zoom: () -> Unit) {
+        if (pointerOverBrowserView && isValid) {
+            zoom()
+        } else {
+            logger.debug(LogCategory.BROWSER, "Pinch zoom suppressed", mapOf(
+                "direction" to direction,
+                "hovered" to pointerOverBrowserView.toString(),
+                "valid" to isValid.toString()
+            ))
+        }
+    }
+
     // --- Co-browse / tab sharing (DOM state-sync) ---
     // Whether the rrweb recorder is actively streaming this tab to viewers.
     @Volatile private var coBrowseCapturing = false
@@ -155,6 +178,16 @@ internal class BrowserHandleImpl(
     internal fun getBrowserLock(): ReentrantReadWriteLock = browserLock
 
     init {
+        // Scope zoom to this browser instance. Chromium's default PER_ORIGIN mode
+        // propagates a zoom change to every browser on the same domain, so pinching
+        // one tab yanked all same-URL tabs with it. Per-domain zoom persistence is
+        // unaffected: it's applied per tab on navigation via ZoomSettingsProvider.
+        try {
+            browser.zoom().mode(ZoomMode.PER_BROWSER)
+        } catch (e: Exception) {
+            logger.warn(LogCategory.BROWSER, "Could not set per-browser zoom mode", error = e)
+        }
+
         setupEventListeners()
         setupBrowserHandlers()
 
@@ -1278,14 +1311,22 @@ internal class BrowserHandleImpl(
 
         // Create BrowserViewState on first composition
         var viewState by remember { mutableStateOf<BrowserViewState?>(null) }
-        
+
         // Track last navigation time for debouncing mouse button navigation
         var lastNavigationTime by remember { mutableStateOf(0L) }
 
-        DisposableEffect(browser) {
+        // The window actually hosting this composition, resolved through the app's
+        // window registry. In a multi-window setup the "first showing window"
+        // fallback can resolve a different window than the one this view renders
+        // in, which would bind the view state and the pinch gesture listener where
+        // the browser isn't (gesture events are delivered per window). Keying the
+        // effect on the id also rebinds both when a tab moves across windows.
+        val hostWindowId = LocalWindowId.current
+
+        DisposableEffect(browser, hostWindowId) {
             // Find a valid window to associate with the BrowserView
-            val awtWindow = Window.getWindows()
-                .firstOrNull { window ->
+            val awtWindow = hostWindowId?.let { WindowFocusManager.getWindow(it) }
+                ?: Window.getWindows().firstOrNull { window ->
                     try {
                         window.isDisplayable && window.isShowing
                     } catch (e: Exception) {
@@ -1305,52 +1346,46 @@ internal class BrowserHandleImpl(
                 logger.warn(LogCategory.BROWSER, "No valid window available for BrowserViewState")
             }
 
+            // Set up the macOS trackpad pinch-to-zoom handler on the same window
+            // the view is bound to. The gesture APIs only allow listening on a
+            // Swing component, and the Compose BrowserView has no dedicated one,
+            // so the listener sits on the window's root pane and receives pinches
+            // made anywhere in that window. Two guards keep that from zooming the
+            // wrong browser: callbacks are gated on the pointer actually hovering
+            // this view, and the listener is removed when this view leaves
+            // composition (hidden tab, closed split).
+            var gesturePane: javax.swing.JComponent? = null
+            var gestureToken: Any? = null
+            if (awtWindow != null && MacOSGestureHandler.isSupported()) {
+                try {
+                    val rootPane = (awtWindow as? javax.swing.RootPaneContainer)?.rootPane
+
+                    if (rootPane != null) {
+                        gestureToken = MacOSGestureHandler.addMagnificationListener(
+                            rootPane,
+                            onZoomIn = { gatedPinchZoom("in") { zoomIn() } },
+                            onZoomOut = { gatedPinchZoom("out") { zoomOut() } }
+                        )
+                        if (gestureToken != null) {
+                            gesturePane = rootPane
+                            logger.debug(LogCategory.BROWSER, "Added macOS pinch-to-zoom gesture handler")
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.warn(LogCategory.BROWSER, "Failed to set up pinch-to-zoom gestures", error = e)
+                }
+            }
+
             onDispose {
+                pointerOverBrowserView = false
+                val pane = gesturePane
+                val token = gestureToken
+                if (pane != null && token != null) {
+                    MacOSGestureHandler.removeMagnificationListener(pane, token)
+                }
                 viewState?.close()
                 viewState = null
                 currentViewState = null
-            }
-        }
-
-        // Set up macOS native trackpad pinch gesture handler for zoom
-        LaunchedEffect(browser) {
-            if (MacOSGestureHandler.isSupported()) {
-                val window = Window.getWindows().firstOrNull { it.isDisplayable && it.isShowing }
-                if (window != null) {
-                    // Add magnification listener for pinch-to-zoom gestures
-                    SwingUtilities.invokeLater {
-                        try {
-                            // Find the JxBrowser component in the window
-                            fun findBrowserComponent(component: java.awt.Component): javax.swing.JComponent? {
-                                if (component is javax.swing.JComponent && component.name?.contains("BrowserView") == true) {
-                                    return component
-                                }
-                                if (component is java.awt.Container) {
-                                    for (child in component.components) {
-                                        val found = findBrowserComponent(child)
-                                        if (found != null) return found
-                                    }
-                                }
-                                return null
-                            }
-
-                            // Try to add gesture listener to the window's root pane or content pane
-                            val rootPane = (window as? javax.swing.JFrame)?.rootPane
-                                ?: (window as? javax.swing.JDialog)?.rootPane
-
-                            if (rootPane != null) {
-                                MacOSGestureHandler.addMagnificationListener(
-                                    rootPane,
-                                    onZoomIn = { zoomIn() },
-                                    onZoomOut = { zoomOut() }
-                                )
-                                logger.debug(LogCategory.BROWSER, "Added macOS pinch-to-zoom gesture handler")
-                            }
-                        } catch (e: Exception) {
-                            logger.warn(LogCategory.BROWSER, "Failed to set up pinch-to-zoom gestures", error = e)
-                        }
-                    }
-                }
             }
         }
 
@@ -1360,6 +1395,10 @@ internal class BrowserHandleImpl(
                 state = state,
                 modifier = Modifier
                     .fillMaxSize()
+                    // Hover tracking that gates the window-wide pinch gesture
+                    // listener to this view (see the DisposableEffect above)
+                    .onPointerEvent(PointerEventType.Enter) { pointerOverBrowserView = true }
+                    .onPointerEvent(PointerEventType.Exit) { pointerOverBrowserView = false }
                     .onPointerEvent(PointerEventType.Press) { event ->
                         // Get the native AWT mouse event to check button codes
                         val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
