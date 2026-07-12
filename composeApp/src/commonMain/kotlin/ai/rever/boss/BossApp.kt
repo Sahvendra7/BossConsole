@@ -27,6 +27,7 @@ import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
+import ai.rever.boss.components.dialogs.openUrlInBrowser
 import ai.rever.boss.components.dialogs.ShortcutHelpDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
 import ai.rever.boss.components.dialogs.CloneProjectDialog
@@ -152,6 +153,7 @@ import ai.rever.boss.components.workspaces.WorkspaceSerializer
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.TemplatePanelConfig
 import ai.rever.boss.dashboard.SplitTemplatesManager
+import ai.rever.boss.platform.openFileWithSystemDefault
 import ai.rever.boss.platform.rememberDirectoryPicker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -566,6 +568,15 @@ private fun openTerminalLinkInternal(
                 navigateToLineIfNeeded()
             } else {
                 splitViewState.openUrlInActivePanel(url, "Loading...")
+            }
+        }
+        TerminalLinkOpenMode.SYSTEM_DEFAULT -> {
+            // Open outside BOSS with the OS default handler (browser or file app).
+            // Line:column navigation doesn't apply to external apps.
+            if (isFile) {
+                openFileWithSystemDefault(stripFilePrefix(url))
+            } else {
+                openUrlInBrowser(url)
             }
         }
     }

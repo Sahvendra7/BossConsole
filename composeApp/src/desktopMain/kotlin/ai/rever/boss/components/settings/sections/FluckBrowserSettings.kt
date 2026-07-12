@@ -140,7 +140,8 @@ fun FluckBrowserSettings() {
                 "Existing Split" to TerminalLinkOpenMode.EXISTING_SPLIT,
                 "Vertical Split" to TerminalLinkOpenMode.VERTICAL_SPLIT,
                 "Horizontal Split" to TerminalLinkOpenMode.HORIZONTAL_SPLIT,
-                "New Tab" to TerminalLinkOpenMode.NEW_TAB
+                "New Tab" to TerminalLinkOpenMode.NEW_TAB,
+                "System Default" to TerminalLinkOpenMode.SYSTEM_DEFAULT
             )
 
             SettingsDropdown(
@@ -161,6 +162,7 @@ fun FluckBrowserSettings() {
                     TerminalLinkOpenMode.VERTICAL_SPLIT -> "Opens in a new panel to the right"
                     TerminalLinkOpenMode.HORIZONTAL_SPLIT -> "Opens in a new panel below"
                     TerminalLinkOpenMode.NEW_TAB -> "Opens in a new tab"
+                    TerminalLinkOpenMode.SYSTEM_DEFAULT -> "Opens outside BOSS with the system default app"
                 }
             )
 

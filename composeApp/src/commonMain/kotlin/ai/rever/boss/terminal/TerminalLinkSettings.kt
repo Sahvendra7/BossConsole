@@ -16,7 +16,9 @@ enum class TerminalLinkOpenMode {
     /** Open in horizontal split */
     HORIZONTAL_SPLIT,
     /** Open in new tab (default behavior) */
-    NEW_TAB
+    NEW_TAB,
+    /** Open with the operating system default handler (browser/app) */
+    SYSTEM_DEFAULT
 }
 
 /**

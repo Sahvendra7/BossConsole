@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Launch
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material.icons.outlined.ViewAgenda
@@ -136,6 +137,15 @@ fun TerminalLinkOpenDialog(
                     title = "New Tab",
                     description = "Open in browser tab",
                     onClick = { onOpenLink(TerminalLinkOpenMode.NEW_TAB, rememberChoice) }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LinkOpenOption(
+                    icon = Icons.AutoMirrored.Outlined.Launch,
+                    title = "System Default",
+                    description = "Open outside BOSS with the default app",
+                    onClick = { onOpenLink(TerminalLinkOpenMode.SYSTEM_DEFAULT, rememberChoice) }
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
