@@ -381,6 +381,16 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/latest-release/deno.json"
 entrypoint = "./functions/latest-release/index.ts"
+
+[functions.crash-report]
+enabled = true
+# MUST be false: the crash dialog posts without a user session (crashes can happen
+# before/without sign-in). The function does its own gating — it requires the
+# apikey header to match SUPABASE_ANON_KEY and rate-limits per IP; the GitHub
+# token stays server-side.
+verify_jwt = false
+import_map = "./functions/crash-report/deno.json"
+entrypoint = "./functions/crash-report/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/redirect/*.html" ]

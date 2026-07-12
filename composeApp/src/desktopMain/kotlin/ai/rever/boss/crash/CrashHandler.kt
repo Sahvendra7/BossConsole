@@ -1,5 +1,6 @@
 package ai.rever.boss.crash
 
+import ai.rever.boss.plugin.loader.PluginClassLoader
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
@@ -224,8 +225,37 @@ object CrashHandler {
             stackTrace = sanitizedStackTrace,
             systemInfo = collectSystemInfo(),
             appInfo = collectAppInfo(),
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            pluginId = attributePluginId(throwable)
         )
+    }
+
+    /**
+     * Attribute a crash to a dynamically loaded plugin: the first stack frame
+     * (root cause first, so the crash origin wins over wrapping layers) whose
+     * class was defined by a [PluginClassLoader] names the culprit. Host
+     * crashes return null. Best-effort — attribution must never make crash
+     * handling itself fail.
+     */
+    internal fun attributePluginId(throwable: Throwable): String? {
+        return try {
+            val chain = mutableListOf<Throwable>()
+            var t: Throwable? = throwable
+            while (t != null && chain.size < 12 && t !in chain) {
+                chain.add(t)
+                t = t.cause
+            }
+            for (cause in chain.asReversed()) {
+                (cause.javaClass.classLoader as? PluginClassLoader)?.let { return it.pluginId }
+                for (frame in cause.stackTrace) {
+                    PluginClassLoader.findPluginForClass(frame.className)?.let { return it }
+                }
+            }
+            null
+        } catch (e: Throwable) {
+            logger.warn(LogCategory.SYSTEM, "Plugin attribution failed: ${e.message}")
+            null
+        }
     }
 
     /**

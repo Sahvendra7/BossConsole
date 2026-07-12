@@ -1,6 +1,7 @@
 package ai.rever.boss.crash
 
 import ai.rever.boss.config.GitHubConfig
+import ai.rever.boss.config.SupabaseClientConfig
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -25,8 +26,18 @@ import java.time.format.DateTimeFormatter
 /**
  * Service for submitting crash reports to GitHub Issues.
  *
- * Submits crash reports to the BossConsole-Releases repository
- * with deduplication support (adds comment to existing issue if same crash).
+ * Primary path: the `crash-report` Supabase Edge Function, which holds the
+ * GitHub token server-side (end users have no local token) and routes the
+ * issue to the crashing plugin's own repository when the report carries a
+ * pluginId, falling back to BossConsole-Releases for host crashes.
+ *
+ * Fallback path (proxy unreachable): direct GitHub API with a locally
+ * configured token — dev machines with GITHUB_TOKEN or `gh` CLI auth. The
+ * direct path always files in BossConsole-Releases since plugin→repo
+ * resolution lives server-side.
+ *
+ * Both paths deduplicate by crash signature (comment on the existing issue
+ * instead of opening a duplicate).
  */
 object CrashReportService {
     private val logger = BossLogger.forComponent("CrashReportService")
@@ -34,6 +45,9 @@ object CrashReportService {
     private const val GITHUB_API_BASE = "https://api.github.com"
     private const val CRASH_REPO = "risa-labs-inc/BossConsole-Releases"
     private const val ISSUES_ENDPOINT = "$GITHUB_API_BASE/repos/$CRASH_REPO/issues"
+
+    private val proxyEndpoint: String
+        get() = "${SupabaseClientConfig.functionUrl}/crash-report"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -61,21 +75,36 @@ object CrashReportService {
     }
 
     /**
-     * Submit a crash report to GitHub Issues.
+     * Submit a crash report.
+     *
+     * Tries the server-side proxy first (works for every user, no local GitHub
+     * token needed). If the proxy fails AND a local GitHub token is available
+     * (dev machines), falls back to the direct GitHub API.
      *
      * @param report The crash report to submit
      * @return Result indicating success with issue URL, or error
      */
     suspend fun submitCrashReport(report: CrashReport): SubmitResult = withContext(Dispatchers.IO) {
+        val proxyResult = submitViaProxy(report)
+        if (proxyResult is ProxyResult.Done) {
+            // Success, or a deliberate server rejection (4xx: throttled,
+            // rejected payload) — re-filing directly would sidestep the
+            // server's decision, so no fallback for those.
+            return@withContext proxyResult.result
+        }
+        proxyResult as ProxyResult.FallbackWorthy
+
+        val authContext = GitHubConfig.getAuthContext()
+        if (!authContext.isAuthenticated) {
+            // No local token to fall back to — report the proxy's error.
+            return@withContext proxyResult.error
+        }
+
+        // Accepted edge: if the proxy filed the issue but its response was lost
+        // (timeout mid-flight), this fallback can file a near-duplicate. Dev-only
+        // (requires a local token) and rare; the duplicate is cheap to close.
+        logger.warn(LogCategory.NETWORK, "Crash report proxy failed, falling back to direct GitHub API")
         try {
-            val authContext = GitHubConfig.getAuthContext()
-
-            if (!authContext.isAuthenticated) {
-                return@withContext SubmitResult.Error(
-                    "GitHub authentication required. Please configure a GitHub token."
-                )
-            }
-
             // Search for existing issue with same signature
             val existingIssue = searchForExistingIssue(report.signature, authContext)
 
@@ -90,6 +119,83 @@ object CrashReportService {
         } catch (e: Exception) {
             logger.error(LogCategory.NETWORK, "Failed to submit crash report", error = e)
             SubmitResult.Error("Failed to submit: ${e.message ?: "Unknown error"}")
+        }
+    }
+
+    /**
+     * Proxy submission outcome: [Done] carries a final answer (success or a
+     * deliberate 4xx rejection the client must respect); [FallbackWorthy]
+     * means the proxy could not be reached or failed server-side (transport
+     * error / 5xx), where retrying via the direct GitHub path makes sense.
+     */
+    private sealed class ProxyResult {
+        data class Done(val result: SubmitResult) : ProxyResult()
+        data class FallbackWorthy(val error: SubmitResult.Error) : ProxyResult()
+    }
+
+    /**
+     * Submit the crash report through the crash-report Edge Function.
+     * The server resolves the target repository (plugin repo or
+     * BossConsole-Releases) and handles signature deduplication.
+     */
+    private suspend fun submitViaProxy(report: CrashReport): ProxyResult {
+        return try {
+            val response = httpClient.post(proxyEndpoint) {
+                headers {
+                    append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
+                    // The function gates on the anon key (verify_jwt=false, so it
+                    // checks this itself) to keep the endpoint from being an
+                    // anonymous issue-creation API.
+                    append("apikey", SupabaseClientConfig.anonKey)
+                }
+                contentType(ContentType.Application.Json)
+                setBody(ProxySubmitRequest(
+                    signature = report.signature,
+                    title = "${CrashSignature.formatForTitle(report.signature)} Crash: ${report.exceptionType}",
+                    body = formatIssueBody(report, isNewReport = true),
+                    commentBody = formatIssueBody(report, isNewReport = false),
+                    pluginId = report.pluginId,
+                    appVersion = report.appInfo.version
+                ))
+            }
+
+            val status = response.status.value
+            when {
+                status in 200..299 -> {
+                    val result = response.body<ProxySubmitResponse>()
+                    logger.info(LogCategory.NETWORK, "Crash report submitted via proxy", mapOf(
+                        "repo" to result.repo,
+                        "isNewIssue" to result.isNewIssue,
+                        "signature" to report.signature
+                    ))
+                    ProxyResult.Done(SubmitResult.Success(result.issueUrl, result.isNewIssue))
+                }
+                status in 400..499 -> {
+                    // Deliberate rejection (throttled, invalid payload, bad key)
+                    // — final, do not re-file via the direct path.
+                    logger.error(LogCategory.NETWORK, "Crash report proxy rejected the report", mapOf(
+                        "status" to status,
+                        "error" to response.bodyAsText().take(200)
+                    ))
+                    ProxyResult.Done(SubmitResult.Error(
+                        "Crash report was rejected (HTTP $status). Please try again later."
+                    ))
+                }
+                else -> {
+                    logger.error(LogCategory.NETWORK, "Crash report proxy failed server-side", mapOf(
+                        "status" to status,
+                        "error" to response.bodyAsText().take(200)
+                    ))
+                    ProxyResult.FallbackWorthy(SubmitResult.Error(
+                        "Failed to submit crash report (HTTP $status). Please try again later."
+                    ))
+                }
+            }
+        } catch (e: Exception) {
+            logger.error(LogCategory.NETWORK, "Crash report proxy unreachable", error = e)
+            ProxyResult.FallbackWorthy(SubmitResult.Error(
+                "Failed to submit crash report: ${e.message ?: "network error"}"
+            ))
         }
     }
 
@@ -244,6 +350,7 @@ object CrashReportService {
             appendLine("| Property | Value |")
             appendLine("|----------|-------|")
             appendLine("| BOSS Version | ${report.appInfo.version} |")
+            report.pluginId?.let { appendLine("| Plugin | $it |") }
             appendLine("| Platform | ${report.appInfo.platform} |")
             appendLine("| OS | ${report.systemInfo.osName} ${report.systemInfo.osVersion} |")
             appendLine("| Architecture | ${report.systemInfo.osArch} |")
@@ -292,6 +399,25 @@ object CrashReportService {
             }
         }
     }
+
+    // Data classes for the crash-report Edge Function
+
+    @Serializable
+    private data class ProxySubmitRequest(
+        val signature: String,
+        val title: String,
+        val body: String,
+        val commentBody: String,
+        val pluginId: String? = null,
+        val appVersion: String
+    )
+
+    @Serializable
+    private data class ProxySubmitResponse(
+        val issueUrl: String,
+        val isNewIssue: Boolean,
+        val repo: String
+    )
 
     // Data classes for GitHub API
 

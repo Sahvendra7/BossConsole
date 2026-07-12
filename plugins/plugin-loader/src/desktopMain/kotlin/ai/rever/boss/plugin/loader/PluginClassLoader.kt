@@ -54,6 +54,29 @@ class PluginClassLoader(
         private val logger = BossLogger.forComponent("PluginClassLoader")
 
         /**
+         * Weak process-wide registry of every constructed plugin classloader,
+         * across all windows' managers (managers are per-window; crash
+         * attribution needs the whole process). Weak so unloaded loaders drop
+         * off with GC; unloading-but-not-yet-collected loaders intentionally
+         * remain visible — a crash caused by a just-unloaded plugin's lingering
+         * class should still attribute to that plugin.
+         */
+        private val allInstances: MutableSet<PluginClassLoader> =
+            java.util.Collections.newSetFromMap(java.util.WeakHashMap())
+
+        /**
+         * Find the plugin whose classloader DEFINED [className], if any.
+         * Used by the crash handler to attribute an uncaught exception's stack
+         * frames to a plugin. Only classes the plugin loader itself defined
+         * match — shared parent-first classes resolve to the host and return
+         * null here.
+         */
+        fun findPluginForClass(className: String): String? {
+            val snapshot = synchronized(allInstances) { allInstances.toList() }
+            return snapshot.firstOrNull { it.definedClassNamed(className) }?.pluginId
+        }
+
+        /**
          * Default packages that are always shared with the host.
          * These include Kotlin stdlib, coroutines, and BOSS plugin API.
          */
@@ -94,6 +117,26 @@ class PluginClassLoader(
             "ai.rever.boss.plugin.ui.",
             "ai.rever.boss.plugin.scrollbar."
         )
+    }
+
+    init {
+        synchronized(allInstances) { allInstances.add(this) }
+    }
+
+    /**
+     * Whether this loader defined the class named [name] (i.e. the class came
+     * from the plugin JAR, not a shared parent-first package). Reads the JVM's
+     * loaded-class table only — never triggers a load, so it is safe during
+     * crash handling and on closed loaders.
+     */
+    internal fun definedClassNamed(name: String): Boolean {
+        val cls = try {
+            findLoadedClass(name)
+        } catch (_: Throwable) {
+            // Closed/unloading loaders can throw Errors; attribution is best-effort.
+            null
+        }
+        return cls != null && cls.classLoader === this
     }
 
     /**

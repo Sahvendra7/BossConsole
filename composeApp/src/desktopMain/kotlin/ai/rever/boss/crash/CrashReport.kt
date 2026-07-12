@@ -18,6 +18,9 @@ import kotlinx.serialization.Serializable
  * @param timestamp Epoch milliseconds when the crash occurred
  * @param userNotes Optional notes provided by the user
  * @param recentLogs Optional sanitized log entries (user consent required)
+ * @param pluginId Plugin the crash is attributed to (a stack frame's class was
+ *   defined by that plugin's classloader), or null for host crashes. Routes the
+ *   GitHub issue to the plugin's own repository.
  */
 data class CrashReport(
     val signature: String,
@@ -28,7 +31,8 @@ data class CrashReport(
     val appInfo: AppInfo,
     val timestamp: Long,
     val userNotes: String? = null,
-    val recentLogs: List<SanitizedLogEntry>? = null
+    val recentLogs: List<SanitizedLogEntry>? = null,
+    val pluginId: String? = null
 )
 
 /**
