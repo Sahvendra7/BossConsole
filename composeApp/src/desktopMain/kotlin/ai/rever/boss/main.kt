@@ -234,6 +234,15 @@ fun main(args: Array<String>) {
         logger.warn(LogCategory.SYSTEM, "Proactive browser lock cleanup failed", error = e)
     }
 
+    // Pre-warm the browser engine off the UI thread so the first browser tab
+    // opens against an already-running Chromium instead of paying the full
+    // engine boot inside its composition. Opt out with BOSS_BROWSER_PREWARM=false.
+    try {
+        ai.rever.boss.plugin.browser.FluckEngine.prewarmInBackground()
+    } catch (e: Exception) {
+        logger.warn(LogCategory.SYSTEM, "Browser engine pre-warm failed to start", error = e)
+    }
+
     // Parse CLI arguments if provided
     if (args.isNotEmpty()) {
         try {

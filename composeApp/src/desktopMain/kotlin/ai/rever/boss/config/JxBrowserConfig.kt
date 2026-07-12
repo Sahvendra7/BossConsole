@@ -24,8 +24,14 @@ object JxBrowserConfig {
     val defaultUrl: String = ConfigLoader.getConfig("jxbrowser.default.url",
         "https://www.risalabs.ai") ?: "https://www.risalabs.ai"
     
-    // OFF_SCREEN mode for lightweight Compose popups compatibility
-    // HARDWARE_ACCELERATED has issues with Compose overlays rendering behind browser
+    // OFF_SCREEN mode for lightweight Compose popups compatibility.
+    // HARDWARE_ACCELERATED renders into a foreign native window/CALayer owned by
+    // Chromium's GPU process, which always sits above the Compose scene — Compose
+    // overlays (menus, dialogs, toasts) cannot draw over it. Re-verified against
+    // JxBrowser 9.3 + Compose Multiplatform 1.11: still true (CMP interop blending
+    // only blends Swing-rendered content, not foreign GPU surfaces), so OFF_SCREEN
+    // remains the required mode. Rendering-perf work should target the engine
+    // boot path and Chromium switches (see FluckEngine.applyPerformanceSwitches).
     val renderingMode = com.teamdev.jxbrowser.engine.RenderingMode.OFF_SCREEN
 
 } 
