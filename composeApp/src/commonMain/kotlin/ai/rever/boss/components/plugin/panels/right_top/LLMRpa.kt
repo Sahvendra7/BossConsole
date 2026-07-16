@@ -4,7 +4,6 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
-import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
@@ -923,12 +922,3 @@ open class LLMRpaComponent(
         }
     }
 }
-
-/**
- * Factory for creating platform-specific LLM RPA components
- */
-expect class LLMRpaFactory() {
-    fun createComponent(ctx: ComponentContext, panelInfo: PanelInfo): LLMRpaComponent
-}
-
-

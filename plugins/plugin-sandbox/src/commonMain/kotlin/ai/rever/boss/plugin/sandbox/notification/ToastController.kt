@@ -89,20 +89,3 @@ data class ToastAction(
     val label: String,
     val onClick: () -> Unit
 )
-
-/**
- * No-op implementation of ToastController for testing or when no UI is available.
- */
-object NoOpToastController : ToastController {
-    override fun show(message: ToastMessage) {
-        // No-op
-    }
-
-    override fun dismiss(id: String) {
-        // No-op
-    }
-
-    override fun dismissAll() {
-        // No-op
-    }
-}

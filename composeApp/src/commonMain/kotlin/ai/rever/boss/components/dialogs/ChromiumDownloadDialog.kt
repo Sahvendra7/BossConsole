@@ -17,8 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 /**
  * The actual download UI content - a Surface with progress info.
@@ -161,48 +159,6 @@ fun ChromiumDownloadContent(
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
-    ) {
-        DownloadSurface(
-            progress = progress,
-            downloadedMB = downloadedMB,
-            totalMB = totalMB,
-            status = status,
-            error = error,
-            onCancel = onCancel,
-            onRetry = onRetry
-        )
-    }
-}
-
-/**
- * Dialog shown during BOSS-branded Chromium download.
- * Displays download progress with a progress bar and MB downloaded/total.
- * Use this for showing as a modal overlay in an existing window.
- *
- * @param progress Download progress from 0.0 to 1.0
- * @param downloadedMB Megabytes downloaded
- * @param totalMB Total megabytes to download
- * @param status Current status message
- * @param error Error message if download failed
- * @param onCancel Callback when user cancels download
- * @param onRetry Callback when user retries after error
- */
-@Composable
-fun ChromiumDownloadDialog(
-    progress: Float,
-    downloadedMB: Long,
-    totalMB: Long,
-    status: String = "Installing BOSS Browser Engine...",
-    error: String? = null,
-    onCancel: () -> Unit,
-    onRetry: (() -> Unit)? = null
-) {
-    Dialog(
-        onDismissRequest = { /* Non-dismissable during download */ },
-        properties = DialogProperties(
-            dismissOnClickOutside = false,
-            dismissOnBackPress = false
-        )
     ) {
         DownloadSurface(
             progress = progress,

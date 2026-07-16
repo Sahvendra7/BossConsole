@@ -6,7 +6,6 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
-import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
 import androidx.compose.foundation.BorderStroke
@@ -1354,12 +1353,3 @@ enum class FeedbackType {
     SUCCESS,
     INFO
 }
-
-/**
- * Factory for creating platform-specific RPA Recorder components
- */
-expect class RpaRecorderFactory() {
-    fun createComponent(ctx: ComponentContext, panelInfo: PanelInfo): RpaRecorderComponent
-}
-
-

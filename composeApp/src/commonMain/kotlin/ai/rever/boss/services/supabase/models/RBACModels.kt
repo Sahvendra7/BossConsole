@@ -2,7 +2,6 @@ package ai.rever.boss.services.supabase.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlin.time.Instant
 
 /**
  * User role assignment from the user_roles table
@@ -91,27 +90,6 @@ data class RoleClaims(
      */
     fun hasAllRoles(vararg roles: String): Boolean = roles.all { hasRole(it) }
 }
-
-/**
- * Request/Response DTOs for role management operations
- */
-@Serializable
-data class AssignRoleRequest(
-    val userId: String,
-    val role: String
-)
-
-@Serializable
-data class RemoveRoleRequest(
-    val userId: String,
-    val role: String
-)
-
-@Serializable
-data class RoleAssignmentResult(
-    val success: Boolean,
-    val message: String? = null
-)
 
 /**
  * User information with roles (supports dynamic roles)

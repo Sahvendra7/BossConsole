@@ -10,9 +10,6 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.remember
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 private val logger = BossLogger.forComponent("BookmarkAPIAccess")
 
@@ -144,12 +141,4 @@ fun rememberBookmarkCollections(): List<BookmarkCollection> {
     } else {
         emptyList()
     }
-}
-
-/**
- * Composable helper to check if bookmarks plugin is available.
- */
-@Composable
-fun isBookmarksPluginAvailable(): Boolean {
-    return remember { BookmarkAPIAccess.getProvider() != null }
 }

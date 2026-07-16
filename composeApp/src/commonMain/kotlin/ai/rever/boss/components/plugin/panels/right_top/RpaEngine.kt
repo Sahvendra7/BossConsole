@@ -6,7 +6,6 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
-import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -38,7 +37,6 @@ import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 
@@ -843,13 +841,3 @@ open class RpaEngineComponent(
     }
     
 }
-
-
-/**
- * Factory for creating platform-specific RPA Engine components
- */
-expect class RpaEngineFactory() {
-    fun createComponent(ctx: ComponentContext, panelInfo: PanelInfo): RpaEngineComponent
-}
-
-
