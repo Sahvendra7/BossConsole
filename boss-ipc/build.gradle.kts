@@ -69,7 +69,7 @@ if (protocAvailable) {
         }
         plugins {
             create("grpc") {
-                artifact = "io.grpc:protoc-gen-grpc-java:1.72.0"
+                artifact = "io.grpc:protoc-gen-grpc-java:1.82.2"
             }
             create("grpckt") {
                 artifact = "io.grpc:protoc-gen-grpc-kotlin:1.4.3:jdk8@jar"
