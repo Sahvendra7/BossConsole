@@ -1215,6 +1215,12 @@ class BossTabsComponent(
     ) : TabUpdateProvider {
 
         override fun updateTitle(title: String) {
+            // A blank title never improves the tab chip — e.g. about:blank (the
+            // dashboard/home state) fires TitleChanged with an empty title on
+            // back-navigation, which used to blank the tab. Keep the last
+            // meaningful title instead.
+            if (title.isBlank()) return
+
             val tabs = bossTabsComponent.tabsState.value.tabs
             val tabIndex = tabs.indexOfFirst { it.id == tabId }
             if (tabIndex < 0) return
@@ -1302,9 +1308,19 @@ class BossTabsComponent(
             val currentTab = tabs[tabIndex]
 
             if (currentTab is FluckTabInfo) {
-                // Get current title for navigation update
-                val title = currentTab.title
-                val updatedTab = currentTab.updateNavigation(title, url)
+                // Landing on home (about:blank renders the dashboard) means no
+                // TitleChanged/FaviconChanged will follow — apply the home identity
+                // here so the tab never keeps the previous page's title/favicon.
+                // The home title also goes into the navigation-history entry, so
+                // the visit isn't recorded under the previous page's title.
+                val isHome = FluckTabInfo.isHomeUrl(url)
+                val title = if (isHome) FluckTabInfo.HOME_TITLE else currentTab.title
+                var updatedTab = currentTab.updateNavigation(title, url)
+                if (isHome) {
+                    updatedTab = updatedTab
+                        .updateTitle(FluckTabInfo.HOME_TITLE)
+                        .updateFaviconCacheKey(null)
+                }
                 bossTabsComponent.updateTab(tabIndex, updatedTab)
             }
         }

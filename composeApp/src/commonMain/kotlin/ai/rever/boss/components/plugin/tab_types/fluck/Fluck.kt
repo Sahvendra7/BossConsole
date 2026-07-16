@@ -15,6 +15,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.*
@@ -60,8 +61,13 @@ class FluckTabInfo(
     var faviconCacheKey: String? = null // Cache key for persisted favicon
 ) : TabInfo {
     override val title: String get() = _title
-    override val icon: ImageVector get() = _icon
-    override val tabIcon: TabIcon? get() = _tabIcon ?: ai.rever.boss.plugin.api.TabIcon.Vector(_icon)
+
+    // On the home page the tab shows its own Home identity instead of the generic
+    // browser globe — unless an explicit icon override (_tabIcon via
+    // updateIcon/updateTabIcon) is in place.
+    private val isOnHomePage: Boolean get() = isHomeUrl(_currentUrl)
+    override val icon: ImageVector get() = if (isOnHomePage) Icons.Outlined.Home else _icon
+    override val tabIcon: TabIcon? get() = _tabIcon ?: ai.rever.boss.plugin.api.TabIcon.Vector(icon)
     val currentUrl: String @Synchronized get() = _currentUrl
     val currentZoomLevel: Double get() = _currentZoomLevel
 
@@ -224,6 +230,18 @@ class FluckTabInfo(
         }
     }
 
+    companion object {
+        /** Tab title shown while a browser tab is on the home page. */
+        const val HOME_TITLE = "Home"
+
+        /**
+         * The home (dashboard) state: a blank URL or about:blank renders the
+         * dashboard instead of web content. Single definition shared by the
+         * tab's icon logic and BossTabUpdateProvider's title/favicon handling
+         * so the two can't drift.
+         */
+        fun isHomeUrl(url: String): Boolean = url.isBlank() || url == "about:blank"
+    }
 }
 
 // Platform-specific browser creation

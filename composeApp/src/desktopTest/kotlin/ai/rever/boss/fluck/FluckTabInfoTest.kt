@@ -1,7 +1,12 @@
 package ai.rever.boss.fluck
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.api.TabTypeId
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Warning
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -332,6 +337,78 @@ class FluckTabInfoTest {
         // Different ids should not be equal
         assertTrue(tab1 != tab2)
         assertTrue(tab1.hashCode() != tab2.hashCode())
+    }
+
+    // ==================== HOME (DASHBOARD) TAB IDENTITY TESTS ====================
+
+    @Test
+    fun `home page shows Home icon instead of the generic globe`() {
+        assertEquals(Icons.Outlined.Home, createTabInfo(url = "").icon)
+        assertEquals(Icons.Outlined.Home, createTabInfo(url = "about:blank").icon)
+        assertEquals(
+            TabIcon.Vector(Icons.Outlined.Home),
+            createTabInfo(url = "about:blank").tabIcon
+        )
+    }
+
+    @Test
+    fun `real page keeps the default browser icon`() {
+        val tabInfo = createTabInfo(url = "https://example.com")
+        assertEquals(Icons.Outlined.Language, tabInfo.icon)
+        assertEquals(TabIcon.Vector(Icons.Outlined.Language), tabInfo.tabIcon)
+    }
+
+    @Test
+    fun `icon follows navigation between home and real pages`() {
+        val tabInfo = createTabInfo(url = "about:blank")
+        assertEquals(Icons.Outlined.Home, tabInfo.icon)
+
+        val onPage = tabInfo.updateNavigation("Example", "https://example.com")
+        assertEquals(Icons.Outlined.Language, onPage.icon)
+
+        val backHome = onPage.updateNavigation("", "about:blank")
+        assertEquals(Icons.Outlined.Home, backHome.icon)
+    }
+
+    @Test
+    fun `explicit tabIcon override wins over the home icon`() {
+        val override = TabIcon.Vector(Icons.Outlined.Warning)
+        val tabInfo = createTabInfo(url = "about:blank").updateTabIcon(override)
+        assertEquals(override, tabInfo.tabIcon)
+    }
+
+    @Test
+    fun `isHomeUrl matches blank and about-blank urls only`() {
+        assertTrue(FluckTabInfo.isHomeUrl(""))
+        assertTrue(FluckTabInfo.isHomeUrl("   "))
+        assertTrue(FluckTabInfo.isHomeUrl("about:blank"))
+        assertTrue(!FluckTabInfo.isHomeUrl("https://example.com"))
+        assertTrue(!FluckTabInfo.isHomeUrl("about:blank#anchor"))
+    }
+
+    @Test
+    fun `home landing transform sets Home title and clears the stale favicon`() {
+        // The exact transform BossTabUpdateProvider.updateUrl applies when a
+        // navigation lands on home: the previous page's title and favicon must
+        // both be replaced by the home identity.
+        val onPage = FluckTabInfo(
+            id = "test-tab",
+            typeId = TabTypeId("fluck"),
+            _title = "Google",
+            url = "https://google.com",
+            faviconCacheKey = "stale-favicon-key"
+        )
+
+        val home = onPage.updateNavigation(FluckTabInfo.HOME_TITLE, "about:blank")
+            .updateTitle(FluckTabInfo.HOME_TITLE)
+            .updateFaviconCacheKey(null)
+
+        assertEquals(FluckTabInfo.HOME_TITLE, home.title)
+        assertEquals(null, home.faviconCacheKey)
+        assertEquals("about:blank", home.currentUrl)
+        assertEquals(Icons.Outlined.Home, home.icon)
+        // The history entry records the home visit under its own title.
+        assertEquals(Pair(FluckTabInfo.HOME_TITLE, "about:blank"), home.navigationHistory.last())
     }
 
     @Test
