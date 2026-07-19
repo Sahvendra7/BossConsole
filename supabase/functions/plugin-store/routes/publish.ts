@@ -15,7 +15,7 @@ import {
 } from "../types/schemas.ts"
 import { getPlugin, createPlugin, setPluginTags, getPluginById, updatePlugin } from "../services/plugins.ts"
 import { createVersion, versionExists, finalizeVersion, getVersionById } from "../services/versions.ts"
-import { getSignedUploadUrl, generateJarPath, uploadJar } from "../services/storage.ts"
+import { getSignedUploadUrl, getSignedDownloadUrl, generateJarPath, uploadJar } from "../services/storage.ts"
 import { getAuthenticatedUser, getUserDisplayName, logApiKeyAction } from "../utils/auth.ts"
 import {
   fetchPluginFromGitHub,
@@ -393,6 +393,14 @@ const finalizeVersionRoute = createRoute({
           schema: ErrorResponseSchema
         }
       }
+    },
+    502: {
+      description: 'Failed to fetch or hash the uploaded JAR',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema
+        }
+      }
     }
   }
 })
@@ -431,8 +439,54 @@ publish.openapi(finalizeVersionRoute, async (ctx) => {
       return ctx.json({ success: false, error: 'Not authorized' }, 403)
     }
 
+    // Recompute the hash server-side — the store signature must anchor to
+    // bytes the server observed, never a client claim. The client-supplied
+    // sha256 stays as a sanity check, mirroring the GitHub publish path.
+    //
+    // Cost: this re-streams the just-uploaded JAR from storage once per
+    // publish (memory-flat, capped by MAX_HASHABLE_BYTES=500MB in
+    // computeRemoteSha256). Same-region storage streams run well inside the
+    // function's wall-clock budget for real plugin sizes (~1-100MB); storage
+    // exposes no trustworthy precomputed sha256 to use instead (object
+    // eTags are md5/multipart-composite).
+    const isExternal = version.jarPath.startsWith('https://')
+    if (isExternal && !isAllowedExternalJarUrl(version.jarPath)) {
+      return ctx.json({ success: false, error: 'External JAR URL host not allowed' }, 400)
+    }
+    const jarUrl = isExternal
+      ? version.jarPath
+      : await getSignedDownloadUrl(supabase, version.jarPath)
+
+    let computedSha256: string
+    let observedBytes: number
+    const hashStartMs = Date.now()
+    try {
+      const hashed = await computeRemoteSha256(jarUrl)
+      computedSha256 = hashed.sha256
+      observedBytes = hashed.totalBytes
+    } catch (e) {
+      console.error(`finalize hash recompute FAILED after ${Date.now() - hashStartMs}ms: version=${body.versionId}`)
+      return ctx.json({
+        success: false,
+        error: `Failed to compute JAR hash: ${(e as Error).message}`
+      }, 502)
+    }
+    // Telemetry for the re-stream cost: finalize latency scales with JAR
+    // size (capped at MAX_HASHABLE_BYTES) — watch these lines in prod to see
+    // whether large plugins push toward the function's wall-clock budget.
+    console.log(
+      `finalize hash recompute: version=${body.versionId} bytes=${observedBytes} ms=${Date.now() - hashStartMs}`,
+    )
+
+    if (body.sha256.toLowerCase() !== computedSha256) {
+      return ctx.json({
+        success: false,
+        error: `SHA-256 mismatch: client reported ${body.sha256.toLowerCase()}, server computed ${computedSha256}. The uploaded JAR may not match what you built locally.`
+      }, 400)
+    }
+
     // Finalize version
-    await finalizeVersion(supabase, body.versionId, body.sha256, body.jarSize)
+    await finalizeVersion(supabase, body.versionId, computedSha256, observedBytes, plugin.pluginId, version.version)
 
     // Log API key usage if applicable
     if (user.apiKeyId) {
@@ -641,8 +695,10 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
       manifest.minApiVersion || ''
     )
 
-    // Finalize version with SHA256 and size
-    await finalizeVersion(supabase, versionResult.id, sha256, jarSize)
+    // Finalize version with SHA256 and size. Sign the exact version string
+    // stored on the row (destructured from the GitHub release) — that is what
+    // the download route returns and the host verifies in the anchor.
+    await finalizeVersion(supabase, versionResult.id, sha256, jarSize, manifest.pluginId, version)
 
     // Log API key usage if applicable
     if (user.apiKeyId) {
@@ -898,7 +954,9 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       supabase,
       versionResult.id,
       computedSha256,
-      totalBytes || jarAsset.size
+      totalBytes || jarAsset.size,
+      manifest.pluginId,
+      version
     )
 
     // Log API key usage

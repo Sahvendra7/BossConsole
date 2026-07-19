@@ -58,6 +58,9 @@ export const PluginScreenshotSchema = z.object({
   caption: z.string()
 })
 
+// Intentionally NO `signature` here: listing is not a verification path —
+// the signature travels only on the download response
+// (DownloadInfoResponseSchema), where the host verifies it.
 export const PluginVersionSchema = z.object({
   id: z.string().uuid(),
   version: z.string(),
@@ -106,6 +109,11 @@ export const PluginDetailResponseSchema = z.object({
 export const DownloadInfoResponseSchema = z.object({
   downloadUrl: z.string().url(),
   sha256: z.string(),
+  // Base64 store signature over the canonical anchor pluginId|version|sha256;
+  // null for versions published before store signing. Declared here so any
+  // future response validation/stripping cannot silently drop the field the
+  // host's signature enforcement depends on.
+  signature: z.string().nullable().optional(),
   version: z.string(),
   size: z.number(),
   versionId: z.string().uuid(),

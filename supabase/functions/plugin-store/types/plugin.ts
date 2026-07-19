@@ -33,6 +33,8 @@ export interface PluginVersion {
   jarPath: string
   jarSize: number
   sha256: string
+  /** Base64 store signature over the canonical anchor `pluginId|version|sha256` (see utils/signing.ts versionAnchor); null pre-signing. */
+  signature?: string | null
   dependencies: PluginDependency[]
   publishedAt: string
   downloadCount?: number

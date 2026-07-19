@@ -653,7 +653,12 @@ data class DownloadInfoResponse(
     val version: String,
     val size: Long,
     val versionId: String,
-    val minIpcVersion: String = "1.0.0"
+    val minIpcVersion: String = "1.0.0",
+    // Base64 RSASSA-PKCS1-v1_5/SHA-256 signature over the UTF-8 bytes of the
+    // canonical anchor "pluginId|version|sha256" (lowercase hex digest — see
+    // PluginStoreTrust.versionAnchor); null for versions published before
+    // store signing.
+    val signature: String? = null
 )
 
 @Serializable

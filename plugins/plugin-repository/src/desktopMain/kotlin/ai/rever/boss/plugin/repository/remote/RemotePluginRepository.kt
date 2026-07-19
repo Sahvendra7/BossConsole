@@ -29,10 +29,104 @@ import java.util.concurrent.ConcurrentHashMap
  * @param downloadCache Cache for downloaded plugin JARs
  */
 class RemotePluginRepository(
-    private val downloadCache: PluginDownloadCache = PluginDownloadCache()
+    private val downloadCache: PluginDownloadCache = PluginDownloadCache(),
+    private val storeVerifier: PluginSignatureVerifier = PluginSignatureVerifier(PluginStoreTrust.TRUSTED_KEYS),
+    // Injectable for tests so the downloadPlugin wiring (verify on cache
+    // hits, verify-before-cache on fresh downloads) is exercisable without
+    // the real store.
+    private val downloadInfoProvider: suspend (pluginId: String, version: String?) -> DownloadInfoResponse = { pluginId, version ->
+        if (version != null) PluginStoreClient.getDownloadUrl(pluginId, version)
+        else PluginStoreClient.getDownloadUrl(pluginId)
+    }
 ) : PluginRepository {
 
     private val logger = BossLogger.forComponent("RemotePluginRepository")
+
+    /**
+     * Enforce the store's anchor signature for a JAR whose SHA-256 has
+     * already been verified to equal [sha256]. The signature must cover the
+     * canonical anchor `pluginId|version|sha256` — binding identity and
+     * version so that one legitimately signed store artifact can't be
+     * substituted for another by rewriting the version row.
+     *
+     * When the caller requested a specific version, [requestedVersion] must
+     * also equal the store-reported [versionLabel] — a mismatch fails before
+     * any signature math. Precision on the guarantee: downgrade protection
+     * therefore holds for EXPLICIT-version installs only. A "latest" install
+     * ([requestedVersion] = null) has no independent notion of what the
+     * newest version should be — a DB-write attacker who bumps an older,
+     * legitimately signed version's published_at can serve it as latest and
+     * its anchor verifies fine. Accepted residual risk under the same
+     * DB-write threat model tracked in BossConsole#872.
+     *
+     * A rejected artifact triggers [onVerificationFailure] (cleanup: delete
+     * the downloaded file, purge the cache entry, …) before throwing; a
+     * missing signature currently warns and allows (rollout phase — flips to
+     * hard-fail once the store backfill is complete and enforcement is
+     * enabled).
+     */
+    internal fun enforceStoreSignature(
+        sha256: String,
+        signature: String?,
+        pluginId: String,
+        versionLabel: String,
+        requestedVersion: String?,
+        onVerificationFailure: () -> Unit
+    ) {
+        if (requestedVersion != null && requestedVersion != versionLabel) {
+            onVerificationFailure()
+            throw DownloadException(
+                "Store returned version $versionLabel but $requestedVersion was requested",
+                pluginId, id
+            )
+        }
+        if (signature == null) {
+            if (PluginSignatureEnforcement.enforceUnsigned) {
+                onVerificationFailure()
+                throw DownloadException(
+                    "Store plugin has no signature and signature enforcement is enabled",
+                    pluginId, id
+                )
+            }
+            logger.warn(LogCategory.NETWORK, "Store plugin is unsigned — allowing for now, will be rejected once signature enforcement is enabled", mapOf(
+                "pluginId" to pluginId,
+                "version" to versionLabel
+            ))
+            return
+        }
+        val anchor = PluginStoreTrust.versionAnchor(pluginId, versionLabel, sha256)
+        val result = storeVerifier.verifySignedMessage(anchor, signature)
+        if (!result.isVerified) {
+            onVerificationFailure()
+            val failure = result as? SignatureVerificationResult.Failed
+            logger.error(LogCategory.NETWORK, "Plugin signature verification failed", mapOf(
+                "pluginId" to pluginId,
+                "version" to versionLabel
+            ), failure?.error)
+            throw DownloadException(
+                "Plugin signature verification failed: ${failure?.reason ?: "unknown"}",
+                pluginId, id
+            )
+        }
+        logger.info(LogCategory.NETWORK, "Plugin signature verified", mapOf(
+            "pluginId" to pluginId,
+            "version" to versionLabel
+        ))
+    }
+
+    /**
+     * Delete a rejected/stale artifact, logging when the delete doesn't take
+     * (e.g. a Windows file lock) so leftover artifacts are observable — the
+     * install has already failed, so a survivor can't load, but it shouldn't
+     * linger silently either.
+     */
+    private fun deleteOrWarn(file: File, context: String) {
+        if (!file.delete() && file.exists()) {
+            logger.warn(LogCategory.NETWORK, "Failed to delete $context — leftover file remains", mapOf(
+                "path" to file.absolutePath
+            ))
+        }
+    }
 
     private val downloadHttpClient = HttpClient(CIO) {
         engine {
@@ -178,19 +272,30 @@ class RemotePluginRepository(
             }
 
             // Get download info
-            val downloadInfo = if (version != null) {
-                PluginStoreClient.getDownloadUrl(pluginId, version)
-            } else {
-                PluginStoreClient.getDownloadUrl(pluginId)
-            }
+            val downloadInfo = downloadInfoProvider(pluginId, version)
 
-            // Check cache first
+            // Check cache first. getCachedJar only returns a file whose
+            // SHA-256 equals downloadInfo.sha256, so the signature check
+            // below binds the cached bytes to the store key too — a JAR
+            // cached during the warn-and-allow window doesn't dodge
+            // enforcement through the cache path.
             val cachedFile = downloadCache.getCachedJar(pluginId, downloadInfo.version, downloadInfo.sha256)
             if (cachedFile != null) {
                 logger.info(LogCategory.NETWORK, "Using cached JAR", mapOf(
                     "pluginId" to pluginId,
                     "version" to downloadInfo.version
                 ))
+                // Verify BEFORE copying so a rejected artifact never lands at
+                // targetPath; on failure the poisoned entry is purged through
+                // the cache's own API.
+                enforceStoreSignature(
+                    sha256 = downloadInfo.sha256,
+                    signature = downloadInfo.signature,
+                    pluginId = pluginId,
+                    versionLabel = downloadInfo.version,
+                    requestedVersion = version,
+                    onVerificationFailure = { downloadCache.removeCachedJar(pluginId, downloadInfo.version) }
+                )
                 cachedFile.copyTo(File(targetPath), overwrite = true)
                 return@runCatching targetPath
             }
@@ -232,12 +337,25 @@ class RemotePluginRepository(
                 // so tampered or unhashed JARs never load.
                 val actualSha256 = File(targetPath).sha256()
                 if (!actualSha256.equals(downloadInfo.sha256, ignoreCase = true)) {
-                    File(targetPath).delete()
+                    deleteOrWarn(File(targetPath), "hash-mismatched download")
                     throw DownloadException(
                         "SHA-256 mismatch. Expected: ${downloadInfo.sha256}, Got: $actualSha256",
                         pluginId, id
                     )
                 }
+
+                // Verify the store's signature over that hash. The checksum
+                // above binds the local bytes to the hash; the signature binds
+                // the hash to the store's signing key, so a rewritten DB row
+                // or storage object can't smuggle a different JAR through.
+                enforceStoreSignature(
+                    sha256 = actualSha256,
+                    signature = downloadInfo.signature,
+                    pluginId = pluginId,
+                    versionLabel = downloadInfo.version,
+                    requestedVersion = version,
+                    onVerificationFailure = { deleteOrWarn(File(targetPath), "rejected download") }
+                )
 
                 // Cache the downloaded JAR
                 downloadCache.cacheJar(pluginId, downloadInfo.version, File(targetPath))
@@ -252,7 +370,10 @@ class RemotePluginRepository(
 
                 targetPath
             } finally {
-                downloadProgress.remove(pluginId)
+                // Two-arg remove: if a concurrent download of another version
+                // of the same plugin replaced our entry (progress is keyed by
+                // pluginId alone — pre-existing), don't yank its flow out.
+                downloadProgress.remove(pluginId, progressFlow)
             }
         }.onFailure { e ->
             logger.error(LogCategory.NETWORK, "Failed to download plugin", mapOf("pluginId" to pluginId), e)

@@ -2,31 +2,22 @@ package ai.rever.boss.plugin.repository
 
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
-import java.io.File
-import java.io.FileInputStream
-import java.security.MessageDigest
+import java.security.KeyFactory
 import java.security.PublicKey
 import java.security.Signature
-import java.security.cert.CertificateFactory
+import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
-import java.util.jar.JarFile
 
 /**
  * Result of plugin signature verification.
  */
 sealed class SignatureVerificationResult {
     /**
-     * Plugin is signed and verified.
+     * Plugin is signed by a trusted publisher.
      */
     data class Verified(
-        val publisher: String,
-        val certificate: String
+        val publisher: String
     ) : SignatureVerificationResult()
-
-    /**
-     * Plugin is not signed.
-     */
-    data object Unsigned : SignatureVerificationResult()
 
     /**
      * Plugin signature verification failed.
@@ -40,244 +31,98 @@ sealed class SignatureVerificationResult {
 }
 
 /**
- * Verifies plugin JAR signatures and checksums.
+ * Verifies plugin artifact signatures against pinned publisher keys.
  *
- * Supports:
- * - SHA-256 checksum verification
- * - Standard JAR signing (uses java.util.jar)
- * - Custom signature files (.sig alongside .jar)
+ * Trusted keys are provided at construction as `publisher -> PEM`
+ * (`-----BEGIN PUBLIC KEY-----` SubjectPublicKeyInfo, as produced by
+ * `openssl pkey -pubout`) and are immutable afterwards — verification never
+ * observes a mutating key set, by construction rather than convention. A PEM
+ * that fails to parse is logged and skipped; if none parse, verification
+ * fails closed. Only that exact armor is handled: other formats (e.g.
+ * PKCS#1 `-----BEGIN RSA PUBLIC KEY-----`) are unsupported and fail parse —
+ * acceptable because the PEMs are compiled-in and the
+ * `store trust anchor parses` test guards the real key.
+ *
+ * The only supported scheme is the BOSS Plugin Store's anchor signature:
+ * RSASSA-PKCS1-v1_5 with SHA-256 over the UTF-8 bytes of the canonical
+ * version anchor (`pluginId|version|sha256`, see
+ * [PluginStoreTrust.versionAnchor]). Deliberately NOT supported: standard
+ * jarsigner verification — `JarFile(file, true)` proves integrity against the
+ * JAR's own embedded certificates, so without a trust-anchor check any
+ * self-signed JAR would pass; an earlier implementation had exactly that hole.
  */
-class PluginSignatureVerifier {
+class PluginSignatureVerifier(trustedKeyPems: Map<String, String> = emptyMap()) {
     private val logger = BossLogger.forComponent("PluginSignatureVerifier")
 
     /**
-     * Trusted public keys by publisher name.
+     * Trusted public keys by publisher name. Parsed once at construction;
+     * never mutated.
      */
-    private val trustedKeys = mutableMapOf<String, PublicKey>()
+    private val trustedKeys: Map<String, PublicKey> = buildMap {
+        for ((publisher, pem) in trustedKeyPems) {
+            try {
+                val pemContent = pem
+                    .replace("-----BEGIN PUBLIC KEY-----", "")
+                    .replace("-----END PUBLIC KEY-----", "")
+                    .replace("\\s".toRegex(), "")
 
-    /**
-     * Add a trusted public key for signature verification.
-     *
-     * @param publisher Publisher name
-     * @param publicKeyPem Public key in PEM format
-     */
-    fun addTrustedKey(publisher: String, publicKeyPem: String) {
-        try {
-            val certificateFactory = CertificateFactory.getInstance("X.509")
-            val pemContent = publicKeyPem
-                .replace("-----BEGIN CERTIFICATE-----", "")
-                .replace("-----END CERTIFICATE-----", "")
-                .replace("\\s".toRegex(), "")
+                val decoded = Base64.getDecoder().decode(pemContent)
+                put(publisher, KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(decoded)))
 
-            val decoded = Base64.getDecoder().decode(pemContent)
-            val certificate = certificateFactory.generateCertificate(decoded.inputStream())
-            trustedKeys[publisher] = certificate.publicKey
-
-            logger.info(LogCategory.SYSTEM, "Added trusted key", mapOf(
-                "publisher" to publisher
-            ))
-        } catch (e: Exception) {
-            logger.error(LogCategory.SYSTEM, "Failed to add trusted key", mapOf(
-                "publisher" to publisher
-            ), e)
+                logger.info(LogCategory.SYSTEM, "Added trusted public key", mapOf(
+                    "publisher" to publisher
+                ))
+            } catch (e: Exception) {
+                logger.error(LogCategory.SYSTEM, "Failed to parse trusted public key", mapOf(
+                    "publisher" to publisher
+                ), e)
+            }
         }
     }
 
     /**
-     * Remove a trusted public key.
+     * Strictly verify a detached signature over a canonical message.
      *
-     * @param publisher Publisher name
-     */
-    fun removeTrustedKey(publisher: String) {
-        trustedKeys.remove(publisher)
-    }
-
-    /**
-     * Verify a plugin JAR's signature.
+     * The signature must be RSASSA-PKCS1-v1_5 with SHA-256 over the UTF-8
+     * bytes of [message] — for store artifacts, the canonical version anchor
+     * from [PluginStoreTrust.versionAnchor]. Only a signature produced with a
+     * trusted publisher's private key verifies; fails closed when no trusted
+     * keys are configured.
      *
-     * @param jarPath Path to the plugin JAR
+     * @param message The exact message the signature is expected to cover
+     * @param signatureBase64 Base64-encoded signature
      * @return Verification result
      */
-    fun verifySignature(jarPath: String): SignatureVerificationResult {
-        val jarFile = File(jarPath)
-        if (!jarFile.exists()) {
-            return SignatureVerificationResult.Failed("JAR file not found: $jarPath")
+    fun verifySignedMessage(message: String, signatureBase64: String): SignatureVerificationResult {
+        if (trustedKeys.isEmpty()) {
+            return SignatureVerificationResult.Failed("No trusted keys configured")
         }
 
-        return try {
-            // Check for standard JAR signing first
-            val standardResult = verifyJarSigning(jarFile)
-            if (standardResult.isVerified) {
-                return standardResult
-            }
-
-            // Check for custom .sig file
-            val sigFile = File("$jarPath.sig")
-            if (sigFile.exists()) {
-                return verifyDetachedSignature(jarFile, sigFile)
-            }
-
-            SignatureVerificationResult.Unsigned
-        } catch (e: Exception) {
-            logger.error(LogCategory.SYSTEM, "Signature verification failed", mapOf(
-                "jarPath" to jarPath
-            ), e)
-            SignatureVerificationResult.Failed("Verification error: ${e.message}", e)
+        val signatureBytes = try {
+            Base64.getDecoder().decode(signatureBase64)
+        } catch (e: IllegalArgumentException) {
+            // Reason strings surface in user-facing install errors — keep
+            // crypto/exception internals in the throwable, not the text.
+            return SignatureVerificationResult.Failed("Signature is not valid base64", e)
         }
-    }
+        val messageBytes = message.toByteArray(Charsets.UTF_8)
 
-    /**
-     * Verify SHA-256 checksum of a JAR.
-     *
-     * @param jarPath Path to the JAR file
-     * @param expectedSha256 Expected SHA-256 hash (hex string)
-     * @return True if checksum matches
-     */
-    fun verifyChecksum(jarPath: String, expectedSha256: String): Boolean {
-        return try {
-            val jarFile = File(jarPath)
-            if (!jarFile.exists()) {
-                return false
-            }
-
-            val digest = MessageDigest.getInstance("SHA-256")
-            FileInputStream(jarFile).use { input ->
-                val buffer = ByteArray(8192)
-                var bytesRead: Int
-                while (input.read(buffer).also { bytesRead = it } != -1) {
-                    digest.update(buffer, 0, bytesRead)
-                }
-            }
-
-            val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
-            val matches = actualHash.equals(expectedSha256, ignoreCase = true)
-
-            if (!matches) {
-                logger.warn(LogCategory.SYSTEM, "Checksum mismatch", mapOf(
-                    "jarPath" to jarPath,
-                    "expected" to expectedSha256,
-                    "actual" to actualHash
-                ))
-            }
-
-            matches
-        } catch (e: Exception) {
-            logger.error(LogCategory.SYSTEM, "Checksum verification failed", mapOf(
-                "jarPath" to jarPath
-            ), e)
-            false
-        }
-    }
-
-    /**
-     * Calculate SHA-256 checksum of a file.
-     *
-     * @param filePath Path to the file
-     * @return SHA-256 hash as hex string
-     */
-    fun calculateChecksum(filePath: String): String? {
-        return try {
-            val file = File(filePath)
-            if (!file.exists()) {
-                return null
-            }
-
-            val digest = MessageDigest.getInstance("SHA-256")
-            FileInputStream(file).use { input ->
-                val buffer = ByteArray(8192)
-                var bytesRead: Int
-                while (input.read(buffer).also { bytesRead = it } != -1) {
-                    digest.update(buffer, 0, bytesRead)
-                }
-            }
-
-            digest.digest().joinToString("") { "%02x".format(it) }
-        } catch (e: Exception) {
-            logger.error(LogCategory.SYSTEM, "Failed to calculate checksum", mapOf(
-                "filePath" to filePath
-            ), e)
-            null
-        }
-    }
-
-    /**
-     * Verify standard JAR signing.
-     */
-    private fun verifyJarSigning(jarFile: File): SignatureVerificationResult {
-        return try {
-            JarFile(jarFile, true).use { jar ->
-                // Read all entries to trigger verification
-                val entries = jar.entries()
-                var hasSignedEntries = false
-
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    if (!entry.isDirectory) {
-                        // Reading the entry triggers verification
-                        jar.getInputStream(entry).use { input ->
-                            val buffer = ByteArray(8192)
-                            while (input.read(buffer) != -1) {
-                                // Just read to trigger verification
-                            }
-                        }
-
-                        // Check if this entry is signed
-                        val certs = entry.codeSigners
-                        if (certs != null && certs.isNotEmpty()) {
-                            hasSignedEntries = true
-                        }
-                    }
-                }
-
-                if (hasSignedEntries) {
-                    // Get signer info from the manifest
-                    val manifest = jar.manifest
-                    val signerInfo = manifest?.mainAttributes?.getValue("Created-By") ?: "Unknown"
-
-                    SignatureVerificationResult.Verified(
-                        publisher = signerInfo,
-                        certificate = "JAR Signed"
-                    )
-                } else {
-                    SignatureVerificationResult.Unsigned
-                }
-            }
-        } catch (e: SecurityException) {
-            SignatureVerificationResult.Failed("JAR signature invalid: ${e.message}", e)
-        }
-    }
-
-    /**
-     * Verify a detached signature file.
-     */
-    private fun verifyDetachedSignature(jarFile: File, sigFile: File): SignatureVerificationResult {
-        return try {
-            val signatureBytes = sigFile.readBytes()
-
-            // Try each trusted key
-            for ((publisher, publicKey) in trustedKeys) {
+        var lastError: Throwable? = null
+        for ((publisher, publicKey) in trustedKeys) {
+            try {
                 val signature = Signature.getInstance("SHA256withRSA")
                 signature.initVerify(publicKey)
-
-                FileInputStream(jarFile).use { input ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        signature.update(buffer, 0, bytesRead)
-                    }
-                }
-
+                signature.update(messageBytes)
                 if (signature.verify(signatureBytes)) {
-                    return SignatureVerificationResult.Verified(
-                        publisher = publisher,
-                        certificate = "Detached signature"
-                    )
+                    return SignatureVerificationResult.Verified(publisher)
                 }
+            } catch (e: Exception) {
+                // e.g. signature length does not match this key's modulus —
+                // record and keep trying the remaining trusted keys.
+                lastError = e
             }
-
-            SignatureVerificationResult.Failed("No trusted key verified the signature")
-        } catch (e: Exception) {
-            SignatureVerificationResult.Failed("Signature verification error: ${e.message}", e)
         }
+
+        return SignatureVerificationResult.Failed("No trusted key verified the signature", lastError)
     }
 }
