@@ -1,4 +1,4 @@
-package ai.rever.boss.plugin.repository
+package ai.rever.boss.plugin.loader
 
 import java.security.KeyPair
 import java.security.KeyPairGenerator

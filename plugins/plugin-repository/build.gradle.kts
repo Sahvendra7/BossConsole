@@ -58,6 +58,8 @@ kotlin {
             dependencies {
                 // Ktor engine
                 implementation(libs.ktor.client.cio)
+                // Trust anchor + signature verifier (load-time verification lives in plugin-loader)
+                implementation(projects.plugins.pluginLoader)
             }
         }
 

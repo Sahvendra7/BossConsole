@@ -1,4 +1,4 @@
-package ai.rever.boss.plugin.repository
+package ai.rever.boss.plugin.loader
 
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory

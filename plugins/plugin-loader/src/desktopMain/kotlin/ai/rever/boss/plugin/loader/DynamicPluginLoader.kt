@@ -8,6 +8,7 @@ import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.api.Version
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
+import java.io.File
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +68,12 @@ interface DynamicPluginLoader {
  * follows IntelliJ IDEA patterns for dynamic plugin management.
  */
 class DynamicPluginLoaderImpl(
-    private val classLoaderManager: PluginClassLoaderManager = PluginClassLoaderManager()
+    private val classLoaderManager: PluginClassLoaderManager = PluginClassLoaderManager(),
+    /**
+     * Verifier for load-time store-signature checks. Defaults to the pinned
+     * store public key; injectable for tests. Immutable after construction.
+     */
+    private val signatureVerifier: PluginSignatureVerifier = PluginSignatureVerifier(PluginStoreTrust.TRUSTED_KEYS)
 ) : DynamicPluginLoader {
 
     private val logger = BossLogger.forComponent("DynamicPluginLoader")
@@ -129,13 +135,20 @@ class DynamicPluginLoaderImpl(
             val manifest = PluginManifestReader.readFromJar(jarPath)
             val pluginId = manifest.pluginId
 
-            // Check if already loaded
+            // Check if already loaded (before hashing the JAR for signature
+            // verification — no point re-hashing to then bail as ALREADY_LOADED).
             if (loadedPlugins.containsKey(pluginId)) {
                 return@withContext Result.failure(PluginLoadException(
                     "${PluginLoadException.ALREADY_LOADED_PREFIX}: $pluginId",
                     pluginId
                 ))
             }
+
+            // Verify the store signature (sidecar) before loading. This is the
+            // choke point every install path funnels through, so it covers
+            // Toolbox installs/updates, the first-run wizard, and restored
+            // plugins alike.
+            verifySignatureOrThrow(jarPath, manifest)?.let { return@withContext Result.failure(it) }
 
             // Check API version compatibility
             if (!isApiVersionCompatible(manifest.apiVersion)) {
@@ -423,6 +436,65 @@ class DynamicPluginLoaderImpl(
         }
 
         return current >= required
+    }
+
+    /**
+     * Verify the store signature carried in the `<jar>.sig` sidecar against
+     * the pinned key, binding the canonical anchor `pluginId|version|sha256`
+     * to the JAR bytes and manifest identity.
+     *
+     * Returns a [PluginSignatureException] to fail the load, or null to
+     * proceed. Policy mirrors the download path: a sidecar that is present but
+     * does not verify always fails; a missing sidecar (dev side-loads, or
+     * store versions from before signing) warns and proceeds during the
+     * rollout, becoming a hard failure once [PluginSignatureEnforcement] is
+     * enabled — except in dev mode, where a missing sidecar is always allowed
+     * so locally built plugins keep loading.
+     */
+    private fun verifySignatureOrThrow(jarPath: String, manifest: PluginManifest): PluginSignatureException? {
+        val signature = PluginSignatureSidecar.read(jarPath)
+        if (signature == null) {
+            val devMode = System.getProperty("boss.dev.mode")?.toBoolean() == true
+            if (PluginSignatureEnforcement.enforceUnsigned && !devMode) {
+                return PluginSignatureException(
+                    "Plugin has no store signature and signature enforcement is enabled",
+                    manifest.pluginId
+                )
+            }
+            logger.warn(LogCategory.SYSTEM, "Plugin has no store signature — allowing for now, will be rejected once signature enforcement is enabled", mapOf(
+                "pluginId" to manifest.pluginId,
+                "version" to manifest.version
+            ))
+            return null
+        }
+
+        // NOTE (TOCTOU boundary): the JAR is hashed here and re-read by the
+        // classloader below, so a LOCAL filesystem attacker could swap bytes in
+        // the gap. That's outside the stated threat model (compromised store /
+        // DB, not local FS) — a local attacker can already tamper with the
+        // plugin dir directly — so we accept it rather than hold the file open.
+        val sha256 = FileHashing.sha256(File(jarPath))
+        val anchor = PluginStoreTrust.versionAnchor(manifest.pluginId, manifest.version, sha256)
+        val result = signatureVerifier.verifySignedMessage(anchor, signature)
+        if (!result.isVerified) {
+            val reason = (result as? SignatureVerificationResult.Failed)?.reason ?: "unknown"
+            // Fail closed and leave the artifact in place — don't auto-delete
+            // from a shared plugin dir (could race the store's own management).
+            // It will be re-rejected on every startup until removed/reinstalled;
+            // say so, since the JAR looks installed but never loads.
+            logger.error(LogCategory.SYSTEM, "Plugin signature verification failed — plugin will NOT load and will keep being rejected until it is reinstalled or removed", mapOf(
+                "pluginId" to manifest.pluginId,
+                "version" to manifest.version,
+                "jarPath" to jarPath,
+                "reason" to reason
+            ))
+            return PluginSignatureException("Plugin signature verification failed: $reason", manifest.pluginId)
+        }
+        logger.info(LogCategory.SYSTEM, "Plugin signature verified", mapOf(
+            "pluginId" to manifest.pluginId,
+            "version" to manifest.version
+        ))
+        return null
     }
 
     /**

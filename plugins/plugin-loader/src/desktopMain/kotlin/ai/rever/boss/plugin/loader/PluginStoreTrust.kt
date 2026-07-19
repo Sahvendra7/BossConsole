@@ -1,4 +1,4 @@
-package ai.rever.boss.plugin.repository
+package ai.rever.boss.plugin.loader
 
 /**
  * Trust anchor for BOSS Plugin Store artifact signatures.
@@ -58,6 +58,15 @@ object PluginStoreTrust {
      * requested from the store, so it round-trips; if a casing divergence is
      * ever introduced upstream it surfaces as "signature verification failed"
      * — check id casing before suspecting the crypto.
+     *
+     * LOAD-BEARING COUPLING: download-time verification uses the STORE ROW's
+     * version, while load-time re-derives this anchor from the JAR's MANIFEST
+     * version. A present-but-invalid sidecar hard-fails regardless of the
+     * enforcement flag, so if a plugin's row version and manifest version ever
+     * differ (trailing space, 1.0 vs 1.0.0, casing) the sidecar would verify
+     * at download yet be rejected at load. The publish function enforces
+     * manifest.version == row version at publish time so this can't happen;
+     * keep that guard if this format changes.
      */
     fun versionAnchor(pluginId: String, version: String, sha256Hex: String): String =
         "$pluginId|$version|${sha256Hex.lowercase()}"

@@ -1,8 +1,9 @@
 package ai.rever.boss.plugin.repository.remote
 
 import ai.rever.boss.plugin.repository.DownloadException
-import ai.rever.boss.plugin.repository.PluginSignatureVerifier
-import ai.rever.boss.plugin.repository.PluginStoreTrust
+import ai.rever.boss.plugin.loader.PluginSignatureVerifier
+import ai.rever.boss.plugin.loader.PluginSignatureSidecar
+import ai.rever.boss.plugin.loader.PluginStoreTrust
 import com.sun.net.httpserver.HttpServer
 import java.io.File
 import java.net.InetSocketAddress
@@ -106,13 +107,24 @@ class RemotePluginRepositoryDownloadTest {
     private fun target(name: String) = File(tempDir, name).absolutePath
 
     @Test
-    fun `fresh download with valid signature succeeds and caches`() = runBlocking<Unit> {
-        val result = repositoryReturning(downloadInfo("1.0.0", signAnchor("1.0.0")))
+    fun `fresh download with valid signature succeeds, caches, and writes the sidecar`() = runBlocking<Unit> {
+        val sig = signAnchor("1.0.0")
+        val result = repositoryReturning(downloadInfo("1.0.0", sig))
             .downloadPlugin(pluginId, "1.0.0", target("fresh-ok.jar"))
 
         val path = result.getOrThrow()
         assertTrue(File(path).readBytes().contentEquals(jarBytes))
         assertNotNull(cache.getCachedJar(pluginId, "1.0.0", jarSha256))
+        // Sidecar written beside the installed JAR for load-time verification.
+        assertEquals(sig, PluginSignatureSidecar.read(path))
+    }
+
+    @Test
+    fun `unsigned download writes no sidecar`() = runBlocking<Unit> {
+        val path = repositoryReturning(downloadInfo("1.0.0", signature = null))
+            .downloadPlugin(pluginId, "1.0.0", target("fresh-unsigned.jar"))
+            .getOrThrow()
+        assertNull(PluginSignatureSidecar.read(path))
     }
 
     @Test
@@ -145,15 +157,18 @@ class RemotePluginRepositoryDownloadTest {
     }
 
     @Test
-    fun `cache hit with valid signature succeeds without re-downloading`() = runBlocking<Unit> {
+    fun `cache hit with valid signature succeeds without re-downloading and writes the sidecar`() = runBlocking<Unit> {
         server!!.stop(0) // prove the cache path never touches the network
         val seed = File(tempDir, "seed-ok.jar").apply { writeBytes(jarBytes) }
         cache.cacheJar(pluginId, "4.0.0", seed)
 
-        val result = repositoryReturning(downloadInfo("4.0.0", signAnchor("4.0.0")))
+        val sig = signAnchor("4.0.0")
+        val result = repositoryReturning(downloadInfo("4.0.0", sig))
             .downloadPlugin(pluginId, "4.0.0", target("cached-ok.jar"))
 
         assertEquals(target("cached-ok.jar"), result.getOrThrow())
         assertTrue(File(target("cached-ok.jar")).readBytes().contentEquals(jarBytes))
+        // The cache-hit path persists the sidecar too, not just fresh downloads.
+        assertEquals(sig, PluginSignatureSidecar.read(target("cached-ok.jar")))
     }
 }

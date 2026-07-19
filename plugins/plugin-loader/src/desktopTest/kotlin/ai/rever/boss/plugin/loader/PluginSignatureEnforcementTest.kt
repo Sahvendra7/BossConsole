@@ -1,4 +1,4 @@
-package ai.rever.boss.plugin.repository
+package ai.rever.boss.plugin.loader
 
 import kotlin.test.AfterTest
 import kotlin.test.Test

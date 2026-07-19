@@ -485,6 +485,29 @@ publish.openapi(finalizeVersionRoute, async (ctx) => {
       }, 400)
     }
 
+    // The signature anchor is pluginId|version|sha256. Download-time
+    // verification uses the store row's version; load-time re-derives the
+    // anchor from the JAR's manifest version. Those must match verbatim or a
+    // valid sidecar fails at load. This two-step upload path takes the version
+    // from the client's body.version, so assert it equals the JAR's manifest
+    // identity here — a mismatch is rejected at publish, never surfaced as a
+    // spurious "tampered" rejection on users' machines. (The GitHub publish
+    // path already derives the version straight from the manifest.)
+    try {
+      const { manifest: jarManifest } = await extractManifestFromRemoteJar(jarUrl)
+      if (jarManifest.pluginId !== plugin.pluginId || jarManifest.version !== version.version) {
+        return ctx.json({
+          success: false,
+          error: `Manifest identity mismatch: JAR declares ${jarManifest.pluginId}@${jarManifest.version} but the version row is ${plugin.pluginId}@${version.version}. The stored version string must match the manifest verbatim.`
+        }, 400)
+      }
+    } catch (e) {
+      return ctx.json({
+        success: false,
+        error: `Failed to read JAR manifest for identity check: ${(e as Error).message}`
+      }, 502)
+    }
+
     // Finalize version
     await finalizeVersion(supabase, body.versionId, computedSha256, observedBytes, plugin.pluginId, version.version)
 

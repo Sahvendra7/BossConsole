@@ -1,9 +1,9 @@
 package ai.rever.boss.plugin.repository.remote
 
 import ai.rever.boss.plugin.repository.DownloadException
-import ai.rever.boss.plugin.repository.PluginSignatureEnforcement
-import ai.rever.boss.plugin.repository.PluginSignatureVerifier
-import ai.rever.boss.plugin.repository.PluginStoreTrust
+import ai.rever.boss.plugin.loader.PluginSignatureEnforcement
+import ai.rever.boss.plugin.loader.PluginSignatureVerifier
+import ai.rever.boss.plugin.loader.PluginStoreTrust
 import java.io.File
 import java.security.KeyPair
 import java.security.KeyPairGenerator

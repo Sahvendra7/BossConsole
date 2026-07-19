@@ -27,6 +27,12 @@
  * pluginId and version enter the anchor VERBATIM (only the digest is
  * lowercased) — ids are case-sensitive identifiers; do not normalize on one
  * side only.
+ *
+ * The `version` signed here MUST equal the JAR's manifest version: the host
+ * re-derives this anchor from the manifest at load time, so a divergence
+ * between the stored/signed version and the manifest version would reject a
+ * legitimate plugin as tampered. The publish route asserts
+ * manifest.version === row version before calling signVersionAnchor.
  */
 export function versionAnchor(pluginId: string, version: string, sha256Hex: string): string {
   return `${pluginId}|${version}|${sha256Hex.toLowerCase()}`

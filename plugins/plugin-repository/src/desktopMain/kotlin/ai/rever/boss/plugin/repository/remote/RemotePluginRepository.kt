@@ -1,5 +1,11 @@
 package ai.rever.boss.plugin.repository.remote
 
+import ai.rever.boss.plugin.loader.FileHashing
+import ai.rever.boss.plugin.loader.PluginSignatureEnforcement
+import ai.rever.boss.plugin.loader.PluginSignatureSidecar
+import ai.rever.boss.plugin.loader.PluginSignatureVerifier
+import ai.rever.boss.plugin.loader.PluginStoreTrust
+import ai.rever.boss.plugin.loader.SignatureVerificationResult
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import ai.rever.boss.plugin.repository.*
@@ -14,7 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -297,6 +302,7 @@ class RemotePluginRepository(
                     onVerificationFailure = { downloadCache.removeCachedJar(pluginId, downloadInfo.version) }
                 )
                 cachedFile.copyTo(File(targetPath), overwrite = true)
+                PluginSignatureSidecar.persist(targetPath, downloadInfo.signature)
                 return@runCatching targetPath
             }
 
@@ -335,7 +341,7 @@ class RemotePluginRepository(
                 // Verify SHA-256 — every published version must have a real
                 // hash. A blank or placeholder value is treated as a mismatch
                 // so tampered or unhashed JARs never load.
-                val actualSha256 = File(targetPath).sha256()
+                val actualSha256 = FileHashing.sha256(File(targetPath))
                 if (!actualSha256.equals(downloadInfo.sha256, ignoreCase = true)) {
                     deleteOrWarn(File(targetPath), "hash-mismatched download")
                     throw DownloadException(
@@ -356,6 +362,11 @@ class RemotePluginRepository(
                     requestedVersion = version,
                     onVerificationFailure = { deleteOrWarn(File(targetPath), "rejected download") }
                 )
+
+                // Persist the signature beside the JAR so load-time
+                // verification (which every install path funnels through) can
+                // re-check it independently of this download path.
+                PluginSignatureSidecar.persist(targetPath, downloadInfo.signature)
 
                 // Cache the downloaded JAR
                 downloadCache.cacheJar(pluginId, downloadInfo.version, File(targetPath))
@@ -431,15 +442,4 @@ class RemotePluginRepository(
         else -> ai.rever.boss.plugin.api.PluginType.PANEL
     }
 
-    private fun File.sha256(): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        inputStream().use { fis ->
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-            while (fis.read(buffer).also { bytesRead = it } != -1) {
-                digest.update(buffer, 0, bytesRead)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
 }
