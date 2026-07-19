@@ -607,7 +607,6 @@ kotlin {
             implementation(projects.plugins.pluginLoader)
             implementation(projects.plugins.pluginRepository)
             implementation(projects.plugins.pluginUpdater)
-            implementation(projects.plugins.pluginDependency)
             // Plugin panel manager is now dynamic (loaded from boss_plugin as plugin-manager)
 
 

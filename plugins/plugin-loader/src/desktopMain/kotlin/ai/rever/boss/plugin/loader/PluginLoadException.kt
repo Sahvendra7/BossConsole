@@ -39,16 +39,6 @@ class PluginClassException(
 ) : PluginLoadException(message, pluginId, cause)
 
 /**
- * Exception thrown when a plugin dependency cannot be resolved.
- */
-class PluginDependencyException(
-    message: String,
-    pluginId: String? = null,
-    val missingDependencies: List<String> = emptyList(),
-    cause: Throwable? = null
-) : PluginLoadException(message, pluginId, cause)
-
-/**
  * Exception thrown when a plugin cannot be unloaded.
  */
 class PluginUnloadException(

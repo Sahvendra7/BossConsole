@@ -2,7 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("multiplatform")
-    alias(libs.plugins.kotlinSerialization)
 }
 
 group = "ai.rever.boss.plugin"
@@ -28,18 +27,10 @@ kotlin {
 
     sourceSets {
         val commonMain by getting {
+            // SemanticVersion is pure Kotlin — no external dependencies. (The
+            // coroutines/serialization/plugin-api-core/logging deps went with
+            // the removed PluginDependencyResolver.)
             dependencies {
-                // Coroutines
-                implementation(libs.kotlinx.coroutines.core)
-
-                // Serialization
-                implementation(libs.kotlinx.serialization.json)
-
-                // Minimal plugin-api-core
-                api(projects.plugins.pluginApiCore)
-
-                // Logging
-                implementation(projects.plugins.pluginLogging)
             }
         }
 
