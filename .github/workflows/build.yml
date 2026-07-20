@@ -18,6 +18,18 @@ env:
   SUPABASE_FUNCTION_URL: ${{ secrets.SUPABASE_FUNCTION_URL }}
 
 jobs:
+  script-tests:
+    name: 🐚 Shell Script Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: 🧪 Release publish — TUS slice tests
+        # Guards the byte-accurate chunk slicing in the release publish path
+        # (regressed twice: #877 misaligned resume, and the SIGPIPE status bug).
+        run: bash scripts/test/test-tus-slice.sh
+
   version-check:
     runs-on: ubuntu-latest
     outputs:

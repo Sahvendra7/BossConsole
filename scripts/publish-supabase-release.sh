@@ -75,7 +75,9 @@ content_type_of() {
 # Cloudflare fronts Supabase and rejects any single request body over ~100 MB
 # with HTTP 413, so files above the threshold are streamed via the TUS resumable
 # endpoint in fixed 6 MiB chunks. Everything else uses the simpler single POST.
-CHUNK_SIZE=$((6 * 1024 * 1024))            # 6 MiB — the only chunk size Supabase's TUS server accepts.
+# CHUNK_SIZE + slice_chunk live in lib/tus-slice.sh (sourced here) so the
+# byte-slicing is unit-tested independently — see scripts/test/test-tus-slice.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/lib/tus-slice.sh"
 RESUMABLE_THRESHOLD=$((50 * 1024 * 1024))  # Anything above 50 MB goes resumable (well under the 100 MB cap).
 MAX_ATTEMPTS=4                             # Tries (1 + 3 retries) per create/PATCH, so a transient blip on any
 RETRY_BACKOFF=2                            # of the ~N requests doesn't abandon the whole upload. Backoff = N*attempt s.
@@ -175,16 +177,14 @@ upload_resumable() {
     *)     location="$SUPABASE_URL/storage/v1/upload/resumable/$location" ;;
   esac
 
-  # 2) PATCH successive 6 MiB chunks until the server-reported offset reaches EOF.
-  # The server's Upload-Offset is the single source of truth for where to resume;
-  # since every full chunk advances it by exactly CHUNK_SIZE it stays aligned.
+  # 2) PATCH successive chunks (up to CHUNK_SIZE each) until the server-reported
+  # offset reaches EOF. The server's Upload-Offset is the single source of truth
+  # for where to resume; because a partially-applied PATCH can leave that offset
+  # on a non-chunk boundary, chunks are sliced by absolute byte offset
+  # ([slice_chunk]) so ANY resumed offset is valid.
   local offset=0
   while [[ "$offset" -lt "$total" ]]; do
-    if (( offset % CHUNK_SIZE != 0 )); then
-      echo "ERROR: resumable upload for $object_path got misaligned offset $offset; aborting" >&2
-      return 1
-    fi
-    dd if="$file" of="$chunk" bs="$CHUNK_SIZE" skip=$(( offset / CHUNK_SIZE )) count=1 2>/dev/null
+    slice_chunk "$file" "$offset" "$total" "$chunk" || return 1
 
     local newoff=""
     for (( attempt = 1; attempt <= MAX_ATTEMPTS; attempt++ )); do
@@ -210,16 +210,13 @@ upload_resumable() {
       fi
       echo "     chunk at offset $offset failed (HTTP ${pcode:-none}); retry $attempt/$((MAX_ATTEMPTS - 1)) after re-syncing offset…" >&2
       sleep $(( RETRY_BACKOFF * attempt ))
-      # The failed PATCH may have partially applied — re-read the true offset and re-slice.
+      # The failed PATCH may have partially applied — re-read the true offset and
+      # re-slice from there. Any byte offset is valid (see slice_chunk).
       local synced; synced="$(tus_head_offset "$location")" || synced=""
       if [[ -n "$synced" && "$synced" -ge "$offset" ]]; then
         offset="$synced"
         (( offset >= total )) && { newoff="$offset"; break; }
-        if (( offset % CHUNK_SIZE != 0 )); then
-          echo "ERROR: resumable upload for $object_path got misaligned offset $offset after resync; aborting" >&2
-          return 1
-        fi
-        dd if="$file" of="$chunk" bs="$CHUNK_SIZE" skip=$(( offset / CHUNK_SIZE )) count=1 2>/dev/null
+        slice_chunk "$file" "$offset" "$total" "$chunk" || return 1
       fi
     done
     offset="$newoff"
@@ -293,6 +290,28 @@ http_code="$(curl -sS -o "$TMP_DIR/app_releases_resp.txt" -w '%{http_code}' \
   --data "$row")"
 if [[ "$http_code" != "200" && "$http_code" != "201" && "$http_code" != "204" ]]; then
   echo "ERROR: app_releases upsert failed (HTTP $http_code): $(cat "$TMP_DIR/app_releases_resp.txt")" >&2
+  exit 1
+fi
+
+# Post-publish assertion: read the row back so "published" is proven, not
+# assumed. This is what the in-app updater (latest-release edge fn) actually
+# reads, so if the row is somehow absent — a merge-duplicates upsert that
+# silently no-ops, an earlier asset upload that aborted before this point —
+# the release would be invisible to clients with no obvious signal. Fail loud.
+# -G + --data-urlencode so a version with URL-unsafe chars (e.g. a +build.meta
+# semver suffix, where '+' would otherwise decode to space) filters correctly.
+verify_code="$(curl -sS -G -o "$TMP_DIR/verify.txt" -w '%{http_code}' \
+  "$SUPABASE_URL/rest/v1/app_releases" \
+  --data-urlencode "app=eq.$APP" \
+  --data-urlencode "version=eq.$VERSION" \
+  --data-urlencode "select=version" \
+  --data-urlencode "limit=1" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY")"
+# The query already filters by version, so a non-empty array = the row exists.
+# jq (a hard dep) parses it precisely rather than regex-matching the version.
+if [[ "$verify_code" != "200" ]] || ! jq -e 'type == "array" and length > 0' "$TMP_DIR/verify.txt" >/dev/null 2>&1; then
+  echo "ERROR: post-publish check failed — app_releases has no queryable row for $APP $VERSION (HTTP $verify_code): $(cat "$TMP_DIR/verify.txt")" >&2
   exit 1
 fi
 
