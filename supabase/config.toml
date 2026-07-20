@@ -371,6 +371,12 @@ enabled = true
 verify_jwt = false  # Plugin store handles its own authorization internally
 import_map = "./functions/plugin-store/deno.json"
 entrypoint = "./functions/plugin-store/index.ts"
+
+[functions.qbo-token]
+enabled = true
+verify_jwt = false  # Verifies the caller and checks finance.read itself (getUser + JWT claims)
+import_map = "./functions/qbo-token/deno.json"
+entrypoint = "./functions/qbo-token/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/redirect/*.html" ]
