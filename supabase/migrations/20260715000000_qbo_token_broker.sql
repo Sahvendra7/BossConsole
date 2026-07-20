@@ -4,12 +4,12 @@
 -- hand finance.read users a short-lived access token — so no client ever holds the rotating,
 -- single-use refresh token (the thing that kept bricking the client-side shared-secret approach).
 --
--- Split of secrets:
---   * Intuit app client_id / client_secret  -> Edge Function env secrets (supabase secrets set), never in the DB.
---   * realm_id                               -> this table (a company id, not sensitive).
---   * refresh_token / access_token           -> this table, encrypted at rest via public.encrypt_text
---                                               (they rotate constantly, so they can't live in Vault's
---                                               static-secret model).
+-- Everything is stored in this table (secrets encrypted at rest via public.encrypt_text), so the
+-- whole thing can be provisioned through the SQL Editor with no function-secret / DB-password
+-- privileges:
+--   * realm_id                              -> plaintext (a company id, not sensitive).
+--   * client_id / client_secret             -> encrypted (Intuit app credentials).
+--   * refresh_token / access_token          -> encrypted (rotate constantly).
 --
 -- Single-flight refresh: Intuit invalidates the old refresh token the instant a new one is issued,
 -- so two concurrent refreshes would brick the credential. qbo_claim_refresh is a compare-and-swap
@@ -22,6 +22,8 @@
 CREATE TABLE IF NOT EXISTS "public"."qbo_token_state" (
     "id" boolean PRIMARY KEY DEFAULT true,
     "realm_id" "text" NOT NULL,
+    "client_id_enc" "text" NOT NULL,
+    "client_secret_enc" "text" NOT NULL,
     "refresh_token_enc" "text" NOT NULL,
     "access_token_enc" "text",
     "access_token_expires_at" timestamptz,
@@ -55,7 +57,7 @@ $$;
 -- Compare-and-swap: claim the refresh iff the token is stale/absent AND not already being
 -- refreshed. Returns the decrypted refresh token to the single winner; 0 rows to everyone else.
 CREATE OR REPLACE FUNCTION "public"."qbo_claim_refresh"("p_margin_seconds" integer, "p_lock_seconds" integer)
-RETURNS TABLE("realm_id" "text", "refresh_token" "text")
+RETURNS TABLE("realm_id" "text", "refresh_token" "text", "client_id" "text", "client_secret" "text")
     LANGUAGE "sql" SECURITY DEFINER SET "search_path" TO ''
 AS $$
     UPDATE public."qbo_token_state" s
@@ -64,7 +66,10 @@ AS $$
        AND (s."access_token_expires_at" IS NULL
             OR s."access_token_expires_at" <= now() + make_interval(secs => p_margin_seconds))
        AND (s."refresh_lock_until" IS NULL OR s."refresh_lock_until" <= now())
-    RETURNING s."realm_id", public.decrypt_text(s."refresh_token_enc");
+    RETURNING s."realm_id",
+              public.decrypt_text(s."refresh_token_enc"),
+              public.decrypt_text(s."client_id_enc"),
+              public.decrypt_text(s."client_secret_enc");
 $$;
 
 -- Persist a rotated credential and release the refresh lock.
@@ -94,13 +99,22 @@ GRANT EXECUTE ON FUNCTION "public"."qbo_claim_refresh"(integer, integer) TO "ser
 GRANT EXECUTE ON FUNCTION "public"."qbo_store_refreshed"("text", "text", timestamptz) TO "service_role";
 
 -- ---------------------------------------------------------------------------
--- One-time seed (run manually, NOT part of this migration — it carries the live
--- refresh token). After a fresh Intuit authorization:
+-- One-time seed (run manually in the SQL Editor, NOT part of this migration — it
+-- carries live secrets). Fill in the Intuit app client id/secret and a fresh
+-- authorization's realm id + refresh token:
 --
---   INSERT INTO public.qbo_token_state (id, realm_id, refresh_token_enc)
---   VALUES (true, '<REALM_ID>', public.encrypt_text('<REFRESH_TOKEN>'))
+--   INSERT INTO public.qbo_token_state (id, realm_id, client_id_enc, client_secret_enc, refresh_token_enc)
+--   VALUES (
+--     true,
+--     '<REALM_ID>',
+--     public.encrypt_text('<INTUIT_CLIENT_ID>'),
+--     public.encrypt_text('<INTUIT_CLIENT_SECRET>'),
+--     public.encrypt_text('<REFRESH_TOKEN>')
+--   )
 --   ON CONFLICT (id) DO UPDATE
 --     SET realm_id = EXCLUDED.realm_id,
+--         client_id_enc = EXCLUDED.client_id_enc,
+--         client_secret_enc = EXCLUDED.client_secret_enc,
 --         refresh_token_enc = EXCLUDED.refresh_token_enc,
 --         access_token_enc = NULL,
 --         access_token_expires_at = NULL,

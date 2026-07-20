@@ -15,8 +15,8 @@ import { createClient } from "@supabase/supabase-js"
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? ""
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-const qboClientId = Deno.env.get("QBO_CLIENT_ID") ?? ""
-const qboClientSecret = Deno.env.get("QBO_CLIENT_SECRET") ?? ""
+// Intuit client id/secret live in the DB (encrypted), returned by qbo_claim_refresh — so the whole
+// credential can be provisioned via the SQL Editor with no function-secret privileges.
 
 // Intuit's OAuth token endpoint is shared across sandbox and production.
 const TOKEN_ENDPOINT = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
@@ -95,8 +95,8 @@ async function getFreshToken(): Promise<TokenResult> {
     throw new Error("token refresh in progress, please retry")
   }
 
-  // We won the lock — exchange the refresh token with Intuit.
-  const basic = btoa(`${qboClientId}:${qboClientSecret}`)
+  // We won the lock — exchange the refresh token with Intuit (client creds come from the claim).
+  const basic = btoa(`${claim.client_id}:${claim.client_secret}`)
   const res = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: {
