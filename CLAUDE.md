@@ -40,6 +40,14 @@ For a bottom split use `panel: horizontal_split`. Reuse a pane across calls by p
 - **`composeApp/`** - Main Compose Multiplatform UI application
 - **`server/`** - Minimal Ktor server component
 - **`shared/`** - Shared business logic
+- **`modules/`** - Microkernel / out-of-process architecture Gradle modules
+  (`boss-ipc`, `boss-service-*`, `boss-orchestrator`, `boss-ui-sdk`,
+  `boss-mastery-*`, `boss-app-*`). They keep flat Gradle paths (`:boss-ipc`),
+  only the directory lives under `modules/`; excluded on Windows-ARM64 (no
+  protoc binary). `boss-ipc`/`boss-ui-sdk` publish as upstream jars consumed by
+  the standalone `boss-microkernel-runtime` repo.
+- **`plugins/`** - Host-side plugin infrastructure modules (`plugin-loader`,
+  `plugin-repository`, `plugin-api-core`, …)
 - **`supabase/`** - Database migrations and Edge Functions
 
 ### External Dependencies

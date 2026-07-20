@@ -24,7 +24,7 @@ val outputDir = layout.buildDirectory.dir("upstream-artifacts")
 // configuration-cache safe (no project access from the task action). The
 // boss-ipc subproject is in evaluation-pending state at root config time,
 // so use afterEvaluate to grab its version once it's ready.
-val ipcVersionSourceFile = file("boss-ipc/src/main/kotlin/ai/rever/boss/ipc/IpcVersion.kt")
+val ipcVersionSourceFile = file("modules/boss-ipc/src/main/kotlin/ai/rever/boss/ipc/IpcVersion.kt")
 val ipcVersionProvider = providers.provider {
     project(":boss-ipc").version.toString()
 }

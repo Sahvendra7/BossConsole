@@ -47,19 +47,27 @@ val settingsOsName: String = System.getProperty("os.name").lowercase()
 val isWindowsArm64 = settingsOsName.contains("win") && (settingsOsArch == "aarch64" || settingsOsArch == "arm")
 
 if (!isWindowsArm64) {
-    include(":boss-ipc")
-    include(":boss-process-manager")
-    include(":boss-service-auth")
-    include(":boss-ui-sdk")
-    include(":boss-orchestrator")
-    include(":boss-mastery-sdk")
-    include(":boss-mastery-orchestrator")
-    include(":boss-service-workspace")
-    include(":boss-service-settings")
-    include(":boss-service-filesystem")
-    include(":boss-app-terminal")
-    include(":boss-app-editor")
-    include(":boss-app-browser")
+    // The microkernel modules live under modules/ to keep the repo root tidy,
+    // but keep their flat Gradle paths (:boss-ipc, …) so consumers and the
+    // type-safe `projects.*` accessors are unchanged — only the projectDir moves.
+    listOf(
+        "boss-ipc",
+        "boss-process-manager",
+        "boss-service-auth",
+        "boss-ui-sdk",
+        "boss-orchestrator",
+        "boss-mastery-sdk",
+        "boss-mastery-orchestrator",
+        "boss-service-workspace",
+        "boss-service-settings",
+        "boss-service-filesystem",
+        "boss-app-terminal",
+        "boss-app-editor",
+        "boss-app-browser",
+    ).forEach { name ->
+        include(":$name")
+        project(":$name").projectDir = file("modules/$name")
+    }
     include(":plugins:plugin-api-ipc")
 }
 // Plugin modules
