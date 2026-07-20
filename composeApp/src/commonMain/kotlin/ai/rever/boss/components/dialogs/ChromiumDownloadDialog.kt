@@ -1,19 +1,22 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
+import BossDarkError
+import BossDarkSurface
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 /**
  * The actual download UI content - a Surface with progress info.
@@ -43,7 +46,7 @@ private fun DownloadSurface(
                 text = "Downloading Browser Engine",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = BossDarkTextPrimary
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -53,14 +56,19 @@ private fun DownloadSurface(
                 Text(
                     text = "Download failed",
                     fontSize = 14.sp,
-                    color = Color(0xFFEF4444), // Red
+                    color = BossDarkError, // Red
                     fontWeight = FontWeight.Medium
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+                // Bound the error message height so a long failure reason scrolls
+                // instead of pushing the Retry/Exit buttons out of the window.
                 Text(
                     text = error,
                     fontSize = 13.sp,
-                    color = BossDarkTextSecondary
+                    color = BossDarkTextSecondary,
+                    modifier = Modifier
+                        .heightIn(max = 120.dp)
+                        .verticalScroll(rememberScrollState())
                 )
             } else {
                 // Status message
@@ -76,8 +84,8 @@ private fun DownloadSurface(
                 LinearProgressIndicator(
                     progress = progress.coerceIn(0f, 1f),
                     modifier = Modifier.fillMaxWidth().height(6.dp),
-                    color = Color(0xFF3B82F6), // Blue
-                    backgroundColor = Color(0xFF374151) // Dark gray
+                    color = BossDarkAccent, // Blue
+                    backgroundColor = BossDarkSurface // Dark gray
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -112,7 +120,7 @@ private fun DownloadSurface(
                     TextButton(
                         onClick = onRetry,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = Color(0xFF3B82F6)
+                            contentColor = BossDarkAccent
                         )
                     ) {
                         Text("Retry", fontWeight = FontWeight.Medium)
@@ -151,48 +159,6 @@ fun ChromiumDownloadContent(
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
-    ) {
-        DownloadSurface(
-            progress = progress,
-            downloadedMB = downloadedMB,
-            totalMB = totalMB,
-            status = status,
-            error = error,
-            onCancel = onCancel,
-            onRetry = onRetry
-        )
-    }
-}
-
-/**
- * Dialog shown during BOSS-branded Chromium download.
- * Displays download progress with a progress bar and MB downloaded/total.
- * Use this for showing as a modal overlay in an existing window.
- *
- * @param progress Download progress from 0.0 to 1.0
- * @param downloadedMB Megabytes downloaded
- * @param totalMB Total megabytes to download
- * @param status Current status message
- * @param error Error message if download failed
- * @param onCancel Callback when user cancels download
- * @param onRetry Callback when user retries after error
- */
-@Composable
-fun ChromiumDownloadDialog(
-    progress: Float,
-    downloadedMB: Long,
-    totalMB: Long,
-    status: String = "Installing BOSS Browser Engine...",
-    error: String? = null,
-    onCancel: () -> Unit,
-    onRetry: (() -> Unit)? = null
-) {
-    Dialog(
-        onDismissRequest = { /* Non-dismissable during download */ },
-        properties = DialogProperties(
-            dismissOnClickOutside = false,
-            dismissOnBackPress = false
-        )
     ) {
         DownloadSurface(
             progress = progress,

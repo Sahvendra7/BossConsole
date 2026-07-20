@@ -22,11 +22,13 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
+import ai.rever.boss.components.dialogs.openUrlInBrowser
 import ai.rever.boss.components.dialogs.ShortcutHelpDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
 import ai.rever.boss.components.dialogs.CloneProjectDialog
@@ -46,6 +48,8 @@ import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
+import ai.rever.boss.components.window_panel.components.main_window_panels.TabCycleOverlayData
+import ai.rever.boss.components.window_panel.components.main_window_panels.TabCycleOverlayHost
 import ai.rever.boss.components.window_panel.rememberSplitViewState
 import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
@@ -150,6 +154,7 @@ import ai.rever.boss.components.workspaces.WorkspaceSerializer
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.TemplatePanelConfig
 import ai.rever.boss.dashboard.SplitTemplatesManager
+import ai.rever.boss.platform.openFileWithSystemDefault
 import ai.rever.boss.platform.rememberDirectoryPicker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -157,6 +162,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
@@ -190,6 +196,7 @@ import ai.rever.boss.services.TerminalHandlerService
 import ai.rever.boss.services.FileHandlerService
 import ai.rever.boss.services.WorkspaceHandlerService
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.utils.awaitRegistryCondition
 import ai.rever.boss.utils.CLIVersionManager
 import ai.rever.boss.utils.CLIInstaller
 import ai.rever.boss.utils.Version
@@ -230,8 +237,9 @@ expect fun consumePendingInitialProject(windowId: String): Project?
 /**
  * Handle the result of a tab drop operation.
  * Includes bounds checking to handle cases where tab list may have changed during drag.
+ * Internal (not private) so the drop-path branching is unit-testable.
  */
-private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitViewState) {
+internal fun handleTabDropResult(result: TabDropResult, splitViewState: SplitViewState) {
     when (result) {
         is TabDropResult.Reorder -> {
             // Reorder within the same panel
@@ -246,39 +254,63 @@ private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitView
             // Move tab from source panel to target panel
             val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
             val targetPanel = splitViewState.getPanel(result.targetPanelId)
-            val sourceTabCount = sourcePanel?.tabsComponent?.tabsState?.value?.tabs?.size ?: 0
 
-            // Validate source index is within bounds
-            if (sourcePanel != null && targetPanel != null && result.sourceIndex in 0 until sourceTabCount) {
-                // Remove from source panel FIRST to prevent duplicate entries
-                // and ensure sourceIndex remains valid during removal
-                sourcePanel.tabsComponent.removeTab(result.sourceIndex)
-
-                // Then add to target panel
-                val newIndex = targetPanel.tabsComponent.addTab(result.tabInfo)
-                if (newIndex >= 0) {
-                    targetPanel.tabsComponent.selectTab(newIndex)
+            if (sourcePanel != null && targetPanel != null) {
+                fun activate(newIndex: Int) {
+                    if (newIndex >= 0) {
+                        targetPanel.tabsComponent.selectTab(newIndex)
+                    }
+                    splitViewState.setActivePanel(result.targetPanelId)
                 }
 
-                // Set target panel as active
-                splitViewState.setActivePanel(result.targetPanelId)
+                // Transfer the live component instance: the tab keeps running across the
+                // move (a browser tab keeps its page and playing media) instead of being
+                // destroyed in one panel and recreated-from-config in the other.
+                val detached = sourcePanel.tabsComponent.detachTab(result.tabInfo.id)
+                if (detached != null) {
+                    activate(targetPanel.tabsComponent.adoptTab(detached))
+                } else if (sourcePanel.tabsComponent.removeTabById(result.tabInfo.id)) {
+                    // Component missing but the tab entry survived: recreate-from-config in
+                    // the target after cleaning up the source. When the tab is gone entirely
+                    // (closed mid-drag) the move is dropped — recreating from the stale
+                    // drag-start snapshot would resurrect a closed tab.
+                    activate(targetPanel.tabsComponent.addTab(result.tabInfo))
+                }
             }
         }
         is TabDropResult.CreateSplit -> {
-            // Remove from source panel FIRST if it's a different panel
-            // This ensures the tab is removed before splitPanel potentially modifies state
-            if (result.sourcePanelId != result.targetPanelId) {
-                val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
-                // Use tab ID for removal instead of index - more reliable after state changes
-                sourcePanel?.tabsComponent?.removeTabById(result.tabInfo.id)
+            // Cross-panel edge drag is a MOVE: detach the live component from the source so
+            // the new split adopts it as-is (no reload, no leaked instance). Same-panel edge
+            // drops keep their existing copy semantics (handled by tabToMove below).
+            val crossPanel = result.sourcePanelId != result.targetPanelId
+            val detached = if (crossPanel) {
+                splitViewState.getPanel(result.sourcePanelId)
+                    ?.tabsComponent?.detachTab(result.tabInfo.id)
+            } else {
+                null
+            }
+            // Cross-panel detach failed: recreate-from-config only if the tab entry still
+            // exists in the source (component missing) — removing it first, mirroring
+            // MoveToPanel. A tab closed mid-drag drops the move instead of resurrecting.
+            val recreateTab = if (crossPanel && detached == null) {
+                val stillInSource = splitViewState.getPanel(result.sourcePanelId)
+                    ?.tabsComponent?.removeTabById(result.tabInfo.id) == true
+                if (stillInSource) result.tabInfo else null
+            } else if (!crossPanel) {
+                result.tabInfo
+            } else {
+                null
             }
 
             // Create a new split with the tab
-            splitViewState.splitPanel(
-                panelId = result.targetPanelId,
-                orientation = result.orientation,
-                tabToMove = result.tabInfo
-            )
+            if (detached != null || recreateTab != null) {
+                splitViewState.splitPanel(
+                    panelId = result.targetPanelId,
+                    orientation = result.orientation,
+                    tabToMove = recreateTab,
+                    detachedTab = detached
+                )
+            }
         }
     }
 }
@@ -539,6 +571,15 @@ private fun openTerminalLinkInternal(
                 splitViewState.openUrlInActivePanel(url, "Loading...")
             }
         }
+        TerminalLinkOpenMode.SYSTEM_DEFAULT -> {
+            // Open outside BOSS with the OS default handler (browser or file app).
+            // Line:column navigation doesn't apply to external apps.
+            if (isFile) {
+                openFileWithSystemDefault(stripFilePrefix(url))
+            } else {
+                openUrlInBrowser(url)
+            }
+        }
     }
 }
 
@@ -601,6 +642,19 @@ fun ComponentContext.BossApp(
     // Register this window's state in the global registry for multi-window features
     LaunchedEffect(splitViewState, windowId) {
         SplitViewStateRegistry.register(windowId, splitViewState)
+    }
+
+    // Register this window's panel component store so the plugin reload path can
+    // reset open sidebar panel slots across all windows (see PanelComponentStoreRegistry).
+    // DisposableEffect (not LaunchedEffect like the registries below): a store
+    // leaked past its window would keep pinning unloaded plugin classloaders —
+    // the very leak #856 is about — so unregistration is tied to composition
+    // teardown as well as the explicit window-close cleanup.
+    DisposableEffect(panelComponentStore, windowId) {
+        PanelComponentStoreRegistry.register(windowId, panelComponentStore)
+        onDispose {
+            PanelComponentStoreRegistry.unregister(windowId)
+        }
     }
 
     // Register callback for FluckEngine to auto-close download redirect tabs (desktop only)
@@ -975,6 +1029,9 @@ fun ComponentContext.BossApp(
     val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showGlobalSearchDialog by remember { mutableStateOf(false) }
+    // Snapshot of the in-progress MRU tab cycle, drives the Ctrl+Tab switcher overlay
+    // (null in positional mode and whenever no cycle is active).
+    var tabCycleOverlay by remember { mutableStateOf<TabCycleOverlayData?>(null) }
     var showProjectDialog by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showCloneProjectDialog by remember { mutableStateOf(false) }
@@ -1041,6 +1098,9 @@ fun ComponentContext.BossApp(
         // Initialize TerminalAPIAccess so host code can access terminal via the plugin system
         TerminalAPIAccess.initialize(plugin)
 
+        // Initialize EditorAPIAccess so host code can access editor settings via the plugin system
+        ai.rever.boss.services.editor.EditorAPIAccess.initialize(plugin)
+
         onDispose {
             // NOTE: Browser disposal moved to main.kt onCloseRequest handler
             // Browsers must be disposed BEFORE Compose disposal begins, not during it
@@ -1070,6 +1130,9 @@ fun ComponentContext.BossApp(
 
             // Unregister this window's state from the global registry
             SplitViewStateRegistry.unregister(windowId)
+
+            // Unregister this window's panel component store from the registry
+            PanelComponentStoreRegistry.unregister(windowId)
 
             // Unregister this window's project state from the registry
             WindowProjectStateRegistry.unregister(windowId)
@@ -1114,6 +1177,22 @@ fun ComponentContext.BossApp(
             // Check if wizard was already completed
             val wizardCompleted = withContext(Dispatchers.IO) {
                 UserDataStorage.isPluginWizardCompleted()
+            }
+
+            // Startup plugin loading (persisted pass + external directory scan) is
+            // asynchronous, so "no plugins installed" is only meaningful once it
+            // finishes — checking mid-load read an empty registry and re-showed the
+            // wizard on every restart. First run (!wizardCompleted) shows the wizard
+            // regardless, so only the completed case needs to wait.
+            if (wizardCompleted) {
+                val loadFinished = withTimeoutOrNull(30_000) {
+                    defaultPlugin.awaitInitialPluginLoad()
+                }
+                if (loadFinished == null) {
+                    logger.warn(LogCategory.SYSTEM, "Startup plugin load still running after 30s; skipping wizard check")
+                    pluginWizardChecked = true
+                    return@LaunchedEffect
+                }
             }
 
             // Check if any plugins are installed (in-memory operation, no IO needed)
@@ -1237,7 +1316,17 @@ fun ComponentContext.BossApp(
                             }
                             // Apply the last session workspace FIRST
                             workspaceManager.loadWorkspace(configWithId)
-                            applyWorkspace(configWithId, splitViewState, windowProjectState)
+                            // A failed restore must not abort this collector: the
+                            // handler-marking below is the only path left once
+                            // loadWorkspace has set currentWorkspace — the fresh-install
+                            // fallback timeout deliberately stands down at that point.
+                            try {
+                                applyWorkspace(configWithId, splitViewState, windowProjectState)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                logger.error(LogCategory.WORKSPACE, "Last Session restore failed - continuing startup", error = e)
+                            }
 
                         } else {
                         }
@@ -1290,7 +1379,11 @@ fun ComponentContext.BossApp(
             // Read timeout from settings (use current value, don't make it a key to avoid restart)
             val timeoutMs = StartupSettingsManager.currentSettings.value.workspaceLoadTimeoutMs
             delay(timeoutMs) // Wait for workspace manager to load from disk
-            if (!workspaceRestorationComplete) {
+            // currentWorkspace != null means Last Session restore is already in
+            // flight (it can outlast this timeout while applyWorkspace waits for
+            // plugin tab types) — let it mark handlers ready itself, otherwise
+            // handler-created tabs get destroyed by the restore's clearAllPanels.
+            if (!workspaceRestorationComplete && workspaceManager.currentWorkspace.value == null) {
                 // Still not complete after timeout - assume fresh install
                 workspaceRestorationComplete = true
 
@@ -1538,9 +1631,28 @@ fun ComponentContext.BossApp(
                 try {
                     // Find the panel info from registry
                     // Compare only panelId and pluginId, ignore defaultOrder (UI metadata)
-                    val panelInfo = panelRegistry.getAllPanels().find {
+                    fun findPanelInfo() = panelRegistry.getAllPanels().find {
                         it.id.panelId == event.panelId.panelId &&
                         it.id.pluginId == event.panelId.pluginId
+                    }
+
+                    var panelInfo = findPanelInfo()
+                    if (panelInfo == null) {
+                        // The plugin providing this panel may still be loading
+                        // (panels are opened reactively on project selection,
+                        // which can beat async plugin registration at startup).
+                        // Wait bounded for it instead of silently dropping the event.
+                        awaitRegistryCondition(
+                            panelRegistry::addChangeListener,
+                            panelRegistry::removeChangeListener
+                        ) { findPanelInfo() != null }
+                        panelInfo = findPanelInfo()
+                        if (panelInfo == null) {
+                            logger.warn(LogCategory.UI, "Dropping panel open event - panel never registered", mapOf(
+                                "panelId" to event.panelId.panelId,
+                                "pluginId" to event.panelId.pluginId
+                            ))
+                        }
                     }
 
                     if (panelInfo != null) {
@@ -1982,6 +2094,33 @@ fun ComponentContext.BossApp(
                                 WindowOperations.closeWindow(windowId)
                             }
                         }
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Tab switching (Ctrl+Tab). Next/previous "steps" and the MRU "commit" share ONE ordered
+    // stream so a step (Tab keydown) is always applied before its commit (modifier keyup) —
+    // a single collector preserves emission order; separate flows would not guarantee it.
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.tabSwitchEvents
+            .onEach { (eventWindowId, action) ->
+                if (eventWindowId != windowId) return@onEach
+                val comp = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                when (action) {
+                    MenuActionsHandler.TabSwitchAction.NEXT -> {
+                        comp?.switchToNextTab()
+                        // Non-null only during an MRU cycle; drives the switcher overlay.
+                        tabCycleOverlay = comp?.currentCycleOverlay()
+                    }
+                    MenuActionsHandler.TabSwitchAction.PREVIOUS -> {
+                        comp?.switchToPreviousTab()
+                        tabCycleOverlay = comp?.currentCycleOverlay()
+                    }
+                    MenuActionsHandler.TabSwitchAction.COMMIT -> {
+                        comp?.commitTabCycle()
+                        tabCycleOverlay = null
                     }
                 }
             }
@@ -2703,6 +2842,12 @@ fun ComponentContext.BossApp(
                         modifier = Modifier.align(Alignment.TopEnd)
                     )
                 }
+
+                // MRU tab-switcher overlay (Ctrl+Tab in most-recently-used mode)
+                TabCycleOverlayHost(
+                    data = tabCycleOverlay,
+                    modifier = Modifier.align(Alignment.Center)
+                )
             }
             
             // Plugin update confirmation prompt (from "Check for Updates" or the header badge).
@@ -2778,11 +2923,25 @@ fun ComponentContext.BossApp(
                                 )
                                 targetComponent.addTab(tab)
                             }
+                            TabType.JUPYTER -> {
+                                val tab = JupyterTabInfo.createUntitled(path)
+                                targetComponent.addTab(tab)
+                            }
                         }
                         // Reset the initial type after tab creation
                         newTabDialogInitialType = null
                     },
-                    initialTabType = newTabDialogInitialType
+                    initialTabType = newTabDialogInitialType,
+                    // Plugin tab types build their own TabInfo; open it in the
+                    // same target component as the built-in types.
+                    onCreateTabInfo = { tabInfo ->
+                        val targetComponent = splitViewState.getActiveTabsComponent()
+                            ?: splitViewState.getLastInteractedTabComponent()
+                            ?: tabsComponent
+                        targetComponent.addTab(tabInfo)
+                        newTabDialogInitialType = null
+                    },
+                    projectPath = windowProjectState.selectedProject.value.path.ifEmpty { null }
                 )
             }
 
@@ -2865,6 +3024,11 @@ fun ComponentContext.BossApp(
                                         splitViewState.openUrlInActivePanel(url, bookmark.tabConfig.title)
                                     }
                                     "editor" -> bookmark.tabConfig.filePath?.let { filePath ->
+                                        FileEventBus.openFile(filePath, sourceWindowId = windowId, projectPath = selectedProject.path)
+                                    }
+                                    // Route .ipynb through the same file bus as editor; the router opens
+                                    // it in the notebook tab when the plugin is present, else the editor.
+                                    "jupyter" -> bookmark.tabConfig.filePath?.takeIf { it.isNotBlank() }?.let { filePath ->
                                         FileEventBus.openFile(filePath, sourceWindowId = windowId, projectPath = selectedProject.path)
                                     }
                                     else -> {} // Other tab types can be added later
@@ -3113,7 +3277,7 @@ fun ComponentContext.BossApp(
                             }
                             else -> {
                                 logger.error(LogCategory.SYSTEM, "Plugin manager not available during installation")
-                                Result.failure(Exception("Plugin manager not available"))
+                                Result.failure(Exception("Toolbox not available"))
                             }
                         }
                     }

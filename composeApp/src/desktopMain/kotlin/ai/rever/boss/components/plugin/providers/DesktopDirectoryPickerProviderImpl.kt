@@ -29,7 +29,14 @@ actual class DirectoryPickerProviderImpl : DirectoryPickerProvider {
                 // Use AWT FileDialog for native macOS look
                 System.setProperty("apple.awt.fileDialogForDirectories", "true")
 
-                val dialog = FileDialog(null as Frame?, "Select Project Directory", FileDialog.LOAD)
+                // Own the dialog to the app's active window and force it frontmost.
+                // With a null owner the native dialog can open BEHIND the Compose
+                // window (or without activating the app), so a click looks like it
+                // did nothing. The active window here is the ComposeWindow (a Frame).
+                val owner = java.awt.KeyboardFocusManager
+                    .getCurrentKeyboardFocusManager().activeWindow as? Frame
+                val dialog = FileDialog(owner, "Select Project Directory", FileDialog.LOAD)
+                dialog.isAlwaysOnTop = true
                 dialog.isVisible = true
 
                 val directory = dialog.directory
@@ -53,7 +60,9 @@ actual class DirectoryPickerProviderImpl : DirectoryPickerProvider {
                     currentDirectory = File(System.getProperty("user.home"))
                 }
 
-                val result = fileChooser.showOpenDialog(null)
+                val owner = java.awt.KeyboardFocusManager
+                    .getCurrentKeyboardFocusManager().activeWindow
+                val result = fileChooser.showOpenDialog(owner)
 
                 if (result == javax.swing.JFileChooser.APPROVE_OPTION) {
                     val selectedFile = fileChooser.selectedFile

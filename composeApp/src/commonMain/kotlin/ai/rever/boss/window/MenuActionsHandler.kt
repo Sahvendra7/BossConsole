@@ -30,6 +30,17 @@ object MenuActionsHandler {
     private val _closeTabEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val closeTabEvents: SharedFlow<String> = _closeTabEvents.asSharedFlow()
 
+    /**
+     * Tab-cycling actions. These are intentionally carried on a SINGLE flow (below) rather
+     * than one flow per action: a "next/previous" step and the "commit" that follows it must
+     * be observed in emission order, which is only guaranteed within one ordered stream.
+     */
+    enum class TabSwitchAction { NEXT, PREVIOUS, COMMIT }
+
+    // Single ordered stream for Ctrl+Tab so a step is always delivered before its commit.
+    private val _tabSwitchEvents = MutableSharedFlow<Pair<String, TabSwitchAction>>(extraBufferCapacity = 10)
+    val tabSwitchEvents: SharedFlow<Pair<String, TabSwitchAction>> = _tabSwitchEvents.asSharedFlow()
+
     private val _zoomInEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val zoomInEvents: SharedFlow<String> = _zoomInEvents.asSharedFlow()
 
@@ -196,6 +207,34 @@ object MenuActionsHandler {
      */
     fun triggerCloseTab(windowId: String) {
         _closeTabEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Next Tab" action for the specified window (Ctrl+Tab).
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerNextTab(windowId: String) {
+        _tabSwitchEvents.tryEmit(windowId to TabSwitchAction.NEXT)
+    }
+
+    /**
+     * Trigger a "Previous Tab" action for the specified window (Ctrl+Shift+Tab).
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerPreviousTab(windowId: String) {
+        _tabSwitchEvents.tryEmit(windowId to TabSwitchAction.PREVIOUS)
+    }
+
+    /**
+     * Commit an in-progress MRU tab cycle for the specified window, fired when the
+     * cycling modifier (e.g. Ctrl) is released. No-op in positional mode.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerCommitTabCycle(windowId: String) {
+        _tabSwitchEvents.tryEmit(windowId to TabSwitchAction.COMMIT)
     }
 
     /**

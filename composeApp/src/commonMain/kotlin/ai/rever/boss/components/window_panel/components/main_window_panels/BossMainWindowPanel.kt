@@ -2,9 +2,12 @@ package ai.rever.boss.components.window_panel.components.main_window_panels
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.keymap.KeymapSettingsManager
+import ai.rever.boss.keymap.model.TabSwitchMode
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkSurface
 import BossDarkTextSecondary
 import ai.rever.boss.components.bars.ScrollbarConfig
 import ai.rever.boss.components.bars.horizontal.HorizontalBar
@@ -48,6 +51,7 @@ import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -79,7 +83,10 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.ViewColumn
+import ai.rever.boss.utils.revealInFileManager
+import ai.rever.boss.utils.revealInFileManagerLabel
 import androidx.compose.material.icons.outlined.Splitscreen
 import androidx.compose.runtime.*
 import androidx.compose.runtime.DisposableEffect
@@ -103,6 +110,8 @@ import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
+import com.arkivanov.essenty.lifecycle.destroy
+import com.arkivanov.essenty.lifecycle.resume
 import kotlin.time.Clock
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -342,6 +351,27 @@ fun BossTabsComponent.BossMainTabBar(
                                 add(ContextMenuItem(isDivider = true))
                             }
 
+                            // Reveal the tab's backing file in the OS file manager (file-backed tabs).
+                            // Host tab types expose filePath directly. Dynamic plugin tabs (e.g. the
+                            // editor-tab plugin's EditorTabData) live in a plugin classloader we can't
+                            // reference by type, so fall back to reading a `filePath` getter reflectively
+                            // — the same duck-typing the editor-tab plugin uses for host tab types.
+                            // The reflected value is assumed absolute: revealInFileManager resolves via
+                            // File(path).absolutePath, so a relative path would resolve against the CWD.
+                            val revealPath = when (val tab = config) {
+                                is EditorTabInfo -> tab.filePath
+                                is JupyterTabInfo -> tab.filePath
+                                else -> runCatching {
+                                    tab.javaClass.getMethod("getFilePath").invoke(tab) as? String
+                                }.getOrNull()
+                            }?.takeIf { it.isNotBlank() }
+                            if (revealPath != null) {
+                                add(ContextMenuItem(revealInFileManagerLabel(), Icons.Outlined.FolderOpen, onClick = {
+                                    revealInFileManager(revealPath)
+                                }))
+                                add(ContextMenuItem(isDivider = true))
+                            }
+
                             // Bookmark current tab
                             // Reference collections to ensure recomposition on bookmark changes
                             collections
@@ -463,7 +493,7 @@ fun BossTabsComponent.BossMainTabBar(
                                 .width(32.dp)
                                 .padding(4.dp)
                                 .background(
-                                    color = Color(0xFF3C3F41),
+                                    color = BossDarkSurface,
                                     shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                                 )
                                 .clickable {
@@ -478,7 +508,7 @@ fun BossTabsComponent.BossMainTabBar(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "New Tab",
-                                tint = Color(0xFF999999),
+                                tint = BossDarkTextSecondary,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -494,7 +524,7 @@ fun BossTabsComponent.BossMainTabBar(
                         .width(32.dp)
                         .padding(4.dp)
                         .background(
-                            color = Color(0xFF3C3F41),
+                            color = BossDarkSurface,
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                         )
                         .clickable {
@@ -509,7 +539,7 @@ fun BossTabsComponent.BossMainTabBar(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "New Tab",
-                        tint = Color(0xFF999999),
+                        tint = BossDarkTextSecondary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -610,8 +640,23 @@ fun BossTabsComponent.BossMainTabBar(
                             selectTab(tabIndex)
                         }
                     }
+                    TabType.JUPYTER -> {
+                        val jupyterTab = JupyterTabInfo.createUntitled(path)
+                        val tabIndex = addTab(jupyterTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
                 }
-            }
+            },
+            // Plugin tab types build their own TabInfo; open it the same way.
+            onCreateTabInfo = { tabInfo ->
+                val tabIndex = addTab(tabInfo)
+                if (tabIndex >= 0) {
+                    selectTab(tabIndex)
+                }
+            },
+            projectPath = windowProjectState?.selectedProject?.value?.path
         )
     }
 
@@ -977,8 +1022,23 @@ fun BossTabsComponent.BossMainPanelContent(
                             selectTab(tabIndex)
                         }
                     }
+                    TabType.JUPYTER -> {
+                        val jupyterTab = JupyterTabInfo.createUntitled(path)
+                        val tabIndex = addTab(jupyterTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
                 }
-            }
+            },
+            // Plugin tab types build their own TabInfo; open it the same way.
+            onCreateTabInfo = { tabInfo ->
+                val tabIndex = addTab(tabInfo)
+                if (tabIndex >= 0) {
+                    selectTab(tabIndex)
+                }
+            },
+            projectPath = selectedProject.path.ifEmpty { null }
         )
     }
 }
@@ -1098,6 +1158,15 @@ private fun createTabFromConfig(
 val createBossAppContext get() = DefaultComponentContext(LifecycleRegistry())
 
 /**
+ * Snapshot of an in-progress MRU tab cycle, used to render the tab-switcher overlay:
+ * the open tabs in cycle order plus the index of the currently-highlighted candidate.
+ */
+data class TabCycleOverlayData(
+    val tabs: List<TabInfo>,
+    val highlightedIndex: Int
+)
+
+/**
  * Root component for the BOSS app using Decompose for navigation
  *
  * @param windowId The window ID for per-window terminal isolation (Issue #498)
@@ -1112,10 +1181,30 @@ class BossTabsComponent(
     private val componentId = "${windowId}_${System.identityHashCode(this)}"
 
     private val tabComponents = mutableStateMapOf<String, TabComponentWithUI>()
+
+    // Per-tab lifecycle registries. Each tab component gets its own ComponentContext whose
+    // lifecycle is destroyed when the tab is closed, so components that clean up in
+    // lifecycle.onDestroy (e.g. the fluck-browser plugin disposing its JxBrowser handle)
+    // actually get destroyed. Previously all tab components shared this panel's context,
+    // whose LifecycleRegistry is never destroyed — closing or moving a browser tab leaked
+    // a live Chromium process (audio kept playing in the background).
+    //
+    // Plain map on purpose (tabComponents is a state map only because composition reads
+    // it): all tab mutations happen on the UI thread, matching Essenty's lifecycle
+    // threading expectations.
+    private val tabLifecycles = mutableMapOf<String, LifecycleRegistry>()
     private val tabsNavigation = TabsNavigation<TabInfo>()
 
     // Expose tab state for UI
     val tabsState: Value<TabsNavigation.TabsState<TabInfo>> = tabsNavigation.state
+
+    // --- Ctrl+Tab tab switching state ---
+    // Most-recently-used order of tab ids (most recent first), used by MRU switch mode.
+    private val mruTabIds = mutableListOf<String>()
+    // Snapshot of the cycle order while an MRU cycle is in progress (hold-modifier,
+    // tap-Tab, commit on release); null when no cycle is active.
+    private var tabCycleOrder: List<String>? = null
+    private var tabCyclePointer: Int = 0
 
     // Listener for tab type unregistration
     private val unregisterListener: (ai.rever.boss.plugin.api.TabTypeId) -> Unit = { typeId ->
@@ -1165,6 +1254,12 @@ class BossTabsComponent(
     ) : TabUpdateProvider {
 
         override fun updateTitle(title: String) {
+            // A blank title never improves the tab chip — e.g. about:blank (the
+            // dashboard/home state) fires TitleChanged with an empty title on
+            // back-navigation, which used to blank the tab. Keep the last
+            // meaningful title instead.
+            if (title.isBlank()) return
+
             val tabs = bossTabsComponent.tabsState.value.tabs
             val tabIndex = tabs.indexOfFirst { it.id == tabId }
             if (tabIndex < 0) return
@@ -1252,9 +1347,19 @@ class BossTabsComponent(
             val currentTab = tabs[tabIndex]
 
             if (currentTab is FluckTabInfo) {
-                // Get current title for navigation update
-                val title = currentTab.title
-                val updatedTab = currentTab.updateNavigation(title, url)
+                // Landing on home (about:blank renders the dashboard) means no
+                // TitleChanged/FaviconChanged will follow — apply the home identity
+                // here so the tab never keeps the previous page's title/favicon.
+                // The home title also goes into the navigation-history entry, so
+                // the visit isn't recorded under the previous page's title.
+                val isHome = FluckTabInfo.isHomeUrl(url)
+                val title = if (isHome) FluckTabInfo.HOME_TITLE else currentTab.title
+                var updatedTab = currentTab.updateNavigation(title, url)
+                if (isHome) {
+                    updatedTab = updatedTab
+                        .updateTitle(FluckTabInfo.HOME_TITLE)
+                        .updateFaviconCacheKey(null)
+                }
                 bossTabsComponent.updateTab(tabIndex, updatedTab)
             }
         }
@@ -1337,22 +1442,42 @@ class BossTabsComponent(
 
     // Add a new tab
     fun addTab(config: TabInfo): Int {
-        // Create component for this tab
-        val component = tabRegistry.createTabComponent(config, this)
+        // Create component for this tab, with its own lifecycle so tab close can destroy it
+        // (fires the component's lifecycle.onDestroy — see tabLifecycles).
+        val tabLifecycle = LifecycleRegistry()
+        val component = tabRegistry.createTabComponent(config, DefaultComponentContext(tabLifecycle))
 
         if (component != null) {
+            // Drive the lifecycle to RESUMED: subscribers added in the component's init get
+            // their up-callbacks replayed, and destroy() below CREATED would otherwise be a
+            // silent no-op (Essenty only fires onDestroy from CREATED or above).
+            tabLifecycle.resume()
+
             // Store component
             tabComponents[config.id] = component
+            tabLifecycles[config.id] = tabLifecycle
 
             // Register tab with TabUpdateRegistry for plugin updates
             TabUpdateRegistry.registerTab(config.id, componentId)
 
             // Add to navigation
             val index = tabsNavigation.addTab(config)
+            // A newly opened tab becomes active; record it as most-recently-used and end
+            // any in-progress MRU cycle.
+            recordTabUsage(config.id)
+            tabCycleOrder = null
             publishSystemEvent(TabEvent(tabId = config.id, tabType = TabEventType.OPENED, windowId = windowId))
             return index
         }
 
+        // No factory for this type — usually the owning plugin hasn't finished
+        // loading. The tab is dropped; workspace restore gates on tab-type
+        // registration to avoid hitting this, so reaching here is worth a log.
+        // (tabLifecycle stays INITIALIZED with no subscribers and no references — GC'd.)
+        bossMainWindowPanelLogger.warn(LogCategory.UI, "Dropped tab - no factory registered for its type", mapOf(
+            "typeId" to config.typeId.typeId,
+            "title" to config.title
+        ))
         return -1 // Failed to create component
     }
 
@@ -1370,7 +1495,12 @@ class BossTabsComponent(
             if (component is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
                 component.dispose()
             }
-            // Panel-host tabs share the window lifecycle, so notify on close explicitly:
+            // Destroy the tab's own lifecycle so components that clean up in
+            // lifecycle.onDestroy (dynamic plugin tabs like fluck-browser) release their
+            // resources — without this a closed browser tab's Chromium process lives on.
+            tabLifecycles.remove(it.id)?.destroy()
+            // Panel-host tabs keep an explicit close signal (the hosted panel component is
+            // owned by PanelComponentStore, not the tab lifecycle — see PanelHostTab.kt):
             // decrements the hosted-as-tab count so the sidebar icon reopens the plugin
             // in its sidebar location once the last hosting tab is closed.
             if (component is ai.rever.boss.components.plugin.tab_types.PanelHostTabComponent) {
@@ -1382,21 +1512,167 @@ class BossTabsComponent(
             if (it.id.startsWith(RUNNER_TERMINAL_PREFIX)) {
                 RunnerTerminalService.removeTerminal(windowId, it.id)
             }
+            // Drop the closed tab from MRU tracking and abandon any in-progress cycle.
+            mruTabIds.remove(it.id)
+            tabCycleOrder = null
         }
         tabsNavigation.removeTab(index)
     }
 
-    // Remove a tab by ID - safer than index-based removal when state may have changed
-    fun removeTabById(tabId: String) {
+    // Remove a tab by ID - safer than index-based removal when state may have changed.
+    // Returns true if a tab with that id existed and was removed.
+    fun removeTabById(tabId: String): Boolean {
         val index = tabsState.value.tabs.indexOfFirst { it.id == tabId }
         if (index >= 0) {
             removeTab(index)
+            return true
         }
+        return false
+    }
+
+    /**
+     * A tab lifted out of one panel for adoption by another (see [detachTab]/[adoptTab]).
+     * Carries the live component instance and its lifecycle so a cross-panel move transfers
+     * the running tab instead of destroy-and-recreate — a moved browser tab keeps its page
+     * (and playing media) instead of reloading and leaking the old browser instance.
+     *
+     * Contract: the caller MUST hand a non-null DetachedTab to [adoptTab] or call
+     * [destroy] on it. Dropping it on the floor keeps the component running (its
+     * lifecycle stays RESUMED) with no panel showing it and no cleanup path — the
+     * exact leak the detach/adopt mechanism exists to eliminate.
+     */
+    class DetachedTab internal constructor(
+        val config: TabInfo,
+        internal val component: TabComponentWithUI,
+        internal val lifecycle: LifecycleRegistry?
+    ) {
+        /** Destroy the detached component instead of adopting it (fires its onDestroy cleanup). */
+        fun destroy() {
+            lifecycle?.destroy()
+        }
+    }
+
+    /**
+     * Detach a tab for a move: remove it from this panel WITHOUT destroying its component or
+     * publishing a CLOSED event. Returns null if the tab or its component is unknown (caller
+     * should fall back to remove+add). The returned [DetachedTab.config] is the panel's
+     * CURRENT TabInfo (fresh navigation state), not whatever the caller captured at drag start.
+     */
+    fun detachTab(tabId: String): DetachedTab? {
+        val index = tabsState.value.tabs.indexOfFirst { it.id == tabId }
+        if (index < 0) return null
+        val config = tabsState.value.tabs[index]
+        val component = tabComponents.remove(tabId) ?: return null
+        val lifecycle = tabLifecycles.remove(tabId)
+
+        // Ownership-checked: no-op if the destination already re-registered this id.
+        TabUpdateRegistry.unregisterTab(tabId, componentId)
+        mruTabIds.remove(tabId)
+        tabCycleOrder = null
+        tabsNavigation.removeTab(index)
+        return DetachedTab(config, component, lifecycle)
+    }
+
+    /**
+     * Adopt a tab detached from another panel: the component instance (and its lifecycle)
+     * transfer as-is, so the tab keeps running across the move. Counterpart of [detachTab].
+     */
+    fun adoptTab(detached: DetachedTab): Int {
+        // Tab ids are unique across a window, but guard anyway: silently overwriting an
+        // existing entry would orphan its component without destroy — the leak shape this
+        // change exists to eliminate. Close the stale holder first.
+        if (tabComponents.containsKey(detached.config.id)) {
+            removeTabById(detached.config.id)
+        }
+        tabComponents[detached.config.id] = detached.component
+        detached.lifecycle?.let { tabLifecycles[detached.config.id] = it }
+        TabUpdateRegistry.registerTab(detached.config.id, componentId)
+        val index = tabsNavigation.addTab(detached.config)
+        recordTabUsage(detached.config.id)
+        tabCycleOrder = null
+        publishSystemEvent(TabEvent(tabId = detached.config.id, tabType = TabEventType.MOVED, windowId = windowId))
+        return index
     }
 
     // Select a tab
     fun selectTab(index: Int) {
+        // A direct selection (tab click, programmatic open) ends any in-progress MRU
+        // cycle and marks the tab as most-recently-used.
+        tabCycleOrder = null
         tabsNavigation.selectTab(index)
+        tabsState.value.tabs.getOrNull(index)?.let { recordTabUsage(it.id) }
+    }
+
+    /**
+     * Switch to the next tab via Ctrl+Tab. Behavior follows the configured
+     * [TabSwitchMode]: positional (next in tab-bar order) or MRU (Alt+Tab style).
+     */
+    fun switchToNextTab() = switchTab(forward = true)
+
+    /** Switch to the previous tab via Ctrl+Shift+Tab. See [switchToNextTab]. */
+    fun switchToPreviousTab() = switchTab(forward = false)
+
+    private fun switchTab(forward: Boolean) {
+        val tabs = tabsState.value.tabs
+        if (tabs.size <= 1) return
+        when (KeymapSettingsManager.currentSettings.value.tabSwitchMode) {
+            TabSwitchMode.POSITIONAL -> {
+                val cur = tabsState.value.activeIndex.coerceAtLeast(0)
+                val step = if (forward) 1 else -1
+                val next = ((cur + step) % tabs.size + tabs.size) % tabs.size
+                selectTab(next)
+            }
+            TabSwitchMode.MRU -> stepMruCycle(forward)
+        }
+    }
+
+    private fun stepMruCycle(forward: Boolean) {
+        val tabs = tabsState.value.tabs
+        // Build the cycle order once at the start of a cycle: MRU order first, then any
+        // open tabs not yet tracked (in tab-bar order) so every tab stays reachable.
+        var order = tabCycleOrder
+        if (order == null) {
+            val tabIds = tabs.map { it.id }
+            val tracked = tabIds.filter { mruTabIds.contains(it) }.sortedBy { mruTabIds.indexOf(it) }
+            val untracked = tabIds.filter { !mruTabIds.contains(it) }
+            order = tracked + untracked
+            tabCycleOrder = order
+            tabCyclePointer = order.indexOf(tabsState.value.activeTab?.id).coerceAtLeast(0)
+        }
+        if (order.isEmpty()) return
+        val step = if (forward) 1 else -1
+        tabCyclePointer = ((tabCyclePointer + step) % order.size + order.size) % order.size
+        val targetIndex = tabs.indexOfFirst { it.id == order[tabCyclePointer] }
+        // Move selection without reordering MRU; commitTabCycle() promotes the landed tab.
+        if (targetIndex >= 0) tabsNavigation.selectTab(targetIndex)
+    }
+
+    /**
+     * Commit an in-progress MRU cycle (called when the cycling modifier is released):
+     * promote the landed tab to the front of the MRU order and end the cycle.
+     * No-op when no cycle is active (e.g. positional mode).
+     */
+    fun commitTabCycle() {
+        tabCycleOrder ?: return
+        tabCycleOrder = null
+        tabsState.value.activeTab?.let { recordTabUsage(it.id) }
+    }
+
+    /**
+     * Snapshot of the in-progress MRU cycle for the switcher overlay, or null when no
+     * cycle is active (e.g. positional mode or after commit).
+     */
+    fun currentCycleOverlay(): TabCycleOverlayData? {
+        val order = tabCycleOrder ?: return null
+        val byId = tabsState.value.tabs.associateBy { it.id }
+        val tabs = order.mapNotNull { byId[it] }
+        if (tabs.isEmpty()) return null
+        return TabCycleOverlayData(tabs = tabs, highlightedIndex = tabCyclePointer.coerceIn(0, tabs.size - 1))
+    }
+
+    private fun recordTabUsage(tabId: String) {
+        mruTabIds.remove(tabId)
+        mruTabIds.add(0, tabId)
     }
 
     // Move a tab from one position to another
@@ -1525,6 +1801,11 @@ class BossTabsComponent(
             }
         }
         tabComponents.clear()
+        // Destroy the per-tab lifecycles so plugin components that clean up in
+        // lifecycle.onDestroy release their resources on window close too — same
+        // contract as removeTab, without relying on the disposeAll() hammer below.
+        tabLifecycles.values.toList().forEach { it.destroy() }
+        tabLifecycles.clear()
         // Also dispose any browsers created by dynamic plugins via BrowserService
         ai.rever.boss.components.plugin.disposePluginBrowsers()
     }
@@ -1549,6 +1830,11 @@ private fun convertTabInfoToTabConfig(tabInfo: TabInfo): TabConfig {
         is TerminalTabInfo -> TabConfig(
             type = "terminal",
             title = tabInfo.title
+        )
+        is JupyterTabInfo -> TabConfig(
+            type = "jupyter",
+            title = tabInfo.title,
+            filePath = tabInfo.filePath
         )
         else -> TabConfig(
             type = "unknown",

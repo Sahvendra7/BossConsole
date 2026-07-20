@@ -1,11 +1,22 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkSurface
+import BossDarkTextMuted
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import ContextMenuBackground
 import ContextMenuBorder
+import ai.rever.boss.plugin.api.NewTabContext
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
+import ai.rever.boss.plugin.api.TabTypeInfo
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -65,7 +76,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.foundation.rememberScrollState
@@ -119,7 +129,8 @@ private fun validateFilePath(path: String, basePath: String? = null): String? {
 enum class TabType(val tabTypeId: TabTypeId) {
     URL(FluckTabType.typeId),
     FILE(CodeEditorTabType.typeId),
-    TERMINAL(TerminalTabType.typeId)
+    TERMINAL(TerminalTabType.typeId),
+    JUPYTER(JupyterTabInfo.TYPE_ID)
 }
 
 // Simple URL parameter encoding
@@ -150,15 +161,65 @@ fun NewTabDialog(
     onDismiss: () -> Unit,
     onCreateTab: (type: TabType, path: String) -> Unit,
     tabRegistry: TabRegistry,
-    initialTabType: TabType? = null
+    initialTabType: TabType? = null,
+    /**
+     * Opens a [TabInfo] built by a plugin tab type's [TabTypeInfo.createTabInfo].
+     * When null, plugin-registered tab types are not offered (legacy callers).
+     */
+    onCreateTabInfo: ((TabInfo) -> Unit)? = null,
+    projectPath: String? = null,
+    windowId: String? = null
 ) {
     val availableTypes = TabType.entries.filter { tabRegistry.isRegistered(it.tabTypeId) }
+    // Plugin-registered tab types that opted into the dialog (newTabSpec).
+    // TabRegistry is state-backed, so this recomposes on (un)registration.
+    val builtinTypeIds = TabType.entries.map { it.tabTypeId }.toSet()
+    val pluginTypes = if (onCreateTabInfo != null) {
+        tabRegistry.getAllTabTypes()
+            .filter { it.newTabSpec != null && it.typeId !in builtinTypeIds }
+            .sortedWith(compareBy({ it.newTabSpec!!.order }, { it.displayName }))
+    } else {
+        emptyList()
+    }
     val defaultType = if (initialTabType != null && initialTabType in availableTypes) initialTabType
         else availableTypes.firstOrNull() ?: TabType.URL
     var selectedType by remember { mutableStateOf(defaultType) }
+    // Non-null when a plugin tab type is selected; built-in selection then
+    // idles. Defaults to the first plugin type when no built-ins are
+    // available. Keyed on availableTypes/pluginTypes so the default is
+    // (re)applied if the registry populates after the dialog first composes
+    // (built-ins are async-loaded plugins — an unkeyed remember would leave
+    // nothing selected). Once the user picks a type the key is stable, so
+    // their choice sticks.
+    var selectedPluginType by remember(availableTypes.isEmpty(), pluginTypes.firstOrNull()?.typeId) {
+        mutableStateOf(if (availableTypes.isEmpty()) pluginTypes.firstOrNull()?.typeId else null)
+    }
+    val selectedPluginTypeInfo = selectedPluginType?.let { id -> pluginTypes.firstOrNull { it.typeId == id } }
+    var pluginInput by remember(selectedPluginType) { mutableStateOf("") }
+
+    // Confirm a plugin tab type: the plugin builds the TabInfo (null = input
+    // rejected, dialog stays open). Crash-isolated — plugin code.
+    val confirmPluginTab: () -> Unit = confirm@{
+        val typeInfo = selectedPluginTypeInfo ?: return@confirm
+        val spec = typeInfo.newTabSpec ?: return@confirm
+        if (!spec.inputOptional && pluginInput.isBlank()) return@confirm
+        val tabInfo = try {
+            typeInfo.createTabInfo(pluginInput.trim(), NewTabContext(projectPath = projectPath, windowId = windowId))
+        } catch (e: Exception) {
+            newTabDialogLogger.warn(LogCategory.UI, "Plugin createTabInfo failed", mapOf(
+                "typeId" to typeInfo.typeId.typeId
+            ), e)
+            null
+        }
+        if (tabInfo != null) {
+            onCreateTabInfo?.invoke(tabInfo)
+            onDismiss()
+        }
+    }
     var urlText by remember { mutableStateOf("") }
     var fileText by remember { mutableStateOf("") }
     var terminalCommand by remember { mutableStateOf("") }
+    var jupyterName by remember { mutableStateOf("") }
     var inputText by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val terminalFocusRequester = remember { FocusRequester() }
@@ -254,11 +315,11 @@ fun NewTabDialog(
                     text = "New Tab",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = BossDarkTextPrimary,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 
-                if (availableTypes.isEmpty()) {
+                if (availableTypes.isEmpty() && pluginTypes.isEmpty()) {
                     // Empty state when no tab plugins are enabled
                     Box(
                         modifier = Modifier
@@ -268,7 +329,7 @@ fun NewTabDialog(
                     ) {
                         Text(
                             text = "No tab types available. Enable a tab plugin or install one from the Plugin Store.",
-                            color = Color(0xFF999999),
+                            color = BossDarkTextSecondary,
                             fontSize = 13.sp
                         )
                     }
@@ -282,13 +343,15 @@ fun NewTabDialog(
                     TabTypeOption(
                         icon = Icons.Default.Language,
                         label = "URL",
-                        isSelected = selectedType == TabType.URL,
+                        isSelected = selectedPluginType == null && selectedType == TabType.URL,
                         onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.FILE -> fileText = inputText
+                                TabType.JUPYTER -> jupyterName = inputText
                                 else -> {}
                             }
+                            selectedPluginType = null
                             selectedType = TabType.URL
                             inputText = urlText
                         },
@@ -300,13 +363,15 @@ fun NewTabDialog(
                     TabTypeOption(
                         icon = Icons.AutoMirrored.Filled.InsertDriveFile,
                         label = "File",
-                        isSelected = selectedType == TabType.FILE,
+                        isSelected = selectedPluginType == null && selectedType == TabType.FILE,
                         onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.URL -> urlText = inputText
+                                TabType.JUPYTER -> jupyterName = inputText
                                 else -> {}
                             }
+                            selectedPluginType = null
                             selectedType = TabType.FILE
                             inputText = fileText
                         },
@@ -318,19 +383,62 @@ fun NewTabDialog(
                     TabTypeOption(
                         icon = Icons.Outlined.Terminal,
                         label = "Terminal",
-                        isSelected = selectedType == TabType.TERMINAL,
+                        isSelected = selectedPluginType == null && selectedType == TabType.TERMINAL,
                         onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.URL -> urlText = inputText
                                 TabType.FILE -> fileText = inputText
+                                TabType.JUPYTER -> jupyterName = inputText
                                 else -> {}
                             }
+                            selectedPluginType = null
                             selectedType = TabType.TERMINAL
                             inputText = terminalCommand
                         },
                         modifier = Modifier.weight(1f)
                     )
+                    }
+
+                    // Plugin-registered tab types that opted into the dialog
+                    // via TabTypeInfo.newTabSpec — fully dynamic, no host
+                    // change needed for a new tab type to appear here.
+                    for (pluginType in pluginTypes) {
+                        TabTypeOption(
+                            icon = pluginType.icon,
+                            label = pluginType.displayName,
+                            isSelected = selectedPluginType == pluginType.typeId,
+                            onClick = {
+                                when (selectedType) {
+                                    TabType.URL -> urlText = inputText
+                                    TabType.FILE -> fileText = inputText
+                                    TabType.JUPYTER -> jupyterName = inputText
+                                    else -> {}
+                                }
+                                selectedPluginType = pluginType.typeId
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (TabType.JUPYTER in availableTypes) {
+                        TabTypeOption(
+                            // Matches JupyterTabInfo's default tab icon for a consistent identity.
+                            icon = Icons.Outlined.Code,
+                            label = "Jupyter",
+                            isSelected = selectedPluginType == null && selectedType == TabType.JUPYTER,
+                            onClick = {
+                                when (selectedType) {
+                                    TabType.URL -> urlText = inputText
+                                    TabType.FILE -> fileText = inputText
+                                    TabType.TERMINAL -> terminalCommand = inputText
+                                    else -> {}
+                                }
+                                selectedType = TabType.JUPYTER
+                                inputText = jupyterName
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
 
@@ -338,8 +446,50 @@ fun NewTabDialog(
 
                 // Input field
                 Column {
-                    // Show terminal command input or URL/File input
-                    if (selectedType == TabType.TERMINAL) {
+                    // Plugin tab type input — one generic field driven by the
+                    // type's NewTabSpec; the plugin validates via createTabInfo.
+                    if (selectedPluginTypeInfo != null) {
+                        val spec = selectedPluginTypeInfo.newTabSpec!!
+                        val pluginFocusRequester = remember { FocusRequester() }
+                        LaunchedEffect(selectedPluginType) {
+                            pluginFocusRequester.requestFocus()
+                        }
+                        OutlinedTextField(
+                            value = pluginInput,
+                            onValueChange = { pluginInput = it },
+                            label = {
+                                Text(
+                                    spec.inputLabel + if (spec.inputOptional) " (optional)" else "",
+                                    color = BossDarkTextSecondary
+                                )
+                            },
+                            placeholder = {
+                                Text(
+                                    spec.inputPlaceholder,
+                                    color = BossDarkTextMuted
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(pluginFocusRequester)
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                        confirmPluginTab()
+                                        true
+                                    } else false
+                                },
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { confirmPluginTab() })
+                        )
+                    } else if (selectedType == TabType.TERMINAL) {
                         // Terminal command input
                         LaunchedEffect(selectedType) {
                             if (selectedType == TabType.TERMINAL) {
@@ -355,13 +505,13 @@ fun NewTabDialog(
                             label = {
                                 Text(
                                     "Initial command (optional)",
-                                    color = Color(0xFF999999)
+                                    color = BossDarkTextSecondary
                                 )
                             },
                             placeholder = {
                                 Text(
                                     "e.g., npm run dev",
-                                    color = Color(0xFF666666)
+                                    color = BossDarkTextMuted
                                 )
                             },
                             modifier = Modifier
@@ -374,11 +524,11 @@ fun NewTabDialog(
                                     } else false
                                 },
                             colors = TextFieldDefaults.outlinedTextFieldColors(
-                                textColor = Color.White,
-                                cursorColor = Color.White,
-                                focusedBorderColor = Color(0xFF4A9EFF),
-                                unfocusedBorderColor = Color(0xFF555555),
-                                backgroundColor = Color(0xFF1E1F22)
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
                             ),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -386,6 +536,39 @@ fun NewTabDialog(
                                 onDone = {
                                     handleCreateTab(selectedType, terminalCommand, onCreateTab, onDismiss)
                                 }
+                            )
+                        )
+                    } else if (selectedType == TabType.JUPYTER) {
+                        // Optional notebook name (blank = a new untitled notebook)
+                        val jupyterFocusRequester = remember { FocusRequester() }
+                        LaunchedEffect(selectedType) {
+                            if (selectedType == TabType.JUPYTER) jupyterFocusRequester.requestFocus()
+                        }
+                        OutlinedTextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            label = { Text("Notebook name (optional)", color = BossDarkTextSecondary) },
+                            placeholder = { Text("e.g., analysis", color = BossDarkTextMuted) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(jupyterFocusRequester)
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                        handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                        true
+                                    } else false
+                                },
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = { handleCreateTab(selectedType, inputText, onCreateTab, onDismiss) }
                             )
                         )
                     } else if (selectedType == TabType.FILE) {
@@ -456,8 +639,8 @@ fun NewTabDialog(
                                 Button(
                                     onClick = { directoryPicker.pickDirectory() },
                                     colors = ButtonDefaults.buttonColors(
-                                        backgroundColor = Color(0xFF4A9EFF),
-                                        contentColor = Color.White
+                                        backgroundColor = BossDarkAccent,
+                                        contentColor = BossDarkTextPrimary
                                     ),
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
@@ -481,30 +664,30 @@ fun NewTabDialog(
                                             buttonHeight = coordinates.size.height
                                         },
                                     colors = ButtonDefaults.outlinedButtonColors(
-                                        backgroundColor = Color(0xFF1E1F22),
-                                        contentColor = Color.White
+                                        backgroundColor = BossDarkBackground,
+                                        contentColor = BossDarkTextPrimary
                                     ),
                                     border = ButtonDefaults.outlinedBorder.copy(
-                                        brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF555555))
+                                        brush = androidx.compose.ui.graphics.SolidColor(BossDarkBorder)
                                     ),
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Folder,
                                         contentDescription = "Folder",
-                                        tint = Color(0xFF6B9EFF),
+                                        tint = BossDarkAccent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = selectedProject.name,
-                                        color = Color.White,
+                                        color = BossDarkTextPrimary,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Icon(
                                         imageVector = Icons.Default.ArrowDropDown,
                                         contentDescription = "Expand",
-                                        tint = Color(0xFF999999)
+                                        tint = BossDarkTextSecondary
                                     )
                                 }
 
@@ -548,7 +731,7 @@ fun NewTabDialog(
                                 .fillMaxWidth()
                                 .height(200.dp)
                                 .background(
-                                    color = Color(0xFF1E1F22),
+                                    color = BossDarkBackground,
                                     shape = RoundedCornerShape(4.dp)
                                 )
                                 .border(
@@ -564,7 +747,7 @@ fun NewTabDialog(
                                 ) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(24.dp),
-                                        color = Color(0xFF4A9EFF),
+                                        color = BossDarkAccent,
                                         strokeWidth = 2.dp
                                     )
                                 }
@@ -645,12 +828,12 @@ fun NewTabDialog(
                                     ) {
                                         Text(
                                             text = "No visible files",
-                                            color = Color(0xFF999999),
+                                            color = BossDarkTextSecondary,
                                             fontSize = 13.sp
                                         )
                                         Text(
                                             text = "(hidden files and build folders are excluded)",
-                                            color = Color(0xFF666666),
+                                            color = BossDarkTextMuted,
                                             fontSize = 11.sp
                                         )
                                     }
@@ -662,7 +845,7 @@ fun NewTabDialog(
                                 ) {
                                     Text(
                                         text = "Unable to load files",
-                                        color = Color(0xFF999999),
+                                        color = BossDarkTextSecondary,
                                         fontSize = 13.sp
                                     )
                                 }
@@ -685,13 +868,13 @@ fun NewTabDialog(
                                 label = {
                                     Text(
                                         "File path",
-                                        color = Color(0xFF999999)
+                                        color = BossDarkTextSecondary
                                     )
                                 },
                                 placeholder = {
                                     Text(
                                         "Select a file above or enter path",
-                                        color = Color(0xFF666666)
+                                        color = BossDarkTextMuted
                                     )
                                 },
                                 modifier = Modifier
@@ -704,11 +887,11 @@ fun NewTabDialog(
                                         } else false
                                     },
                                 colors = TextFieldDefaults.outlinedTextFieldColors(
-                                    textColor = Color.White,
-                                    cursorColor = Color.White,
-                                    focusedBorderColor = Color(0xFF4A9EFF),
-                                    unfocusedBorderColor = Color(0xFF555555),
-                                    backgroundColor = Color(0xFF1E1F22)
+                                    textColor = BossDarkTextPrimary,
+                                    cursorColor = BossDarkTextPrimary,
+                                    focusedBorderColor = BossDarkAccent,
+                                    unfocusedBorderColor = BossDarkBorder,
+                                    backgroundColor = BossDarkBackground
                                 ),
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -726,7 +909,7 @@ fun NewTabDialog(
                                 Icon(
                                     imageVector = Icons.Default.FolderOpen,
                                     contentDescription = "Browse files",
-                                    tint = Color(0xFF999999)
+                                    tint = BossDarkTextSecondary
                                 )
                             }
                         }
@@ -742,13 +925,13 @@ fun NewTabDialog(
                             label = {
                                 Text(
                                     "Enter URL or search term",
-                                    color = Color(0xFF999999)
+                                    color = BossDarkTextSecondary
                                 )
                             },
                             placeholder = {
                                 Text(
                                     "https://example.com or search...",
-                                    color = Color(0xFF666666)
+                                    color = BossDarkTextMuted
                                 )
                             },
                             modifier = Modifier
@@ -792,11 +975,11 @@ fun NewTabDialog(
                                     } else false
                                 },
                             colors = TextFieldDefaults.outlinedTextFieldColors(
-                                textColor = Color.White,
-                                cursorColor = Color.White,
-                                focusedBorderColor = Color(0xFF4A9EFF),
-                                unfocusedBorderColor = Color(0xFF555555),
-                                backgroundColor = Color(0xFF1E1F22)
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
                             ),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -834,9 +1017,9 @@ fun NewTabDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .background(
-                                                    if (index == selectedSuggestionIndex) 
-                                                        Color(0xFF4A9EFF).copy(alpha = 0.2f)
-                                                    else 
+                                                    if (index == selectedSuggestionIndex)
+                                                        BossDarkAccent.copy(alpha = 0.2f)
+                                                    else
                                                         Color.Transparent
                                                 )
                                                 .clickable {
@@ -852,21 +1035,21 @@ fun NewTabDialog(
                                                 imageVector = if (suggestion.isSearchSuggestion) Icons.Default.Search else Icons.Default.History,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp),
-                                                tint = Color(0xFF999999)
+                                                tint = BossDarkTextSecondary
                                             )
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = suggestion.title.ifEmpty { suggestion.url },
                                                     fontSize = 14.sp,
-                                                    color = Color.White,
+                                                    color = BossDarkTextPrimary,
                                                     maxLines = 1
                                                 )
                                                 if (suggestion.title.isNotEmpty()) {
                                                     Text(
                                                         text = suggestion.url,
                                                         fontSize = 12.sp,
-                                                        color = Color(0xFF999999),
+                                                        color = BossDarkTextSecondary,
                                                         maxLines = 1
                                                     )
                                                 }
@@ -886,7 +1069,7 @@ fun NewTabDialog(
                                                     imageVector = Icons.Default.Close,
                                                     contentDescription = "Delete",
                                                     modifier = Modifier.size(16.dp),
-                                                    tint = Color(0xFF999999)
+                                                    tint = BossDarkTextSecondary
                                                 )
                                             }
                                         }
@@ -909,32 +1092,45 @@ fun NewTabDialog(
                     TextButton(
                         onClick = onDismiss,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = Color(0xFF999999)
+                            contentColor = BossDarkTextSecondary
                         )
                     ) {
                         Text("Cancel")
                     }
-                    
+
                     Spacer(modifier = Modifier.width(8.dp))
-                    
+
                     Button(
                         onClick = {
-                            val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
-                            handleCreateTab(selectedType, input, onCreateTab, onDismiss)
+                            if (selectedPluginTypeInfo != null) {
+                                confirmPluginTab()
+                            } else {
+                                val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
+                                handleCreateTab(selectedType, input, onCreateTab, onDismiss)
+                            }
                         },
-                        enabled = availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || inputText.isNotBlank()),
+                        enabled = if (selectedPluginTypeInfo != null) {
+                            selectedPluginTypeInfo.newTabSpec!!.inputOptional || pluginInput.isNotBlank()
+                        } else {
+                            availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || selectedType == TabType.JUPYTER || inputText.isNotBlank())
+                        },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF4A9EFF),
-                            contentColor = Color.White,
-                            disabledBackgroundColor = Color(0xFF3A3A3A),
-                            disabledContentColor = Color(0xFF666666)
+                            backgroundColor = BossDarkAccent,
+                            contentColor = BossDarkTextPrimary,
+                            disabledBackgroundColor = BossDarkSurface,
+                            disabledContentColor = BossDarkTextMuted
                         )
                     ) {
                         Text(
-                            when (selectedType) {
-                                TabType.URL -> "Fluck it"
-                                TabType.FILE -> "Open"
-                                TabType.TERMINAL -> "Open Terminal"
+                            if (selectedPluginTypeInfo != null) {
+                                selectedPluginTypeInfo.newTabSpec!!.confirmLabel
+                            } else {
+                                when (selectedType) {
+                                    TabType.URL -> "Fluck it"
+                                    TabType.FILE -> "Open"
+                                    TabType.TERMINAL -> "Open Terminal"
+                                    TabType.JUPYTER -> "New Notebook"
+                                }
                             }
                         )
                     }
@@ -957,12 +1153,12 @@ private fun TabTypeOption(
         modifier = modifier
             .height(80.dp)
             .background(
-                color = if (isSelected) Color(0xFF4A9EFF).copy(alpha = 0.2f) else ContextMenuBorder,
+                color = if (isSelected) BossDarkAccent.copy(alpha = 0.2f) else ContextMenuBorder,
                 shape = RoundedCornerShape(4.dp)
             )
             .border(
                 width = 1.dp,
-                color = if (isSelected) Color(0xFF4A9EFF) else ContextMenuBorder,
+                color = if (isSelected) BossDarkAccent else ContextMenuBorder,
                 shape = RoundedCornerShape(4.dp)
             )
             .clickable { onClick() }
@@ -977,14 +1173,14 @@ private fun TabTypeOption(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (isSelected) Color(0xFF4A9EFF) else Color(0xFF999999),
+                tint = if (isSelected) BossDarkAccent else BossDarkTextSecondary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
                 fontSize = 13.sp,
-                color = if (isSelected) Color.White else Color(0xFF999999)
+                color = if (isSelected) BossDarkTextPrimary else BossDarkTextSecondary
             )
         }
     }
@@ -996,7 +1192,7 @@ private fun handleCreateTab(
     onCreateTab: (TabType, String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    if (type != TabType.TERMINAL && input.isBlank()) return
+    if (type != TabType.TERMINAL && type != TabType.JUPYTER && input.isBlank()) return
 
     val processedInput = when (type) {
         TabType.URL -> {
@@ -1016,6 +1212,7 @@ private fun handleCreateTab(
             // Pass the command (or empty string if none)
             input.trim()
         }
+        TabType.JUPYTER -> input.trim() // empty = new untitled notebook
     }
 
     onCreateTab(type, processedInput)
@@ -1087,7 +1284,7 @@ private fun DialogFileTreeItem(
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.ExpandMore else Icons.Default.ChevronRight,
                     contentDescription = if (isExpanded) "Collapse" else "Expand",
-                    tint = Color(0xFF999999),
+                    tint = BossDarkTextSecondary,
                     modifier = Modifier.size(14.dp)
                 )
             } else {
@@ -1115,7 +1312,7 @@ private fun DialogFileTreeItem(
             Text(
                 text = node.name,
                 fontSize = 12.sp,
-                color = Color(0xFFCCCCCC)
+                color = BossDarkTextPrimary
             )
         }
 

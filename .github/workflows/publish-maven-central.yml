@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup JDK
         uses: actions/setup-java@v5
@@ -33,7 +33,7 @@ jobs:
 
       - name: Publish plugin-workspace-types to Maven Central
         if: contains(github.event.inputs.packages, 'all') || contains(github.event.inputs.packages, 'plugin-workspace-types')
-        run: ./gradlew :plugins:plugin-workspace-types:publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew :plugin-platform:plugin-workspace-types:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -42,7 +42,7 @@ jobs:
 
       - name: Publish plugin-bookmark-types to Maven Central
         if: contains(github.event.inputs.packages, 'all') || contains(github.event.inputs.packages, 'plugin-bookmark-types')
-        run: ./gradlew :plugins:plugin-bookmark-types:publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew :plugin-platform:plugin-bookmark-types:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -51,7 +51,7 @@ jobs:
 
       - name: Publish plugin-api-browser to Maven Central
         if: contains(github.event.inputs.packages, 'all') || contains(github.event.inputs.packages, 'plugin-api-browser')
-        run: ./gradlew :plugins:plugin-api-browser:publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew :plugin-platform:plugin-api-browser:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -60,7 +60,7 @@ jobs:
 
       - name: Publish plugin-api to Maven Central
         if: contains(github.event.inputs.packages, 'all') || (contains(github.event.inputs.packages, 'plugin-api') && !contains(github.event.inputs.packages, 'plugin-api-browser'))
-        run: ./gradlew :plugins:plugin-api:publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew :plugin-platform:plugin-api:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -69,7 +69,7 @@ jobs:
 
       - name: Publish plugin-logging to Maven Central
         if: contains(github.event.inputs.packages, 'all') || contains(github.event.inputs.packages, 'plugin-logging')
-        run: ./gradlew :plugins:plugin-logging:publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew :plugin-platform:plugin-logging:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: Publish plugin-ui-core to Maven Central
         if: contains(github.event.inputs.packages, 'all') || contains(github.event.inputs.packages, 'plugin-ui-core')
-        run: ./gradlew :plugins:plugin-ui-core:publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew :plugin-platform:plugin-ui-core:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -87,7 +87,7 @@ jobs:
 
       - name: Publish plugin-scrollbar to Maven Central
         if: contains(github.event.inputs.packages, 'all') || contains(github.event.inputs.packages, 'plugin-scrollbar')
-        run: ./gradlew :plugins:plugin-scrollbar:publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew :plugin-platform:plugin-scrollbar:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

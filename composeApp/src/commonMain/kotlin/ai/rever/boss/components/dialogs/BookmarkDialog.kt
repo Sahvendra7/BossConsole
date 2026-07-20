@@ -1,8 +1,10 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkSurface
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.components.bookmarks.BookmarkCollection
 import ai.rever.boss.components.workspaces.extractPanels
@@ -87,7 +89,7 @@ fun BookmarkDialog(
                     Icon(
                         imageVector = Icons.Outlined.Star,
                         contentDescription = "Bookmark",
-                        tint = Color(0xFFFBBF24),
+                        tint = BossDarkAccent,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -96,7 +98,7 @@ fun BookmarkDialog(
                             text = "Add to Bookmarks",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                         Text(
                             text = tabTitle,
@@ -122,7 +124,7 @@ fun BookmarkDialog(
                         text = "Select Collections",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White
+                        color = BossDarkTextPrimary
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -186,7 +188,7 @@ fun BookmarkDialog(
                             text = "Open In Workspaces",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                     }
 
@@ -248,7 +250,7 @@ fun BookmarkDialog(
                         onClick = { onConfirm(selectedCollections, workspacePanelSelections) },
                         enabled = selectedCollections.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFFBBF24),
+                            backgroundColor = BossDarkAccent,
                             contentColor = Color.Black,
                             disabledBackgroundColor = BossDarkBorder,
                             disabledContentColor = BossDarkTextSecondary
@@ -305,7 +307,7 @@ private fun CollectionPill(
         modifier = Modifier
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) Color(0xFFFBBF24) else BossDarkSurface,
+        color = if (isSelected) BossDarkAccent else BossDarkSurface,
         border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, BossDarkBorder)
     ) {
         Row(
@@ -317,7 +319,7 @@ private fun CollectionPill(
                     imageVector = Icons.Filled.Star,
                     contentDescription = "Favorite",
                     modifier = Modifier.size(14.dp),
-                    tint = if (isSelected) Color.Black else Color(0xFFFBBF24)
+                    tint = if (isSelected) Color.Black else BossDarkAccent
                 )
                 Spacer(modifier = Modifier.width(4.dp))
             }
@@ -325,7 +327,7 @@ private fun CollectionPill(
                 text = collection.name,
                 fontSize = 13.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) Color.Black else Color.White
+                color = if (isSelected) Color.Black else BossDarkTextPrimary
             )
         }
     }
@@ -387,7 +389,7 @@ private fun WorkspacePill(
                 .fillMaxWidth()
                 .clickable(onClick = onToggle),
             shape = RoundedCornerShape(16.dp),
-            color = if (isSelected) Color(0xFFFBBF24) else BossDarkSurface,
+            color = if (isSelected) BossDarkAccent else BossDarkSurface,
             border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, BossDarkBorder)
         ) {
             Row(
@@ -403,7 +405,7 @@ private fun WorkspacePill(
                     },
                     fontSize = 13.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) Color.Black else Color.White
+                    color = if (isSelected) Color.Black else BossDarkTextPrimary
                 )
 
                 if (isSelected) {
@@ -484,7 +486,7 @@ private fun PanelOption(
             text = displayName,
             fontSize = 12.sp,
             fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-            color = if (isSelected) Color(0xFFFBBF24) else Color.White
+            color = if (isSelected) BossDarkAccent else BossDarkTextPrimary
         )
     }
 }

@@ -54,10 +54,12 @@ class PanelHostTabComponent(
 
     /**
      * Called by [ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent.removeTab]
-     * when this tab is closed. The tab shares the window's lifecycle (it's created with the
-     * BossTabsComponent as its ComponentContext), so a lifecycle observer would only fire on
-     * window close — we need this explicit per-tab close signal instead. When the last hosting
-     * tab closes, the sidebar icon reopens the plugin in its sidebar location.
+     * when this tab is closed. Kept as an explicit close signal (rather than a lifecycle
+     * observer) on purpose: the hosted panel component is owned by [PanelComponentStore],
+     * not by this tab, and a cross-panel move transfers this component live via
+     * detachTab/adoptTab — no close happens, so the hosted-as-tab count must not change.
+     * When the last hosting tab closes, the sidebar icon reopens the plugin in its
+     * sidebar location.
      */
     fun onClosed() {
         draggable.unmarkHostedAsTab(panelId)

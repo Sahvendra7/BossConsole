@@ -461,6 +461,9 @@ repositories {
     // JetBrains IntelliJ Platform repositories for PSI code navigation
     maven("https://www.jetbrains.com/intellij-repository/releases")
     maven("https://cache-redirector.jetbrains.com/intellij-dependencies")
+    // NOTE: the boss-plugin-api contract is deliberately NOT resolved from any
+    // Maven registry — its distribution is store/GitHub-releases only. See
+    // plugin-platform/plugin-api-core/build.gradle.kts (fetchApiPluginJar).
 }
 
 jxbrowser {
@@ -577,30 +580,33 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
-            // BossEditor: external code editor library (resolves from Maven Central)
-            implementation(libs.bosseditor.compose.desktop)
+            // NOTE: BossEditor is not a host dependency. The editor-tab plugin
+            // bundles bosseditor-compose-desktop (and its kotlin-compiler-embeddable
+            // PSI stack) privately inside its own JAR; the plugin's classloader
+            // resolves bosseditor classes from its own URLs while sharing the
+            // host's Compose runtime via parent classloader delegation.
+            // Same arrangement as BossTerm/terminal-tab (see the note below).
             // Minimal plugin-api-core (PluginContext, DynamicPlugin, PluginManifest)
             // Everything else comes from boss-plugin-api bundled plugin
-            implementation(projects.plugins.pluginApiCore)
-            implementation(projects.plugins.pluginUiCore)
-            implementation(projects.plugins.pluginLogging)
-            implementation(projects.plugins.pluginScrollbar)
-            implementation(projects.plugins.pluginEvents)
-            implementation(projects.plugins.pluginSearch)
-            implementation(projects.plugins.pluginWindow)
-            implementation(projects.plugins.pluginGitTypes)
-            implementation(projects.plugins.pluginRunTypes)
-            implementation(projects.plugins.pluginWorkspaceTypes)
-            implementation(projects.plugins.pluginBookmarkTypes)
-            implementation(projects.plugins.pluginIcons)
-            implementation(projects.plugins.pluginPathUtils)
-            implementation(projects.plugins.pluginSandbox)
+            implementation(projects.pluginPlatform.pluginApiCore)
+            implementation(projects.pluginPlatform.pluginUiCore)
+            implementation(projects.pluginPlatform.pluginLogging)
+            implementation(projects.pluginPlatform.pluginScrollbar)
+            implementation(projects.pluginPlatform.pluginEvents)
+            implementation(projects.pluginPlatform.pluginSearch)
+            implementation(projects.pluginPlatform.pluginWindow)
+            implementation(projects.pluginPlatform.pluginGitTypes)
+            implementation(projects.pluginPlatform.pluginRunTypes)
+            implementation(projects.pluginPlatform.pluginWorkspaceTypes)
+            implementation(projects.pluginPlatform.pluginBookmarkTypes)
+            implementation(projects.pluginPlatform.pluginIcons)
+            implementation(projects.pluginPlatform.pluginPathUtils)
+            implementation(projects.pluginPlatform.pluginSandbox)
 
             // Plugin management infrastructure
-            implementation(projects.plugins.pluginLoader)
-            implementation(projects.plugins.pluginRepository)
-            implementation(projects.plugins.pluginUpdater)
-            implementation(projects.plugins.pluginDependency)
+            implementation(projects.pluginPlatform.pluginLoader)
+            implementation(projects.pluginPlatform.pluginRepository)
+            implementation(projects.pluginPlatform.pluginUpdater)
             // Plugin panel manager is now dynamic (loaded from boss_plugin as plugin-manager)
 
 
@@ -684,18 +690,65 @@ kotlin {
 
             // CLI argument parsing
             implementation("com.github.ajalt.clikt:clikt:5.1.0")
-
-            // Kotlin PSI - Code navigation with go-to-definition for Kotlin files
-            // Uses kotlin-compiler-embeddable which includes shaded IntelliJ PSI classes
-            // at org.jetbrains.kotlin.com.intellij.* (not com.intellij.*)
-            // Java PSI support can be added later with separate non-conflicting dependencies
-            implementation(libs.kotlin.compiler.embeddable)
         }
 
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
             implementation("org.junit.jupiter:junit-jupiter:6.1.0")
+            // Test-only: lets the suite assert the IPC proxy's skip-list stays
+            // equal to the in-process scanner's (no production coupling).
+            implementation(projects.pluginPlatform.pluginApiIpc)
         }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// macOS code signing resolution
+//
+// Release builds sign with a "Developer ID Application" certificate. CI imports
+// that cert into a keychain; local dev machines usually don't have it. Rather
+// than hard-fail createDistributable with "Could not find certificate...", we
+// auto-skip signing when the resolved identity isn't in the keychain.
+//
+// Signing is disabled when DISABLE_MACOS_SIGNING=true is set, OR the resolved
+// Developer ID identity is not available in the keychain. CI (cert present)
+// still signs; local packageDistributionForCurrentOS just works unsigned.
+// ---------------------------------------------------------------------------
+val isMacOSHost: Boolean = System.getProperty("os.name").lowercase().contains("mac")
+
+val macOSDeveloperId: String = System.getenv("MACOS_DEVELOPER_ID")
+    ?: System.getenv("DEVELOPER_ID")
+    ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+
+// Is the signing identity present in the keychain? providers.exec keeps this
+// configuration-cache compatible (a cert import invalidates the entry), and the
+// provider chain keeps it LAZY: the keychain is only scanned when something
+// actually queries the signing decision (packaging/notarization tasks), never
+// on ./gradlew run|test|help. "-" is ad-hoc signing. Lambdas capture locals,
+// not script state, so they stay config-cache serializable.
+val signingIdentityAvailableProvider: Provider<Boolean> = run {
+    val devId = macOSDeveloperId
+    when {
+        !isMacOSHost -> providers.provider { false }
+        devId == "-" -> providers.provider { true }
+        else -> providers.exec {
+            commandLine("security", "find-identity", "-v", "-p", "codesigning")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.map { it.contains(devId) }
+    }
+}
+
+val macOSSigningDisabledProvider: Provider<Boolean> = run {
+    val onMac = isMacOSHost
+    val devId = macOSDeveloperId
+    val envDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+    signingIdentityAvailableProvider.map { available ->
+        val disabled = envDisabled || (onMac && !available)
+        if (onMac && disabled && !envDisabled) {
+            println("⚠️  macOS signing identity not found in keychain ('$devId') — building UNSIGNED. Import the cert or set MACOS_DEVELOPER_ID to sign.")
+        }
+        disabled
     }
 }
 
@@ -753,6 +806,17 @@ compose.desktop {
             }
         }
         jvmArgs(*platformJvmArgs.toTypedArray())
+
+        // Bake Supabase config into the packaged app launcher so the shared Supabase
+        // client AND the self-updater use the CI-provided values at runtime (via
+        // ConfigLoader's system-property lookup, which outranks the hardcoded
+        // SupabaseClientConfig fallback — see issue #33). CI supplies these via env from
+        // repo secrets (release.yml top-level env); local `./gradlew run` leaves them
+        // unset and uses the run-task systemProperty block / config defaults. The anon
+        // key is the public, RLS-gated key.
+        System.getenv("SUPABASE_ANON_KEY")?.takeIf { it.isNotBlank() }?.let { jvmArgs("-DSUPABASE_ANON_KEY=$it") }
+        System.getenv("SUPABASE_URL")?.takeIf { it.isNotBlank() }?.let { jvmArgs("-DSUPABASE_URL=$it") }
+        System.getenv("SUPABASE_FUNCTION_URL")?.takeIf { it.isNotBlank() }?.let { jvmArgs("-DSUPABASE_FUNCTION_URL=$it") }
 
         nativeDistributions {
             targetFormats(
@@ -834,20 +898,17 @@ compose.desktop {
                 
                 // Code signing configuration
                 signing {
-                    // Enable signing by default, disable only if explicitly skipped
-                    val skipSigning = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-                    sign.set(!skipSigning)
-                    
-                    // Use environment variable for certificate identity, fallback to default
-                    val developerId = System.getenv("MACOS_DEVELOPER_ID") 
-                        ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
-                    identity.set(developerId)
-                    
-                    // Debug logging
+                    // Sign unless explicitly disabled or no identity is available in the
+                    // keychain. Provider-typed so the keychain scan only runs when a
+                    // packaging task actually reads `sign`.
+                    sign.set(macOSSigningDisabledProvider.map { !it })
+                    identity.set(macOSDeveloperId)
+
+                    // Debug logging (keychain lookup + final decision resolve lazily
+                    // when packaging queries them; the UNSIGNED warning prints then)
                     println("🔐 macOS Code Signing Configuration:")
                     println("   DISABLE_MACOS_SIGNING: ${System.getenv("DISABLE_MACOS_SIGNING")}")
-                    println("   Identity: $developerId")
-                    println("   Signing enabled: ${!skipSigning}")
+                    println("   Identity: $macOSDeveloperId")
                 }
                 
                 // Entitlements
@@ -870,6 +931,10 @@ compose.desktop {
                         <string>BOSS needs access to your camera for video conferencing and screen sharing.</string>
                         <key>NSMicrophoneUsageDescription</key>
                         <string>BOSS needs access to your microphone for video conferencing and voice communication.</string>
+                        <key>NSBluetoothAlwaysUsageDescription</key>
+                        <string>BOSS uses Bluetooth to let you sign in with a passkey stored on your phone or tablet.</string>
+                        <key>NSBluetoothPeripheralUsageDescription</key>
+                        <string>BOSS uses Bluetooth to let you sign in with a passkey stored on your phone or tablet.</string>
                         <key>CFBundleURLTypes</key>
                         <array>
                             <dict>
@@ -1007,11 +1072,10 @@ tasks.register("extractCLIToAppResources") {
     doLast {
         println("📦 Extracting CLI script to app bundle Resources...")
 
-        // Check if signing is enabled
-        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-        val developerId = System.getenv("MACOS_DEVELOPER_ID")
-            ?: System.getenv("DEVELOPER_ID")
-            ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+        // Signing is skipped when disabled explicitly or no keychain identity is available.
+        // Resolved here inside doLast, i.e. at execution time only.
+        val signingDisabled = macOSSigningDisabledProvider.get()
+        val developerId = macOSDeveloperId
 
         // Find the built app in the standard Compose Desktop location
         val appDir = project.layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
@@ -1088,11 +1152,9 @@ tasks.register("signPty4jBinaries") {
     description = "Signs PTY4J native binaries with hardened runtime for Apple notarization"
     group = "build"
 
-    // Only run on macOS and when signing is enabled
+    // Only run on macOS and when signing is enabled (resolved at execution time)
     onlyIf {
-        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-        isMacOS && !signingDisabled
+        isMacOSHost && !macOSSigningDisabledProvider.get()
     }
 
     // Inject ExecOperations for exec calls (replaces deprecated project.exec)
@@ -1102,9 +1164,7 @@ tasks.register("signPty4jBinaries") {
         println("🔧 Signing PTY4J native binaries with hardened runtime for notarization...")
 
         // Get developer identity from environment or use default
-        val developerId = System.getenv("MACOS_DEVELOPER_ID")
-            ?: System.getenv("DEVELOPER_ID")
-            ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+        val developerId = macOSDeveloperId
 
         if (developerId == "-") {
             println("⚠️ No signing identity found, skipping PTY4J signing")
@@ -1327,12 +1387,41 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
                 modified = true
             }
 
+            // Make desktop integration best-effort in the maintainer scripts.
+            // jpackage's generated postinst/prerm run xdg-* tools (xdg-desktop-menu,
+            // xdg-icon-resource, ...) under `set -e`; on headless systems (servers,
+            // containers, CI) those exit non-zero (e.g. "No writable system menu
+            // directory found"), which aborts dpkg configure/remove and leaves the
+            // package half-installed. Tolerates leading whitespace and covers the
+            // whole xdg-* class in case a future jpackage reorders or indents them.
+            // Assumes single-line commands (true of jpackage output); a trailing
+            // backslash continuation would put the appended `||` on the wrong line.
+            listOf("postinst", "prerm").forEach { scriptName ->
+                val script = File(workDir, "DEBIAN/$scriptName")
+                if (script.isFile) {
+                    val content = script.readText()
+                    // The marker guard keeps this idempotent: without it the regex
+                    // would re-match an already-patched line and append a second `||`.
+                    if (!content.contains("skipping desktop integration")) {
+                        val patched = content.replace(
+                            Regex("(?m)^([ \\t]*)(xdg-\\S+ .*)$"),
+                            "\$1\$2 || echo \"boss: no desktop environment detected, skipping desktop integration\" >&2"
+                        )
+                        if (patched != content) {
+                            script.writeText(patched)
+                            println("✅ Made xdg-* desktop integration best-effort in $scriptName (headless installs)")
+                            modified = true
+                        }
+                    }
+                }
+            }
+
             if (modified) {
                 // Repack deb using dpkg-deb --build
                 execOps.exec {
                     commandLine("dpkg-deb", "--build", "--root-owner-group", workDir.absolutePath, debFile.absolutePath)
                 }
-                println("✅ Repacked ${debFile.name} with StartupWMClass")
+                println("✅ Repacked ${debFile.name} with desktop-integration fixes")
             }
         } catch (e: Exception) {
             println("❌ Failed to fix .desktop file: ${e.message}")
@@ -1344,7 +1433,7 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
 }
 
 tasks.register<FixLinuxDesktopFileTask>("fixLinuxDesktopFile") {
-    description = "Adds StartupWMClass to .deb package .desktop file for proper Ubuntu/Debian dock integration"
+    description = "Fixes the .deb for desktop integration: StartupWMClass, hicolor icon, and headless-safe maintainer scripts"
     group = "build"
 
     val isLinux = System.getProperty("os.name").lowercase().contains("linux")
@@ -1365,8 +1454,7 @@ afterEvaluate {
         dependsOn("prepareBundledPluginsResources")
     }
 
-    val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-    val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+    val isMacOS = isMacOSHost
 
     // Configure createDistributable
     tasks.findByName("createDistributable")?.apply {
@@ -1375,15 +1463,14 @@ afterEvaluate {
         // Ensure bundled plugins are prepared
         dependsOn("prepareBundledPluginsResources")
 
-        // On macOS with signing enabled, PTY4J signing must happen after createDistributable
-        // Task chain: createDistributable → signPty4jBinaries → extractCLIToAppResources
-        if (isMacOS && !signingDisabled) {
-            finalizedBy("signPty4jBinaries")
-            println("📝 createDistributable will be finalized by signPty4jBinaries")
-        } else if (isMacOS) {
-            // If signing disabled, skip PTY4J signing but still extract CLI
-            finalizedBy("extractCLIToAppResources")
-            println("📝 createDistributable will be finalized by extractCLIToAppResources (signing disabled)")
+        // Task chain: createDistributable → signPty4jBinaries → extractCLIToAppResources.
+        // Both finalizers are wired unconditionally so the signing decision is NOT
+        // needed at configuration time (keeps the keychain scan lazy): when signing
+        // is disabled, signPty4jBinaries skips itself via its own onlyIf and the
+        // CLI extraction still runs.
+        if (isMacOS) {
+            finalizedBy("signPty4jBinaries", "extractCLIToAppResources")
+            println("📝 createDistributable will be finalized by signPty4jBinaries (skips itself when signing is disabled) and extractCLIToAppResources")
         }
     }
 
@@ -1396,18 +1483,18 @@ afterEvaluate {
         }
     }
 
-    // Ensure extractCLIToAppResources depends on CLI script generation and runs after PTY4J signing
+    // Ensure extractCLIToAppResources depends on CLI script generation and runs after
+    // PTY4J signing. mustRunAfter is pure ordering — harmless when signPty4jBinaries
+    // is skipped — so it needs no config-time signing check.
     tasks.findByName("extractCLIToAppResources")?.apply {
         dependsOn("generateVersionedCLIScripts")
-        if (!signingDisabled) {
-            mustRunAfter("signPty4jBinaries")
-        }
+        mustRunAfter("signPty4jBinaries")
         println("📝 extractCLIToAppResources will depend on generateVersionedCLIScripts")
     }
 
-    // Ensure packageDmg runs after all signing/CLI tasks
+    // Ensure packageDmg runs after all signing/CLI tasks (ordering only, see above)
     tasks.findByName("packageDmg")?.apply {
-        if (isMacOS && !signingDisabled) {
+        if (isMacOS) {
             mustRunAfter("signPty4jBinaries", "extractCLIToAppResources")
             println("📝 packageDmg will run after PTY4J signing and CLI extraction")
         }

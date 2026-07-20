@@ -18,6 +18,18 @@ env:
   SUPABASE_FUNCTION_URL: ${{ secrets.SUPABASE_FUNCTION_URL }}
 
 jobs:
+  script-tests:
+    name: 🐚 Shell Script Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: 🧪 Release publish — TUS slice tests
+        # Guards the byte-accurate chunk slicing in the release publish path
+        # (regressed twice: #877 misaligned resume, and the SIGPIPE status bug).
+        run: bash scripts/test/test-tus-slice.sh
+
   version-check:
     runs-on: ubuntu-latest
     outputs:
@@ -25,7 +37,7 @@ jobs:
       build-number: ${{ steps.get-version.outputs.build-number }}
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -58,7 +70,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -83,6 +95,8 @@ jobs:
           echo "🧪 Running tests on ${{ matrix.os }}"
           ./gradlew test --continue
         env:
+          # boss-plugin-api-core resolution from GitHub Packages (settings/composeApp repos)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Windows-specific: disable daemon to avoid file handle issues (KT-55959)
           GRADLE_OPTS: ${{ matrix.os == 'windows-latest' && '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.caching=true -Dkotlin.daemon.jvm.options=-Xmx2g' || '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true' }}
 
@@ -91,6 +105,8 @@ jobs:
           echo "🔨 Building application for ${{ matrix.os }}"
           ./gradlew build --stacktrace
         env:
+          # boss-plugin-api-core resolution from GitHub Packages (settings/composeApp repos)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Windows-specific: disable daemon to avoid file handle issues (KT-55959)
           GRADLE_OPTS: ${{ matrix.os == 'windows-latest' && '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.caching=true -Dkotlin.daemon.jvm.options=-Xmx2g' || '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true' }}
 
@@ -99,6 +115,8 @@ jobs:
         run: |
           echo "🏗️ Creating executable JAR"
           ./gradlew createExecutableJar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📊 Upload Test Results
         uses: actions/upload-artifact@v7
@@ -124,7 +142,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -148,6 +166,8 @@ jobs:
         run: |
           echo "🔒 Checking dependencies"
           ./gradlew :composeApp:dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📊 Generate Build Report
         run: |
@@ -160,7 +180,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -212,12 +232,15 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: 🟩 Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
-          version: latest
+          # Pinned (not "latest"): resolving "latest" hits the unauthenticated GitHub
+          # API from shared runners and intermittently fails with "rate limit exceeded".
+          # Pinning skips that lookup. Bump as needed.
+          version: 2.109.0
 
       - name: 🚀 Start local Postgres (applies migrations)
         run: supabase db start

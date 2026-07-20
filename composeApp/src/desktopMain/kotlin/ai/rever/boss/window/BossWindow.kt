@@ -666,7 +666,7 @@ fun ApplicationScope.BossWindow(
             }
 
             // Plugin Menu - Dynamically populated from PanelRegistry
-            Menu("Plugin") {
+            Menu("Toolbox") {
                 registeredPlugins.forEachIndexed { index, panelInfo ->
                     Item(
                         text = panelInfo.displayName,
@@ -687,7 +687,7 @@ fun ApplicationScope.BossWindow(
                 // Fallback if no plugins registered
                 if (registeredPlugins.isEmpty()) {
                     Item(
-                        text = "(No plugins available)",
+                        text = "(No tools available)",
                         onClick = { },
                         enabled = false
                     )
@@ -782,7 +782,7 @@ fun ApplicationScope.BossWindow(
                 )
 
                 Item(
-                    "Plugin Setup Wizard...",
+                    "Toolbox Setup Wizard...",
                     onClick = {
                         MenuActionsHandler.triggerShowPluginWizard(windowState.id)
                     }
@@ -819,7 +819,7 @@ fun ApplicationScope.BossWindow(
                 Separator()
 
                 Item(
-                    "Reload All Plugins",
+                    "Reload All Tools",
                     onClick = {
                         menuScope.launch {
                             MenuActionsHandler.triggerReloadAllPlugins(windowState.id)

@@ -2,7 +2,11 @@ package ai.rever.boss.components.dialogs
 
 import BossDarkAccent
 import BossDarkBackground
+import BossDarkError
+import BossDarkSuccess
 import BossDarkSurface
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import ai.rever.boss.utils.CLIInstallResult
 import ai.rever.boss.utils.CLIInstaller
 import androidx.compose.foundation.layout.*
@@ -13,7 +17,6 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,7 +116,7 @@ private fun InstallingContent() {
             text = "Installing BOSS CLI",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -121,7 +124,7 @@ private fun InstallingContent() {
         Text(
             text = "Please wait...",
             fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.7f)
+            color = BossDarkTextSecondary
         )
     }
 }
@@ -141,7 +144,7 @@ private fun SuccessContent(
             imageVector = Icons.Default.CheckCircle,
             contentDescription = "Success",
             modifier = Modifier.size(64.dp),
-            tint = Color(0xFF4CAF50)
+            tint = BossDarkSuccess
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -150,7 +153,7 @@ private fun SuccessContent(
             text = "CLI Installed Successfully",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -166,7 +169,7 @@ private fun SuccessContent(
                 Text(
                     text = result.message,
                     fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = BossDarkTextSecondary,
                     lineHeight = 20.sp
                 )
             }
@@ -178,7 +181,7 @@ private fun SuccessContent(
             onClick = onClose,
             colors = ButtonDefaults.buttonColors(
                 backgroundColor = BossDarkAccent,
-                contentColor = Color.White
+                contentColor = BossDarkTextPrimary
             ),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -203,7 +206,7 @@ private fun ErrorContent(
             imageVector = Icons.Default.Error,
             contentDescription = "Error",
             modifier = Modifier.size(64.dp),
-            tint = Color(0xFFF44336)
+            tint = BossDarkError
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -212,7 +215,7 @@ private fun ErrorContent(
             text = "Installation Failed",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -228,7 +231,7 @@ private fun ErrorContent(
                 Text(
                     text = message,
                     fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = BossDarkTextSecondary,
                     lineHeight = 20.sp
                 )
             }
@@ -243,7 +246,7 @@ private fun ErrorContent(
             OutlinedButton(
                 onClick = onClose,
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.White
+                    contentColor = BossDarkTextPrimary
                 ),
                 modifier = Modifier.weight(1f)
             ) {
@@ -254,7 +257,7 @@ private fun ErrorContent(
                 onClick = onRetry,
                 colors = ButtonDefaults.buttonColors(
                     backgroundColor = BossDarkAccent,
-                    contentColor = Color.White
+                    contentColor = BossDarkTextPrimary
                 ),
                 modifier = Modifier.weight(1f)
             ) {

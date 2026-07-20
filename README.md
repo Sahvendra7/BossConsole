@@ -14,9 +14,13 @@ BOSS (Business OS + Simulator) is a sophisticated, AI-powered desktop workspace 
 
 | Platform | Architecture | Download |
 |----------|--------------|----------|
-| **macOS** | Universal (Apple Silicon + Intel) | [Homebrew](https://formulae.brew.sh/cask/boss) \| [DMG](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) |
-| **Windows** | x64 / ARM64 | [MSI](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) |
-| **Linux** | AMD64 / ARM64 | [DEB](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) \| [RPM](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) \| [JAR](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) |
+| **macOS** | Universal (Apple Silicon + Intel) | [Homebrew](https://formulae.brew.sh/cask/boss) \| [DMG](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=dmg) |
+| **Windows** | x64 | [MSI](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=msi) |
+| **Windows** | ARM64 | [MSI](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=msi&arch=arm64) |
+| **Linux** | AMD64 | [DEB](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=deb&arch=amd64) \| [RPM](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=rpm&arch=amd64) \| [JAR](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=jar&arch=amd64) |
+| **Linux** | ARM64 | [DEB](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=deb&arch=arm64) \| [RPM](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=rpm&arch=arm64) \| [JAR](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=jar&arch=arm64) |
+
+Download links always fetch the newest release directly (via the [`latest-release`](supabase/functions/latest-release/app.ts) edge function; the saved file keeps its versioned name). Release metadata as JSON — version, assets, sha256 checksums — is at [`?app=boss`](https://api.risaboss.com/functions/v1/latest-release?app=boss) without the `download` parameter. To browse all versions, use [BossConsole-Releases](https://github.com/risa-labs-inc/BossConsole-Releases/releases).
 
 ### Quick Install
 
@@ -41,6 +45,15 @@ For detailed installation instructions, system requirements, and troubleshooting
 - **AI & Automation**: LLM integration with robotic process automation, smart workflows, browser automation
 - **Healthcare Focus**: Prior authorization, patient triage, EHR management, compliance workflows
 - **Enterprise Ready**: Auto-updates, workspace configuration management, Git integration, cross-platform support
+
+---
+
+## Design System
+
+BOSS and BossTerm share one visual language — **"Operator's Console"**: an amber **signal** (`#F2A93B`) for what's live/now on a calm **ink** floor (`#0E1217`), cyan **data** accents, and a MesloLGS mono voice. The whole app re-skins live across three themes — **Operator** (the signature dark identity), **Daylight** (light), and **Clean** (neutral charcoal) — and every dynamic plugin follows along.
+
+- 📖 **[Design System spec](docs/DESIGN_SYSTEM.md)** — tokens, themes, and where they ship in code
+- 🎨 **[Visual styleguide](docs/design-system.html)** — a self-contained HTML reference for colors / type / components (open it in a browser)
 
 ---
 
@@ -171,12 +184,13 @@ boss --help                    # Show help
 ## Documentation
 
 - [Core Subsystems](docs/SUBSYSTEMS.md) - Auth, UI, keyboard shortcuts, threading
+- [Design System](docs/DESIGN_SYSTEM.md) - "Operator's Console" tokens, themes, and the live styleguide
 - [BossEditor Module](docs/BOSSEDITOR.md) - LSP, PSI, editor features
 - [Application Features](docs/FEATURES.md) - Performance monitoring, dashboard, downloads
 - [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) - Detailed shortcuts reference
 - [Threading Best Practices](docs/THREADING.md) - Threading patterns and pitfalls
 - [RBAC Guide](docs/RBAC_GUIDE.md) - Role-based access control
-- [Plugin System](plugins/README.md) - Modular plugin architecture
+- [Plugin System](plugin-platform/README.md) - Modular plugin architecture
 
 ---
 

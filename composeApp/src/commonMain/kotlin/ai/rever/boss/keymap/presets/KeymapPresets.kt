@@ -49,6 +49,22 @@ object KeymapPresets {
                 category = KeymapActions.Categories.TAB_MANAGEMENT,
                 description = KeymapActions.getDescription(KeymapActions.TAB_CLOSE)
             ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_NEXT,
+                key = "Tab",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_NEXT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_PREVIOUS,
+                key = "Tab",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_PREVIOUS)
+            ),
             // Browser Controls
             KeyBinding(
                 actionId = KeymapActions.BROWSER_RELOAD,
@@ -302,6 +318,23 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.TAB_MANAGEMENT,
                 description = KeymapActions.getDescription(KeymapActions.TAB_CLOSE)
+            ),
+            // VS Code uses Ctrl+Tab / Ctrl+Shift+Tab to switch between editor tabs
+            KeyBinding(
+                actionId = KeymapActions.TAB_NEXT,
+                key = "Tab",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_NEXT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_PREVIOUS,
+                key = "Tab",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_PREVIOUS)
             ),
             // Browser Controls
             KeyBinding(
@@ -563,6 +596,23 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.TAB_MANAGEMENT,
                 description = KeymapActions.getDescription(KeymapActions.TAB_CLOSE)
+            ),
+            // IntelliJ uses Ctrl+Tab (Switcher) to move between tabs
+            KeyBinding(
+                actionId = KeymapActions.TAB_NEXT,
+                key = "Tab",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_NEXT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_PREVIOUS,
+                key = "Tab",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_PREVIOUS)
             ),
             // Browser Controls - IntelliJ uses Cmd+R for Run, we'll use for reload
             KeyBinding(

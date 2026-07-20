@@ -1,7 +1,9 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,7 +56,7 @@ fun RenameDialog(
                     text = title,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -66,9 +68,9 @@ fun RenameDialog(
                     label = { Text(label, color = BossDarkTextSecondary) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        cursorColor = Color(0xFFFBBF24),
-                        focusedBorderColor = Color(0xFFFBBF24),
+                        textColor = BossDarkTextPrimary,
+                        cursorColor = BossDarkAccent,
+                        focusedBorderColor = BossDarkAccent,
                         unfocusedBorderColor = BossDarkBorder
                     ),
                     singleLine = true
@@ -102,7 +104,7 @@ fun RenameDialog(
                         },
                         enabled = newName.trim().isNotEmpty() && newName.trim() != currentName,
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFFBBF24),
+                            backgroundColor = BossDarkAccent,
                             contentColor = Color.Black,
                             disabledBackgroundColor = BossDarkBorder,
                             disabledContentColor = BossDarkTextSecondary

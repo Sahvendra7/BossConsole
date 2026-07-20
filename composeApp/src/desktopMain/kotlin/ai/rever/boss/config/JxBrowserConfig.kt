@@ -17,15 +17,21 @@ object JxBrowserConfig {
     val licenseKey: String by lazy {
         ConfigLoader.getConfig("JXBROWSER_LICENSE_KEY")
             ?: ConfigLoader.getConfig("jxbrowser.license.key")
-            ?: "58NM0Q9E2PKXH7EUHPUTJN668X5SS6QK0TN3QT1L8328W7PKKT7NWPR2R6ZG5CD4S9NS5OU0C7OWR7Z6UWTXDCIC1T28Z6EO38FS8NL8LS10WS7MSXK7DUZ7KDXTHVI12DP71SYEXFCFRKOMG9N6X7845LFEE5B9JB8U" // TODO: Remove in production
+            ?: "58NM0Q9E2PZMOJX1AVU29ISJGWZ8NX2CM2SZ1NUO4I641T6J7QJWXYF88K6T2GDPHV9H6QW0X9BU9A1TXGJI4MOFNE15IGJRII375IUZ6I1NP7DI0YU7XXWRE2BV0X2HGYV2T2963SEHQ5B7K2APDM8MJZKJE5Y6QEGF" // TODO: Remove in production
     }
     
     // Other JxBrowser configuration options
     val defaultUrl: String = ConfigLoader.getConfig("jxbrowser.default.url",
         "https://www.risalabs.ai") ?: "https://www.risalabs.ai"
     
-    // OFF_SCREEN mode for lightweight Compose popups compatibility
-    // HARDWARE_ACCELERATED has issues with Compose overlays rendering behind browser
+    // OFF_SCREEN mode for lightweight Compose popups compatibility.
+    // HARDWARE_ACCELERATED renders into a foreign native window/CALayer owned by
+    // Chromium's GPU process, which always sits above the Compose scene — Compose
+    // overlays (menus, dialogs, toasts) cannot draw over it. Re-verified against
+    // JxBrowser 9.3 + Compose Multiplatform 1.11: still true (CMP interop blending
+    // only blends Swing-rendered content, not foreign GPU surfaces), so OFF_SCREEN
+    // remains the required mode. Rendering-perf work should target the engine
+    // boot path and Chromium switches (see FluckEngine.applyPerformanceSwitches).
     val renderingMode = com.teamdev.jxbrowser.engine.RenderingMode.OFF_SCREEN
 
 } 

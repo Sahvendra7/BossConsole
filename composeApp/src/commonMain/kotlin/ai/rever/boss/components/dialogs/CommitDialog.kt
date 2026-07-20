@@ -3,6 +3,7 @@ package ai.rever.boss.components.dialogs
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkError
 import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.git.GitFileStatus
@@ -282,7 +283,7 @@ fun CommitDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = error,
-                        color = Color(0xFFB00020),
+                        color = BossDarkError,
                         fontSize = 12.sp
                     )
                 }

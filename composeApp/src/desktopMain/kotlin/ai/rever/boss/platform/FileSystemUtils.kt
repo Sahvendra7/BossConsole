@@ -2,6 +2,7 @@ package ai.rever.boss.platform
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.revealInFileManager
 import java.io.File
 import java.io.IOException
 
@@ -21,34 +22,7 @@ object FileSystemUtils {
      * @param filePath Absolute path to the file to reveal
      */
     fun revealInFolder(filePath: String) {
-        try {
-            val osName = System.getProperty("os.name").lowercase()
-            val file = File(filePath)
-
-            when {
-                osName.contains("mac") -> {
-                    // macOS: Use 'open -R' to reveal in Finder
-                    Runtime.getRuntime().exec(arrayOf("open", "-R", file.absolutePath))
-                }
-
-                osName.contains("windows") -> {
-                    // Windows: Use 'explorer /select,' to select in Explorer
-                    Runtime.getRuntime().exec(arrayOf("explorer.exe", "/select,", file.absolutePath))
-                }
-
-                osName.contains("linux") -> {
-                    // Linux: Open parent directory (can't select specific file universally)
-                    val parentDir = file.parentFile?.absolutePath ?: return
-                    Runtime.getRuntime().exec(arrayOf("xdg-open", parentDir))
-                }
-
-                else -> {
-                    logger.warn(LogCategory.FILE, "Reveal in folder not supported on this OS", mapOf("os" to osName))
-                }
-            }
-        } catch (e: IOException) {
-            logger.warn(LogCategory.FILE, "Failed to reveal file in folder", error = e)
-        }
+        revealInFileManager(filePath)
     }
 
     /**

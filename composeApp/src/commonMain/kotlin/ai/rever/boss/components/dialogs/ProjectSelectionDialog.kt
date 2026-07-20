@@ -1,5 +1,10 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkSurface
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import ai.rever.boss.window.Project
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.window.WindowProjectState
@@ -74,7 +79,7 @@ fun ProjectSelectionDialog(
                         }
                     },
                 shape = RoundedCornerShape(8.dp),
-                backgroundColor = Color(0xFF2B2D30),
+                backgroundColor = BossDarkBackground,
                 elevation = 8.dp
             ) {
                 Column(
@@ -85,7 +90,7 @@ fun ProjectSelectionDialog(
                         text = "Open Project",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = BossDarkTextPrimary,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
@@ -93,7 +98,7 @@ fun ProjectSelectionDialog(
                     Text(
                         text = "Recent Projects",
                         fontSize = 12.sp,
-                        color = Color(0xFF999999),
+                        color = BossDarkTextSecondary,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
@@ -124,7 +129,7 @@ fun ProjectSelectionDialog(
                         Button(
                             onClick = { onOpenDirectoryPicker() },
                             colors = ButtonDefaults.buttonColors(
-                                backgroundColor = Color(0xFF4A9EFF),
+                                backgroundColor = BossDarkAccent,
                                 contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(4.dp)
@@ -141,7 +146,7 @@ fun ProjectSelectionDialog(
                         TextButton(
                             onClick = onDismiss,
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = Color(0xFF999999)
+                                contentColor = BossDarkTextSecondary
                             )
                         ) {
                             Text("Cancel")
@@ -163,7 +168,7 @@ private fun ProjectListItem(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clickable { onClick() },
-        backgroundColor = Color(0xFF3C3F41),
+        backgroundColor = BossDarkSurface,
         shape = RoundedCornerShape(4.dp),
         elevation = 1.dp
     ) {
@@ -176,7 +181,7 @@ private fun ProjectListItem(
             Icon(
                 imageVector = Icons.Outlined.Folder,
                 contentDescription = "Project",
-                tint = Color(0xFF6B9EFF),
+                tint = BossDarkAccent,
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -185,12 +190,12 @@ private fun ProjectListItem(
                     text = project.name,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
                 Text(
                     text = project.path,
                     fontSize = 12.sp,
-                    color = Color(0xFF999999)
+                    color = BossDarkTextSecondary
                 )
             }
         }

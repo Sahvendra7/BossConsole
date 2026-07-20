@@ -2,10 +2,12 @@ package ai.rever.boss.plugin
 
 import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MicrokernelRuntime
+import ai.rever.boss.components.registery.PanelComponentStoreRegistry
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.plugin.api.InaccessiblePluginInfo
 import ai.rever.boss.plugin.api.LoadedPluginInfo
+import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.plugin.api.PluginLoaderDelegate
 import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.repository.remote.PluginStoreConfig
@@ -16,6 +18,10 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Implementation of PluginLoaderDelegate that wraps DynamicPluginManager.
@@ -28,6 +34,23 @@ class PluginLoaderDelegateImpl(
 ) : PluginLoaderDelegate {
 
     private val logger = BossLogger.forComponent("PluginLoaderDelegate")
+
+    /**
+     * Owner of detached reload jobs (see [reloadPlugin]) — deliberately never
+     * cancelled: an in-flight reload must run to completion even if the
+     * initiating plugin (or this delegate's window) is torn down mid-reload.
+     * No leak either way: idle, the scope holds no threads and becomes
+     * unreachable together with this delegate if its window closes; a running
+     * job is held by the dispatcher only until it completes.
+     */
+    private val reloadScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    /**
+     * Detaches reloads from their callers and coalesces them per pluginId.
+     * Per-delegate (= per-window) on purpose, matching the manager it guards —
+     * same-plugin reloads in different windows target different managers.
+     */
+    private val detachedReloads = KeyedDetachedJobs<String, LoadedPluginInfo?>(reloadScope)
 
     override suspend fun loadPlugin(jarPath: String): LoadedPluginInfo? {
         // Never try to load the microkernel runtime via the plugin-install
@@ -103,6 +126,27 @@ class PluginLoaderDelegateImpl(
     }
 
     override suspend fun reloadPlugin(pluginId: String): LoadedPluginInfo? {
+        // Detached from the caller (mirroring DynamicPluginManager.swapScope):
+        // reloads are driven from a PLUGIN's own coroutine (Toolbox update
+        // flow, evolver hot-reload), and reloading the caller's OWN plugin
+        // force-unloads it — cancelling its scope between unload and load
+        // would otherwise leave the plugin unloaded and never reloaded.
+        //
+        // Coalescing trade-off: a call that joins an in-flight reload gets
+        // THAT job's result — a jar replaced on disk mid-reload is not picked
+        // up; call again after completion to load it.
+        return detachedReloads.run(pluginId, onDetachedFailure = { cause ->
+            // Only non-Exception Throwables can land here (doReloadPlugin
+            // swallows Exceptions into null) — e.g. a NoClassDefFoundError
+            // from a closed classloader, exactly the failure that must not
+            // vanish when the caller was torn down by its own reload.
+            logger.error(LogCategory.SYSTEM, "Detached plugin reload threw after caller cancellation", error = cause)
+        }) {
+            doReloadPlugin(pluginId)
+        }
+    }
+
+    private suspend fun doReloadPlugin(pluginId: String): LoadedPluginInfo? {
         return try {
             logger.info(LogCategory.SYSTEM, "Reloading plugin via delegate", mapOf("pluginId" to pluginId))
 
@@ -226,23 +270,14 @@ class PluginLoaderDelegateImpl(
             ))
             // Close the stale tab UIs on the EDT and wait for them to detach, then reload
             // so the freshly-installed version is what's loaded when the user reopens.
-            // removeTabById is host-side and doesn't touch plugin classes.
-            if (tabs.isNotEmpty()) {
-                runOnEdtAndWait {
-                    tabs.forEach { (component, tabId) ->
-                        try {
-                            component.removeTabById(tabId)
-                        } catch (e: Throwable) {
-                            logger.warn(LogCategory.SYSTEM, "removeTabById threw during reset", mapOf(
-                                "pluginId" to pluginId,
-                                "tabId" to tabId
-                            ), e)
-                        }
-                    }
-                }
-            }
+            closeTabsOnEdt(pluginId, tabs)
             reloadPlugin(pluginId)
             tabs.size
+        } catch (ce: CancellationException) {
+            // Self-reset: the detached reload just unloaded the CALLER's own
+            // plugin and cancelled its scope. The reload completes on the
+            // detached scope — propagate instead of logging a spurious error.
+            throw ce
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Exception resetting plugin instances", error = e)
             0
@@ -252,6 +287,91 @@ class PluginLoaderDelegateImpl(
     override fun restartApplication() {
         logger.info(LogCategory.SYSTEM, "Restarting application to apply plugin update")
         ApplicationRestarter.scheduleRestart()
+    }
+
+    /**
+     * Close EVERY open plugin tab across all windows on the EDT and wait for
+     * them to detach. Used by the API-layer hot swap BEFORE any plugin
+     * classloader is closed: Compose runs each tab's `onDispose` cleanup
+     * synchronously here while its classloader is still open, so lazily-loaded
+     * disposal lambdas (e.g. BossTerm's ProperTerminal onDispose) resolve
+     * instead of throwing NoClassDefFoundError against a closed loader.
+     * Sidebar panels re-register on reload; open tabs do not reopen.
+     */
+    suspend fun teardownAllPluginTabs(): Int {
+        val tabs = SplitViewStateRegistry.getAllStates().values.flatMap { state ->
+            state.getAllPanels().flatMap { panel ->
+                val component = panel.tabsComponent
+                component.tabsState.value.tabs
+                    .filter { tab -> TabSandboxRegistry.getSandbox(tab.typeId) != null }
+                    .map { tab -> component to tab.id }
+            }
+        }
+        if (tabs.isEmpty()) return 0
+        logger.info(LogCategory.SYSTEM, "Tearing down plugin tabs before API-layer swap", mapOf(
+            "tabs" to tabs.size.toString()
+        ))
+        closeTabsOnEdt(pluginId = null, tabs = tabs)
+        return tabs.size
+    }
+
+    /**
+     * Close ONE plugin's open tabs across all windows on the EDT and wait.
+     * Invoked by the shared uninstall path (DynamicPluginManager) before the
+     * classloader closes, so update/reload/remove of a tab-hosting plugin
+     * (terminal-tab, editor-tab, fluck-browser) disposes its tab UI cleanly —
+     * same NoClassDefFoundError-avoidance as the API swap, one plugin at a time.
+     */
+    suspend fun teardownPluginTabs(pluginId: String): Int {
+        val tabs = findOpenTabs(pluginId)
+        if (tabs.isEmpty()) return 0
+        logger.info(LogCategory.SYSTEM, "Tearing down plugin tabs before unload", mapOf(
+            "pluginId" to pluginId,
+            "tabs" to tabs.size.toString()
+        ))
+        closeTabsOnEdt(pluginId, tabs)
+        return tabs.size
+    }
+
+    /**
+     * Reset any OPEN sidebar panel slots showing one of [panelIds] across all
+     * windows, so they re-create from the plugin's just-registered factories.
+     * The panel counterpart of [teardownPluginTabs], on the other side of the
+     * swap: tabs must close BEFORE the old classloader does, while panels stay
+     * open and swap to the new build once it's registered — a hot reload is
+     * then truly live for panels too, and the stale component stops pinning
+     * the pre-reload classloader (#856). Invoked by the shared (re)install
+     * path via [DynamicPluginManager.pluginPanelsRefresh]. Fire-and-forget on
+     * the EDT, matching the manual ⋮ → Restart Panel path.
+     */
+    fun refreshPluginPanels(pluginId: String, panelIds: Set<PanelId>) {
+        if (panelIds.isEmpty()) return
+        SwingUtilities.invokeLater {
+            val reset = PanelComponentStoreRegistry.resetPanels(panelIds)
+            if (reset > 0) {
+                logger.info(LogCategory.SYSTEM, "Refreshed open sidebar panels after plugin (re)registration", mapOf(
+                    "pluginId" to pluginId,
+                    "panels" to reset.toString()
+                ))
+            }
+        }
+    }
+
+    /** Remove the given tabs on the EDT and block until they detach. [pluginId] is null for the all-plugins (API-swap) teardown. */
+    private suspend fun closeTabsOnEdt(pluginId: String?, tabs: List<Pair<BossTabsComponent, String>>) {
+        if (tabs.isEmpty()) return
+        runOnEdtAndWait {
+            tabs.forEach { (component, tabId) ->
+                try {
+                    component.removeTabById(tabId)
+                } catch (e: Throwable) {
+                    logger.warn(LogCategory.SYSTEM, "removeTabById threw during tab teardown", mapOf(
+                        "pluginId" to (pluginId ?: "all"),
+                        "tabId" to tabId
+                    ), e)
+                }
+            }
+        }
     }
 
     override fun getInaccessiblePlugins(): List<InaccessiblePluginInfo> {

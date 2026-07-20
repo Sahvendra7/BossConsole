@@ -13,11 +13,13 @@ import androidx.compose.ui.graphics.Color
  * Shared UI constants for settings panel - aligned with BossTerm's SettingsTheme.
  */
 object SettingsTheme {
-    val SurfaceColor: Color = BossDarkBackground      // Sidebar background (#2B2B2B)
-    val BackgroundColor: Color = BossDarkContentBackground // Content area background (#1E1E1E)
-    val AccentColor: Color = BossDarkAccent           // Selection/highlight color
-    val BorderColor: Color = BossDarkBorder           // Border/divider color (#4D4D4D)
-    val TextPrimary: Color = BossDarkTextPrimary      // Primary text color
-    val TextSecondary: Color = BossDarkTextSecondary  // Secondary text color
-    val TextMuted: Color = BossDarkTextMuted          // Muted text color (#707070)
+    // Getters (not stored vals) so the entire settings UI re-skins when the
+    // active host theme changes — BossDark* now resolve through BossThemeController.
+    val SurfaceColor: Color get() = BossDarkBackground       // Sidebar background
+    val BackgroundColor: Color get() = BossDarkContentBackground // Content area background
+    val AccentColor: Color get() = BossDarkAccent            // Selection/highlight color
+    val BorderColor: Color get() = BossDarkBorder            // Border/divider color
+    val TextPrimary: Color get() = BossDarkTextPrimary        // Primary text color
+    val TextSecondary: Color get() = BossDarkTextSecondary    // Secondary text color
+    val TextMuted: Color get() = BossDarkTextMuted            // Muted text color
 }

@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
@@ -192,3 +192,33 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+
+      # The Supabase app_releases row is the client's PRIMARY release-notes
+      # source (the update dialog's "What's new"), and sync-release seeds it
+      # with the auto-generated GitHub release body. Overwrite that with the
+      # curated notes. Deliberately not gated on check-existing so a manual
+      # dispatch for an already-documented tag repairs its row.
+      - name: 📡 Sync Release Notes to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # The row only appears after sync-release finishes uploading every
+          # installer (the DMG alone can take many minutes via TUS), so allow
+          # a generous wait: 40 × 30s = 20 minutes.
+          SYNC_MAX_ATTEMPTS: "40"
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+            echo "ℹ️  SUPABASE_SERVICE_ROLE_KEY not set; skipping Supabase notes sync."
+            exit 0
+          fi
+          export SUPABASE_URL="${SUPABASE_URL:-https://api.risaboss.com}"
+
+          VERSION="${{ steps.release-info.outputs.version }}"
+          NOTES_FILE="docs/release-notes/v${VERSION}.md"
+          if [[ ! -f "$NOTES_FILE" ]]; then
+            echo "ℹ️  $NOTES_FILE not found; nothing to sync."
+            exit 0
+          fi
+          bash scripts/sync-supabase-release-notes.sh boss "$VERSION" "$NOTES_FILE"

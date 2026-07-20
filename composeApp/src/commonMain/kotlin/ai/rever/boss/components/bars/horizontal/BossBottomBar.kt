@@ -16,9 +16,15 @@ import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.Project
+import ai.rever.boss.components.plugin.registries.StatusBarRegistryImpl
+import ai.rever.boss.components.plugin.registries.owningPluginId
+import ai.rever.boss.plugin.api.StatusBarAlignment
+import ai.rever.boss.plugin.sandbox.ui.PluginExtensionBoundary
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import ai.rever.boss.utils.SystemUtils
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -45,8 +51,36 @@ fun BossBottomBar(tabsComponent: BossTabsComponent? = null) {
     HorizontalBar(height = 30.dp) {
         HorizontalBarRow {
             BossLeftBottomBar(tabsComponent)
+            PluginStatusBarItems(StatusBarAlignment.LEFT)
             Spacer(modifier = Modifier.weight(0.1f))
+            PluginStatusBarItems(StatusBarAlignment.RIGHT)
             BossRightBottomBar()
+        }
+    }
+}
+
+/**
+ * Plugin-contributed status-bar widgets (StatusBarRegistry) for one alignment
+ * group. Each widget renders inside a [PluginExtensionBoundary]: a crash
+ * attributed to the owning plugin collapses that widget to a compact error
+ * marker instead of corrupting the status bar (or, for a plugin with no
+ * other boundary, escalating to the app-level CrashHandler).
+ */
+@Composable
+private fun PluginStatusBarItems(alignment: StatusBarAlignment) {
+    val items by StatusBarRegistryImpl.items.collectAsState()
+    val access by StatusBarRegistryImpl.access.collectAsState()
+    val visible = remember(items, access, alignment) {
+        StatusBarRegistryImpl.visibleItems(alignment)
+    }
+    visible.forEach { provider ->
+        key(provider.itemId) {
+            PluginExtensionBoundary(
+                pluginId = owningPluginId(provider),
+                surface = "status item ${provider.itemId}"
+            ) {
+                provider.Content()
+            }
         }
     }
 }

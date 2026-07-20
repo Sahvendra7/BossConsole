@@ -25,7 +25,6 @@ actual fun getCodeEditorTextColor(): Color = Color(0xFF_D4D4D4)
 actual fun getCodeEditorLineNumberColor(): Color = Color(0xFF_858585)
 actual fun getCodeEditorLineNumberBgColor(): Color = Color(0xFF_2D2D30)
 actual fun getCodeEditorKeywordColor(): Color = Color(0xFF_569CD6)
-actual fun getCodeEditorStringColor(): Color = Color(0xFF_CE9178)
 actual fun getCodeEditorCommentColor(): Color = Color(0xFF_6A9955)
 
 /**

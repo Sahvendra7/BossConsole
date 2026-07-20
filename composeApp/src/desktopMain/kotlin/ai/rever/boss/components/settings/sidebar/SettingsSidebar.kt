@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ViewSidebar
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -35,6 +36,11 @@ enum class SettingsSection(
         displayName = "Browser",
         description = "Configure browser behavior, user agent, and link handling",
         icon = Icons.Outlined.Language
+    ),
+    BROWSER_ENGINE(
+        displayName = "Browser Engine",
+        description = "Chromium engine version, downloads, and reinstall",
+        icon = Icons.Outlined.Memory
     ),
     BOSS_EDITOR(
         displayName = "BossEditor",
@@ -86,10 +92,20 @@ enum class SettingsSection(
         description = "Hide UI elements and minimize distractions",
         icon = Icons.Outlined.Visibility
     ),
+    THEME(
+        displayName = "Theme",
+        description = "App color theme — Operator, Daylight, or Clean",
+        icon = Icons.Outlined.Palette
+    ),
     WINDOW_APPEARANCE(
         displayName = "Appearance",
         description = "Title bar, window decorations, and theming",
         icon = Icons.Outlined.DesktopWindows
+    ),
+    SIDEBAR(
+        displayName = "Sidebar",
+        description = "Plugin icon limits and overflow behavior",
+        icon = Icons.AutoMirrored.Outlined.ViewSidebar
     ),
     PERFORMANCE(
         displayName = "Performance",
@@ -122,7 +138,10 @@ private val NavRailWidth = 180.dp
 @Composable
 fun SettingsSidebar(
     selectedSection: SettingsSection,
-    onSectionChange: (SettingsSection) -> Unit
+    onSectionChange: (SettingsSection) -> Unit,
+    pluginPages: List<ai.rever.boss.plugin.api.SettingsPageProvider> = emptyList(),
+    selectedPluginPageId: String? = null,
+    onPluginPageChange: (String) -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
 
@@ -135,12 +154,37 @@ fun SettingsSidebar(
             .padding(vertical = 8.dp)
     ) {
         SettingsSection.entries.forEach { section ->
-            val isSelected = section == selectedSection
+            val isSelected = selectedPluginPageId == null && section == selectedSection
             NavigationRailItem(
-                section = section,
+                displayName = section.displayName,
+                icon = section.icon,
                 isSelected = isSelected,
                 onClick = { onSectionChange(section) }
             )
+        }
+
+        // Plugin-contributed settings pages (SettingsPageRegistry) under a
+        // "Plugins" divider — fully dynamic, appear/disappear with plugins.
+        if (pluginPages.isNotEmpty()) {
+            Divider(
+                color = TextSecondary.copy(alpha = 0.2f),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+            Text(
+                text = "PLUGINS",
+                color = TextSecondary,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+            pluginPages.forEach { page ->
+                NavigationRailItem(
+                    displayName = page.displayName,
+                    icon = page.icon,
+                    isSelected = page.pageId == selectedPluginPageId,
+                    onClick = { onPluginPageChange(page.pageId) }
+                )
+            }
         }
     }
 }
@@ -150,7 +194,8 @@ fun SettingsSidebar(
  */
 @Composable
 private fun NavigationRailItem(
-    section: SettingsSection,
+    displayName: String,
+    icon: ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -174,14 +219,14 @@ private fun NavigationRailItem(
         )
 
         Icon(
-            imageVector = section.icon,
-            contentDescription = section.displayName,
+            imageVector = icon,
+            contentDescription = displayName,
             tint = if (isSelected) AccentColor else TextSecondary,
             modifier = Modifier.size(18.dp)
         )
 
         Text(
-            text = section.displayName,
+            text = displayName,
             color = if (isSelected) AccentColor else TextPrimary,
             fontSize = 13.sp,
             fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal

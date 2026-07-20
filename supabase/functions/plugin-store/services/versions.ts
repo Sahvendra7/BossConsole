@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { PluginVersion, PluginDependency } from "../types/plugin.ts"
+import { signVersionAnchor } from "../utils/signing.ts"
 
 /**
  * Get all versions of a plugin
@@ -25,6 +26,7 @@ export async function getPluginVersions(
     changelog: row.changelog as string,
     minBossVersion: row.min_boss_version as string,
     minIpcVersion: (row.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (row.min_api_version as string) ?? '',
     jarPath: row.jar_path as string,
     jarSize: Number(row.jar_size) || 0,
     sha256: row.sha256 as string,
@@ -62,9 +64,11 @@ export async function getLatestVersion(
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
     minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (data.min_api_version as string) ?? '',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
+    signature: (data.signature as string | null) ?? null,
     dependencies: data.dependencies || [],
     publishedAt: data.published_at
   }
@@ -98,9 +102,11 @@ export async function getVersion(
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
     minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (data.min_api_version as string) ?? '',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
+    signature: (data.signature as string | null) ?? null,
     dependencies: data.dependencies || [],
     publishedAt: data.published_at
   }
@@ -132,9 +138,11 @@ export async function getVersionById(
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
     minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
+    minApiVersion: (data.min_api_version as string) ?? '',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
+    signature: (data.signature as string | null) ?? null,
     dependencies: data.dependencies || [],
     publishedAt: data.published_at
   }
@@ -151,7 +159,8 @@ export async function createVersion(
   minBossVersion: string,
   minIpcVersion: string,
   dependencies: PluginDependency[],
-  jarPath: string
+  jarPath: string,
+  minApiVersion: string = ''
 ): Promise<{ id: string }> {
   const { data, error } = await supabase
     .from('plugin_versions')
@@ -161,6 +170,7 @@ export async function createVersion(
       changelog,
       min_boss_version: minBossVersion,
       min_ipc_version: minIpcVersion,
+      min_api_version: minApiVersion,
       dependencies,
       jar_path: jarPath,
       sha256: 'pending', // Will be updated after upload
@@ -187,13 +197,28 @@ export async function finalizeVersion(
   supabase: SupabaseClient,
   versionId: string,
   sha256: string,
-  jarSize: number
+  jarSize: number,
+  pluginId: string,
+  version: string
 ): Promise<void> {
+  // Sign the canonical anchor pluginId|version|sha256 — binding identity and
+  // version, not just the digest, so store-signed artifacts aren't mutually
+  // substitutable. Null (no signing key configured) leaves the version
+  // unsigned, which hosts currently treat as warn-only.
+  const signature = await signVersionAnchor(pluginId, version, sha256)
+  if (signature === null) {
+    // Deliberate never-block-publish behavior, but the degraded state must
+    // be observable: this version ships unsigned (warn-only on hosts) until
+    // a backfill --re-sign-all pass.
+    console.error(`PUBLISHED UNSIGNED: ${pluginId} v${version} (versionId=${versionId}) — signing unavailable`)
+  }
+
   const { error } = await supabase
     .from('plugin_versions')
     .update({
       sha256,
-      jar_size: jarSize
+      jar_size: jarSize,
+      signature
     })
     .eq('id', versionId)
 

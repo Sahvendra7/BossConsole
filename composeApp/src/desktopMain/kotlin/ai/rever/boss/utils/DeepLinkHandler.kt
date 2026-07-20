@@ -1,6 +1,7 @@
 package ai.rever.boss.utils
 
 import ai.rever.boss.services.URLHandlerService
+import ai.rever.boss.window.MenuActionsHandler
 import ai.rever.boss.window.Project
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.PanelIds
@@ -150,6 +151,7 @@ actual object DeepLinkHandler {
             uri.startsWith("boss://terminal") -> handleTerminalLink(uri)
             uri.startsWith("boss://folder") -> handleFolderLink(uri)
             uri.startsWith("boss://plugin") -> handlePluginLink(uri)
+            uri.startsWith("boss://split") -> handleSplitLink(uri)
             else -> {
                 // Default: emit to flow for auth/other handlers
                 _deepLinkFlow.value = uri
@@ -242,11 +244,13 @@ actual object DeepLinkHandler {
 
     /**
      * Handle boss://plugin deep links
-     * Opens any panel by its panel ID.
+     * Opens any panel by its panel ID, or — with an `action` parameter —
+     * routes to the plugin's registered DeepLinkActionHandler.
      * Examples:
      *   boss://plugin?id=bookmarks
      *   boss://plugin?id=terminal
      *   boss://plugin?id=secret-manager
+     *   boss://plugin?id=my.plugin&action=sync&scope=all
      */
     private fun handlePluginLink(uri: String) {
         logger.debug(LogCategory.UI, "Handling plugin link")
@@ -256,6 +260,22 @@ actual object DeepLinkHandler {
 
         if (panelIdStr == null) {
             logger.warn(LogCategory.UI, "Missing 'id' parameter in plugin deep link")
+            return
+        }
+
+        // Action links dispatch to the plugin's DeepLinkActionHandler and do
+        // NOT fall through to opening a panel — the two are distinct verbs
+        // sharing the `plugin` scheme. Unhandled actions just log (registry
+        // warns); external input, so handlers own validation.
+        val action = params["action"]?.urlDecode()
+        if (action != null) {
+            val actionParams = params
+                .filterKeys { it != "id" && it != "action" }
+                .mapValues { (_, value) -> value.urlDecode() }
+            scope.launch(Dispatchers.Main) {
+                ai.rever.boss.components.plugin.registries.DeepLinkActionRegistryImpl
+                    .dispatch(panelIdStr, action, actionParams)
+            }
             return
         }
 
@@ -276,6 +296,49 @@ actual object DeepLinkHandler {
             }
             PanelEventBus.openPanel(panelId, sourceWindowId = focusedWindowId)
             logger.info(LogCategory.UI, "Emitted panel open event", mapOf("panelId" to panelIdStr, "windowId" to focusedWindowId))
+        }
+    }
+
+    /**
+     * Handle boss://split deep links — split BossConsole's main window.
+     * Examples:
+     *   boss://split                       (defaults to vertical)
+     *   boss://split?orientation=vertical
+     *   boss://split?orientation=horizontal
+     */
+    private fun handleSplitLink(uri: String) {
+        logger.debug(LogCategory.UI, "Handling split link")
+
+        val params = parseQueryParams(uri)
+        val requested = params["orientation"]?.urlDecode()?.lowercase()
+        val horizontal = when (requested) {
+            null, "vertical" -> false
+            "horizontal" -> true
+            else -> {
+                logger.warn(LogCategory.UI, "Unknown split orientation, defaulting to vertical",
+                    mapOf("orientation" to requested))
+                false
+            }
+        }
+
+        scope.launch(Dispatchers.Main) {
+            // Use the registration/focus-gain-backed lookup, not focusedWindowFlow
+            // alone — an MCP-driven caller typically has OS focus itself (not
+            // BOSS), so focusedWindowFlow can still be null even though a usable
+            // window is plainly registered.
+            val focusedWindowId = WindowFocusManager.resolveActionableWindowId()
+            if (focusedWindowId == null) {
+                logger.warn(LogCategory.UI, "No window focused, cannot split")
+                return@launch
+            }
+
+            if (horizontal) {
+                MenuActionsHandler.triggerSplitHorizontally(focusedWindowId)
+            } else {
+                MenuActionsHandler.triggerSplitVertically(focusedWindowId)
+            }
+            logger.info(LogCategory.UI, "Emitted split event",
+                mapOf("windowId" to focusedWindowId, "horizontal" to horizontal.toString()))
         }
     }
 

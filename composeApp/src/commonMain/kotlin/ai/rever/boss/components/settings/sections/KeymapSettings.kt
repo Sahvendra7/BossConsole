@@ -2,6 +2,8 @@ package ai.rever.boss.components.settings.sections
 
 import BossDarkAccent
 import BossDarkBackground
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -45,7 +47,7 @@ fun KeymapSettings() {
             text = "Keyboard Shortcuts",
             style = MaterialTheme.typography.h5,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -53,7 +55,7 @@ fun KeymapSettings() {
         Text(
             text = "Reference for all available keyboard shortcuts in BOSS Console",
             style = MaterialTheme.typography.body2,
-            color = Color.Gray
+            color = BossDarkTextSecondary
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -61,12 +63,12 @@ fun KeymapSettings() {
         TextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search shortcuts...", color = Color.Gray) },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) },
+            placeholder = { Text("Search shortcuts...", color = BossDarkTextSecondary) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = BossDarkTextSecondary) },
             modifier = Modifier.fillMaxWidth(),
             colors = TextFieldDefaults.textFieldColors(
                 backgroundColor = BossDarkAccent.copy(alpha = 0.1f),
-                textColor = Color.White,
+                textColor = BossDarkTextPrimary,
                 cursorColor = BossDarkAccent,
                 focusedIndicatorColor = BossDarkAccent,
                 unfocusedIndicatorColor = Color.Transparent
@@ -99,7 +101,7 @@ fun KeymapSettings() {
         if (filteredShortcuts.isEmpty()) {
             Text(
                 text = "No shortcuts found matching your search.",
-                color = Color.Gray,
+                color = BossDarkTextSecondary,
                 modifier = Modifier.padding(16.dp)
             )
         } else {
@@ -126,7 +128,7 @@ private fun FilterChipButton(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(
             backgroundColor = if (selected) BossDarkAccent else BossDarkAccent.copy(alpha = 0.1f),
-            contentColor = if (selected) Color.White else Color.Gray
+            contentColor = if (selected) BossDarkTextPrimary else BossDarkTextSecondary
         ),
         shape = RoundedCornerShape(16.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -157,7 +159,7 @@ private fun CategorySection(
                 text = category.displayName,
                 style = MaterialTheme.typography.subtitle1,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = BossDarkTextPrimary
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -186,12 +188,12 @@ private fun ShortcutRow(shortcut: KeyboardShortcut) {
             Text(
                 text = shortcut.action,
                 style = MaterialTheme.typography.body1,
-                color = Color.White
+                color = BossDarkTextPrimary
             )
             Text(
                 text = shortcut.description,
                 style = MaterialTheme.typography.caption,
-                color = Color.Gray
+                color = BossDarkTextSecondary
             )
         }
 
@@ -232,7 +234,7 @@ private fun KeyCap(text: String) {
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             style = MaterialTheme.typography.body2,
             fontFamily = FontFamily.Monospace,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
     }
 }

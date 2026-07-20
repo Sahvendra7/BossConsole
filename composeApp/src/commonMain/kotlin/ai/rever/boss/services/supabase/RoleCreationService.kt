@@ -420,32 +420,6 @@ private data class RpcResponse(
     val role_id: String? = null           // Returned by create_new_role() (table-based)
 )
 
-@Serializable
-private data class RolesResponse(
-    val success: Boolean,
-    val error: String? = null,
-    val roles: List<RoleData>? = null
-)
-
-@Serializable
-private data class RoleData(
-    val name: String,
-    val ordinal: Int
-)
-
-@Serializable
-private data class PermissionsResponse(
-    val success: Boolean,
-    val error: String? = null,
-    val permissions: List<PermissionData>? = null
-)
-
-@Serializable
-private data class PermissionData(
-    val name: String,
-    val ordinal: Int
-)
-
 // NEW: Response DTOs for table-based schema
 @Serializable
 private data class RolesResponseNew(

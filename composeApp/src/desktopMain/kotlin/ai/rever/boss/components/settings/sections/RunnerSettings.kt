@@ -1,5 +1,7 @@
 package ai.rever.boss.components.settings.sections
 
+import BossDarkError
+import BossDarkSuccess
 import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.boss.components.settings.shared.SettingsSlider
 import ai.rever.boss.components.settings.shared.SettingsToggle
@@ -112,19 +114,19 @@ fun RunnerSettings() {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RunControlInfoItem(
                     icon = "▶",
-                    iconColor = Color(0xFF59A869),
+                    iconColor = BossDarkSuccess,
                     title = "Run",
                     description = "Execute the selected configuration"
                 )
                 RunControlInfoItem(
                     icon = "↻",
-                    iconColor = Color(0xFF59A869),
+                    iconColor = BossDarkSuccess,
                     title = "Re-run",
                     description = "Stop current run and execute again"
                 )
                 RunControlInfoItem(
                     icon = "■",
-                    iconColor = Color(0xFFE05555),
+                    iconColor = BossDarkError,
                     title = "Stop",
                     description = "Terminate the running process (Ctrl+C)"
                 )

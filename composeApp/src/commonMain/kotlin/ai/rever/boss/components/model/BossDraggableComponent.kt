@@ -183,6 +183,21 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
         }
     }
 
+    /**
+     * Click behaviour for a sidebar item, shared by the rail icon
+     * (DraggableActionButton) and the overflow More menu so the two
+     * can't drift: a plugin-supplied [SidebarItem.onClick] always wins;
+     * otherwise the default toggle-panel behaviour ([onClick]) runs,
+     * suppressed while a drag gesture is in flight.
+     */
+    fun handleSidebarItemClick(item: SidebarItem) {
+        val customClick = item.onClick
+        when {
+            customClick != null -> customClick()
+            draggingItem == null -> onClick(item)
+        }
+    }
+
     // Maps sidebar slots to their corresponding panel display areas
     private fun slotToPanel(slot: Panel): Panel? {
         return when(slot) {
@@ -361,6 +376,12 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
                 if (targetSlotBounds != null && finalDropPosition != null && currentTargetItems.isNotEmpty()) {
                     // Estimate item height based on slot bounds and item count
                     // Add small epsilon to height to avoid division by zero if bounds are tiny
+                    // NOTE: when the slot's icons are capped (sidebar overflow), the
+                    // bounds only span the rendered rows (visible icons + More button)
+                    // while currentTargetItems counts the full list, so this estimate
+                    // skews small on overflowing slots. The drop still lands (safeIndex
+                    // clamps below), just at an imprecise index — accepted alongside
+                    // the documented "overflow items aren't drag-reorderable" limit.
                     val totalSlotHeight = max(1f, targetSlotBounds.height) // Ensure positive height
                     val itemHeightEstimate = totalSlotHeight / currentTargetItems.size
 

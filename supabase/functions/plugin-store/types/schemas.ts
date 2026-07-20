@@ -42,7 +42,8 @@ export const PluginListItemSchema = z.object({
   ratingCount: z.number(),
   downloadCount: z.number(),
   tags: z.array(z.string()),
-  updatedAt: z.string()
+  updatedAt: z.string(),
+  requiredPermissions: z.array(z.string()).optional().default([])
 })
 
 export const PluginListResponseSchema = z.object({
@@ -57,12 +58,16 @@ export const PluginScreenshotSchema = z.object({
   caption: z.string()
 })
 
+// Intentionally NO `signature` here: listing is not a verification path —
+// the signature travels only on the download response
+// (DownloadInfoResponseSchema), where the host verifies it.
 export const PluginVersionSchema = z.object({
   id: z.string().uuid(),
   version: z.string(),
   changelog: z.string(),
   minBossVersion: z.string(),
   minIpcVersion: z.string().default('1.0.0'),
+  minApiVersion: z.string().default(''),
   jarSize: z.number(),
   sha256: z.string(),
   dependencies: z.array(z.object({
@@ -93,7 +98,8 @@ export const PluginDetailResponseSchema = z.object({
   downloadCount: z.number(),
   tags: z.array(z.string()),
   screenshots: z.array(PluginScreenshotSchema),
-  versions: z.array(PluginVersionSchema)
+  versions: z.array(PluginVersionSchema),
+  requiredPermissions: z.array(z.string()).optional().default([])
 })
 
 // ============================================================================
@@ -103,10 +109,16 @@ export const PluginDetailResponseSchema = z.object({
 export const DownloadInfoResponseSchema = z.object({
   downloadUrl: z.string().url(),
   sha256: z.string(),
+  // Base64 store signature over the canonical anchor pluginId|version|sha256;
+  // null for versions published before store signing. Declared here so any
+  // future response validation/stripping cannot silently drop the field the
+  // host's signature enforcement depends on.
+  signature: z.string().nullable().optional(),
   version: z.string(),
   size: z.number(),
   versionId: z.string().uuid(),
-  minIpcVersion: z.string().default('1.0.0')
+  minIpcVersion: z.string().default('1.0.0'),
+  requiredPermissions: z.array(z.string()).optional().default([])
 })
 
 // ============================================================================
@@ -161,10 +173,15 @@ export const PublishVersionRequestSchema = z.object({
   changelog: z.string().max(5000).optional().default(''),
   minBossVersion: z.string().optional().default('1.0.0'),
   minIpcVersion: z.string().optional().default('1.0.0'),
+  minApiVersion: z.string().optional().default(''),
   dependencies: z.array(z.object({
     pluginId: z.string(),
     versionRange: z.string()
-  })).optional().default([])
+  })).optional().default([]),
+  // Optional (no default): when present, refreshes the plugin's install gate to
+  // this version's manifest value ("latest wins"). Absent ⇒ leave unchanged, so
+  // older clients that don't send it don't wipe an existing gate.
+  requiredPermissions: z.array(z.string().max(64)).max(50).optional()
 })
 
 export const PublishVersionResponseSchema = z.object({

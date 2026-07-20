@@ -14,6 +14,8 @@ object KeymapActions {
     // Tab Management Actions
     const val TAB_NEW = "tab.new"
     const val TAB_CLOSE = "tab.close"
+    const val TAB_NEXT = "tab.next"
+    const val TAB_PREVIOUS = "tab.previous"
 
     // Browser Control Actions
     const val BROWSER_RELOAD = "browser.reload"
@@ -84,6 +86,8 @@ object KeymapActions {
         WINDOW_CLOSE to "Close the current window",
         TAB_NEW to "Open new tab dialog",
         TAB_CLOSE to "Close the current tab (or window if last tab)",
+        TAB_NEXT to "Switch to the next tab in the active panel",
+        TAB_PREVIOUS to "Switch to the previous tab in the active panel",
         BROWSER_RELOAD to "Reload the current browser tab",
         BROWSER_ZOOM_RESET to "Reset browser zoom to 100%",
         BROWSER_ZOOM_IN to "Increase browser zoom level",
@@ -120,6 +124,8 @@ object KeymapActions {
         WINDOW_CLOSE to Categories.WINDOW_MANAGEMENT,
         TAB_NEW to Categories.TAB_MANAGEMENT,
         TAB_CLOSE to Categories.TAB_MANAGEMENT,
+        TAB_NEXT to Categories.TAB_MANAGEMENT,
+        TAB_PREVIOUS to Categories.TAB_MANAGEMENT,
         BROWSER_RELOAD to Categories.BROWSER_CONTROLS,
         BROWSER_ZOOM_RESET to Categories.BROWSER_CONTROLS,
         BROWSER_ZOOM_IN to Categories.BROWSER_CONTROLS,
@@ -156,6 +162,8 @@ object KeymapActions {
         WINDOW_CLOSE to ShortcutContext.GLOBAL,
         TAB_NEW to ShortcutContext.GLOBAL,
         TAB_CLOSE to ShortcutContext.GLOBAL,
+        TAB_NEXT to ShortcutContext.GLOBAL,
+        TAB_PREVIOUS to ShortcutContext.GLOBAL,
         BROWSER_RELOAD to ShortcutContext.BROWSER,
         BROWSER_ZOOM_RESET to ShortcutContext.BROWSER,
         BROWSER_ZOOM_IN to ShortcutContext.BROWSER,
@@ -189,7 +197,7 @@ object KeymapActions {
      */
     fun getAllActionIds(): List<String> = listOf(
         WINDOW_NEW, WINDOW_CLOSE,
-        TAB_NEW, TAB_CLOSE,
+        TAB_NEW, TAB_CLOSE, TAB_NEXT, TAB_PREVIOUS,
         BROWSER_RELOAD, BROWSER_ZOOM_RESET, BROWSER_ZOOM_IN, BROWSER_ZOOM_OUT, BROWSER_FIND,
         PANEL_NAVIGATE_LEFT, PANEL_NAVIGATE_RIGHT, PANEL_NAVIGATE_UP, PANEL_NAVIGATE_DOWN,
         PANEL_SPLIT_VERTICAL, PANEL_SPLIT_HORIZONTAL, QUICK_SWITCHER_OPEN,

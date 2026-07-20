@@ -24,7 +24,7 @@ java {
 
 dependencies {
     // Plugin API (provided by boss-microkernel-runtime at runtime — don't bundle)
-    compileOnly(project(":plugins:plugin-api-core")) {
+    compileOnly(project(":plugin-platform:plugin-api-core")) {
         targetConfiguration = "desktopRuntimeElements"
     }
 

@@ -48,6 +48,22 @@ object EmacsPresetDefinition {
                 category = KeymapActions.Categories.TAB_MANAGEMENT,
                 description = KeymapActions.getDescription(KeymapActions.TAB_CLOSE)
             ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_NEXT,
+                key = "Tab",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_NEXT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_PREVIOUS,
+                key = "Tab",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_PREVIOUS)
+            ),
             // Browser Controls - Emacs: C-l (recenter/redraw) for reload
             KeyBinding(
                 actionId = KeymapActions.BROWSER_RELOAD,

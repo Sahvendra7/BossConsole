@@ -6,11 +6,6 @@ import BossDarkSurface
 import BossDarkTextSecondary
 import ai.rever.boss.components.wizard.CheckboxCard
 import ai.rever.boss.components.wizard.WizardNote
-import ai.rever.boss.components.wizard.WizardStepIndicator
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,13 +32,10 @@ import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.HomeRepairService
 import androidx.compose.material.icons.filled.Rocket
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,172 +44,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.launch
 
 // Dashboard-style colors
 private val AccentBlue = Color(0xFF4A9EFF)
 private val SuccessGreen = Color(0xFF4CAF50)
-
-/**
- * Plugin installation wizard dialog.
- *
- * Guides users through selecting and installing plugins after login.
- *
- * @param state The wizard state
- * @param onDismiss Callback when the wizard should be dismissed
- * @param onComplete Callback when installation is complete
- * @param onInstallPlugins Callback to perform the actual plugin installation
- */
-@Composable
-fun PluginInstallWizard(
-    state: PluginInstallWizardState,
-    onDismiss: () -> Unit,
-    onComplete: () -> Unit,
-    onInstallPlugins: suspend (List<WizardPluginInfo>, (Float, String) -> Unit) -> Result<PluginInstallResult>
-) {
-    val currentStep = state.wizardState.currentStep
-    val scope = rememberCoroutineScope()
-
-    // Handle installation when we reach the Installing step
-    // Use installationAttempted flag to prevent re-triggering (fixes race condition)
-    LaunchedEffect(currentStep) {
-        if (currentStep is PluginInstallStep.Installing && !state.isInstalling && !state.installationAttempted) {
-            val selectedPlugins = state.getSelectedPlugins()
-            if (selectedPlugins.isEmpty()) {
-                // No plugins selected, skip to complete
-                state.completeInstallation(emptyList())
-                state.goToNextStep()
-            } else {
-                state.startInstallation()
-                val result = onInstallPlugins(selectedPlugins) { progress, status ->
-                    state.updateProgress(progress, status)
-                }
-                result.fold(
-                    onSuccess = { installResult ->
-                        state.completeInstallation(installResult.installedIds, installResult.failedPlugins)
-                        state.goToNextStep()
-                    },
-                    onFailure = { error ->
-                        state.failInstallation(error.message ?: "Installation failed")
-                    }
-                )
-            }
-        }
-    }
-
-    Dialog(
-        onDismissRequest = {
-            // Only allow dismiss if not installing
-            if (!state.isInstalling) {
-                onDismiss()
-            }
-        },
-        properties = DialogProperties(
-            dismissOnClickOutside = !state.isInstalling,
-            dismissOnBackPress = !state.isInstalling,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Box(
-            modifier = Modifier
-                .width(650.dp)
-                .heightIn(min = 500.dp, max = 600.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(BossDarkBackground)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp)
-            ) {
-                // Header
-                WizardHeader(
-                    currentStep = currentStep,
-                    onBack = if (!state.wizardState.isFirstStep && !state.isInstalling && currentStep !is PluginInstallStep.Complete) {
-                        { state.goToPreviousStep() }
-                    } else null,
-                    onDismiss = if (!state.isInstalling && currentStep !is PluginInstallStep.Installing) {
-                        onDismiss
-                    } else null
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Step indicator (hidden during Installing and Complete)
-                if (currentStep !is PluginInstallStep.Installing && currentStep !is PluginInstallStep.Complete) {
-                    WizardStepIndicator(
-                        currentStep = state.wizardState.currentVisibleStepIndex + 1,
-                        totalSteps = state.wizardState.totalVisibleSteps,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-
-                // Content
-                Box(modifier = Modifier.weight(1f)) {
-                    AnimatedContent(
-                        targetState = currentStep,
-                        transitionSpec = {
-                            fadeIn() togetherWith fadeOut()
-                        },
-                        label = "wizard_step_content"
-                    ) { step ->
-                        when (step) {
-                            is PluginInstallStep.Welcome -> WelcomeStepContent()
-                            is PluginInstallStep.EssentialPlugins,
-                            is PluginInstallStep.DeveloperPlugins,
-                            is PluginInstallStep.ProductivityPlugins,
-                            is PluginInstallStep.AutomationPlugins,
-                            is PluginInstallStep.AdminPlugins,
-                            is PluginInstallStep.OtherPlugins -> {
-                                step.category?.let { category ->
-                                    CategoryStepContent(
-                                        category = category,
-                                        plugins = state.getPluginsForCategory(category),
-                                        isPluginSelected = { state.isPluginSelected(it) },
-                                        onTogglePlugin = { state.togglePlugin(it) },
-                                        onSelectAll = { state.selectAllInCategory(category) },
-                                        onDeselectAll = { state.deselectAllInCategory(category) }
-                                    )
-                                }
-                            }
-                            is PluginInstallStep.Installing -> InstallingStepContent(
-                                progress = state.installationProgress,
-                                status = state.installationStatus,
-                                error = state.installationError,
-                                onRetry = {
-                                    state.reset()
-                                }
-                            )
-                            is PluginInstallStep.Complete -> CompleteStepContent(
-                                installedCount = state.installedPluginIds.size,
-                                failedPlugins = state.failedPlugins
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Navigation buttons
-                WizardNavigation(
-                    currentStep = currentStep,
-                    isInstalling = state.isInstalling,
-                    hasSelectedPlugins = state.hasSelectedPlugins(),
-                    onBack = { state.goToPreviousStep() },
-                    onNext = { state.goToNextStep() },
-                    onSkip = {
-                        // Skip all remaining category steps and go to Installing
-                        state.skipToInstalling()
-                    },
-                    onFinish = onComplete
-                )
-            }
-        }
-    }
-}
 
 @Composable
 internal fun WizardHeader(
@@ -279,7 +108,7 @@ internal fun WelcomeStepContent() {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = Icons.Default.Extension,
+            imageVector = Icons.Default.HomeRepairService,
             contentDescription = null,
             modifier = Modifier.size(64.dp),
             tint = AccentBlue
@@ -288,7 +117,7 @@ internal fun WelcomeStepContent() {
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Welcome to BOSS Plugins",
+            text = "Welcome to the BOSS Toolbox",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
@@ -298,7 +127,7 @@ internal fun WelcomeStepContent() {
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Customize your workspace by selecting the plugins you need.\nWe'll help you get started with some recommended essentials.",
+            text = "Customize your workspace by selecting the tools you need.\nWe'll help you get started with some recommended essentials.",
             fontSize = 14.sp,
             color = BossDarkTextSecondary,
             textAlign = TextAlign.Center,
@@ -323,7 +152,7 @@ internal fun WelcomeStepContent() {
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Essential plugins will be pre-selected for you",
+                text = "Essential tools will be pre-selected for you",
                 fontSize = 13.sp,
                 color = BossDarkTextSecondary
             )
@@ -371,7 +200,7 @@ internal fun CategoryStepContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No plugins available in this category",
+                    text = "No tools available in this category",
                     color = BossDarkTextSecondary,
                     fontSize = 14.sp
                 )
@@ -398,7 +227,7 @@ internal fun CategoryStepContent(
 
         // Note about Plugin Manager
         WizardNote(
-            text = "You can manage these plugins later in the Plugin Manager"
+            text = "You can manage these tools later in the Toolbox"
         )
     }
 }
@@ -464,7 +293,7 @@ internal fun InstallingStepContent(
             Spacer(modifier = Modifier.height(28.dp))
 
             Text(
-                text = "Installing Plugins",
+                text = "Installing Tools",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
@@ -536,9 +365,9 @@ internal fun CompleteStepContent(
 
         Text(
             text = if (installedCount > 0) {
-                "$installedCount plugin${if (installedCount > 1) "s" else ""} installed successfully"
+                "$installedCount tool${if (installedCount > 1) "s" else ""} installed successfully"
             } else {
-                "No plugins were selected for installation"
+                "No tools were selected for installation"
             },
             fontSize = 14.sp,
             color = BossDarkTextSecondary,
@@ -558,7 +387,7 @@ internal fun CompleteStepContent(
             ) {
                 Column {
                     Text(
-                        text = "${failedPlugins.size} plugin${if (failedPlugins.size > 1) "s" else ""} failed to install:",
+                        text = "${failedPlugins.size} tool${if (failedPlugins.size > 1) "s" else ""} failed to install:",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = WarningOrange
@@ -578,7 +407,7 @@ internal fun CompleteStepContent(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "You can retry installing these plugins from the Plugin Manager",
+                text = "You can retry installing these tools from the Toolbox",
                 fontSize = 13.sp,
                 color = BossDarkTextSecondary.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,
@@ -588,7 +417,7 @@ internal fun CompleteStepContent(
             Spacer(modifier = Modifier.height(32.dp))
 
             Text(
-                text = "You can install more plugins anytime from the Plugin Manager",
+                text = "You can install more tools anytime from the Toolbox",
                 fontSize = 13.sp,
                 color = BossDarkTextSecondary.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,

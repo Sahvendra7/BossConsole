@@ -20,6 +20,7 @@ import com.teamdev.jxbrowser.download.event.*
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.engine.ProprietaryFeature
+import com.teamdev.jxbrowser.engine.Theme
 import com.teamdev.jxbrowser.engine.UserDataDirectoryAlreadyInUseException
 import com.teamdev.jxbrowser.permission.PermissionType
 import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
@@ -31,6 +32,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import androidx.compose.runtime.snapshotFlow
+import ai.rever.boss.plugin.ui.BossThemeController
+import ai.rever.boss.plugin.ui.BossThemes
 import java.awt.Toolkit
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -49,10 +54,46 @@ sealed class EngineInitError {
 object FluckEngine {
     private val logger = BossLogger.forComponent("FluckEngine")
 
+    // --- Host-theme-driven Chromium color scheme (prefers-color-scheme) ---
+    // NOTE: declared BEFORE the init {} block below, so themeScope is non-null
+    // when startHostThemeObserver() runs during object initialization.
+
+    @Volatile
+    private var preferredColorSchemeDark: Boolean = true
+    private val themeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     init {
         // Load persisted browser settings (user agent, profile, share-button toggle…)
         // before the first browser/toolbar is created, so saved values apply on boot.
         BrowserSettingsManager.ensureLoaded()
+        startHostThemeObserver()
+    }
+
+    /**
+     * Mirror the active BOSS host theme into the live Chromium engine so web
+     * content's `prefers-color-scheme` matches the app (Daylight → light;
+     * Operator/Clean dark themes → dark). Emits the current value immediately,
+     * then on every host theme switch.
+     */
+    private fun startHostThemeObserver() {
+        themeScope.launch {
+            snapshotFlow { BossThemes.byId(BossThemeController.currentId).isLight }
+                .collect { isLight -> setColorScheme(dark = !isLight) }
+        }
+    }
+
+    /**
+     * Set Chromium's theme (drives `prefers-color-scheme`) to match the host.
+     * Applied live to the running engine and re-applied on engine (re)creation.
+     * Safe to call before the engine exists.
+     */
+    fun setColorScheme(dark: Boolean) {
+        preferredColorSchemeDark = dark
+        try {
+            _engine?.setTheme(if (dark) Theme.DARK else Theme.LIGHT)
+        } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Failed to apply engine color scheme", mapOf("error" to (e.message ?: "unknown")))
+        }
     }
 
     /**
@@ -296,16 +337,24 @@ object FluckEngine {
         activeFindBars.remove(browser)?.dispose()
     }
 
-    private var _engine: Engine? = null
-    private var initializationError: Throwable? = null
-    private var attemptCount = 0
+    // @Volatile on all three: written under engineLock but read WITHOUT the lock —
+    // _engine via currentEngine/isEngineHealthy/setColorScheme, the other two via
+    // initError/isAvailable() on the UI thread. Pre-warm moves the writes to a
+    // background thread on every normal launch, so the unlocked reads need a
+    // happens-before edge (safe publication for _engine included).
+    @Volatile private var _engine: Engine? = null
+    @Volatile private var initializationError: Throwable? = null
+    @Volatile private var attemptCount = 0
     private var proactiveCleanupDone = false
 
     /**
      * Engine generation counter - increments every time the engine is reinitialized.
      * Browser tabs can use this to detect when their browser instance is stale.
      */
-    private var _engineGeneration = 0L
+    // @Volatile for the same reason as _engine above — mutated under engineLock
+    // (possibly on the pre-warm thread), read lock-free via currentEngineGeneration.
+    // Also: non-volatile Long writes aren't guaranteed atomic on the JVM.
+    @Volatile private var _engineGeneration = 0L
     private val _engineGenerationFlow = MutableStateFlow(0L)
 
     /**
@@ -335,6 +384,22 @@ object FluckEngine {
         val fullStackTrace = e.stackTraceToString().lowercase()
 
         return when {
+            // Linux sandbox bring-up failures. Hardened distros (Ubuntu 23.10+ /
+            // 24.04 restrict unprivileged user namespaces via AppArmor) can fail
+            // the zygote/sandbox start now that the sandbox is on by default —
+            // the user can't guess the escape hatch from a crashing tab, so the
+            // message must carry it. Deliberately matches on the MESSAGE only:
+            // a stack-trace match would shadow the license/network branches
+            // below, since Linux engine boots traverse sandbox/zygote frames on
+            // unrelated failures too.
+            msg.contains("sandbox") || msg.contains("zygote") ||
+            msg.contains("user namespace") || msg.contains("clone()") ->
+                EngineInitError.Other(
+                    "The browser sandbox failed to start. On hardened Linux (e.g. Ubuntu 24.04), " +
+                    "enable unprivileged user namespaces, or set BOSS_CHROMIUM_DISABLE_SANDBOX=true " +
+                    "and restart BOSS.",
+                    e
+                )
             // License validation errors (usually network-related)
             msg.contains("license") || msg.contains("validation") ||
             fullStackTrace.contains("licensecheck") || fullStackTrace.contains("license") ->
@@ -362,6 +427,13 @@ object FluckEngine {
      * Reset initialization state to allow retry after fixing network issues.
      */
     fun resetInitializationState() {
+        // Deliberately NOT synchronized(engineLock): the engine getter holds that
+        // lock for the entire multi-second boot, and this is called from UI-thread
+        // click handlers (Retry Engine) — taking engineLock here would block the
+        // click behind an in-flight boot, exactly the freeze class this code
+        // exists to remove. Both fields are @Volatile; an interleave with a
+        // concurrent boot can only briefly reorder these benign counters, which
+        // the getter's own retry logic absorbs.
         initializationError = null
         attemptCount = 0
     }
@@ -506,7 +578,8 @@ object FluckEngine {
             "SingletonSocket",
             "SingletonCookie",
             "lockfile",
-            ".org.chromium.Chromium.lock"  // Some versions use this
+            ".org.chromium.Chromium.lock",  // legacy Chromium bundle id (pre-9.3.0 engines)
+            ".com.teamdev.Platinum.lock"    // JxBrowser 9.3.0+ renamed the Chromium bundle id
         )
 
         lockFiles.forEach { fileName ->
@@ -711,6 +784,116 @@ object FluckEngine {
         } catch (e: Exception) {
             logger.debug(LogCategory.BROWSER, "Error cleaning orphaned RPA profiles", mapOf("error" to (e.message ?: "unknown")))
             0
+        }
+    }
+
+    // --- Env flag helpers. Pure variants are internal so tests can cover them. ---
+    private val ENV_TRUE = setOf("1", "true", "yes", "on")
+    private val ENV_FALSE = setOf("0", "false", "no", "off")
+    internal fun isTruthyFlag(value: String?): Boolean = value?.trim()?.lowercase() in ENV_TRUE
+    internal fun isFalsyFlag(value: String?): Boolean = value?.trim()?.lowercase() in ENV_FALSE
+    private fun envIsTrue(name: String) = isTruthyFlag(System.getenv(name))
+    private fun envIsFalse(name: String) = isFalsyFlag(System.getenv(name))
+
+    /**
+     * Parse BOSS_CHROMIUM_EXTRA_SWITCHES: whitespace-separated, exactly like a
+     * Chromium command line. NOT comma-separated — commas are Chromium's own
+     * separator inside feature-list values (--enable-features=A,B), which must
+     * pass through intact. Entries must look like switches; values with embedded
+     * spaces are not supported. Returns (accepted switches, dropped tokens) from
+     * a single tokenization so the accept filter and the dropped-token warning
+     * can never diverge.
+     */
+    internal fun partitionExtraSwitches(raw: String?): Pair<List<String>, List<String>> {
+        val tokens = raw?.trim()?.split(WHITESPACE)?.filter { it.isNotEmpty() } ?: emptyList()
+        return tokens.partition { it.startsWith("--") }
+    }
+    private val WHITESPACE = Regex("\\s+")
+
+    /** Accepted switches only — see [partitionExtraSwitches]. */
+    internal fun parseExtraSwitches(raw: String?): List<String> = partitionExtraSwitches(raw).first
+
+    /**
+     * Warm the engine on a background thread so the first browser tab doesn't pay
+     * the full Chromium boot (process spawn, profile open, license validation) on
+     * the UI path. Without this, the engine initializes lazily and synchronously
+     * inside the first tab's composition — a multi-second freeze on cold starts.
+     *
+     * Deliberate default: pre-warm only when the browser profile directory already
+     * exists, i.e. this machine has used the browser before. Browser-less sessions
+     * (terminal-only, editor-only, first run) never pay the Chromium spawn; the
+     * first real browser use creates the profile, and every launch after that
+     * pre-warms. Opt out entirely with BOSS_BROWSER_PREWARM=false.
+     *
+     * Called once from app startup after [proactiveCleanupOnStartup]. A pre-warm
+     * failure must not poison user-facing availability (the user never asked for
+     * this boot), so it clears the recorded init error — the first real use
+     * re-attempts initialization and surfaces its own error through the normal
+     * createBrowser flow.
+     *
+     * Guarantee calibration: this removes the freeze, it doesn't make it
+     * impossible. The [engine] getter holds engineLock for the whole boot, so a
+     * tab opened WHILE pre-warm is still booting blocks on that lock for the
+     * remainder of the boot — a head start, not an exclusion.
+     *
+     * The gate checks the CONFIGURED primary profile directory; the boot itself
+     * may fall back to a temp profile (browser-profile-<ts>) if the primary is
+     * locked by another instance. The two profile notions intentionally differ —
+     * the gate only decides whether the head start happens, never correctness.
+     */
+    fun prewarmInBackground() {
+        if (envIsFalse("BOSS_BROWSER_PREWARM")) return
+        val profileDir = BossDirectories.resolve(BrowserSettings.currentProfile)
+        if (!profileDir.exists()) {
+            logger.debug(LogCategory.BROWSER, "Skipping engine pre-warm — no browser profile on this machine yet")
+            return
+        }
+        Thread({
+            try {
+                val startNs = System.nanoTime()
+                engine
+                logger.info(LogCategory.BROWSER, "Browser engine pre-warmed", mapOf(
+                    "durationMs" to (System.nanoTime() - startNs) / 1_000_000
+                ))
+            } catch (e: Throwable) {
+                // Errors (UnsatisfiedLinkError from a broken Chromium bundle, OOM)
+                // deserve visibility; plain Exceptions (transient network/license)
+                // are routine and stay at debug.
+                if (e is Error) {
+                    logger.warn(LogCategory.BROWSER, "Engine pre-warm failed with a serious error (lazy init will retry on first use)", error = e)
+                } else {
+                    logger.debug(LogCategory.BROWSER, "Engine pre-warm failed (lazy init will retry on first use)", mapOf(
+                        "error" to (e.message ?: "unknown")
+                    ))
+                }
+                clearInitStateIfErrorIs(e)
+            }
+        }, "fluck-engine-prewarm").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * Clear the recorded init state ONLY if [expected] is still the recorded
+     * error — i.e. this pre-warm attempt's own failure. Without the guard, a
+     * user-initiated boot that failed AFTER the pre-warm (recording its own,
+     * legitimate error) would have that error silently wiped by the pre-warm's
+     * cleanup, making isAvailable() report healthy with no working engine.
+     * Runs under engineLock for atomicity against the getter's mutations —
+     * safe here because this is only called from the pre-warm background
+     * thread, where briefly waiting out an in-flight boot is harmless (unlike
+     * the UI-path [resetInitializationState], which must stay lock-free).
+     *
+     * Error-class failures (UnsatisfiedLinkError, OOM) fall through harmlessly:
+     * createEngineWithProfile records only Exceptions into initializationError,
+     * so for an Error the recorded value is still null, the identity check
+     * fails, and nothing is cleared — the correct outcome, since nothing was
+     * poisoned in the first place.
+     */
+    private fun clearInitStateIfErrorIs(expected: Throwable) {
+        synchronized(engineLock) {
+            if (initializationError === expected) {
+                initializationError = null
+                attemptCount = 0
+            }
         }
     }
 
@@ -1023,7 +1206,155 @@ object FluckEngine {
         }
     }
     
+    /**
+     * Chromium performance configuration, scoped per platform.
+     *
+     * The bundled BOSS Chromium is 150.x — modern enough that the classic "enable"
+     * switches (GPU rasterization, ANGLE Metal/D3D11, QUIC, canvas OOP raster) are
+     * on by default, so the previous flag set was audited out:
+     *  - --enable-gpu-rasterization / --enable-zero-copy / --ignore-gpu-blocklist:
+     *    default-on in 150; their only residual effect is forcing GPU paths on
+     *    driver-blocklisted machines, where they cause crashes/artifacts.
+     *  - --disable-dev-shm-usage: container-only switch. On desktop Linux it moves
+     *    Chromium's shared memory to disk-backed files — and shared memory is the
+     *    OFF_SCREEN frame-transport path, so it directly slowed rendering.
+     *  - --no-sandbox: no rendering benefit; dropped to restore Chromium process
+     *    isolation (BOSS_CHROMIUM_DISABLE_SANDBOX=true restores the old behavior).
+     *
+     * In OFF_SCREEN mode the rendering ceiling is the Chromium→Java pixel copy
+     * (per TeamDev), so what remains here targets real stalls (Windows occlusion
+     * tracking), video decode (Linux VA-API), and repeat-load speed (disk cache).
+     * Skia Graphite is opt-in only — it blanks OSR output on this JxBrowser (see
+     * the mac branch below). Extra switches can be injected without a rebuild via
+     * BOSS_CHROMIUM_EXTRA_SWITCHES (whitespace-separated, like a Chromium
+     * command line).
+     *
+     * CAUTION for BOSS_CHROMIUM_EXTRA_SWITCHES users: Chromium's --enable-features /
+     * --disable-features are NOT additive — the last occurrence on the command line
+     * wins. Passing your own --enable-features=… replaces the platform set above
+     * (e.g. SkiaGraphite, VA-API); include those features in your value if you want
+     * to keep them.
+     */
+    private fun applyPerformanceSwitches(builder: EngineOptions.Builder, inContainer: Boolean) {
+        // Bigger fixed on-disk HTTP cache for faster repeat page loads. Chromium's
+        // auto-sizing historically caps around ~320 MB; 512 MB comfortably exceeds
+        // it without meaningfully eating the disk. Tune via this API, not a
+        // --disk-cache-size extra switch — precedence between the two is
+        // unspecified when both are set.
+        builder.diskCacheSize(512L * 1024 * 1024)
+
+        val (extras, dropped) = partitionExtraSwitches(System.getenv("BOSS_CHROMIUM_EXTRA_SWITCHES"))
+        if (extras.isNotEmpty()) {
+            // Audit trail: extras are unrestricted and can re-weaken hardening,
+            // so record exactly what this session runs with.
+            logger.info(LogCategory.BROWSER, "Injecting extra Chromium switches from BOSS_CHROMIUM_EXTRA_SWITCHES", mapOf(
+                "switches" to extras.joinToString(" ")
+            ))
+        }
+        if (dropped.isNotEmpty()) {
+            // Surface fat-fingered entries (bare values, single-dash flags) instead
+            // of silently dropping them — misconfiguration should be debuggable.
+            logger.warn(LogCategory.BROWSER, "Ignoring non-switch tokens in BOSS_CHROMIUM_EXTRA_SWITCHES (switches must start with --)", mapOf(
+                "dropped" to dropped.joinToString(" ")
+            ))
+        }
+
+        performanceSwitchesFor(
+            os = System.getProperty("os.name").lowercase(),
+            arch = System.getProperty("os.arch").lowercase(),
+            graphiteOptIn = envIsTrue("BOSS_ENABLE_SKIA_GRAPHITE"),
+            inContainer = inContainer,
+            extraSwitches = extras,
+        ).forEach { builder.addSwitch(it) }
+    }
+
+    /**
+     * Container detection for the Linux-only container switches. /.dockerenv only
+     * covers Docker; /proc/1/cgroup catches most other runtimes (Kubernetes,
+     * containerd, LXC, Podman) on cgroup v1 — cgroup v2 may show a bare "0::/",
+     * which is undetectable, so BOSS_IN_CONTAINER=true remains the explicit
+     * override (and BOSS_CHROMIUM_DISABLE_SANDBOX=true the sandbox-specific one).
+     */
+    private fun runningInContainer(): Boolean {
+        if (System.getenv("BOSS_IN_CONTAINER") == "true") return true
+        // File-based markers are Linux-only concepts — skip the I/O elsewhere.
+        if (!System.getProperty("os.name").lowercase().contains("linux")) return false
+        if (java.io.File("/.dockerenv").exists()) return true
+        return try {
+            val cgroup = java.io.File("/proc/1/cgroup")
+            cgroup.exists() && cgroupIndicatesContainer(cgroup.readText())
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Pure predicate over /proc/1/cgroup content, split out so it's unit-testable. */
+    internal fun cgroupIndicatesContainer(cgroupText: String): Boolean =
+        listOf("docker", "kubepods", "containerd", "lxc", "podman").any { it in cgroupText }
+
+    /**
+     * The per-platform switch decision as a pure function so the flag audit is
+     * unit-testable without an [EngineOptions.Builder].
+     */
+    internal fun performanceSwitchesFor(
+        os: String,
+        arch: String,
+        graphiteOptIn: Boolean,
+        inContainer: Boolean,
+        extraSwitches: List<String> = emptyList(),
+    ): List<String> {
+        val switches = mutableListOf<String>()
+        when {
+            os.contains("win") -> {
+                // Chromium's native-window occlusion tracker can conclude the
+                // embedded (hidden) native window is fully covered and stop
+                // producing frames — a known stall for embedded engines whose
+                // visibility is driven by the app's own surface, not the native
+                // window. CEF/JCEF embedders disable it for the same reason.
+                switches += "--disable-features=CalculateNativeWinOcclusion"
+            }
+            os.contains("mac") -> {
+                // Skia Graphite (Metal-native raster backend) is default in
+                // stable Chrome on Apple Silicon — but in the EMBEDDED engine it
+                // breaks OFF_SCREEN rendering. Verified live on JxBrowser 9.3.0 /
+                // Chromium 150 / Apple Silicon (2026-07-13): with Graphite forced
+                // on, pages load (navigation, titles, favicons all fine) but
+                // frames never reach the Compose surface — blank content area;
+                // identical run with Graphite off renders normally. The OSR
+                // frame-export path evidently doesn't support Graphite yet, so
+                // it is OPT-IN only, for re-testing on future JxBrowser upgrades:
+                // BOSS_ENABLE_SKIA_GRAPHITE=true.
+                if (arch.contains("aarch64") && graphiteOptIn) {
+                    switches += "--enable-features=SkiaGraphite"
+                }
+            }
+            os.contains("linux") -> {
+                // Linux hardware video decode is still gated in upstream defaults
+                // (feature names differ across Chromium generations; unknown ones
+                // are ignored, so list both eras).
+                switches += "--enable-features=VaapiVideoDecoder,VaapiVideoDecodeLinuxGL,VaapiVideoEncoder"
+                // Container-only: tiny /dev/shm would otherwise crash renderers.
+                // Never on desktop Linux — it would push the OSR frame transport
+                // to disk.
+                if (inContainer) {
+                    switches += "--disable-dev-shm-usage"
+                    // NOTE: the container sandbox opt-out is NOT a switch here —
+                    // JxBrowser manages the sandbox via EngineOptions.disableSandbox()
+                    // (a raw --no-sandbox may be ignored); see createEngineInstance.
+                }
+            }
+            // Unknown platform strings get no platform-specific switches.
+        }
+        // Operator escape hatch, appended last (see the --enable-features caveat
+        // in the KDoc above).
+        switches += extraSwitches
+        return switches
+    }
+
     private fun createEngineInstance(chromiumDir: java.nio.file.Path, profileDirPath: java.nio.file.Path, profileName: String): Engine {
+        // Evaluated once per boot: feeds both the container-only switches and the
+        // sandbox decision below, so the two can never disagree.
+        val inContainer = runningInContainer()
         val optionsBuilder = EngineOptions.newBuilder(JxBrowserConfig.renderingMode)
             .licenseKey(JxBrowserConfig.licenseKey)
             .chromiumDir(chromiumDir)
@@ -1032,19 +1363,17 @@ object FluckEngine {
             .enableProprietaryFeature(ProprietaryFeature.H_264)
             .enableProprietaryFeature(ProprietaryFeature.AAC)
             .enableProprietaryFeature(ProprietaryFeature.HEVC)
-            // GPU acceleration and performance flags
-            .addSwitch("--enable-gpu-rasterization")
-            .addSwitch("--enable-zero-copy")
-            .addSwitch("--ignore-gpu-blocklist")
-            // Linux-specific hardware video decode
+            .apply { applyPerformanceSwitches(this, inContainer) }
+            // Chromium sandbox stays ON (the JxBrowser default): --no-sandbox had
+            // no performance benefit and stripped process isolation from an engine
+            // that renders arbitrary web content. Disabled ONLY via the supported
+            // JxBrowser API (a raw --no-sandbox switch is not guaranteed to be
+            // honored), for: an explicit operator opt-out, or containers, where
+            // the sandbox usually can't start (no user namespaces) and the
+            // container boundary provides the isolation instead.
             .apply {
-                if (System.getProperty("os.name").lowercase().contains("linux")) {
-                    addSwitch("--enable-features=VaapiVideoDecoder,VaapiVideoEncoder")
-                }
+                if (envIsTrue("BOSS_CHROMIUM_DISABLE_SANDBOX") || inContainer) disableSandbox()
             }
-            // Minimal Chrome flags
-            .addSwitch("--disable-dev-shm-usage")
-            .addSwitch("--no-sandbox") // May be needed for some environments
         
         // Add user agent if configured
         BrowserSettings.userAgent?.let { ua ->
@@ -1069,10 +1398,26 @@ object FluckEngine {
         
         val newEngine = Engine.newInstance(optionsBuilder.build())
 
-        // Activate Widevine DRM for protected content (Netflix, Disney+, etc.)
+        // A successful boot invalidates any earlier failure — clear it so the
+        // recorded state is unambiguous (previously a stale error from a failed
+        // attempt survived a later successful boot).
+        initializationError = null
+        attemptCount = 0
+
+        // Activate Widevine DRM for protected content (Netflix, Disney+, etc.).
+        // Deliberately NOT joined: activation can hit the network (CDM download on
+        // first run), and blocking here stalls engine creation — which stalls the
+        // first browser tab. DRM sites opened in the first moments simply retry.
         try {
-            val widevineStatus = newEngine.widevine().activate().join()
+            newEngine.widevine().activate().whenComplete { status, error ->
+                if (error != null) {
+                    logger.debug(LogCategory.BROWSER, "Widevine activation failed", mapOf("error" to (error.message ?: "unknown")))
+                } else {
+                    logger.debug(LogCategory.BROWSER, "Widevine activation completed", mapOf("status" to status.toString()))
+                }
+            }
         } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Widevine activation call failed", mapOf("error" to (e.message ?: "unknown")))
         }
 
         // Set up permission handlers for the engine
@@ -1080,6 +1425,12 @@ object FluckEngine {
 
         _engine = newEngine
 
+        // Match Chromium's theme to the active BOSS host theme on (re)creation.
+        try {
+            newEngine.setTheme(if (preferredColorSchemeDark) Theme.DARK else Theme.LIGHT)
+        } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Failed to set initial engine theme", mapOf("error" to (e.message ?: "unknown")))
+        }
 
         return newEngine
     }

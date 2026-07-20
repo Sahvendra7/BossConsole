@@ -1,10 +1,20 @@
 # BossEditor
 
-BossEditor is an external dependency providing IDE-like code editor features for the main BOSS application.
+BossEditor is the code editor library providing IDE-like editor features in BOSS.
 
 **Repository**: [risa-labs-inc/BossEditor](https://github.com/risa-labs-inc/BossEditor)
 **Maven Artifact**: `com.risaboss:bosseditor-compose-desktop`
-**Dependency**: Declared in `composeApp/build.gradle.kts`
+**Dependency**: **Not a host dependency.** The `editor-tab` plugin bundles
+BossEditor (and its `kotlin-compiler-embeddable` PSI stack) privately inside its
+own JAR — the same arrangement as BossTerm inside `terminal-tab`. The plugin's
+classloader resolves `ai.rever.bosseditor.*` child-first from the plugin JAR
+while sharing the host's Compose runtime via parent delegation. Bumping
+BossEditor only requires re-releasing the plugin, not BossConsole.
+
+The host talks to the editor through `EditorTabPluginAPI` (plugin-api-core):
+the Settings window's Editor and Language Server sections delegate to
+`EditorSettingsPanel` / `LspSettingsPanel` served by the plugin via
+`EditorAPIAccess` (mirroring `TerminalAPIAccess`).
 
 ## LSP Integration
 
@@ -25,7 +35,8 @@ Kotlin navigation using kotlin-compiler-embeddable for native Kotlin support wit
 - `parseKotlinFile(fileName, content)` returns non-nullable `KtFile`
 - `parseFile(file)` returns nullable `KtFile?`
 - K1 API deprecation warnings are intentional (awaiting K2 Analysis API stability)
-- `composeApp/` also depends on `kotlin-compiler-embeddable` directly for its own PSI code
+- The PSI stack (including `kotlin-compiler-embeddable`) ships inside the
+  `editor-tab` plugin JAR; the host has no PSI dependency of its own
 
 ## Advanced Editor Features
 

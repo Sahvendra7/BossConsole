@@ -71,7 +71,10 @@ actual fun getCodeEditorKeywordColor(): Color = Color(0xFF_569CD6)
 actual fun getCodeEditorCommentColor(): Color = Color(0xFF_6A9955)
 
 /**
- * Desktop implementation uses BossEditor via DesktopCodeEditorUI.
+ * Desktop delegates to the shared basic editor, like the other platforms.
+ * The real editor experience is the editor-tab plugin, which registers the
+ * "editor" tab type and renders its own BossEditor — this composable is a
+ * fallback that is not reached while the plugin is installed.
  */
 @Composable
 actual fun PlatformCodeEditorUI(
@@ -84,14 +87,12 @@ actual fun PlatformCodeEditorUI(
     onModifiedStateChange: (Boolean) -> Unit,
     onSaveRequested: suspend () -> Boolean
 ) {
-    DesktopCodeEditorUI(
+    CodeEditorUI(
         content = content,
         onContentChange = onContentChange,
         language = language,
         filePath = filePath,
         projectPath = projectPath,
-        modifier = modifier,
-        onModifiedStateChange = onModifiedStateChange,
-        onSaveRequested = onSaveRequested
+        modifier = modifier
     )
 }

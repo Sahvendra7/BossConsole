@@ -61,13 +61,19 @@ class PanelComponentStore(
 
         logger.debug(LogCategory.UI, "Resetting panel", mapOf("panelId" to panelId.panelId))
 
+        // Cleanup hook on the OLD component, isolated so its failure can't keep
+        // the stale instance cached: after a plugin hot reload this calls into a
+        // closed classloader, where even class resolution throws an Error.
         try {
-            // Call lifecycle hook for cleanup
             currentComponent.onBeforeReset()
+        } catch (t: Throwable) {
+            logger.warn(LogCategory.UI, "onBeforeReset failed during panel reset (continuing)", mapOf("panelId" to panelId.panelId), t)
+        }
 
-            // Remove from active components (triggers Decompose disposal)
-            activeComponents.remove(panelId)
+        // Remove from active components (triggers Decompose disposal)
+        activeComponents.remove(panelId)
 
+        try {
             // Create new component instance
             val newComponent = registry.createComponent(panelId, rootContext)
             if (newComponent == null) {
@@ -83,8 +89,8 @@ class PanelComponentStore(
 
             logger.info(LogCategory.UI, "Successfully reset panel", mapOf("panelId" to panelId.panelId))
             return true
-        } catch (e: Exception) {
-            logger.error(LogCategory.UI, "Error resetting panel", mapOf("panelId" to panelId.panelId), error = e)
+        } catch (t: Throwable) {
+            logger.error(LogCategory.UI, "Error resetting panel", mapOf("panelId" to panelId.panelId), error = t)
             return false
         }
     }

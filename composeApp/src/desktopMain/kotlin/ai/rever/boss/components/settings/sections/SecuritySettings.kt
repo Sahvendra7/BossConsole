@@ -6,9 +6,12 @@ import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkContentBackground
+import BossDarkError
+import BossDarkSuccess
 import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
+import BossDarkWarning
 import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.passkey.PasskeyInfo
@@ -24,7 +27,6 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -234,7 +236,7 @@ fun SecuritySettings() {
         if (authState !is AuthService.AuthState.Authenticated) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFFFF5252).copy(alpha = 0.1f),
+                backgroundColor = BossDarkError.copy(alpha = 0.1f),
                 shape = RoundedCornerShape(8.dp),
                 elevation = 0.dp
             ) {
@@ -245,7 +247,7 @@ fun SecuritySettings() {
                     Icon(
                         Icons.Outlined.Warning,
                         contentDescription = "Warning",
-                        tint = Color(0xFFFF5252),
+                        tint = BossDarkError,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -270,7 +272,7 @@ fun SecuritySettings() {
             if (!touchIDSupported) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = Color(0xFFFF9800).copy(alpha = 0.1f),
+                    backgroundColor = BossDarkWarning.copy(alpha = 0.1f),
                     shape = RoundedCornerShape(8.dp),
                     elevation = 0.dp
                 ) {
@@ -281,7 +283,7 @@ fun SecuritySettings() {
                         Icon(
                             Icons.Outlined.Warning,
                             contentDescription = "Warning",
-                            tint = Color(0xFFFF9800),
+                            tint = BossDarkWarning,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
@@ -499,7 +501,7 @@ fun SecuritySettings() {
                                         Icon(
                                             Icons.Outlined.Delete,
                                             contentDescription = "Remove",
-                                            tint = Color(0xFFFF5252),
+                                            tint = BossDarkError,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -575,10 +577,10 @@ fun SecuritySettings() {
             Spacer(modifier = Modifier.height(16.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFFFF5252).copy(alpha = 0.1f),
+                backgroundColor = BossDarkError.copy(alpha = 0.1f),
                 shape = RoundedCornerShape(8.dp),
                 elevation = 0.dp,
-                border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.3f))
+                border = BorderStroke(1.dp, BossDarkError.copy(alpha = 0.3f))
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -587,7 +589,7 @@ fun SecuritySettings() {
                     Icon(
                         Icons.Outlined.Error,
                         contentDescription = "Error",
-                        tint = Color(0xFFFF5252),
+                        tint = BossDarkError,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -652,7 +654,7 @@ fun SecuritySettings() {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         "Warning: You will no longer be able to use this credential to sign in.",
-                        color = Color(0xFFFF5252),
+                        color = BossDarkError,
                         fontSize = 12.sp
                     )
                 }
@@ -677,7 +679,7 @@ fun SecuritySettings() {
                         }
                     }
                 ) {
-                    Text("Remove", color = Color(0xFFFF5252))
+                    Text("Remove", color = BossDarkError)
                 }
             },
             dismissButton = {
@@ -880,7 +882,7 @@ private fun WebAuthnCapabilityRow(
             Icon(
                 icon,
                 contentDescription = label,
-                tint = if (enabled) Color(0xFF4CAF50) else Color(0xFFFF5252),
+                tint = if (enabled) BossDarkSuccess else BossDarkError,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -893,7 +895,7 @@ private fun WebAuthnCapabilityRow(
         Text(
             text = status,
             fontSize = 12.sp,
-            color = if (enabled) Color(0xFF4CAF50) else BossDarkTextSecondary
+            color = if (enabled) BossDarkSuccess else BossDarkTextSecondary
         )
     }
 }

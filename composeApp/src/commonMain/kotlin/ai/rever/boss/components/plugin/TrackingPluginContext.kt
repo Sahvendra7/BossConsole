@@ -9,6 +9,8 @@ import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
 import ai.rever.boss.plugin.api.LogDataProvider
+import ai.rever.boss.plugin.api.McpToolProvider
+import ai.rever.boss.plugin.api.McpToolRegistry
 import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SettingsProvider
@@ -73,6 +75,43 @@ class PluginRegistrationTracker {
     private val tabTypesByPlugin = ConcurrentHashMap<String, MutableSet<TabTypeId>>()
 
     /**
+     * MCP tool provider ids registered by each plugin.
+     */
+    private val mcpToolProvidersByPlugin = ConcurrentHashMap<String, MutableSet<String>>()
+
+    /**
+     * UI extension teardown callbacks by plugin — panel menus, settings
+     * pages, deep-link handlers, shortcut providers, status-bar items. Each
+     * registration records the exact undo action captured at register time,
+     * so [unregisterAll] is one loop and a NEW extension kind needs no edit
+     * here (the old per-kind enum + per-kind teardown loop meant a forgotten
+     * loop would leak a kind past unload).
+     */
+    private val uiExtensionUndoByPlugin = ConcurrentHashMap<String, MutableList<() -> Unit>>()
+
+    /**
+     * Record a UI extension registration with the action that undoes it.
+     */
+    fun recordUiExtensionRegistration(pluginId: String, undo: () -> Unit) {
+        uiExtensionUndoByPlugin
+            .getOrPut(pluginId) { java.util.concurrent.CopyOnWriteArrayList() }
+            .add(undo)
+    }
+
+    /**
+     * Run and clear all recorded UI extension teardown callbacks for a plugin.
+     */
+    fun unregisterUiExtensions(pluginId: String) {
+        uiExtensionUndoByPlugin.remove(pluginId)?.forEach { undo ->
+            try {
+                undo()
+            } catch (_: Throwable) {
+                // Teardown of one extension must not block the others.
+            }
+        }
+    }
+
+    /**
      * Record a panel registration.
      */
     fun recordPanelRegistration(pluginId: String, panelId: PanelId) {
@@ -87,10 +126,24 @@ class PluginRegistrationTracker {
     }
 
     /**
+     * Record an MCP tool provider registration.
+     */
+    fun recordMcpToolProviderRegistration(pluginId: String, providerId: String) {
+        mcpToolProvidersByPlugin.getOrPut(pluginId) { ConcurrentHashMap.newKeySet() }.add(providerId)
+    }
+
+    /**
      * Get all panels registered by a plugin.
      */
     fun getPanelsForPlugin(pluginId: String): Set<PanelId> {
         return panelsByPlugin[pluginId]?.toSet() ?: emptySet()
+    }
+
+    /**
+     * Get all MCP tool provider ids registered by a plugin.
+     */
+    fun getMcpToolProvidersForPlugin(pluginId: String): Set<String> {
+        return mcpToolProvidersByPlugin[pluginId]?.toSet() ?: emptySet()
     }
 
     /**
@@ -108,6 +161,8 @@ class PluginRegistrationTracker {
     fun clearPlugin(pluginId: String) {
         panelsByPlugin.remove(pluginId)
         tabTypesByPlugin.remove(pluginId)
+        mcpToolProvidersByPlugin.remove(pluginId)
+        uiExtensionUndoByPlugin.remove(pluginId)
     }
 
     /**
@@ -339,6 +394,14 @@ class TrackingPluginContext(
     // File picker provider - delegate to underlying context
     override val filePickerProvider: FilePickerProvider? get() = delegate.filePickerProvider
 
+    // Directory picker + project data providers — previously omitted here, so
+    // every plugin saw the interface default null (the codebase panel's "Open
+    // Project" and the Tool Evolver's Evolve "Browse" silently did nothing).
+    override val directoryPickerProvider: ai.rever.boss.plugin.api.DirectoryPickerProvider?
+        get() = delegate.directoryPickerProvider
+    override val projectDataProvider: ai.rever.boss.plugin.api.ProjectDataProvider?
+        get() = delegate.projectDataProvider
+
     // Keyboard shortcut provider - delegate to underlying context
     override val keyboardShortcutProvider: KeyboardShortcutProvider? get() = delegate.keyboardShortcutProvider
 
@@ -350,6 +413,80 @@ class TrackingPluginContext(
 
     // Diagnostic provider - delegate to underlying context
     override val diagnosticProvider: DiagnosticProvider? get() = delegate.diagnosticProvider
+
+    // MCP tool provider registration - track per plugin so tools are removed
+    // automatically in unregisterAll() when the plugin is disabled/unloaded.
+    override fun registerMcpToolProvider(provider: McpToolProvider) {
+        tracker.recordMcpToolProviderRegistration(pluginId, provider.providerId)
+        delegate.registerMcpToolProvider(provider)
+    }
+
+    // Deliberately does NOT remove providerId from the tracker (unlike a plugin
+    // explicitly unregistering a panel/tab type, which also isn't untracked
+    // individually — same convention). unregisterAll() reads the tracker to know
+    // which ids to unregister and clears everything at once at plugin teardown,
+    // so a stale tracker entry here just means unregisterAll() calls the
+    // (idempotent) registry unregister a second time for that id — harmless.
+    override fun unregisterMcpToolProvider(providerId: String) {
+        delegate.unregisterMcpToolProvider(providerId)
+    }
+
+    override val mcpToolRegistry: McpToolRegistry? get() = delegate.mcpToolRegistry
+
+    // UI extension registrations — each records the exact undo action, so
+    // unregisterAll tears them all down in one loop (see the tracker). Same
+    // convention as MCP providers: an explicit unregister call doesn't remove
+    // the tracked undo, so unregisterAll may call the (idempotent) registry
+    // unregister a second time — harmless.
+    override fun registerPanelMenuContribution(contribution: ai.rever.boss.plugin.api.PanelMenuContribution) {
+        val id = contribution.contributionId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterPanelMenuContribution(id) }
+        delegate.registerPanelMenuContribution(contribution)
+    }
+
+    override fun unregisterPanelMenuContribution(contributionId: String) {
+        delegate.unregisterPanelMenuContribution(contributionId)
+    }
+
+    override fun registerSettingsPage(provider: ai.rever.boss.plugin.api.SettingsPageProvider) {
+        val id = provider.pageId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterSettingsPage(id) }
+        delegate.registerSettingsPage(provider)
+    }
+
+    override fun unregisterSettingsPage(pageId: String) {
+        delegate.unregisterSettingsPage(pageId)
+    }
+
+    override fun registerDeepLinkActionHandler(handler: ai.rever.boss.plugin.api.DeepLinkActionHandler) {
+        val id = handler.handlerId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterDeepLinkActionHandler(id) }
+        delegate.registerDeepLinkActionHandler(handler)
+    }
+
+    override fun unregisterDeepLinkActionHandler(handlerId: String) {
+        delegate.unregisterDeepLinkActionHandler(handlerId)
+    }
+
+    override fun registerShortcutActionProvider(provider: ai.rever.boss.plugin.api.ShortcutActionProvider) {
+        val id = provider.providerId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterShortcutActionProvider(id) }
+        delegate.registerShortcutActionProvider(provider)
+    }
+
+    override fun unregisterShortcutActionProvider(providerId: String) {
+        delegate.unregisterShortcutActionProvider(providerId)
+    }
+
+    override fun registerStatusBarItem(provider: ai.rever.boss.plugin.api.StatusBarItemProvider) {
+        val id = provider.itemId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterStatusBarItem(id) }
+        delegate.registerStatusBarItem(provider)
+    }
+
+    override fun unregisterStatusBarItem(itemId: String) {
+        delegate.unregisterStatusBarItem(itemId)
+    }
 
     // Plugin-to-plugin API access - delegate to underlying context
     override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)
@@ -385,6 +522,19 @@ class TrackingPluginContext(
             println("[TrackingPluginContext] Unregistering tab type: ${tabTypeId.typeId}")
             delegate.tabRegistry.unregisterTabType(tabTypeId)
         }
+
+        // Unregister all MCP tool providers — this is what makes a plugin's
+        // `mcp__boss__*` tools disappear when the plugin is disabled/unloaded.
+        val toolProviders = tracker.getMcpToolProvidersForPlugin(pluginId)
+        for (providerId in toolProviders) {
+            delegate.unregisterMcpToolProvider(providerId)
+        }
+
+        // Unregister all UI extensions (panel menu items, settings pages,
+        // deep-link handlers, shortcuts, status-bar widgets) — same lifecycle
+        // guarantee as MCP tools: gone the moment the plugin is disabled. One
+        // loop over the recorded undo callbacks; new kinds need no edit here.
+        tracker.unregisterUiExtensions(pluginId)
 
         // Clear tracking records
         tracker.clearPlugin(pluginId)

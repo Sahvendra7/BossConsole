@@ -32,6 +32,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -541,8 +542,12 @@ fun Dashboard(
     }
 }
 
+/** Below this width the stats card stacks under the welcome text instead of sitting beside it. */
+private val HeaderCompactWidth = 700.dp
+
 /**
  * Dashboard header with welcome message and session stats.
+ * Side-by-side on wide panels, stacked vertically on narrow ones.
  */
 @Composable
 private fun DashboardHeader(
@@ -556,44 +561,75 @@ private fun DashboardHeader(
         animationSpec = tween(500)
     )
 
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(alpha),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .alpha(alpha)
+    ) {
+        if (maxWidth < HeaderCompactWidth) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                WelcomeMessage()
+                StatsSummary(
+                    sessionDuration = sessionDuration,
+                    todayFiles = todayFiles,
+                    todayPages = todayPages
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                WelcomeMessage(modifier = Modifier.weight(1f).padding(end = 24.dp))
+                StatsSummary(
+                    sessionDuration = sessionDuration,
+                    todayFiles = todayFiles,
+                    todayPages = todayPages
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WelcomeMessage(modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(
+            text = "Welcome To Boss Console",
+            color = Color.White,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "What would you like to work on today?",
+            color = BossDarkTextSecondary,
+            fontSize = 14.sp
+        )
+    }
+}
+
+@Composable
+private fun StatsSummary(
+    sessionDuration: String,
+    todayFiles: Int,
+    todayPages: Int
+) {
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .background(
+                color = BossDarkSurface,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Text(
-                text = "Welcome To Boss Console",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "What would you like to work on today?",
-                color = BossDarkTextSecondary,
-                fontSize = 14.sp
-            )
-        }
-
-        // Stats summary
-        Row(
-            modifier = Modifier
-                .background(
-                    color = BossDarkSurface,
-                    shape = RoundedCornerShape(8.dp)
-                )
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StatItem(label = "Session", value = sessionDuration)
-            StatDivider()
-            StatItem(label = "Files Today", value = todayFiles.toString())
-            StatDivider()
-            StatItem(label = "Pages Today", value = todayPages.toString())
-        }
+        StatItem(label = "Session", value = sessionDuration)
+        StatDivider()
+        StatItem(label = "Files Today", value = todayFiles.toString())
+        StatDivider()
+        StatItem(label = "Pages Today", value = todayPages.toString())
     }
 }
 
@@ -604,12 +640,16 @@ private fun StatItem(label: String, value: String) {
             text = value,
             color = Color(0xFF4A9EFF),
             fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false
         )
         Text(
             text = label,
             color = BossDarkTextSecondary,
-            fontSize = 11.sp
+            fontSize = 11.sp,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

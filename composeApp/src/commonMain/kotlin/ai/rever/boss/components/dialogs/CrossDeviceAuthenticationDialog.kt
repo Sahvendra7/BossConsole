@@ -244,7 +244,7 @@ fun CrossDeviceAuthenticationDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = if (pollError != null) BossDarkError else Color.Gray,
+                            backgroundColor = if (pollError != null) BossDarkError else BossDarkBorder,
                             contentColor = Color.White
                         )
                     ) {

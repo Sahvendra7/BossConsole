@@ -1,5 +1,6 @@
 package ai.rever.boss.crash
 
+import ai.rever.boss.plugin.loader.PluginClassLoader
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
@@ -70,9 +71,58 @@ object CrashHandler {
     }
 
     /**
+     * Whether [throwable] (or anything in its cause chain) is a benign, expected
+     * exception that should be logged and swallowed rather than reported as a
+     * crash: dropped network sockets (broken pipe / connection reset), closed
+     * ktor channels, coroutine cancellations, and Supabase session-refresh
+     * failures (supabase-kt throws TokenExpiredException into its own internal
+     * coroutines when an authenticated request races an expired session — the
+     * auth layer recovers on its own, see CoreAuthService.startSessionRecovery).
+     * Matched by class-name suffix + message so we don't need a compile
+     * dependency on ktor/coroutines here.
+     */
+    internal fun isIgnorable(throwable: Throwable): Boolean {
+        var t: Throwable? = throwable
+        var depth = 0
+        while (t != null && depth < 12) {
+            val name = t.javaClass.name
+            val msg = t.message ?: ""
+            val benign =
+                name.endsWith("ClosedWriteChannelException") ||
+                name.endsWith("ClosedReceiveChannelException") ||
+                name.endsWith("ClosedChannelException") ||
+                name.endsWith("CancellationException") ||
+                name == "io.github.jan.supabase.auth.exception.TokenExpiredException" ||
+                (t is java.io.IOException && (
+                    msg.contains("Broken pipe", ignoreCase = true) ||
+                    msg.contains("Connection reset", ignoreCase = true) ||
+                    msg.contains("Socket closed", ignoreCase = true) ||
+                    msg.contains("Stream closed", ignoreCase = true) ||
+                    msg.contains("Connection refused", ignoreCase = true)
+                ))
+            if (benign) return true
+            t = t.cause
+            depth++
+        }
+        return false
+    }
+
+    /**
      * Handle an uncaught exception.
      */
     private fun handleCrash(thread: Thread, throwable: Throwable) {
+        // Benign, non-fatal exceptions (dropped sockets, cancellations) reach the
+        // global handler routinely — e.g. hot-swapping a plugin jar drops the MCP
+        // server's ktor writer with a "Broken pipe". These must NOT pop the crash
+        // dialog or terminate the app; log and swallow so the app keeps running.
+        if (isIgnorable(throwable)) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Ignoring benign uncaught exception on thread ${thread.name}: " +
+                    "${throwable.javaClass.simpleName}: ${throwable.message}"
+            )
+            return
+        }
         try {
             logger.error(
                 LogCategory.SYSTEM,
@@ -175,8 +225,37 @@ object CrashHandler {
             stackTrace = sanitizedStackTrace,
             systemInfo = collectSystemInfo(),
             appInfo = collectAppInfo(),
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            pluginId = attributePluginId(throwable)
         )
+    }
+
+    /**
+     * Attribute a crash to a dynamically loaded plugin: the first stack frame
+     * (root cause first, so the crash origin wins over wrapping layers) whose
+     * class was defined by a [PluginClassLoader] names the culprit. Host
+     * crashes return null. Best-effort — attribution must never make crash
+     * handling itself fail.
+     */
+    internal fun attributePluginId(throwable: Throwable): String? {
+        return try {
+            val chain = mutableListOf<Throwable>()
+            var t: Throwable? = throwable
+            while (t != null && chain.size < 12 && t !in chain) {
+                chain.add(t)
+                t = t.cause
+            }
+            for (cause in chain.asReversed()) {
+                (cause.javaClass.classLoader as? PluginClassLoader)?.let { return it.pluginId }
+                for (frame in cause.stackTrace) {
+                    PluginClassLoader.findPluginForClass(frame.className)?.let { return it }
+                }
+            }
+            null
+        } catch (e: Throwable) {
+            logger.warn(LogCategory.SYSTEM, "Plugin attribution failed: ${e.message}")
+            null
+        }
     }
 
     /**

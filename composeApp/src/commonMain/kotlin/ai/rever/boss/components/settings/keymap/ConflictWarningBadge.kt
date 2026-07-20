@@ -2,13 +2,12 @@ package ai.rever.boss.components.settings.keymap
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipArea
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
+import BossDarkError
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,7 +15,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ai.rever.boss.keymap.handler.KeymapConflict
 import ai.rever.boss.keymap.model.KeyBinding
 
 /**
@@ -40,7 +38,7 @@ fun ConflictWarningBadge(
         Surface(
             modifier = modifier,
             shape = RoundedCornerShape(12.dp),
-            color = Color(0xFFFF5252).copy(alpha = 0.9f),
+            color = BossDarkError.copy(alpha = 0.9f),
             elevation = 2.dp
         ) {
             Row(
@@ -84,7 +82,7 @@ private fun ConflictTooltip(conflicts: List<KeyBinding>) {
                 text = "⚠️ Shortcut Conflicts",
                 style = MaterialTheme.typography.subtitle2,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFFF5252)
+                color = BossDarkError
             )
 
             Divider()
@@ -125,30 +123,5 @@ private fun ConflictTooltip(conflicts: List<KeyBinding>) {
                 color = MaterialTheme.colors.primary.copy(alpha = 0.8f)
             )
         }
-    }
-}
-
-/**
- * Compact conflict indicator - just an icon with count.
- */
-@Composable
-fun CompactConflictBadge(
-    conflictCount: Int,
-    modifier: Modifier = Modifier
-) {
-    if (conflictCount == 0) return
-
-    Box(
-        modifier = modifier
-            .size(20.dp)
-            .background(Color(0xFFFF5252), CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = conflictCount.toString(),
-            color = Color.White,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }

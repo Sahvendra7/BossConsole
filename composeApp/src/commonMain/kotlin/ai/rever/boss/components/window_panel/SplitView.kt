@@ -40,6 +40,7 @@ import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import ai.rever.boss.components.plugin.tab_types.PanelHostTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.window.WindowProjectStateRegistry
@@ -106,7 +107,7 @@ private val splitViewLogger = BossLogger.forComponent("SplitView")
 
 @Stable
 class SplitViewState(
-    private val tabRegistry: TabRegistry,
+    internal val tabRegistry: TabRegistry,
     private val windowId: String,
     initialTabsComponent: BossTabsComponent? = null
 ) {
@@ -250,7 +251,51 @@ class SplitViewState(
             return
         }
 
+        // Route .ipynb to the notebook editor — but only when the jupyter-notebook
+        // plugin is actually registered. If it isn't, fall through to the code editor
+        // rather than creating an unrenderable/blank notebook tab.
+        if (fileName.substringAfterLast('.', "").equals("ipynb", ignoreCase = true) &&
+            tabRegistry.isRegistered(JupyterTabInfo.TYPE_ID)
+        ) {
+            openNotebookTab(filePath, fileName)
+            return
+        }
+
         openFileInEditorTab(filePath, fileName)
+    }
+
+    /**
+     * Open a `.ipynb` file as a Jupyter notebook tab. Mirrors
+     * [openFileInEditorTab]'s dedupe-then-add behavior, but creates a
+     * [JupyterTabInfo] (rendered by the jupyter-notebook plugin).
+     */
+    fun openNotebookTab(filePath: String, fileName: String) {
+        val activeComponent = getActiveTabsComponent() ?: return
+
+        findPanelWithNotebookTab(filePath)?.let { (panelId, component, tabIndex) ->
+            component.selectTab(tabIndex)
+            setActivePanel(panelId)
+            return
+        }
+
+        val notebookTab = JupyterTabInfo.create(filePath, title = fileName)
+        activeComponent.addTab(notebookTab).takeIf { it >= 0 }?.let {
+            activeComponent.selectTab(it)
+        }
+    }
+
+    private fun findPanelWithNotebookTab(filePath: String): PanelTabMatch? =
+        findPanelWithTabMatching { tab -> tab is JupyterTabInfo && tab.filePath == filePath }
+
+    /** Find the first panel containing a tab that satisfies [predicate]. */
+    private fun findPanelWithTabMatching(predicate: (TabInfo) -> Boolean): PanelTabMatch? {
+        getAllPanels().forEach { panel ->
+            val tabIndex = panel.tabsComponent.tabsState.value.tabs.indexOfFirst(predicate)
+            if (tabIndex >= 0) {
+                return PanelTabMatch(panel.id, panel.tabsComponent, tabIndex)
+            }
+        }
+        return null
     }
 
     /**
@@ -446,13 +491,46 @@ class SplitViewState(
     fun splitPanel(
         panelId: String,
         orientation: SplitOrientation,
-        tabToMove: TabInfo? = null
+        tabToMove: TabInfo? = null,
+        detachedTab: BossTabsComponent.DetachedTab? = null
     ): String {
-        findPanel(panelId) ?: return panelId
+        // Mutually exclusive by contract: passing both would adopt the live component AND
+        // add a copy of the same tab, duplicating it across the two panels.
+        require(tabToMove == null || detachedTab == null) {
+            "splitPanel: pass either tabToMove (copy) or detachedTab (move), not both"
+        }
+        if (findPanel(panelId) == null) {
+            // A detached tab is already out of its source panel: silently returning would
+            // lose it from the UI while its live component (e.g. a Chromium process) keeps
+            // running — the leak this mechanism exists to eliminate. Rescue it into the
+            // first available panel instead ("main" always exists).
+            detachedTab?.let { detached ->
+                splitViewLogger.warn(LogCategory.UI, "splitPanel target panel missing; rescuing detached tab", mapOf(
+                    "targetPanelId" to panelId,
+                    "tabId" to detached.config.id
+                ))
+                val rescue = getAllPanels().firstOrNull()
+                if (rescue != null) {
+                    val index = rescue.tabsComponent.adoptTab(detached)
+                    if (index >= 0) rescue.tabsComponent.selectTab(index)
+                    setActivePanel(rescue.id)
+                } else {
+                    detached.destroy()
+                }
+            }
+            return panelId
+        }
 
         // Create new panel with copied tab
         val newPanelId = "split-${Random.nextLong()}"
         val newComponent = BossTabsComponent(createBossAppContext, tabRegistry, windowId)
+
+        // A tab detached from another panel (cross-panel edge drag) transfers its live
+        // component instance — no copy, no reload, and nothing left behind to leak.
+        detachedTab?.let { detached ->
+            val newIndex = newComponent.adoptTab(detached)
+            if (newIndex >= 0) newComponent.selectTab(newIndex)
+        }
 
         // Copy tab if specified
         tabToMove?.let { tab ->
@@ -479,6 +557,8 @@ class SplitViewState(
                     )
                 is TerminalTabInfo ->
                     freshTab.copy(id = "terminal-${Random.nextLong()}")
+                is JupyterTabInfo ->
+                    freshTab.copy(id = JupyterTabInfo.newId())
                 // PanelHostTabInfo deliberately falls through uncopied: its id is fixed
                 // ("panel-tab:<panelId>") and it renders the panel's single cached component
                 // instance, so a copy would compose that instance in two tabs at once.
@@ -694,16 +774,8 @@ class SplitViewState(
      * Find the panel that contains an editor tab for the given file path.
      * Unlike findPanelWithFile, this only matches EditorTabInfo (not browser tabs).
      */
-    private fun findPanelWithEditorTab(filePath: String): PanelTabMatch? {
-        getAllPanels().forEach { panel ->
-            val tabIndex = panel.tabsComponent.tabsState.value.tabs
-                .indexOfFirst { tab -> tab is EditorTabInfo && tab.filePath == filePath }
-            if (tabIndex >= 0) {
-                return PanelTabMatch(panel.id, panel.tabsComponent, tabIndex)
-            }
-        }
-        return null
-    }
+    private fun findPanelWithEditorTab(filePath: String): PanelTabMatch? =
+        findPanelWithTabMatching { tab -> tab is EditorTabInfo && tab.filePath == filePath }
 
     /**
      * Find the panel that contains a tab with the given URL

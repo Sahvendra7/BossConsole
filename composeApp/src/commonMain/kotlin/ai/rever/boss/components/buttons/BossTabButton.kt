@@ -1,8 +1,6 @@
 package ai.rever.boss.components.buttons
 
-import BossDarkAccent
-import BossDarkBorder
-import BossDarkTextPrimary
+import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.plugin.api.TabIcon
@@ -80,6 +78,11 @@ fun BossTabButton(
     onDragStart: () -> Unit = {},
     onDragEnd: (TabDropResult?) -> Unit = {}
 ) {
+    // BOSS design-system tokens — semantic accessors over BossDesignSystem.kt.
+    val colors = BossTheme.colors
+    val radii = BossTheme.radius
+    val space = BossTheme.space
+
     // Determine which icon to use
     val painter = when {
         tabIcon != null -> tabIcon.asPainter()
@@ -133,12 +136,12 @@ fun BossTabButton(
                         tooltipSizeRef[0] = coordinates.size.width
                         tooltipSizeRef[1] = coordinates.size.height
                     },
-                color = BossDarkBorder,
-                shape = RoundedCornerShape(4.dp)
+                color = colors.raised,
+                shape = RoundedCornerShape(radii.input)
             ) {
                 Text(
                     text = fileName,
-                    color = Color.White,
+                    color = colors.textPrimary,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
@@ -273,9 +276,9 @@ fun BossTabButton(
             modifier = Modifier.fillMaxHeight(),
             colors = ButtonDefaults.buttonColors(
                 backgroundColor = Color.Transparent,
-                contentColor = if (isSelected) BossDarkTextPrimary else BossDarkTextPrimary.copy(0.8f)
+                contentColor = if (isSelected) colors.textPrimary else colors.textPrimary.copy(0.8f)
             ),
-            contentPadding = PaddingValues(horizontal = 8.dp),
+            contentPadding = PaddingValues(horizontal = space.sm),
             onClick = onClick
         ) {
             Row(
@@ -343,7 +346,9 @@ fun BossTabButton(
                     .fillMaxWidth()
                     .height(4.dp)
                     .background(
-                        color = if (isFocused) BossDarkAccent else BossDarkBorder,
+                        // Signature element: the active-tab marker wears the amber
+                        // signal when focused, and a quiet line when not.
+                        color = if (isFocused) colors.signal else colors.line,
                         shape = RoundedCornerShape(2.dp)
                     )
             )

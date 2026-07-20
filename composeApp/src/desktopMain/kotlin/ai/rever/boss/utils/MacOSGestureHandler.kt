@@ -17,12 +17,6 @@ object MacOSGestureHandler {
 
     private var isAvailable: Boolean? = null
 
-    // Accumulator for smooth zooming (like Safari)
-    // Uses @Volatile + synchronized for thread-safe access from gesture callbacks
-    @Volatile
-    private var magnificationAccumulator = 0.0
-    private val accumulatorLock = Any()
-
     // Threshold for triggering zoom - accumulate this much gesture magnitude before firing
     // Value 0.15 chosen empirically to match Safari's feel (not too sensitive, not too sluggish)
     private const val ZOOM_THRESHOLD = 0.15
@@ -54,30 +48,37 @@ object MacOSGestureHandler {
      * @param component The Swing component to listen on
      * @param onZoomIn Called when user pinches out (zoom in)
      * @param onZoomOut Called when user pinches in (zoom out)
+     * @return An opaque registration token to pass to [removeMagnificationListener],
+     *         or null if gestures are unsupported or registration failed
      */
     fun addMagnificationListener(
         component: Component,
         onZoomIn: () -> Unit,
         onZoomOut: () -> Unit
-    ): Boolean {
-        if (!isSupported()) return false
+    ): Any? {
+        if (!isSupported()) return null
 
         return try {
             val gestureUtilitiesClass = Class.forName("com.apple.eawt.event.GestureUtilities")
             val magnificationListenerClass = Class.forName("com.apple.eawt.event.MagnificationListener")
             val magnificationEventClass = Class.forName("com.apple.eawt.event.MagnificationEvent")
 
+            // Accumulator for smooth zooming (like Safari). Per-listener state so
+            // several registered listeners don't feed a shared accumulator and
+            // trip the threshold N times faster than a single one would.
+            val accumulatorLock = Any()
+            var magnificationAccumulator = 0.0
+
             // Create a dynamic proxy for MagnificationListener
             val listener = java.lang.reflect.Proxy.newProxyInstance(
                 magnificationListenerClass.classLoader,
                 arrayOf(magnificationListenerClass)
-            ) { _, method, args ->
+            ) { proxy, method, args ->
                 if (method.name == "magnify" && args != null && args.isNotEmpty()) {
                     val event = args[0]
                     val getMagnification = magnificationEventClass.getMethod("getMagnification")
                     val magnification = getMagnification.invoke(event) as Double
 
-                    // Accumulate magnification for smoother zooming (like Safari)
                     // Use synchronized to prevent race condition between gesture thread and UI thread
                     var shouldZoomIn = false
                     var shouldZoomOut = false
@@ -103,9 +104,13 @@ object MacOSGestureHandler {
                 } else if (method.name == "toString") {
                     return@newProxyInstance "MacOSGestureHandler.MagnificationListener"
                 } else if (method.name == "hashCode") {
-                    return@newProxyInstance System.identityHashCode(this)
+                    return@newProxyInstance System.identityHashCode(proxy)
                 } else if (method.name == "equals") {
-                    return@newProxyInstance false
+                    // Identity equals is load-bearing: Apple's GestureHandler stores
+                    // listeners in a LinkedList and removeGestureListenerFrom uses
+                    // List.remove(Object), which calls equals. Always-false equals
+                    // would make removal a silent no-op and leak the listener.
+                    return@newProxyInstance args != null && args.isNotEmpty() && proxy === args[0]
                 }
                 null
             }
@@ -119,21 +124,36 @@ object MacOSGestureHandler {
 
             if (component is JComponent) {
                 addMethod.invoke(null, component, listener)
-                true
+                listener
             } else {
-                false
+                null
             }
         } catch (e: Exception) {
-            false
+            null
         }
     }
 
     /**
-     * Reset the accumulator (call when gesture ends or focus changes)
+     * Remove a magnification listener previously registered with [addMagnificationListener].
+     *
+     * @param component The component the listener was added to
+     * @param listener The registration token returned by [addMagnificationListener]
      */
-    fun resetAccumulator() {
-        synchronized(accumulatorLock) {
-            magnificationAccumulator = 0.0
+    fun removeMagnificationListener(component: Component, listener: Any) {
+        if (!isSupported()) return
+
+        try {
+            val gestureUtilitiesClass = Class.forName("com.apple.eawt.event.GestureUtilities")
+            val removeMethod = gestureUtilitiesClass.getMethod(
+                "removeGestureListenerFrom",
+                JComponent::class.java,
+                Class.forName("com.apple.eawt.event.GestureListener")
+            )
+            if (component is JComponent) {
+                removeMethod.invoke(null, component, listener)
+            }
+        } catch (_: Exception) {
+            // Best-effort; the proxy becomes unreachable either way
         }
     }
 }

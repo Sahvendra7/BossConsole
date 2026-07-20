@@ -51,5 +51,13 @@
     <!-- Allow spawning subprocesses -->
     <key>com.apple.security.inherit</key>
     <true/>
+
+    <!-- Platform passkeys (Touch ID) are handled natively by JxBrowser 9.3.0+ inside
+         the (branded) Chromium processes, so the app itself needs no WebAuthn
+         entitlement. Historical note: the custom in-process authenticator removed in
+         July 2026 would have required com.apple.developer.web-browser.public-key-credential
+         (Apple entitlement request YWD6D3446V) — a managed capability that must never
+         be declared here without an embedded provisioning profile, or macOS refuses
+         to launch the app. -->
 </dict>
 </plist>

@@ -27,6 +27,10 @@ dependencyResolutionManagement {
         }
         maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
         mavenCentral()
+        // NOTE: the boss-plugin-api contract is deliberately NOT resolved from
+        // any Maven registry — its distribution is store/GitHub-releases only.
+        // plugin-platform/plugin-api-core downloads the pinned release jar (the same
+        // asset the Plugin Store serves) and filters the api package locally.
     }
 }
 
@@ -43,43 +47,51 @@ val settingsOsName: String = System.getProperty("os.name").lowercase()
 val isWindowsArm64 = settingsOsName.contains("win") && (settingsOsArch == "aarch64" || settingsOsArch == "arm")
 
 if (!isWindowsArm64) {
-    include(":boss-ipc")
-    include(":boss-process-manager")
-    include(":boss-service-auth")
-    include(":boss-ui-sdk")
-    include(":boss-orchestrator")
-    include(":boss-mastery-sdk")
-    include(":boss-mastery-orchestrator")
-    include(":boss-service-workspace")
-    include(":boss-service-settings")
-    include(":boss-service-filesystem")
-    include(":boss-app-terminal")
-    include(":boss-app-editor")
-    include(":boss-app-browser")
-    include(":plugins:plugin-api-ipc")
+    // The microkernel modules live under modules/ to keep the repo root tidy,
+    // but keep their flat Gradle paths (:boss-ipc, …) so consumers and the
+    // type-safe `projects.*` accessors are unchanged — only the projectDir moves.
+    listOf(
+        "boss-ipc",
+        "boss-process-manager",
+        "boss-service-auth",
+        "boss-ui-sdk",
+        "boss-orchestrator",
+        "boss-mastery-sdk",
+        "boss-mastery-orchestrator",
+        "boss-service-workspace",
+        "boss-service-settings",
+        "boss-service-filesystem",
+        "boss-app-terminal",
+        "boss-app-editor",
+        "boss-app-browser",
+    ).forEach { name ->
+        include(":$name")
+        project(":$name").projectDir = file("modules/$name")
+    }
+    include(":plugin-platform:plugin-api-ipc")
 }
 // Plugin modules
 // plugin-api-core: Ultra-minimal core (PluginContext, DynamicPlugin, PluginManifest)
 // Everything else comes from boss-plugin-api bundled plugin
-include(":plugins:plugin-api-core")
-include(":plugins:plugin-ui-core")
-include(":plugins:plugin-logging")
-include(":plugins:plugin-scrollbar")
-include(":plugins:plugin-events")
-include(":plugins:plugin-search")
-include(":plugins:plugin-window")
-include(":plugins:plugin-git-types")
-include(":plugins:plugin-run-types")
-include(":plugins:plugin-workspace-types")
-include(":plugins:plugin-bookmark-types")
-include(":plugins:plugin-icons")
-include(":plugins:plugin-path-utils")
-include(":plugins:plugin-sandbox")
-include(":plugins:plugin-api-browser")
-include(":plugins:plugin-loader")
-include(":plugins:plugin-repository")
-include(":plugins:plugin-dependency")
-include(":plugins:plugin-updater")
+include(":plugin-platform:plugin-api-core")
+include(":plugin-platform:plugin-ui-core")
+include(":plugin-platform:plugin-logging")
+include(":plugin-platform:plugin-scrollbar")
+include(":plugin-platform:plugin-events")
+include(":plugin-platform:plugin-search")
+include(":plugin-platform:plugin-window")
+include(":plugin-platform:plugin-git-types")
+include(":plugin-platform:plugin-run-types")
+include(":plugin-platform:plugin-workspace-types")
+include(":plugin-platform:plugin-bookmark-types")
+include(":plugin-platform:plugin-icons")
+include(":plugin-platform:plugin-path-utils")
+include(":plugin-platform:plugin-sandbox")
+include(":plugin-platform:plugin-api-browser")
+include(":plugin-platform:plugin-loader")
+include(":plugin-platform:plugin-repository")
+include(":plugin-platform:plugin-dependency")
+include(":plugin-platform:plugin-updater")
 // Plugin panel manager is now dynamic (loaded from boss_plugin as plugin-manager)
 
 // Tab type plugins are now dynamic (loaded from boss_plugin):

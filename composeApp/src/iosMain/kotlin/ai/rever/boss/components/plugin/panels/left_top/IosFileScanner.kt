@@ -54,3 +54,12 @@ actual fun directoryHasChildren(path: String): Boolean {
     // Mock - assume directories have children
     return true
 }
+
+// showHidden variants — the iOS mock has no hidden entries, so they delegate
+
+actual fun scanDirectory(path: String, showHidden: Boolean): FileNodeData? = scanDirectory(path)
+
+actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int, showHidden: Boolean): FileNodeData? =
+    scanDirectoryWithDepth(path, maxDepth, startDepth)
+
+actual fun directoryHasChildren(path: String, showHidden: Boolean): Boolean = directoryHasChildren(path)

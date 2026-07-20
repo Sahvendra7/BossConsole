@@ -1,5 +1,6 @@
 package ai.rever.boss.components.misc
 
+import ai.rever.boss.components.bars.vertical.SidebarOverflowButton
 import ai.rever.boss.components.buttons.DraggableActionButton
 import ai.rever.boss.components.model.BossDraggableComponent
 import ai.rever.boss.plugin.api.Panel
@@ -58,7 +59,14 @@ fun SidebarSlotContainer(
 @Composable
 fun BossDraggableComponent.DraggableSidebarSection(
     slot: Panel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Cap on plugin icons rendered inline; items beyond it collapse into
+     * a trailing [SidebarOverflowButton]. null = unlimited (legacy
+     * behaviour). Computed per bar by
+     * [ai.rever.boss.components.sidebar.computeSlotIconLimits].
+     */
+    maxVisibleIcons: Int? = null,
 ) {
     // Observe sidebar visibility and pass the hidden set explicitly into
     // getItemsForSlot — that's what registers the Compose snapshot
@@ -74,7 +82,12 @@ fun BossDraggableComponent.DraggableSidebarSection(
         modifier = modifier
     ) {
         val items = getItemsForSlot(slot, visibility.hiddenPanelIds)
-        items.forEachIndexed { index, item ->
+        val visibleItems = if (maxVisibleIcons != null && items.size > maxVisibleIcons) {
+            items.take(maxVisibleIcons.coerceAtLeast(0))
+        } else {
+            items
+        }
+        visibleItems.forEachIndexed { index, item ->
 
             key (item.id) {
                 DraggableActionButton(
@@ -84,7 +97,7 @@ fun BossDraggableComponent.DraggableSidebarSection(
                         .run {
                             if (index == 0) {
                                 padding(bottom = 4.dp)
-                            } else if (index == items.size) {
+                            } else if (index == visibleItems.lastIndex) {
                                 padding(top = 4.dp)
                             } else {
                                 padding(vertical = 4.dp)
@@ -93,6 +106,12 @@ fun BossDraggableComponent.DraggableSidebarSection(
                         .size(32.dp)
                 )
             }
+        }
+        if (visibleItems.size < items.size) {
+            SidebarOverflowButton(
+                slot = slot,
+                items = items.drop(visibleItems.size),
+            )
         }
         // Add a minimum height to the slot even when empty to ensure it's a valid drop target
         if (items.isEmpty()) {

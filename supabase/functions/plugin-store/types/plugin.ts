@@ -28,9 +28,13 @@ export interface PluginVersion {
   changelog: string
   minBossVersion: string
   minIpcVersion: string
+  /** Minimum boss-plugin-api (runtime API layer) version; '' = no requirement. */
+  minApiVersion: string
   jarPath: string
   jarSize: number
   sha256: string
+  /** Base64 store signature over the canonical anchor `pluginId|version|sha256` (see utils/signing.ts versionAnchor); null pre-signing. */
+  signature?: string | null
   dependencies: PluginDependency[]
   publishedAt: string
   downloadCount?: number
@@ -49,6 +53,8 @@ export interface PluginWithStats extends Plugin {
   downloadCount: number
   tags: string[]
   screenshots: PluginScreenshot[]
+  /** Permissions a user must hold to install/use this plugin. Empty = open. */
+  requiredPermissions: string[]
 }
 
 export interface PluginScreenshot {
@@ -73,6 +79,8 @@ export interface PluginListItem {
   downloadCount: number
   tags: string[]
   updatedAt: string
+  /** Permissions a user must hold to install/use this plugin. Empty = open. */
+  requiredPermissions: string[]
 }
 
 export interface PluginSearchResult {
@@ -121,6 +129,7 @@ export interface PluginManifest {
   tags?: string[]
   minBossVersion?: string
   minIpcVersion?: string
+  minApiVersion?: string
   dependencies?: PluginDependency[]
   sandbox?: {
     maxThreads?: number

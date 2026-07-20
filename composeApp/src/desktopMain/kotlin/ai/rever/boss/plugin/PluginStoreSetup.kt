@@ -12,6 +12,7 @@ import ai.rever.boss.plugin.repository.remote.PluginStoreRealtimeService
 import ai.rever.boss.plugin.repository.remote.RemotePluginRepository
 import ai.rever.boss.plugin.updater.PluginUpdateManager
 import ai.rever.boss.plugin.updater.UpdateCheckerConfig
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -40,7 +41,14 @@ data class SystemPluginInfo(
     /** If true, the JAR is downloaded but not registered for plugin loading.
      *  Used for runtime dependencies (e.g., microkernel runtime) that live in
      *  the plugins directory but are not loadable UI/service plugins. */
-    val downloadOnly: Boolean = false
+    val downloadOnly: Boolean = false,
+    /** Minimum plugin version this host build requires. When the installed JAR
+     *  is older (or its version can't be determined), it is updated
+     *  synchronously BEFORE load instead of via the usual background
+     *  check-for-next-launch. Set this when a host release changes the
+     *  host↔plugin contract — e.g. editor-tab 1.4.0 bundles BossEditor after
+     *  the host dropped it, so older plugin JARs cannot run on this host. */
+    val minVersion: String? = null
 )
 
 /**
@@ -116,57 +124,15 @@ object PluginStoreSetup {
      * List of system plugins that must always be installed.
      * These are auto-downloaded from GitHub releases if missing.
      * Ordered by load priority (lower = loads first).
+     *
+     * Sourced from the remote manifest (system_plugins table) via
+     * [SystemPluginManifestService]: cache → built-in fallback, with startup
+     * catch-up + Realtime sync. A live getter (not lazy) so system plugins
+     * pushed mid-session are seen by later [ensureSystemPluginsInstalled]
+     * runs; version-floor changes apply on next launch.
      */
-    private val systemPlugins: List<SystemPluginInfo> by lazy {
-        buildList {
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.api",
-                githubRepo = "risa-labs-inc/boss-plugin-api",
-                artifactPrefix = "boss-plugin-api",
-                loadPriority = 0
-            ))
-            // Microkernel runtime JAR is only needed when kernel mode is active (OOP plugins)
-            if (isKernelMode) {
-                add(SystemPluginInfo(
-                    pluginId = ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID,
-                    githubRepo = ai.rever.boss.components.plugin.MicrokernelRuntime.GITHUB_REPO,
-                    artifactPrefix = ai.rever.boss.components.plugin.MicrokernelRuntime.ARTIFACT_PREFIX,
-                    loadPriority = 1,
-                    downloadOnly = true
-                ))
-            }
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.pluginmanager",
-                githubRepo = "risa-labs-inc/boss-plugin-plugin-manager",
-                artifactPrefix = "boss-plugin-plugin-manager",
-                loadPriority = 5
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.terminaltab",
-                githubRepo = "risa-labs-inc/boss-plugin-terminal-tab",
-                artifactPrefix = "boss-plugin-terminal-tab",
-                loadPriority = 10
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.terminal",
-                githubRepo = "risa-labs-inc/boss-plugin-terminal",
-                artifactPrefix = "boss-plugin-terminal",
-                loadPriority = 10
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
-                githubRepo = "risa-labs-inc/boss-plugin-fluck-browser",
-                artifactPrefix = "boss-plugin-fluck-browser",
-                loadPriority = 10
-            ))
-            add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.plugin.dynamic.editortab",
-                githubRepo = "risa-labs-inc/boss-plugin-editor-tab",
-                artifactPrefix = "boss-plugin-editor-tab",
-                loadPriority = 10
-            ))
-        }
-    }
+    private val systemPlugins: List<SystemPluginInfo>
+        get() = SystemPluginManifestService.currentList(isKernelMode)
 
     // Plugin infrastructure components
     private var _downloadCache: PluginDownloadCache? = null
@@ -255,11 +221,24 @@ object PluginStoreSetup {
                 // Gate store updates by host IPC compatibility so an
                 // incompatible newer version is reported, never auto-installed.
                 hostIpcVersion = IpcCompatibility.hostVersion ?: "1.0.0",
-                isIpcCompatible = { IpcCompatibility.isInstallable(it) }
+                isIpcCompatible = { IpcCompatibility.isInstallable(it) },
+                // Gate by minBossVersion too: without this, an update built
+                // against a newer host replaces the working jar and only THEN
+                // gets rejected by the loader (Toolbox 1.8.4 on BOSS 9.2.25).
+                hostBossVersion = AppVersion.currentVersionString(),
+                // Gate by minApiVersion: lambda because the api layer resolves
+                // later in startup (initializeApiLayer publishes the property).
+                hostApiVersion = { System.getProperty("boss.api.version") ?: "" }
             )
 
             // Create and start realtime service for live updates
             _realtimeService = PluginStoreRealtimeService()
+
+            // Sync the system-plugins manifest (startup catch-up + Realtime).
+            // New rows install live; min_version bumps apply next launch.
+            SystemPluginManifestService.startSync {
+                ensureSystemPluginsInstalled()
+            }
 
             initialized = true
             logger.info(LogCategory.SYSTEM, "Plugin store initialization complete", mapOf(
@@ -436,17 +415,34 @@ object PluginStoreSetup {
                     val jarExists = existingEntry?.let { File(it.jarPath).exists() } ?: false
 
                     if (installedIds.contains(systemPlugin.pluginId) && jarExists) {
-                        // Plugin is on disk — proceed with startup using the
-                        // current JAR. Kick off a background update check so
-                        // newer releases are pulled in for the *next* launch
-                        // (the running session keeps its already-loaded
-                        // classloader — replacing on the fly would break
-                        // anything currently holding a class reference).
-                        scheduleBackgroundUpdateCheck(systemPlugin, File(existingEntry.jarPath))
-                        logger.debug(LogCategory.SYSTEM, "System plugin already installed", mapOf(
-                            "pluginId" to systemPlugin.pluginId
+                        val jarFile = File(existingEntry.jarPath)
+                        val installedVersion = extractVersionFromJarFileName(jarFile.name, systemPlugin.artifactPrefix)
+                            ?: runCatching { readPluginManifest(jarFile)?.version }.getOrNull()
+                        // Installed JAR is older than this host requires (or its
+                        // version is unreadable, which only very old JARs are):
+                        // fall through to the synchronous download below so the
+                        // contract-breaking version is never loaded. If the
+                        // download fails (offline), the old JAR still loads and
+                        // the update is retried next launch.
+                        val tooOldForHost = isTooOldForHost(installedVersion, systemPlugin.minVersion)
+                        if (!tooOldForHost) {
+                            // Plugin is on disk — proceed with startup using the
+                            // current JAR. Kick off a background update check so
+                            // newer releases are pulled in for the *next* launch
+                            // (the running session keeps its already-loaded
+                            // classloader — replacing on the fly would break
+                            // anything currently holding a class reference).
+                            scheduleBackgroundUpdateCheck(systemPlugin, jarFile)
+                            logger.debug(LogCategory.SYSTEM, "System plugin already installed", mapOf(
+                                "pluginId" to systemPlugin.pluginId
+                            ))
+                            continue
+                        }
+                        logger.info(LogCategory.SYSTEM, "System plugin older than this host requires - updating before load", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "installedVersion" to (installedVersion ?: "unknown"),
+                            "minVersion" to (systemPlugin.minVersion ?: "")
                         ))
-                        continue
                     }
                 }
 
@@ -644,7 +640,7 @@ object PluginStoreSetup {
      * Handles the `{prefix}-{version}.jar` and `{prefix}-{version}-all.jar`
      * patterns produced by Gradle. Returns null if the filename doesn't match.
      */
-    private fun extractVersionFromJarFileName(fileName: String, artifactPrefix: String): String? {
+    internal fun extractVersionFromJarFileName(fileName: String, artifactPrefix: String): String? {
         val withoutPrefix = fileName.removePrefix("$artifactPrefix-")
         if (withoutPrefix == fileName) return null
         val version = withoutPrefix
@@ -700,11 +696,28 @@ object PluginStoreSetup {
                 val tagNameMatch = Regex(""""tag_name"\s*:\s*"([^"]+)"""").find(responseText)
                 val tagName = tagNameMatch?.groupValues?.get(1) ?: "unknown"
 
-                // Find the JAR download URL
-                val jarUrlMatch = Regex(""""browser_download_url"\s*:\s*"([^"]+${plugin.artifactPrefix}[^"]*\.jar)"""")
-                    .find(responseText)
+                // The host's minimum must hold for the release we are about to
+                // INSTALL, not just trigger the download: if the repo's latest
+                // release still predates minVersion (release-order violation,
+                // yanked release), installing it would persist the exact
+                // contract-breaking JAR the gate exists to prevent. Keep
+                // whatever is on disk and retry next launch instead.
+                val requiredMin = plugin.minVersion
+                if (requiredMin != null && isTooOldForHost(tagName.removePrefix("v"), requiredMin)) {
+                    logger.error(LogCategory.SYSTEM, "Latest GitHub release is older than this host requires - not installing", mapOf(
+                        "pluginId" to plugin.pluginId,
+                        "repo" to plugin.githubRepo,
+                        "latestTag" to tagName,
+                        "minVersion" to requiredMin
+                    ))
+                    return@withContext false
+                }
 
-                if (jarUrlMatch == null) {
+                // Find the JAR download URL (skips "-thin.jar" assets — see
+                // pickPluginJarUrl).
+                val jarUrl = pickPluginJarUrl(responseText, plugin.artifactPrefix)
+
+                if (jarUrl == null) {
                     logger.warn(LogCategory.SYSTEM, "No JAR asset found in GitHub release", mapOf(
                         "pluginId" to plugin.pluginId,
                         "repo" to plugin.githubRepo,
@@ -712,8 +725,6 @@ object PluginStoreSetup {
                     ))
                     return@withContext false
                 }
-
-                val jarUrl = jarUrlMatch.groupValues[1]
                 val jarFileName = jarUrl.substringAfterLast("/")
                 val destFile = File(_pluginDir, jarFileName)
                 // Stage the download in a sibling `.tmp` file and atomic-rename
@@ -882,27 +893,39 @@ object PluginStoreSetup {
     suspend fun loadPersistedPlugins(
         dynamicPluginManager: ai.rever.boss.components.plugin.DynamicPluginManager
     ): Map<String, Result<ai.rever.boss.components.plugin.DynamicPluginInfo>> {
+        val loadBeganMs = System.currentTimeMillis()
         val results = mutableMapOf<String, Result<ai.rever.boss.components.plugin.DynamicPluginInfo>>()
 
-        // 1. Copy bundled plugins to ~/.boss/plugins if not already present
-        copyBundledPluginsToPluginDir(dynamicPluginManager)
+        // Steps 1-4 are JAR scans, copies, downloads, and the installed.json
+        // read; callers arrive on Dispatchers.Main, so keep the disk churn off
+        // the UI thread. The actual plugin loading below stays on the caller:
+        // loadPlugin self-dispatches to IO and register() needs Main.
+        val persistedPlugins = withContext(Dispatchers.IO) {
+            // 1. Copy bundled plugins to ~/.boss/plugins if not already present
+            copyBundledPluginsToPluginDir(dynamicPluginManager)
 
-        // 2. Ensure all system plugins are installed (auto-download if missing)
-        ensureSystemPluginsInstalled()
+            // 2. Ensure all system plugins are installed (auto-download if missing)
+            ensureSystemPluginsInstalled()
 
-        // 3. Remove stale duplicate versions of the same plugin and repoint
-        //    installed.json at the kept JAR — different writers use different
-        //    filename conventions, so multiple versions can accumulate and an
-        //    older JAR could otherwise shadow a newer one at scan time.
-        runCatching { PluginJarReconciler.reconcilePluginDir(_pluginDir) }
-            .onFailure { e ->
-                logger.warn(LogCategory.SYSTEM, "Plugin dir reconcile failed", mapOf(
-                    "error" to (e.message ?: "unknown")
-                ))
-            }
+            // 3. Remove stale duplicate versions of the same plugin and repoint
+            //    installed.json at the kept JAR — different writers use different
+            //    filename conventions, so multiple versions can accumulate and an
+            //    older JAR could otherwise shadow a newer one at scan time.
+            runCatching { PluginJarReconciler.reconcilePluginDir(_pluginDir) }
+                .onFailure { e ->
+                    logger.warn(LogCategory.SYSTEM, "Plugin dir reconcile failed", mapOf(
+                        "error" to (e.message ?: "unknown")
+                    ))
+                }
 
-        // 4. Load persisted plugins (including bundled ones now in plugin dir)
-        val persistedPlugins = PluginPersistence.getInstalledPlugins()
+            // 3b. Resolve the runtime API layer from the reconciled dir: the
+            //     shared ApiClassLoader must parent every plugin classloader
+            //     created below, so this has to precede all plugin loads.
+            dynamicPluginManager.initializeApiLayer(_pluginDir)
+
+            // 4. Read persisted plugins (including bundled ones now in plugin dir)
+            PluginPersistence.getInstalledPlugins()
+        }
 
         if (persistedPlugins.isEmpty()) {
             logger.info(LogCategory.SYSTEM, "No persisted plugins to load")
@@ -924,6 +947,36 @@ object PluginStoreSetup {
         val persistedResults = dynamicPluginManager.loadPersistedPlugins(entries)
         results.putAll(persistedResults)
 
+        // Repoint installed.json at what actually loaded: a stale persisted
+        // path that got re-resolved by pluginId (see DynamicPluginManager.
+        // loadPersistedPlugins) would otherwise re-trigger the fallback on
+        // every startup until something else re-persisted the entry. No-op
+        // when paths already agree (the common case).
+        withContext(Dispatchers.IO) {
+            val persistedById = persistedPlugins.associateBy { it.pluginId }
+            for ((pluginId, result) in persistedResults) {
+                val loaded = result.getOrNull() ?: continue
+                val persisted = persistedById[pluginId] ?: continue
+                if (persisted.jarPath != loaded.jarPath) {
+                    PluginPersistence.addInstalledPlugin(
+                        pluginId = pluginId,
+                        jarPath = loaded.jarPath,
+                        enabled = persisted.enabled,
+                        sourceUrl = persisted.sourceUrl,
+                        installedVersion = loaded.manifest.version
+                    )
+                    logger.info(LogCategory.SYSTEM, "Repointed persisted jar path at loaded jar", mapOf(
+                        "pluginId" to pluginId,
+                        "jarPath" to loaded.jarPath
+                    ))
+                }
+            }
+        }
+
+        logger.info(LogCategory.SYSTEM, "Persisted plugin load complete", mapOf(
+            "count" to results.size.toString(),
+            "elapsedMs" to (System.currentTimeMillis() - loadBeganMs).toString()
+        ))
         return results
     }
 
@@ -1196,11 +1249,22 @@ object PluginStoreSetup {
 
     /**
      * Check if version1 is newer than version2.
-     * Simple semver comparison (major.minor.patch).
+     *
+     * Numeric major.minor.patch comparison; a segment's non-numeric suffix
+     * counts only as its numeric prefix ("0-rc1" -> 0). On a numeric tie, a
+     * version WITH a pre-release suffix is OLDER than one without
+     * (1.4.0-rc1 < 1.4.0) — this comparator gates whether a system plugin
+     * satisfies the host's [SystemPluginInfo.minVersion], and a pre-release
+     * must not pass for its release. Internal for test access.
      */
-    private fun isNewerVersion(version1: String, version2: String): Boolean {
-        val v1Parts = version1.split(".").mapNotNull { it.toIntOrNull() }
-        val v2Parts = version2.split(".").mapNotNull { it.toIntOrNull() }
+    internal fun isNewerVersion(version1: String, version2: String): Boolean {
+        fun numericParts(v: String) =
+            v.split(".").map { seg -> seg.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
+        fun hasPreReleaseSuffix(v: String) =
+            v.split(".").any { seg -> seg.any { !it.isDigit() } }
+
+        val v1Parts = numericParts(version1)
+        val v2Parts = numericParts(version2)
 
         for (i in 0 until maxOf(v1Parts.size, v2Parts.size)) {
             val v1 = v1Parts.getOrElse(i) { 0 }
@@ -1208,6 +1272,30 @@ object PluginStoreSetup {
             if (v1 > v2) return true
             if (v1 < v2) return false
         }
-        return false
+        // Numeric tie: a release is newer than its own pre-release.
+        return hasPreReleaseSuffix(version2) && !hasPreReleaseSuffix(version1)
     }
+
+    /**
+     * True when the host mandates a minimum plugin version and the installed
+     * version is below it — or can't be determined at all (only very old JARs
+     * lack a readable version). Internal for test access.
+     */
+    internal fun isTooOldForHost(installedVersion: String?, minVersion: String?): Boolean {
+        if (minVersion == null) return false
+        return installedVersion == null || isNewerVersion(minVersion, installedVersion)
+    }
+
+    /**
+     * Pick the plugin JAR asset URL from a GitHub release JSON payload.
+     * Skips "-thin.jar" assets — a module's default :jar output, missing
+     * everything buildPluginJar bundles (editor-tab's BossEditor,
+     * fluck-browser's tunnel deps, …) — which GitHub can list first.
+     * Internal for test access.
+     */
+    internal fun pickPluginJarUrl(releaseJson: String, artifactPrefix: String): String? =
+        Regex(""""browser_download_url"\s*:\s*"([^"]+${Regex.escape(artifactPrefix)}[^"]*\.jar)"""")
+            .findAll(releaseJson)
+            .map { it.groupValues[1] }
+            .firstOrNull { !it.endsWith("-thin.jar") }
 }

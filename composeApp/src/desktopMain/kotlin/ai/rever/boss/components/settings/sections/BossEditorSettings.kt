@@ -1,39 +1,24 @@
 package ai.rever.boss.components.settings.sections
 
-import ai.rever.bosseditor.settings.EditorSettingsManager
-import ai.rever.bosseditor.settings.EditorSettingsPanel
+import ai.rever.boss.services.editor.EditorAPIAccess
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 /**
- * BossEditor settings using BossEditor's full settings panel.
+ * Editor settings delegated to the editor-tab plugin.
  *
- * This integrates BossEditor's comprehensive settings system directly into BOSS,
- * providing access to all editor customization options:
- * - Visual: Theme, font size, line spacing, line numbers
- * - Behavior: Scroll speed, tab size, word wrap
- * - Features: Code folding, rainbow brackets, indent guides
- * - Caret: Style, blink rate
- * - Minimap: Enable/disable, width
- *
- * Settings are automatically saved to ~/.boss/editor-settings.json
- * and changes take effect immediately for all BossEditor instances.
+ * When the plugin is loaded it renders BossEditor's comprehensive settings
+ * panel; before its asynchronous startup registration completes, a short
+ * notice renders instead and swaps to the real panel automatically
+ * (rememberProvider observes API registration).
  */
 @Composable
 fun BossEditorSettings() {
-    // Use BossEditor's singleton settings manager for reactive updates
-    val settingsManager = remember { EditorSettingsManager.instance }
-    val currentSettings by settingsManager.settings.collectAsState()
-
-    EditorSettingsPanel(
-        settings = currentSettings,
-        onSettingsChange = { newSettings ->
-            settingsManager.updateSettings(newSettings)
-        },
-        onResetToDefaults = {
-            settingsManager.resetToDefaults()
-        },
-        modifier = Modifier.fillMaxSize()
-    )
+    val provider = EditorAPIAccess.rememberProvider()
+    if (provider != null) {
+        provider.EditorSettingsPanel(modifier = Modifier.fillMaxSize())
+    } else {
+        PluginSettingsUnavailableNotice("Editor settings are provided by the Code Editor plugin, which isn't loaded yet.")
+    }
 }

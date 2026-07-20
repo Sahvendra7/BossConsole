@@ -4,8 +4,11 @@ import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkContentBackground
+import BossDarkError
+import BossDarkSuccess
 import BossDarkTextPrimary
 import BossDarkTextSecondary
+import BossDarkWarning
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -130,7 +133,7 @@ fun VersionSelectionDialog(
                 if (error != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = Color(0xFFF44336).copy(alpha = 0.2f),
+                        backgroundColor = BossDarkError.copy(alpha = 0.2f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Row(
@@ -141,11 +144,11 @@ fun VersionSelectionDialog(
                             Icon(
                                 Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = Color(0xFFF44336)
+                                tint = BossDarkError
                             )
                             Text(
                                 text = error,
-                                color = Color(0xFFF44336),
+                                color = BossDarkError,
                                 fontSize = 14.sp
                             )
                         }
@@ -249,7 +252,7 @@ private fun VersionItem(
 
                     if (isCurrent) {
                         Card(
-                            backgroundColor = Color(0xFF4CAF50),
+                            backgroundColor = BossDarkSuccess,
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
@@ -279,7 +282,7 @@ private fun VersionItem(
 
                     if (versionInfo.isPrerelease) {
                         Card(
-                            backgroundColor = Color(0xFFFFC107),
+                            backgroundColor = BossDarkWarning,
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(

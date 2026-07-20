@@ -2,6 +2,7 @@ package ai.rever.boss.services.network
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Service for monitoring network connectivity with auto-retry
@@ -49,8 +51,9 @@ object NetworkMonitorService {
         _networkState.value = NetworkState.Checking
 
         val isConnected = try {
-            performConnectivityCheck(CONNECTIVITY_CHECK_URL) ||
-                performConnectivityCheck(FALLBACK_CHECK_URL)
+            // Race both probes: this check gates the first usable screen, and
+            // probing sequentially made the worst case timeout*2 (20s).
+            raceConnectivityProbes()
         } catch (e: Exception) {
             logger.warn(LogCategory.NETWORK, "Connectivity check failed", error = e)
             false
@@ -73,6 +76,38 @@ object NetworkMonitorService {
         }
 
         isConnected
+    }
+
+    /**
+     * Run all probes concurrently and return as soon as one succeeds, or when
+     * every probe has failed. The probes are blocking socket calls that ignore
+     * coroutine cancellation, so they are launched fire-and-forget on the
+     * service [scope] instead of being awaited structurally: a probe that
+     * loses the race keeps running until its own connect/read timeout, but it
+     * no longer delays the result (a structured version stalled the connected
+     * path for up to the full timeout when the fallback host was unreachable).
+     */
+    private suspend fun raceConnectivityProbes(): Boolean {
+        val urls = listOf(CONNECTIVITY_CHECK_URL, FALLBACK_CHECK_URL)
+        val result = CompletableDeferred<Boolean>()
+        val probesRemaining = AtomicInteger(urls.size)
+        for (url in urls) {
+            scope.launch {
+                if (performConnectivityCheck(url)) {
+                    result.complete(true)
+                }
+            }.invokeOnCompletion {
+                // Runs on every completion path, including a probe cancelled
+                // before its body executed (e.g. cleanup() cancelling the
+                // scope), so await() can never hang: when the last probe
+                // finishes without a success, fail. complete() is a no-op if
+                // the result was already completed with true.
+                if (probesRemaining.decrementAndGet() == 0) {
+                    result.complete(false)
+                }
+            }
+        }
+        return result.await()
     }
 
     private fun performConnectivityCheck(urlString: String): Boolean {

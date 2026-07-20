@@ -10,9 +10,6 @@ import BossDarkBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import ai.rever.bosseditor.psi.PSIBootstrap
-import ai.rever.bosseditor.psi.PSIThreadBridge
-import ai.rever.bosseditor.psi.ProjectIndexer
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.SingleInstanceManager
 import ai.rever.boss.utils.logging.BossLogger
@@ -39,18 +36,30 @@ import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.github.ajalt.clikt.core.main
 import java.io.File
 import kotlin.system.exitProcess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.swing.JPopupMenu
 
 private val logger = BossLogger.forComponent("Main")
 
+/**
+ * Scope for fire-and-forget startup work (PSI warm-up, update-Realtime start).
+ * Deliberately process-lifetime — main() has no teardown point; long-lived
+ * services manage their own scopes and are disposed via the shutdown hook.
+ * SupervisorJob so one failed warm-up doesn't cancel the others.
+ */
+private val startupScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
 fun main(args: Array<String>) {
+    val startupBeganMs = System.currentTimeMillis()
+
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
     setLinuxWMClass()
 
@@ -175,21 +184,6 @@ fun main(args: Array<String>) {
             System.err.println("Error closing browser engine: ${e.message}")
         }
         try {
-            // Shutdown project indexer
-            ProjectIndexer.shutdownGlobal()
-        } catch (e: Exception) {
-            System.err.println("Error shutting down project indexer: ${e.message}")
-        }
-        try {
-            // Shutdown PSI to prevent memory leaks
-            if (PSIBootstrap.isInitialized) {
-                PSIBootstrap.shutdown()
-                PSIThreadBridge.shutdown()
-            }
-        } catch (e: Exception) {
-            System.err.println("Error shutting down PSI: ${e.message}")
-        }
-        try {
             // Close HTTP client for high-quality favicon service
             ai.rever.boss.cache.HighQualityFaviconService.close()
         } catch (e: Exception) {
@@ -200,6 +194,12 @@ fun main(args: Array<String>) {
             AWTKeyboardInterceptor.uninstall()
         } catch (e: Exception) {
             System.err.println("Error uninstalling keyboard interceptor: ${e.message}")
+        }
+        try {
+            // Stop app-update realtime subscription
+            ai.rever.boss.updater.AppUpdateRealtimeService.instance.dispose()
+        } catch (e: Exception) {
+            System.err.println("Error stopping app update realtime: ${e.message}")
         }
         try {
             // Shutdown plugin store
@@ -234,6 +234,15 @@ fun main(args: Array<String>) {
         logger.warn(LogCategory.SYSTEM, "Proactive browser lock cleanup failed", error = e)
     }
 
+    // Pre-warm the browser engine off the UI thread so the first browser tab
+    // opens against an already-running Chromium instead of paying the full
+    // engine boot inside its composition. Opt out with BOSS_BROWSER_PREWARM=false.
+    try {
+        ai.rever.boss.plugin.browser.FluckEngine.prewarmInBackground()
+    } catch (e: Exception) {
+        logger.warn(LogCategory.SYSTEM, "Browser engine pre-warm failed to start", error = e)
+    }
+
     // Parse CLI arguments if provided
     if (args.isNotEmpty()) {
         try {
@@ -266,44 +275,36 @@ fun main(args: Array<String>) {
     // This ensures Cmd+N, Cmd+W, etc. work even when terminal has focus
     AWTKeyboardInterceptor.install()
     
+    // Apply the persisted app theme before any UI composes, so the app opens
+    // in the user's chosen look (Operator / Daylight / Clean).
+    ai.rever.boss.theme.AppThemeSettingsManager.ensureInitialized()
+
     // Initialize passkey service for desktop platforms
     PasskeyPlatformInit.initialize()
 
     // Initialize plugin store (remote repository, download cache, update manager)
     PluginStoreSetup.initialize()
 
+    // Start app-update Realtime push (Supabase) so the app learns about new releases
+    // instantly instead of polling; route events into the existing update manager.
+    // Off the main thread: building the Supabase client is not needed for first paint.
+    startupScope.launch {
+        ai.rever.boss.updater.AppUpdateRealtimeService.instance.apply {
+            onReleaseChanged = { ai.rever.boss.updater.UpdateManager.instance.checkForUpdates() }
+            start()
+        }
+    }
+
     // Set up the persisted plugins loader for DefaultPlugin
     ai.rever.boss.components.plugin.DefaultPlugin.Companion.loadPersistedPluginsInternal = { manager ->
         PluginStoreSetup.loadPersistedPlugins(manager)
     }
 
-    // Initialize PSI for Kotlin code navigation (must be before any editor opens)
-    try {
-        PSIBootstrap.initialize()
-    } catch (e: Exception) {
-        logger.warn(LogCategory.SYSTEM, "PSI initialization failed", error = e)
-        // Continue - navigation will just be disabled
-    }
-
-    // Initialize ProjectIndexer for cross-file navigation
-    // Uses current working directory as project root
-    if (PSIBootstrap.isInitialized) {
-        try {
-            val projectPath = System.getProperty("user.dir")
-            val indexer = ProjectIndexer.initialize(projectPath)
-
-            // Start project indexing, then library indexing
-            CoroutineScope(Dispatchers.IO).launch {
-                // First index project files
-                indexer.startIndexing().join()
-
-                // Then index library sources (Compose, stdlib, etc.)
-                indexer.indexLibrarySources()
-            }
-        } catch (e: Exception) {
-            // Continue - cross-file navigation will be limited
-        }
-    }
+    // Note: no PSI or ProjectIndexer lifecycle here. The PSI stack lives in
+    // the editor-tab plugin's bundled BossEditor now — the plugin warms it up
+    // on register and shuts it down on dispose. (Indexing user.dir at startup
+    // was also actively harmful: for a packaged app launched from Finder,
+    // user.dir is "/", so the indexer walked the entire disk at 100% CPU.)
 
     // Start global log capture from app startup
     GlobalLogCapture.start()
@@ -328,6 +329,9 @@ fun main(args: Array<String>) {
     )
     logger.debug(LogCategory.SYSTEM, "API key availability", apiKeyStatus.mapValues { if (it.value) "set" else "not set" })
 
+    // Apply any engine install staged from Settings before validating/creating the engine
+    ChromiumAutoDownloader.promotePendingInstall()
+
     // Check if Chromium needs to be downloaded (for debug/dev builds)
     val chromiumNeedsDownload = !ChromiumAutoDownloader.isChromiumInstalled()
     if (chromiumNeedsDownload) {
@@ -340,6 +344,10 @@ fun main(args: Array<String>) {
     if (!chromiumNeedsDownload) {
         WindowManager.createNewWindow()
     }
+
+    logger.info(LogCategory.SYSTEM, "Pre-UI startup complete", mapOf(
+        "elapsedMs" to (System.currentTimeMillis() - startupBeganMs).toString()
+    ))
 
     application {
         // Provide a custom WindowExceptionHandlerFactory that intercepts plugin crashes
@@ -389,6 +397,15 @@ fun main(args: Array<String>) {
                 width = 500.dp,
                 height = 220.dp
             )
+
+            // The error state adds a failure message plus Retry/Exit buttons; grow the
+            // window so they aren't clipped by the fixed 220dp height.
+            LaunchedEffect(downloadProgress.error != null) {
+                downloadWindowState.size = DpSize(
+                    500.dp,
+                    if (downloadProgress.error != null) 360.dp else 220.dp
+                )
+            }
 
             Window(
                 onCloseRequest = { exitApplication() },

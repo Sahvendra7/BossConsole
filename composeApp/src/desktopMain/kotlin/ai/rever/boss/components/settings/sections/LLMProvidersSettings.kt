@@ -4,6 +4,8 @@ import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkContentBackground
+import BossDarkError
+import BossDarkSuccess
 import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
@@ -28,7 +30,6 @@ import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontFamily
@@ -142,7 +143,7 @@ fun LLMProvidersSettings() {
                                         Icons.Outlined.CheckCircle,
                                         contentDescription = "API Key Set",
                                         modifier = Modifier.size(14.dp),
-                                        tint = Color(0xFF4CAF50)
+                                        tint = BossDarkSuccess
                                     )
                                 }
                                 Icon(
@@ -166,7 +167,7 @@ fun LLMProvidersSettings() {
                                             },
                                             trailingIcon = if (apiKeys[provider]?.isNotBlank() == true)
                                                 Icons.Outlined.CheckCircle else null,
-                                            trailingIconColor = Color(0xFF4CAF50),
+                                            trailingIconColor = BossDarkSuccess,
                                             onClick = {
                                                 selectedProvider = provider
                                                 // Update selected model to first available for this provider
@@ -212,8 +213,8 @@ fun LLMProvidersSettings() {
                                 if (!envKey.isNullOrBlank()) {
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Card(
-                                        backgroundColor = Color(0xFF4CAF50).copy(alpha = 0.1f),
-                                        contentColor = Color(0xFF4CAF50),
+                                        backgroundColor = BossDarkSuccess.copy(alpha = 0.1f),
+                                        contentColor = BossDarkSuccess,
                                         shape = RoundedCornerShape(4.dp),
                                         elevation = 0.dp
                                     ) {
@@ -413,7 +414,7 @@ fun LLMProvidersSettings() {
                         Text(
                             text = error,
                             fontSize = 12.sp,
-                            color = Color(0xFFFF5252)
+                            color = BossDarkError
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(
@@ -682,7 +683,7 @@ fun LLMProvidersSettings() {
         ) {
             Surface(
                 modifier = Modifier.padding(top = 16.dp),
-                color = if (message.contains("Error")) Color(0xFFF44336) else BossDarkAccent,
+                color = if (message.contains("Error")) BossDarkError else BossDarkAccent,
                 shape = RoundedCornerShape(6.dp),
                 elevation = 4.dp
             ) {

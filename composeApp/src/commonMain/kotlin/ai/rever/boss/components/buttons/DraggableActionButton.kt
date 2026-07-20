@@ -1,6 +1,8 @@
 package ai.rever.boss.components.buttons
 
 import ai.rever.boss.components.model.BossDraggableComponent
+import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.components.sidebar.rememberSidebarSettingsMenuItems
 import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.opposite
 import ai.rever.boss.plugin.api.SidebarItem
@@ -35,6 +37,9 @@ fun BossDraggableComponent.DraggableActionButton(
 
     var componentPositionInWindow by remember { mutableStateOf<Offset?>(null) }
     var pendingDragStartOffset by remember { mutableStateOf<Offset?>(null) }
+
+    // Right-click (long-press on touch) → "Sidebar settings"
+    val settingsMenuItems = rememberSidebarSettingsMenuItems()
 
     // Log recomposition state
 
@@ -77,6 +82,7 @@ fun BossDraggableComponent.DraggableActionButton(
             }
             .size(40.dp)
             .alpha(if (isBeingDragged) 0f else 1f)
+            .contextMenu(items = settingsMenuItems)
             .pointerInput(Unit) { // Keep Unit key
                 detectDragGesturesAfterLongPress(
                     onDragStart = { touchOffset ->
@@ -107,9 +113,6 @@ fun BossDraggableComponent.DraggableActionButton(
                 )
             }
     ) {
-        item.onClick?.invoke() ?:
-        run {
-            if (draggingItem == null) item.onClick()
-        }
+        handleSidebarItemClick(item)
     }
 }

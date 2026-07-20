@@ -116,8 +116,10 @@ import ai.rever.boss.plugin.sandbox.notification.BossPluginNotificationService
 import ai.rever.boss.plugin.sandbox.notification.PluginSandboxNotificationListener
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.window.WindowGitState
+import ai.rever.boss.plugin.loader.PluginLoadException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
@@ -172,6 +174,17 @@ class DefaultPlugin(
         private var persistedPluginsLoaded = false
 
         /**
+         * The in-flight persisted-plugin load, joined by [loadExternalPlugins]
+         * so the directory scan runs strictly after it. Global (companion) to
+         * match [persistedPluginsLoaded]: the persisted load runs ONCE, into
+         * the first window's manager — a later window's scan still joins it
+         * (its own manager starts empty; populating secondary-window managers
+         * from persistence is a pre-existing open question, not changed here).
+         */
+        @Volatile
+        private var persistedPluginsLoadJob: Job? = null
+
+        /**
          * Load persisted plugins. This is called automatically when DynamicPluginManager is first accessed.
          * Platform-specific implementation should set this callback.
          */
@@ -208,6 +221,14 @@ class DefaultPlugin(
      * Register a plugin API for other plugins to consume.
      * The API is registered under all interfaces it implements.
      */
+    /**
+     * Bumped whenever a plugin API registers. Compose UI that gates on
+     * [getPluginAPI] availability observes this to self-heal once the
+     * (asynchronously loading) plugin registers its API.
+     */
+    private val _apiRegistryVersion = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val apiRegistryVersion: StateFlow<Int> get() = _apiRegistryVersion
+
     override fun registerPluginAPI(api: Any) {
         // Register under all interfaces implemented by the API
         api::class.java.interfaces.forEach { iface ->
@@ -217,6 +238,10 @@ class DefaultPlugin(
                 "implementation" to api::class.java.name
             ))
         }
+        // Registration happens asynchronously during plugin startup; bump the
+        // observable version so Compose readers (EditorAPIAccess.rememberProvider)
+        // re-check availability instead of staying on their "not loaded" branch.
+        _apiRegistryVersion.value += 1
 
         // Also register under the concrete class for direct lookups
         apiRegistry[api::class.java] = api
@@ -323,10 +348,12 @@ class DefaultPlugin(
             outOfProcessSpawner = oopSpawner,
         )
 
-        // Load persisted plugins on first access (only once globally)
+        // Load persisted plugins on first access (only once globally).
+        // The Job is kept so loadExternalPlugins can sequence after it —
+        // the two passes cover overlapping jar sets and must not race.
         if (!persistedPluginsLoaded) {
             persistedPluginsLoaded = true
-            pluginScope.launch {
+            persistedPluginsLoadJob = pluginScope.launch {
                 loadPersistedPluginsInternal(manager)
             }
         }
@@ -447,6 +474,77 @@ class DefaultPlugin(
         logger.debug(LogCategory.SYSTEM, "Search provider unregistered", mapOf(
             "providerId" to providerId
         ))
+    }
+
+    // ============================================================
+    // MCP TOOL PROVIDER REGISTRATION
+    // Plugins contribute tools to the `boss` MCP server; the terminal-tab
+    // plugin bridges McpToolRegistryImpl onto the live MCP server.
+    // ============================================================
+
+    override fun registerMcpToolProvider(provider: ai.rever.boss.plugin.api.McpToolProvider) {
+        ai.rever.boss.mcp.McpToolRegistryImpl.registerProvider(provider)
+        logger.debug(LogCategory.SYSTEM, "MCP tool provider registered", mapOf(
+            "providerId" to provider.providerId
+        ))
+    }
+
+    override fun unregisterMcpToolProvider(providerId: String) {
+        ai.rever.boss.mcp.McpToolRegistryImpl.unregisterProvider(providerId)
+        logger.debug(LogCategory.SYSTEM, "MCP tool provider unregistered", mapOf(
+            "providerId" to providerId
+        ))
+    }
+
+    override val mcpToolRegistry: ai.rever.boss.plugin.api.McpToolRegistry
+        get() = ai.rever.boss.mcp.McpToolRegistryImpl
+
+    // ============================================================
+    // UI EXTENSION REGISTRIES
+    // Panel top-bar menus, settings pages, deep-link actions, global
+    // shortcuts, status-bar widgets. Backed by the process-wide
+    // registries in ai.rever.boss.components.plugin.registries;
+    // TrackingPluginContext auto-unregisters on disable/unload.
+    // ============================================================
+
+    override fun registerPanelMenuContribution(contribution: ai.rever.boss.plugin.api.PanelMenuContribution) {
+        ai.rever.boss.components.plugin.registries.PanelMenuRegistryImpl.register(contribution)
+    }
+
+    override fun unregisterPanelMenuContribution(contributionId: String) {
+        ai.rever.boss.components.plugin.registries.PanelMenuRegistryImpl.unregister(contributionId)
+    }
+
+    override fun registerSettingsPage(provider: ai.rever.boss.plugin.api.SettingsPageProvider) {
+        ai.rever.boss.components.plugin.registries.SettingsPageRegistryImpl.register(provider)
+    }
+
+    override fun unregisterSettingsPage(pageId: String) {
+        ai.rever.boss.components.plugin.registries.SettingsPageRegistryImpl.unregister(pageId)
+    }
+
+    override fun registerDeepLinkActionHandler(handler: ai.rever.boss.plugin.api.DeepLinkActionHandler) {
+        ai.rever.boss.components.plugin.registries.DeepLinkActionRegistryImpl.register(handler)
+    }
+
+    override fun unregisterDeepLinkActionHandler(handlerId: String) {
+        ai.rever.boss.components.plugin.registries.DeepLinkActionRegistryImpl.unregister(handlerId)
+    }
+
+    override fun registerShortcutActionProvider(provider: ai.rever.boss.plugin.api.ShortcutActionProvider) {
+        ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl.register(provider)
+    }
+
+    override fun unregisterShortcutActionProvider(providerId: String) {
+        ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl.unregister(providerId)
+    }
+
+    override fun registerStatusBarItem(provider: ai.rever.boss.plugin.api.StatusBarItemProvider) {
+        ai.rever.boss.components.plugin.registries.StatusBarRegistryImpl.register(provider)
+    }
+
+    override fun unregisterStatusBarItem(itemId: String) {
+        ai.rever.boss.components.plugin.registries.StatusBarRegistryImpl.unregister(itemId)
     }
 
     // Split view operations for plugins that need tab/panel operations
@@ -835,6 +933,31 @@ class DefaultPlugin(
     }
 
     /**
+     * The in-flight external-plugins directory scan launched from init via
+     * [loadExternalPlugins]; null when the scan was skipped (no plugin dir).
+     * Joined by [awaitInitialPluginLoad].
+     */
+    @Volatile
+    private var externalPluginsScanJob: Job? = null
+
+    /**
+     * Suspends until startup plugin loading has finished: the persisted-plugins
+     * pass and the external directory scan (which itself sequences after the
+     * persisted pass). Both are launched asynchronously from init, so an early
+     * read of [DynamicPluginManager.getInstalledPlugins] sees an empty registry
+     * on every startup — callers that treat "no plugins installed" as meaningful
+     * (e.g. the Toolbox setup wizard) must await this first.
+     */
+    suspend fun awaitInitialPluginLoad() {
+        // Force the lazy manager so the persisted load is guaranteed to have been
+        // kicked off before we join — keeps this method correct even if init's own
+        // eager touch of dynamicPluginManager is ever refactored away.
+        dynamicPluginManager
+        persistedPluginsLoadJob?.join()
+        externalPluginsScanJob?.join()
+    }
+
+    /**
      * Load external plugins from the local plugins directory (~/.boss/plugins/).
      *
      * This scans for JAR files and installs them via DynamicPluginManager.
@@ -849,33 +972,53 @@ class DefaultPlugin(
             return
         }
 
-        val jarFiles = pluginDir.listFiles { file ->
-            file.isFile && file.extension == "jar"
-                    // Skip microkernel runtime — it's a classpath dependency for OOP plugins, not a loadable plugin
-                    && !file.name.startsWith(MicrokernelRuntime.ARTIFACT_PREFIX)
-        } ?: emptyArray()
+        // Scan asynchronously, but strictly AFTER the persisted pass: the two
+        // passes cover overlapping jar sets, and racing them made whichever
+        // pass lost log "Plugin already loaded" as a failure for most plugins
+        // every startup — and let this scan force-load (enabled=true) plugins
+        // whose persisted entry said enabled=false.
+        externalPluginsScanJob = pluginScope.launch {
+            val manager = dynamicPluginManager // first access starts the persisted load
+            persistedPluginsLoadJob?.join()
 
-        if (jarFiles.isEmpty()) {
-            logger.debug(LogCategory.SYSTEM, "No external plugins found", mapOf(
+            // List the directory only NOW: the background system-plugin
+            // updater can replace jars while startup is in flight — a listing
+            // captured at init would try already-deleted files and never see
+            // freshly downloaded ones.
+            val jarFiles = pluginDir.listFiles { file ->
+                file.isFile && file.extension == "jar"
+                        // Skip microkernel runtime — it's a classpath dependency for OOP plugins, not a loadable plugin
+                        && !file.name.startsWith(MicrokernelRuntime.ARTIFACT_PREFIX)
+            } ?: emptyArray()
+
+            if (jarFiles.isEmpty()) {
+                logger.debug(LogCategory.SYSTEM, "No external plugins found", mapOf(
+                    "path" to pluginDir.absolutePath
+                ))
+                return@launch
+            }
+
+            logger.info(LogCategory.SYSTEM, "Loading external plugins", mapOf(
+                "count" to jarFiles.size,
                 "path" to pluginDir.absolutePath
             ))
-            return
-        }
 
-        logger.info(LogCategory.SYSTEM, "Loading external plugins", mapOf(
-            "count" to jarFiles.size,
-            "path" to pluginDir.absolutePath
-        ))
+            // The persisted pass is authoritative for every jar it got into
+            // pluginStates — loaded ones and binary-incompatibility rejections
+            // (tracked as DISABLED); don't retry either. Other load failures
+            // don't land in pluginStates, so the scan may retry those and
+            // re-log the real error. This scan otherwise only picks up jars
+            // dropped into the directory manually.
+            val trackedJarPaths = manager.pluginStates.value.values.map { it.jarPath }.toSet()
 
-        // Load each plugin asynchronously
-        pluginScope.launch {
             for (jarFile in jarFiles) {
+                if (jarFile.absolutePath in trackedJarPaths) continue
                 try {
                     logger.info(LogCategory.SYSTEM, "Installing external plugin", mapOf(
                         "file" to jarFile.name
                     ))
 
-                    val result = dynamicPluginManager.installPlugin(jarFile.absolutePath)
+                    val result = manager.installPlugin(jarFile.absolutePath)
 
                     if (result.isSuccess) {
                         val info = result.getOrThrow()
@@ -883,6 +1026,12 @@ class DefaultPlugin(
                             "pluginId" to info.manifest.pluginId,
                             "version" to info.manifest.version,
                             "displayName" to info.manifest.displayName
+                        ))
+                    } else if (result.exceptionOrNull()?.message?.startsWith(PluginLoadException.ALREADY_LOADED_PREFIX) == true) {
+                        // A second jar for a plugin that's already running — a
+                        // stale old version left in the directory, not a failure.
+                        logger.info(LogCategory.SYSTEM, "Skipping duplicate jar for already-loaded plugin", mapOf(
+                            "file" to jarFile.name
                         ))
                     } else {
                         logger.error(LogCategory.SYSTEM, "Failed to load external plugin", mapOf(

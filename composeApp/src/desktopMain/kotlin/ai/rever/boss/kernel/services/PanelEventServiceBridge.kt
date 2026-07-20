@@ -18,4 +18,14 @@ class PanelEventServiceBridge(
         provider.closePanel(panelId, request.windowId)
         return Empty.getDefaultInstance()
     }
+
+    override suspend fun openPanel(request: OpenPanelRequest): Empty {
+        val panelId = PanelId(
+            panelId = request.panelId,
+            pluginId = request.pluginId,
+            defaultOrder = request.defaultOrder,
+        )
+        provider.openPanel(panelId, request.windowId)
+        return Empty.getDefaultInstance()
+    }
 }

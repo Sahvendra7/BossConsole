@@ -1,7 +1,9 @@
 package ai.rever.boss.components.wizard
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -37,7 +39,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 // Dashboard-style accent color
-private val AccentBlue = Color(0xFF4A9EFF)
+private val AccentBlue get() = BossDarkAccent
 
 /**
  * A dialog container for multi-step wizards.
@@ -177,7 +179,7 @@ private fun WizardDialogHeader(
                 text = title,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = BossDarkTextPrimary
             )
             if (subtitle != null) {
                 Text(

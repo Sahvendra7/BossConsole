@@ -1,10 +1,12 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.KeymapMatcher
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.keymap.model.TabSwitchMode
 import ai.rever.boss.utils.SystemUtils
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
@@ -46,6 +48,16 @@ object AWTKeyboardInterceptor {
     private var shiftPressCount: Int = 0
     // 500ms threshold follows accessibility guidelines for double-tap gestures (typically 500-800ms)
     private const val DOUBLE_SHIFT_THRESHOLD_MS = 500
+
+    // MRU tab-cycle tracking. Set when Ctrl+Tab starts a cycle in MRU mode, alongside the
+    // physical keycode of the modifier sustaining it; the cycle commits only when THAT
+    // modifier is released. This avoids (a) emitting a commit on every unrelated Ctrl/Cmd
+    // keyup, and (b) committing early when a different modifier is released mid-cycle.
+    // Accessed only from the AWT event dispatch thread. Process-global (like the double-
+    // shift state above): cycling in one window then focusing another without releasing the
+    // modifier is a benign mismatch — the stray release just no-ops downstream.
+    private var tabCycleActive = false
+    private var tabCycleModifierKeyCode = -1
     // Minimum time shift must be released to count as a clean release (prevents false positives from held shift)
     private const val MIN_SHIFT_RELEASE_MS = 50
 
@@ -151,6 +163,17 @@ object AWTKeyboardInterceptor {
                 lastShiftReleaseTime = 0
             }
 
+            // Commit an in-progress MRU tab cycle when its own cycling modifier is released.
+            // Only fires while a cycle is active and only for that specific modifier, so
+            // unrelated modifier keyups don't churn the UI thread or commit prematurely.
+            // The release itself is not consumed.
+            if (event.id == KeyEvent.KEY_RELEASED && tabCycleActive && event.keyCode == tabCycleModifierKeyCode) {
+                tabCycleActive = false
+                val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                findWindowId(focusedWindow)?.let { MenuActionsHandler.triggerCommitTabCycle(it) }
+                return@KeyEventDispatcher false
+            }
+
             // Only intercept KEY_PRESSED events for other shortcuts
             if (event.id != KeyEvent.KEY_PRESSED) {
                 return@KeyEventDispatcher false
@@ -181,7 +204,33 @@ object AWTKeyboardInterceptor {
                 // Dispatch the action through MenuActionsHandler
                 val handled = dispatchAction(binding.actionId, windowId)
                 if (handled) {
+                    // Begin (or continue) an MRU tab cycle: remember which modifier is
+                    // sustaining it so its release — and only its release — commits the cycle.
+                    // This arms even when the focused panel has <=1 tab (the component-side
+                    // switchTab/commit then no-op), so the interceptor may briefly believe a
+                    // cycle is active when none is — harmless, and Tab stays swallowed.
+                    if ((binding.actionId == KeymapActions.TAB_NEXT || binding.actionId == KeymapActions.TAB_PREVIOUS) &&
+                        KeymapSettingsManager.currentSettings.value.tabSwitchMode == TabSwitchMode.MRU
+                    ) {
+                        tabCycleActive = true
+                        tabCycleModifierKeyCode = cyclingModifierKeyCode(binding)
+                    }
                     // Consume the event to prevent it from reaching BossTerm
+                    event.consume()
+                    return@KeyEventDispatcher true
+                }
+            }
+
+            // Plugin-contributed GLOBAL shortcuts (PluginShortcutRegistry).
+            // Host bindings always win — this pass only runs when no host
+            // binding matched. User rebinds live in the keymap settings under
+            // the plugin actionId (matched by the pass above); a spec's
+            // defaultBinding applies only while the keymap has no entry for
+            // that actionId.
+            val pluginActionId = findMatchingPluginDefault(event)
+            if (pluginActionId != null) {
+                val handled = PluginShortcutRegistryImpl.dispatch(pluginActionId, windowId)
+                if (handled) {
                     event.consume()
                     return@KeyEventDispatcher true
                 }
@@ -219,6 +268,20 @@ object AWTKeyboardInterceptor {
             current = current.owner
         }
         return null
+    }
+
+    /**
+     * The physical modifier keycode that sustains an MRU tab cycle for [binding], mirroring
+     * the platform-aware mapping in findMatchingBinding: a "Ctrl" binding is the Control key
+     * on macOS but the Meta key on Windows/Linux (and vice-versa for a "Cmd" binding).
+     */
+    private fun cyclingModifierKeyCode(binding: KeyBinding): Int {
+        val hasCmd = binding.modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
+        return if (SystemUtils.isMacOS) {
+            if (hasCmd) KeyEvent.VK_META else KeyEvent.VK_CONTROL
+        } else {
+            if (hasCmd) KeyEvent.VK_CONTROL else KeyEvent.VK_META
+        }
     }
 
     /**
@@ -309,25 +372,7 @@ object AWTKeyboardInterceptor {
             // Check if key matches
             if (!binding.key.equals(keyName, ignoreCase = true)) continue
 
-            // Check modifiers
-            val hasCmd = binding.modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
-            val hasCtrl = binding.modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) }
-            val hasShift = binding.modifiers.any { it.equals("Shift", true) }
-            val hasAlt = binding.modifiers.any { it.equals("Alt", true) || it.equals("Option", true) }
-
-            // Platform-aware modifier matching
-            val isMacOS = SystemUtils.isMacOS
-            val primaryMatch = if (hasCmd || hasCtrl) {
-                if (isMacOS) {
-                    (hasCmd && event.isMetaDown) || (hasCtrl && event.isControlDown)
-                } else {
-                    (hasCmd && event.isControlDown) || (hasCtrl && event.isMetaDown)
-                }
-            } else {
-                !event.isMetaDown && !event.isControlDown
-            }
-
-            if (primaryMatch && hasShift == event.isShiftDown && hasAlt == event.isAltDown) {
+            if (chordMatchesEvent(binding.modifiers, event)) {
                 // Skip bindings whose context doesn't match
                 if (!isContextEligible(binding.context, currentContext)) continue
 
@@ -347,6 +392,56 @@ object AWTKeyboardInterceptor {
         }
 
         return bestMatch
+    }
+
+    /**
+     * Match the event against plugin shortcut DEFAULT bindings. Only specs
+     * whose actionId has no entry in the keymap settings participate — a user
+     * rebind (or explicit unbind) always supersedes the plugin default. Note
+     * the dispatcher's early modifier gate applies: plugin defaults must
+     * include Cmd/Ctrl/Alt to be reachable.
+     */
+    private fun findMatchingPluginDefault(event: KeyEvent): String? {
+        val pluginShortcuts = PluginShortcutRegistryImpl.shortcuts.value
+        if (pluginShortcuts.isEmpty()) return null
+
+        val keyName = getKeyName(event.keyCode)
+        val userShortcuts = KeymapSettingsManager.currentSettings.value.shortcuts
+
+        for (registered in pluginShortcuts) {
+            val spec = registered.spec
+            val default = spec.defaultBinding ?: continue
+            if (userShortcuts.containsKey(spec.actionId)) continue
+            if (!default.key.equals(keyName, ignoreCase = true)) continue
+            if (chordMatchesEvent(default.modifiers, event)) {
+                return spec.actionId
+            }
+        }
+        return null
+    }
+
+    /**
+     * Platform-aware modifier match shared by the host-binding pass and the
+     * plugin-default pass, so both agree on Cmd/Ctrl handling (on non-mac,
+     * "Cmd" maps to the Control key). [modifiers] is the binding's modifier
+     * name list; the caller has already matched the key.
+     */
+    private fun chordMatchesEvent(modifiers: Collection<String>, event: KeyEvent): Boolean {
+        val hasCmd = modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
+        val hasCtrl = modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) }
+        val hasShift = modifiers.any { it.equals("Shift", true) }
+        val hasAlt = modifiers.any { it.equals("Alt", true) || it.equals("Option", true) }
+
+        val primaryMatch = if (hasCmd || hasCtrl) {
+            if (SystemUtils.isMacOS) {
+                (hasCmd && event.isMetaDown) || (hasCtrl && event.isControlDown)
+            } else {
+                (hasCmd && event.isControlDown) || (hasCtrl && event.isMetaDown)
+            }
+        } else {
+            !event.isMetaDown && !event.isControlDown
+        }
+        return primaryMatch && hasShift == event.isShiftDown && hasAlt == event.isAltDown
     }
 
     /**
@@ -445,6 +540,14 @@ object AWTKeyboardInterceptor {
             }
             KeymapActions.TAB_CLOSE -> {
                 MenuActionsHandler.triggerCloseTab(windowId)
+                true
+            }
+            KeymapActions.TAB_NEXT -> {
+                MenuActionsHandler.triggerNextTab(windowId)
+                true
+            }
+            KeymapActions.TAB_PREVIOUS -> {
+                MenuActionsHandler.triggerPreviousTab(windowId)
                 true
             }
 
@@ -546,7 +649,16 @@ object AWTKeyboardInterceptor {
                 true
             }
 
-            else -> false
+            else -> {
+                // Plugin-contributed actions ("plugin.<pluginId>.<name>") —
+                // reached when the user rebound a plugin shortcut (the binding
+                // then lives in the keymap settings and matches the main pass).
+                if (actionId.startsWith(PluginShortcutRegistryImpl.ACTION_ID_PREFIX)) {
+                    PluginShortcutRegistryImpl.dispatch(actionId, windowId)
+                } else {
+                    false
+                }
+            }
         }
     }
 }

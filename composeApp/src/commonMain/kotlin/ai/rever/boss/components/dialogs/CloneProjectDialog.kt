@@ -3,6 +3,8 @@ package ai.rever.boss.components.dialogs
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkError
+import BossDarkSuccess
 import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
@@ -254,8 +256,8 @@ private fun ConfigurationStep(
             colors = TextFieldDefaults.outlinedTextFieldColors(
                 textColor = BossDarkTextPrimary,
                 cursorColor = BossDarkAccent,
-                focusedBorderColor = if (urlError != null) Color(0xFFE04040) else BossDarkAccent,
-                unfocusedBorderColor = if (urlError != null) Color(0xFFE04040) else BossDarkBorder,
+                focusedBorderColor = if (urlError != null) BossDarkError else BossDarkAccent,
+                unfocusedBorderColor = if (urlError != null) BossDarkError else BossDarkBorder,
                 backgroundColor = BossDarkSurface
             ),
             singleLine = true,
@@ -270,7 +272,7 @@ private fun ConfigurationStep(
             Text(
                 text = error,
                 fontSize = 12.sp,
-                color = Color(0xFFE04040)
+                color = BossDarkError
             )
         }
 
@@ -305,8 +307,8 @@ private fun ConfigurationStep(
             colors = TextFieldDefaults.outlinedTextFieldColors(
                 textColor = BossDarkTextPrimary,
                 cursorColor = BossDarkAccent,
-                focusedBorderColor = if (directoryExists) Color(0xFFE04040) else BossDarkAccent,
-                unfocusedBorderColor = if (directoryExists) Color(0xFFE04040) else BossDarkBorder,
+                focusedBorderColor = if (directoryExists) BossDarkError else BossDarkAccent,
+                unfocusedBorderColor = if (directoryExists) BossDarkError else BossDarkBorder,
                 backgroundColor = BossDarkSurface
             ),
             singleLine = true,
@@ -367,7 +369,7 @@ private fun ConfigurationStep(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    if (directoryExists) Color(0xFFE04040).copy(alpha = 0.1f) else BossDarkSurface,
+                    if (directoryExists) BossDarkError.copy(alpha = 0.1f) else BossDarkSurface,
                     RoundedCornerShape(4.dp)
                 )
                 .padding(12.dp)
@@ -382,7 +384,7 @@ private fun ConfigurationStep(
                 Text(
                     text = finalClonePath,
                     fontSize = 13.sp,
-                    color = if (directoryExists) Color(0xFFE04040) else BossDarkTextPrimary,
+                    color = if (directoryExists) BossDarkError else BossDarkTextPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -391,7 +393,7 @@ private fun ConfigurationStep(
                     Text(
                         text = "⚠ Directory already exists",
                         fontSize = 12.sp,
-                        color = Color(0xFFE04040),
+                        color = BossDarkError,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -536,7 +538,7 @@ private fun SuccessStep(
             imageVector = Icons.Default.CheckCircle,
             contentDescription = "Success",
             modifier = Modifier.size(48.dp),
-            tint = Color(0xFF4CAF50)
+            tint = BossDarkSuccess
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -611,7 +613,7 @@ private fun ErrorStep(
                     imageVector = Icons.Default.Error,
                     contentDescription = "Error",
                     modifier = Modifier.size(20.dp),
-                    tint = Color(0xFFE04040)
+                    tint = BossDarkError
                 )
                 Text(
                     text = "Clone Failed",

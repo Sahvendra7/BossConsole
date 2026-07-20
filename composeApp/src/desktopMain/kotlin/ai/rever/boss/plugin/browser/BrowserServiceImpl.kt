@@ -116,13 +116,17 @@ object BrowserServiceImpl : BrowserService {
 
     override fun isAvailable(): Boolean {
         return try {
+            // Deliberately does NOT touch FluckEngine.engine: that getter performs
+            // the full synchronous Chromium boot, and this method gets called from
+            // browser-tab composition (the UI thread). A not-yet-initialized (or
+            // closed-and-recreatable) engine reports available — initialization
+            // happens lazily inside createBrowser, whose failure paths callers
+            // already surface with retry UI.
             val initErr = FluckEngine.initError
-            val engineClosed = FluckEngine.engine.isClosed
-            val available = initErr == null && !engineClosed
+            val available = initErr == null
             if (!available) {
                 logger.warn(LogCategory.BROWSER, "BrowserService not available", mapOf(
-                    "initError" to (initErr?.toString() ?: "none"),
-                    "engineClosed" to engineClosed.toString()
+                    "initError" to (initErr?.toString() ?: "none")
                 ))
             }
             available
