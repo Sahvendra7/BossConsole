@@ -5,7 +5,7 @@
 //   apply(from = rootProject.file("gradle/plugin-publish.gradle.kts"))
 //
 // Then run:
-//   ./gradlew :plugins:plugin-my-plugin:publishPlugin -PpluginStoreToken=eyJ...
+//   ./gradlew :plugin-platform:plugin-my-plugin:publishPlugin -PpluginStoreToken=eyJ...
 
 // Find the JAR task (varies by multiplatform setup)
 val jarTask = tasks.findByName("desktopJar") 

@@ -36,17 +36,30 @@ kotlin {
                 implementation(libs.kotlinx.serialization.json)
 
                 // Minimal plugin-api-core
-                api(projects.plugins.pluginApiCore)
-                implementation(projects.plugins.pluginRepository)
-                implementation(projects.plugins.pluginDependency)
+                api(projects.pluginPlatform.pluginApiCore)
 
                 // Logging
-                implementation(projects.plugins.pluginLogging)
+                implementation(projects.pluginPlatform.pluginLogging)
+
+                // Path utilities (BossDirectories)
+                implementation(projects.pluginPlatform.pluginPathUtils)
+
+                // Ktor client for remote repositories
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json)
+
+                // Supabase Realtime for live updates
+                implementation(libs.supabase.realtime)
             }
         }
 
         val desktopMain by getting {
             dependencies {
+                // Ktor engine
+                implementation(libs.ktor.client.cio)
+                // Trust anchor + signature verifier (load-time verification lives in plugin-loader)
+                implementation(projects.pluginPlatform.pluginLoader)
             }
         }
 

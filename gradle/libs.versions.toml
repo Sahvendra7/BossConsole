@@ -44,7 +44,7 @@ intellij-platform = "243.21565.199"
 # The plugin API contract (risa-labs-inc/boss-plugin-api releases). This pin
 # is the single source of truth for which API level the host implements —
 # bump it when consuming a new SDK release. Distribution is store/GitHub-
-# releases ONLY: plugins/plugin-api-core downloads this release's jar and
+# releases ONLY: plugin-platform/plugin-api-core downloads this release's jar and
 # filters the api package locally (no Maven registry involved).
 boss-plugin-api = "1.0.66"
 

@@ -107,7 +107,7 @@ kotlin {
         // source mirror. This module retains a FEW host-only sources under
         // src/ (the terminal/codeeditor/fluck tab types), which import the
         // contract classes from that jar. The ~20 host modules keep depending
-        // on :plugins:plugin-api-core unchanged. Bump the pin in
+        // on :plugin-platform:plugin-api-core unchanged. Bump the pin in
         // libs.versions.toml (boss-plugin-api) to adopt a new API level.
         val commonMain by getting {
             dependencies {
@@ -135,17 +135,17 @@ kotlin {
                 api(libs.kotlinx.serialization.json)
 
                 // Type modules for provider interfaces
-                api(projects.plugins.pluginBookmarkTypes)
-                api(projects.plugins.pluginWorkspaceTypes)
+                api(projects.pluginPlatform.pluginBookmarkTypes)
+                api(projects.pluginPlatform.pluginWorkspaceTypes)
 
                 // Browser service API for plugins needing browser capabilities
-                api(projects.plugins.pluginApiBrowser)
+                api(projects.pluginPlatform.pluginApiBrowser)
 
                 // UI core for context menu data types
-                api(projects.plugins.pluginUiCore)
+                api(projects.pluginPlatform.pluginUiCore)
 
                 // BossLogger/LogCategory — referenced by the artifact's classes
-                api(projects.plugins.pluginLogging)
+                api(projects.pluginPlatform.pluginLogging)
             }
         }
 

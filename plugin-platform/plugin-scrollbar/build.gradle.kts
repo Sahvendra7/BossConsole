@@ -29,18 +29,18 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                implementation(project(":plugins:plugin-ui-core"))
+                implementation(project(":plugin-platform:plugin-ui-core"))
                 implementation(libs.compose.mp.runtime)
                 implementation(libs.compose.mp.ui)
                 implementation(libs.compose.mp.foundation)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
-                implementation(project(":plugins:plugin-path-utils"))
+                implementation(project(":plugin-platform:plugin-path-utils"))
             }
         }
         val desktopMain by getting {
             dependencies {
-                implementation(project(":plugins:plugin-logging"))
+                implementation(project(":plugin-platform:plugin-logging"))
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
             }

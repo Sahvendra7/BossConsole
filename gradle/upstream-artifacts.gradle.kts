@@ -69,8 +69,8 @@ tasks.register<Copy>("assembleUpstreamJars") {
     dependsOn("verifyIpcVersionConsistency")
     dependsOn(":boss-ipc:jar")
     dependsOn(":boss-ui-sdk:jar")
-    dependsOn(":plugins:plugin-api-ipc:desktopJar")
-    dependsOn(":plugins:plugin-api-core:desktopJar")
+    dependsOn(":plugin-platform:plugin-api-ipc:desktopJar")
+    dependsOn(":plugin-platform:plugin-api-core:desktopJar")
 
     val destDir = outputDir
     into(destDir)
@@ -89,13 +89,13 @@ tasks.register<Copy>("assembleUpstreamJars") {
     // plugin-api-ipc desktopJar → plugin-api-ipc-<ver>-desktop.jar by default;
     // rename to drop the platform classifier so the runtime repo can fetch it
     // by a predictable name.
-    from(project(":plugins:plugin-api-ipc").layout.buildDirectory.dir("libs")) {
+    from(project(":plugin-platform:plugin-api-ipc").layout.buildDirectory.dir("libs")) {
         include("plugin-api-ipc-desktop-*.jar")
         exclude("*-sources.jar", "*-javadoc.jar")
         rename("""plugin-api-ipc-desktop-(.+)\.jar""", "plugin-api-ipc-$1.jar")
     }
     // plugin-api-core desktopJar → same rename trick.
-    from(project(":plugins:plugin-api-core").layout.buildDirectory.dir("libs")) {
+    from(project(":plugin-platform:plugin-api-core").layout.buildDirectory.dir("libs")) {
         include("plugin-api-core-desktop-*.jar")
         exclude("*-sources.jar", "*-javadoc.jar")
         rename("""plugin-api-core-desktop-(.+)\.jar""", "plugin-api-core-$1.jar")

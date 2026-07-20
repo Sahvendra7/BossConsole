@@ -18,7 +18,7 @@ import java.security.MessageDigest
  *
  * Usage:
  * ```
- * ./gradlew :plugins:plugin-my-plugin:publishPlugin \
+ * ./gradlew :plugin-platform:plugin-my-plugin:publishPlugin \
  *   -PpluginStoreToken=eyJ... \
  *   -PauthorName="My Company"
  * ```

@@ -46,8 +46,10 @@ For a bottom split use `panel: horizontal_split`. Reuse a pane across calls by p
   only the directory lives under `modules/`; excluded on Windows-ARM64 (no
   protoc binary). `boss-ipc`/`boss-ui-sdk` publish as upstream jars consumed by
   the standalone `boss-microkernel-runtime` repo.
-- **`plugins/`** - Host-side plugin infrastructure modules (`plugin-loader`,
-  `plugin-repository`, `plugin-api-core`, …)
+- **`plugin-platform/`** - Host-side plugin platform / SDK modules
+  (`plugin-loader`, `plugin-repository`, `plugin-api-core`, …). This is the
+  infrastructure that loads and runs plugins, **not** the plugins themselves —
+  those live in the separate `boss_plugins` repo.
 - **`supabase/`** - Database migrations and Edge Functions
 
 ### External Dependencies

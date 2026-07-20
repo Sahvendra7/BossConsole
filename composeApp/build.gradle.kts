@@ -463,7 +463,7 @@ repositories {
     maven("https://cache-redirector.jetbrains.com/intellij-dependencies")
     // NOTE: the boss-plugin-api contract is deliberately NOT resolved from any
     // Maven registry — its distribution is store/GitHub-releases only. See
-    // plugins/plugin-api-core/build.gradle.kts (fetchApiPluginJar).
+    // plugin-platform/plugin-api-core/build.gradle.kts (fetchApiPluginJar).
 }
 
 jxbrowser {
@@ -588,25 +588,25 @@ kotlin {
             // Same arrangement as BossTerm/terminal-tab (see the note below).
             // Minimal plugin-api-core (PluginContext, DynamicPlugin, PluginManifest)
             // Everything else comes from boss-plugin-api bundled plugin
-            implementation(projects.plugins.pluginApiCore)
-            implementation(projects.plugins.pluginUiCore)
-            implementation(projects.plugins.pluginLogging)
-            implementation(projects.plugins.pluginScrollbar)
-            implementation(projects.plugins.pluginEvents)
-            implementation(projects.plugins.pluginSearch)
-            implementation(projects.plugins.pluginWindow)
-            implementation(projects.plugins.pluginGitTypes)
-            implementation(projects.plugins.pluginRunTypes)
-            implementation(projects.plugins.pluginWorkspaceTypes)
-            implementation(projects.plugins.pluginBookmarkTypes)
-            implementation(projects.plugins.pluginIcons)
-            implementation(projects.plugins.pluginPathUtils)
-            implementation(projects.plugins.pluginSandbox)
+            implementation(projects.pluginPlatform.pluginApiCore)
+            implementation(projects.pluginPlatform.pluginUiCore)
+            implementation(projects.pluginPlatform.pluginLogging)
+            implementation(projects.pluginPlatform.pluginScrollbar)
+            implementation(projects.pluginPlatform.pluginEvents)
+            implementation(projects.pluginPlatform.pluginSearch)
+            implementation(projects.pluginPlatform.pluginWindow)
+            implementation(projects.pluginPlatform.pluginGitTypes)
+            implementation(projects.pluginPlatform.pluginRunTypes)
+            implementation(projects.pluginPlatform.pluginWorkspaceTypes)
+            implementation(projects.pluginPlatform.pluginBookmarkTypes)
+            implementation(projects.pluginPlatform.pluginIcons)
+            implementation(projects.pluginPlatform.pluginPathUtils)
+            implementation(projects.pluginPlatform.pluginSandbox)
 
             // Plugin management infrastructure
-            implementation(projects.plugins.pluginLoader)
-            implementation(projects.plugins.pluginRepository)
-            implementation(projects.plugins.pluginUpdater)
+            implementation(projects.pluginPlatform.pluginLoader)
+            implementation(projects.pluginPlatform.pluginRepository)
+            implementation(projects.pluginPlatform.pluginUpdater)
             // Plugin panel manager is now dynamic (loaded from boss_plugin as plugin-manager)
 
 
@@ -697,7 +697,7 @@ kotlin {
             implementation("org.junit.jupiter:junit-jupiter:6.1.0")
             // Test-only: lets the suite assert the IPC proxy's skip-list stays
             // equal to the in-process scanner's (no production coupling).
-            implementation(projects.plugins.pluginApiIpc)
+            implementation(projects.pluginPlatform.pluginApiIpc)
         }
     }
 }

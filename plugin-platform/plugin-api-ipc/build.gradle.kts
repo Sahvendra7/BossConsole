@@ -30,7 +30,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 // Plugin API (interfaces we're implementing proxies for)
-                api(projects.plugins.pluginApiCore)
+                api(projects.pluginPlatform.pluginApiCore)
 
                 // Coroutines
                 api(libs.kotlinx.coroutines.core)

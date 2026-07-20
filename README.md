@@ -190,7 +190,7 @@ boss --help                    # Show help
 - [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) - Detailed shortcuts reference
 - [Threading Best Practices](docs/THREADING.md) - Threading patterns and pitfalls
 - [RBAC Guide](docs/RBAC_GUIDE.md) - Role-based access control
-- [Plugin System](plugins/README.md) - Modular plugin architecture
+- [Plugin System](plugin-platform/README.md) - Modular plugin architecture
 
 ---
 

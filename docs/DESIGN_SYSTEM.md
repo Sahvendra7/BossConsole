@@ -215,7 +215,7 @@ raw-palette names `chalk` / `mist` / `muted`.
 
 | Concern | Location |
 |---------|----------|
-| Host tokens (source of truth) | `plugins/plugin-ui-core/src/commonMain/kotlin/ai/rever/boss/plugin/ui/BossDesignSystem.kt` |
+| Host tokens (source of truth) | `plugin-platform/plugin-ui-core/src/commonMain/kotlin/ai/rever/boss/plugin/ui/BossDesignSystem.kt` |
 | Legacy color object (delegates to `BossPalette`) | `…/ui/BossColors.kt` |
 | `BossTheme()` composable (provides token locals) | `…/ui/BossTheme.kt` |
 | composeApp re-exports + MesloLGS font injection | `composeApp/.../components/misc/BossTheme.kt` |

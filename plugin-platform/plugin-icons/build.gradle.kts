@@ -29,10 +29,10 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 // Path utilities (shared with bosseditor)
-                implementation(projects.plugins.pluginPathUtils)
+                implementation(projects.pluginPlatform.pluginPathUtils)
 
                 // UI core for colors (BossDarkTextSecondary)
-                implementation(projects.plugins.pluginUiCore)
+                implementation(projects.pluginPlatform.pluginUiCore)
 
                 // Compose dependencies
                 implementation(libs.compose.mp.runtime)

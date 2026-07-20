@@ -2,8 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("multiplatform")
-    id("org.jetbrains.compose")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.kotlinSerialization)
 }
 
 group = "ai.rever.boss.plugin"
@@ -30,31 +29,24 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // Compose dependencies
-                implementation(libs.compose.mp.runtime)
-                implementation(libs.compose.mp.ui)
-                implementation(libs.compose.mp.foundation)
-                implementation(compose.material3)
-                implementation(compose.materialIconsExtended)
-
-                // Decompose for ComponentContext
-                implementation(libs.decompose)
-                implementation(libs.essenty.lifecycle)
-
                 // Coroutines
                 implementation(libs.kotlinx.coroutines.core)
 
+                // Serialization
+                implementation(libs.kotlinx.serialization.json)
+
                 // Minimal plugin-api-core
-                api(projects.plugins.pluginApiCore)
+                api(projects.pluginPlatform.pluginApiCore)
+                implementation(projects.pluginPlatform.pluginRepository)
+                implementation(projects.pluginPlatform.pluginDependency)
 
                 // Logging
-                implementation(projects.plugins.pluginLogging)
+                implementation(projects.pluginPlatform.pluginLogging)
             }
         }
 
         val desktopMain by getting {
             dependencies {
-                implementation(compose.desktop.currentOs)
             }
         }
 

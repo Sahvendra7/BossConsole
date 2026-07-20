@@ -1,11 +1,13 @@
-# BOSS Plugins
+# BOSS Plugin Platform
 
-Modular plugin system for extending BOSS functionality.
+Host-side plugin platform (SDK + loader/runtime) that lets BOSS load and run
+plugins. This directory holds the **infrastructure**, not the plugins
+themselves — shippable plugins live in the separate `boss_plugins` repo.
 
 ## Architecture
 
 ```
-plugins/
+plugin-platform/
 ├── plugin-api/              # Core plugin interfaces and contracts
 ├── plugin-ui/               # Shared UI components (colors, themes)
 ├── plugin-scrollbar/        # Scrollbar utilities
@@ -40,7 +42,7 @@ plugins/
 
 Add to `settings.gradle.kts`:
 ```kotlin
-include(":plugins:plugin-panel-myplugin")
+include(":plugin-platform:plugin-panel-myplugin")
 ```
 
 Create `build.gradle.kts`:
@@ -55,7 +57,7 @@ kotlin {
     jvm("desktop")
     sourceSets {
         commonMain.dependencies {
-            api(projects.plugins.pluginApi)
+            api(projects.pluginPlatform.pluginApi)
             implementation(compose.runtime)
             implementation(compose.material)
         }
