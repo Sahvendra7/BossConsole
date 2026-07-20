@@ -4,9 +4,9 @@ import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectory
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectoryWithDepth as platformScanDirectoryWithDepth
-import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.revealInFileManager
 import ai.rever.boss.plugin.api.FileNodeData
 import ai.rever.boss.plugin.api.FileSystemDataProvider
 import kotlinx.coroutines.CoroutineScope
@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.io.File
-import java.io.IOException
 
 /**
  * Implementation of FileSystemDataProvider that wraps platform-specific file operations.
@@ -206,35 +205,8 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
         }
     }
 
-    override fun revealInFileManager(path: String): Result<Unit> {
-        return try {
-            val file = File(path)
-
-            when {
-                SystemUtils.isMacOS -> {
-                    // macOS: Use 'open -R' to reveal in Finder
-                    Runtime.getRuntime().exec(arrayOf("open", "-R", file.absolutePath))
-                }
-                SystemUtils.isWindows -> {
-                    // Windows: Use 'explorer /select,' to select in Explorer
-                    Runtime.getRuntime().exec(arrayOf("explorer.exe", "/select,", file.absolutePath))
-                }
-                SystemUtils.isLinux -> {
-                    // Linux: Open parent directory (can't select specific file universally)
-                    val parentDir = file.parentFile?.absolutePath
-                        ?: return Result.failure(IllegalStateException("Cannot determine parent directory"))
-                    Runtime.getRuntime().exec(arrayOf("xdg-open", parentDir))
-                }
-                else -> {
-                    return Result.failure(UnsupportedOperationException("Unsupported operating system"))
-                }
-            }
-            Result.success(Unit)
-        } catch (e: IOException) {
-            logger.warn(LogCategory.FILE, "Failed to reveal in file manager", mapOf("path" to path), error = e)
-            Result.failure(e)
-        }
-    }
+    override fun revealInFileManager(path: String): Result<Unit> =
+        revealInFileManager(path)
 
     override fun copyToClipboard(text: String): Result<Unit> {
         return try {

@@ -8,6 +8,7 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.window.Project
@@ -128,6 +129,7 @@ private fun tabTypeIdFor(tabConfig: TabConfig): TabTypeId? = when (tabConfig.typ
     "browser" -> FluckTabType.typeId
     "terminal" -> TerminalTabType.typeId
     "editor" -> CodeEditorTabType.typeId
+    "jupyter" -> JupyterTabInfo.TYPE_ID
     else -> null
 }
 
@@ -142,7 +144,7 @@ private suspend fun applyWorkspaceNode(
             // Add tabs to current panel
             val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
             node.panel.tabs.forEach { tabConfig ->
-                createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
+                createTabFromWorkspaceConfig(tabConfig, projectPath, splitViewState)?.let { tabsComponent?.addTab(it) }
             }
         }
 
@@ -153,7 +155,7 @@ private suspend fun applyWorkspaceNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     leftNode.panel.tabs.forEach { tabConfig ->
-                        createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
+                        createTabFromWorkspaceConfig(tabConfig, projectPath, splitViewState)?.let { tabsComponent?.addTab(it) }
                     }
                 }
                 else -> {
@@ -166,7 +168,7 @@ private suspend fun applyWorkspaceNode(
             // Resolve the first tab up front; if it doesn't map to a supported tab type
             // (e.g. a legacy panel-host entry in a recovered workspace), skip the split
             // instead of creating an empty "ghost" panel via splitPanel(tabToMove = null).
-            val firstRightTabInfo = getFirstTab(node.right)?.let { createTabFromWorkspaceConfig(it, projectPath) }
+            val firstRightTabInfo = getFirstTab(node.right)?.let { createTabFromWorkspaceConfig(it, projectPath, splitViewState) }
             if (firstRightTabInfo != null) {
                 val rightPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
@@ -180,7 +182,7 @@ private suspend fun applyWorkspaceNode(
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(rightPanelId)
                         rightNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
+                            createTabFromWorkspaceConfig(tabConfig, projectPath, splitViewState)?.let { tabsComponent?.addTab(it) }
                         }
                     }
                     else -> {
@@ -198,7 +200,7 @@ private suspend fun applyWorkspaceNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     topNode.panel.tabs.forEach { tabConfig ->
-                        createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
+                        createTabFromWorkspaceConfig(tabConfig, projectPath, splitViewState)?.let { tabsComponent?.addTab(it) }
                     }
                 }
                 else -> {
@@ -210,7 +212,7 @@ private suspend fun applyWorkspaceNode(
             // Then create horizontal split for bottom side
             // Resolve the first tab up front (see the VerticalSplit note) — never create an
             // empty split panel for an unsupported first tab.
-            val firstBottomTabInfo = getFirstTab(node.bottom)?.let { createTabFromWorkspaceConfig(it, projectPath) }
+            val firstBottomTabInfo = getFirstTab(node.bottom)?.let { createTabFromWorkspaceConfig(it, projectPath, splitViewState) }
             if (firstBottomTabInfo != null) {
                 val bottomPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
@@ -224,7 +226,7 @@ private suspend fun applyWorkspaceNode(
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(bottomPanelId)
                         bottomNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
+                            createTabFromWorkspaceConfig(tabConfig, projectPath, splitViewState)?.let { tabsComponent?.addTab(it) }
                         }
                     }
                     else -> {
@@ -245,7 +247,7 @@ private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? {
     }
 }
 
-private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: String): TabInfo? {
+private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: String, splitViewState: SplitViewState): TabInfo? {
     // Resolve project path for placeholder resolution
     val resolvedProjectPath = projectPath.ifEmpty {
         System.getProperty("user.home") ?: ""
@@ -292,22 +294,38 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
                 initialCommand = initialCmd
             )
         }
-        CodeEditorTabType.typeId -> {
-            // Process file path placeholder
-            val filePath = tabConfig.filePath?.let {
-                SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
-            } ?: ""
-            val fileIconInfo = FileIcons.forFile(tabConfig.title)
-
-            EditorTabInfo(
-                id = "editor-${Random.nextLong()}",
-                typeId = CodeEditorTabType.typeId,
-                title = tabConfig.title,
-                icon = fileIconInfo.icon,
-                tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
-                filePath = filePath
-            )
+        CodeEditorTabType.typeId -> createEditorTab(tabConfig, resolvedProjectPath)
+        JupyterTabInfo.TYPE_ID -> {
+            if (splitViewState.tabRegistry.isRegistered(JupyterTabInfo.TYPE_ID)) {
+                val filePath = tabConfig.filePath?.let {
+                    SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
+                } ?: ""
+                JupyterTabInfo.create(filePath, title = tabConfig.title)
+            } else {
+                // Jupyter plugin unavailable (e.g. uninstalled since this workspace was
+                // saved): restore the notebook as an editor tab instead of letting addTab
+                // silently drop it — the same isRegistered guard as SplitViewState.openFile.
+                createEditorTab(tabConfig, resolvedProjectPath)
+            }
         }
         else -> null
     }
+}
+
+/** Build the editor tab for [tabConfig]; also the notebook fallback when the jupyter plugin is missing. */
+private fun createEditorTab(tabConfig: TabConfig, resolvedProjectPath: String): EditorTabInfo {
+    // Process file path placeholder
+    val filePath = tabConfig.filePath?.let {
+        SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
+    } ?: ""
+    val fileIconInfo = FileIcons.forFile(tabConfig.title)
+
+    return EditorTabInfo(
+        id = "editor-${Random.nextLong()}",
+        typeId = CodeEditorTabType.typeId,
+        title = tabConfig.title,
+        icon = fileIconInfo.icon,
+        tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+        filePath = filePath
+    )
 }

@@ -703,6 +703,56 @@ kotlin {
 }
 
 
+// ---------------------------------------------------------------------------
+// macOS code signing resolution
+//
+// Release builds sign with a "Developer ID Application" certificate. CI imports
+// that cert into a keychain; local dev machines usually don't have it. Rather
+// than hard-fail createDistributable with "Could not find certificate...", we
+// auto-skip signing when the resolved identity isn't in the keychain.
+//
+// Signing is disabled when DISABLE_MACOS_SIGNING=true is set, OR the resolved
+// Developer ID identity is not available in the keychain. CI (cert present)
+// still signs; local packageDistributionForCurrentOS just works unsigned.
+// ---------------------------------------------------------------------------
+val isMacOSHost: Boolean = System.getProperty("os.name").lowercase().contains("mac")
+
+val macOSDeveloperId: String = System.getenv("MACOS_DEVELOPER_ID")
+    ?: System.getenv("DEVELOPER_ID")
+    ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+
+// Is the signing identity present in the keychain? providers.exec keeps this
+// configuration-cache compatible (a cert import invalidates the entry), and the
+// provider chain keeps it LAZY: the keychain is only scanned when something
+// actually queries the signing decision (packaging/notarization tasks), never
+// on ./gradlew run|test|help. "-" is ad-hoc signing. Lambdas capture locals,
+// not script state, so they stay config-cache serializable.
+val signingIdentityAvailableProvider: Provider<Boolean> = run {
+    val devId = macOSDeveloperId
+    when {
+        !isMacOSHost -> providers.provider { false }
+        devId == "-" -> providers.provider { true }
+        else -> providers.exec {
+            commandLine("security", "find-identity", "-v", "-p", "codesigning")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.map { it.contains(devId) }
+    }
+}
+
+val macOSSigningDisabledProvider: Provider<Boolean> = run {
+    val onMac = isMacOSHost
+    val devId = macOSDeveloperId
+    val envDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+    signingIdentityAvailableProvider.map { available ->
+        val disabled = envDisabled || (onMac && !available)
+        if (onMac && disabled && !envDisabled) {
+            println("⚠️  macOS signing identity not found in keychain ('$devId') — building UNSIGNED. Import the cert or set MACOS_DEVELOPER_ID to sign.")
+        }
+        disabled
+    }
+}
+
+
 compose.desktop {
     application {
         mainClass = "ai.rever.boss.MainKt"
@@ -848,20 +898,17 @@ compose.desktop {
                 
                 // Code signing configuration
                 signing {
-                    // Enable signing by default, disable only if explicitly skipped
-                    val skipSigning = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-                    sign.set(!skipSigning)
-                    
-                    // Use environment variable for certificate identity, fallback to default
-                    val developerId = System.getenv("MACOS_DEVELOPER_ID") 
-                        ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
-                    identity.set(developerId)
-                    
-                    // Debug logging
+                    // Sign unless explicitly disabled or no identity is available in the
+                    // keychain. Provider-typed so the keychain scan only runs when a
+                    // packaging task actually reads `sign`.
+                    sign.set(macOSSigningDisabledProvider.map { !it })
+                    identity.set(macOSDeveloperId)
+
+                    // Debug logging (keychain lookup + final decision resolve lazily
+                    // when packaging queries them; the UNSIGNED warning prints then)
                     println("🔐 macOS Code Signing Configuration:")
                     println("   DISABLE_MACOS_SIGNING: ${System.getenv("DISABLE_MACOS_SIGNING")}")
-                    println("   Identity: $developerId")
-                    println("   Signing enabled: ${!skipSigning}")
+                    println("   Identity: $macOSDeveloperId")
                 }
                 
                 // Entitlements
@@ -1025,11 +1072,10 @@ tasks.register("extractCLIToAppResources") {
     doLast {
         println("📦 Extracting CLI script to app bundle Resources...")
 
-        // Check if signing is enabled
-        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-        val developerId = System.getenv("MACOS_DEVELOPER_ID")
-            ?: System.getenv("DEVELOPER_ID")
-            ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+        // Signing is skipped when disabled explicitly or no keychain identity is available.
+        // Resolved here inside doLast, i.e. at execution time only.
+        val signingDisabled = macOSSigningDisabledProvider.get()
+        val developerId = macOSDeveloperId
 
         // Find the built app in the standard Compose Desktop location
         val appDir = project.layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
@@ -1106,11 +1152,9 @@ tasks.register("signPty4jBinaries") {
     description = "Signs PTY4J native binaries with hardened runtime for Apple notarization"
     group = "build"
 
-    // Only run on macOS and when signing is enabled
+    // Only run on macOS and when signing is enabled (resolved at execution time)
     onlyIf {
-        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-        isMacOS && !signingDisabled
+        isMacOSHost && !macOSSigningDisabledProvider.get()
     }
 
     // Inject ExecOperations for exec calls (replaces deprecated project.exec)
@@ -1120,9 +1164,7 @@ tasks.register("signPty4jBinaries") {
         println("🔧 Signing PTY4J native binaries with hardened runtime for notarization...")
 
         // Get developer identity from environment or use default
-        val developerId = System.getenv("MACOS_DEVELOPER_ID")
-            ?: System.getenv("DEVELOPER_ID")
-            ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+        val developerId = macOSDeveloperId
 
         if (developerId == "-") {
             println("⚠️ No signing identity found, skipping PTY4J signing")
@@ -1412,8 +1454,7 @@ afterEvaluate {
         dependsOn("prepareBundledPluginsResources")
     }
 
-    val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-    val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+    val isMacOS = isMacOSHost
 
     // Configure createDistributable
     tasks.findByName("createDistributable")?.apply {
@@ -1422,15 +1463,14 @@ afterEvaluate {
         // Ensure bundled plugins are prepared
         dependsOn("prepareBundledPluginsResources")
 
-        // On macOS with signing enabled, PTY4J signing must happen after createDistributable
-        // Task chain: createDistributable → signPty4jBinaries → extractCLIToAppResources
-        if (isMacOS && !signingDisabled) {
-            finalizedBy("signPty4jBinaries")
-            println("📝 createDistributable will be finalized by signPty4jBinaries")
-        } else if (isMacOS) {
-            // If signing disabled, skip PTY4J signing but still extract CLI
-            finalizedBy("extractCLIToAppResources")
-            println("📝 createDistributable will be finalized by extractCLIToAppResources (signing disabled)")
+        // Task chain: createDistributable → signPty4jBinaries → extractCLIToAppResources.
+        // Both finalizers are wired unconditionally so the signing decision is NOT
+        // needed at configuration time (keeps the keychain scan lazy): when signing
+        // is disabled, signPty4jBinaries skips itself via its own onlyIf and the
+        // CLI extraction still runs.
+        if (isMacOS) {
+            finalizedBy("signPty4jBinaries", "extractCLIToAppResources")
+            println("📝 createDistributable will be finalized by signPty4jBinaries (skips itself when signing is disabled) and extractCLIToAppResources")
         }
     }
 
@@ -1443,18 +1483,18 @@ afterEvaluate {
         }
     }
 
-    // Ensure extractCLIToAppResources depends on CLI script generation and runs after PTY4J signing
+    // Ensure extractCLIToAppResources depends on CLI script generation and runs after
+    // PTY4J signing. mustRunAfter is pure ordering — harmless when signPty4jBinaries
+    // is skipped — so it needs no config-time signing check.
     tasks.findByName("extractCLIToAppResources")?.apply {
         dependsOn("generateVersionedCLIScripts")
-        if (!signingDisabled) {
-            mustRunAfter("signPty4jBinaries")
-        }
+        mustRunAfter("signPty4jBinaries")
         println("📝 extractCLIToAppResources will depend on generateVersionedCLIScripts")
     }
 
-    // Ensure packageDmg runs after all signing/CLI tasks
+    // Ensure packageDmg runs after all signing/CLI tasks (ordering only, see above)
     tasks.findByName("packageDmg")?.apply {
-        if (isMacOS && !signingDisabled) {
+        if (isMacOS) {
             mustRunAfter("signPty4jBinaries", "extractCLIToAppResources")
             println("📝 packageDmg will run after PTY4J signing and CLI extraction")
         }

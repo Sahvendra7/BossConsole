@@ -22,6 +22,7 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
@@ -2922,6 +2923,10 @@ fun ComponentContext.BossApp(
                                 )
                                 targetComponent.addTab(tab)
                             }
+                            TabType.JUPYTER -> {
+                                val tab = JupyterTabInfo.createUntitled(path)
+                                targetComponent.addTab(tab)
+                            }
                         }
                         // Reset the initial type after tab creation
                         newTabDialogInitialType = null
@@ -3019,6 +3024,11 @@ fun ComponentContext.BossApp(
                                         splitViewState.openUrlInActivePanel(url, bookmark.tabConfig.title)
                                     }
                                     "editor" -> bookmark.tabConfig.filePath?.let { filePath ->
+                                        FileEventBus.openFile(filePath, sourceWindowId = windowId, projectPath = selectedProject.path)
+                                    }
+                                    // Route .ipynb through the same file bus as editor; the router opens
+                                    // it in the notebook tab when the plugin is present, else the editor.
+                                    "jupyter" -> bookmark.tabConfig.filePath?.takeIf { it.isNotBlank() }?.let { filePath ->
                                         FileEventBus.openFile(filePath, sourceWindowId = windowId, projectPath = selectedProject.path)
                                     }
                                     else -> {} // Other tab types can be added later

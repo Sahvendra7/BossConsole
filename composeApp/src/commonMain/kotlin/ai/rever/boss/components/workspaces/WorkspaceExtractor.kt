@@ -7,6 +7,7 @@ import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import kotlin.time.Clock
 
@@ -58,6 +59,11 @@ private fun extractSplitConfig(node: SplitNode): SplitConfig {
                     )
                     is EditorTabInfo -> TabConfig(
                         type = "editor",
+                        title = tab.title,
+                        filePath = tab.filePath
+                    )
+                    is JupyterTabInfo -> TabConfig(
+                        type = "jupyter",
                         title = tab.title,
                         filePath = tab.filePath
                     )

@@ -16,6 +16,7 @@ import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.plugin.api.TabTypeInfo
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -75,7 +76,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.foundation.rememberScrollState
@@ -129,7 +129,8 @@ private fun validateFilePath(path: String, basePath: String? = null): String? {
 enum class TabType(val tabTypeId: TabTypeId) {
     URL(FluckTabType.typeId),
     FILE(CodeEditorTabType.typeId),
-    TERMINAL(TerminalTabType.typeId)
+    TERMINAL(TerminalTabType.typeId),
+    JUPYTER(JupyterTabInfo.TYPE_ID)
 }
 
 // Simple URL parameter encoding
@@ -218,6 +219,7 @@ fun NewTabDialog(
     var urlText by remember { mutableStateOf("") }
     var fileText by remember { mutableStateOf("") }
     var terminalCommand by remember { mutableStateOf("") }
+    var jupyterName by remember { mutableStateOf("") }
     var inputText by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val terminalFocusRequester = remember { FocusRequester() }
@@ -346,6 +348,7 @@ fun NewTabDialog(
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.FILE -> fileText = inputText
+                                TabType.JUPYTER -> jupyterName = inputText
                                 else -> {}
                             }
                             selectedPluginType = null
@@ -365,6 +368,7 @@ fun NewTabDialog(
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.URL -> urlText = inputText
+                                TabType.JUPYTER -> jupyterName = inputText
                                 else -> {}
                             }
                             selectedPluginType = null
@@ -385,6 +389,7 @@ fun NewTabDialog(
                             when (selectedType) {
                                 TabType.URL -> urlText = inputText
                                 TabType.FILE -> fileText = inputText
+                                TabType.JUPYTER -> jupyterName = inputText
                                 else -> {}
                             }
                             selectedPluginType = null
@@ -407,9 +412,30 @@ fun NewTabDialog(
                                 when (selectedType) {
                                     TabType.URL -> urlText = inputText
                                     TabType.FILE -> fileText = inputText
+                                    TabType.JUPYTER -> jupyterName = inputText
                                     else -> {}
                                 }
                                 selectedPluginType = pluginType.typeId
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (TabType.JUPYTER in availableTypes) {
+                        TabTypeOption(
+                            // Matches JupyterTabInfo's default tab icon for a consistent identity.
+                            icon = Icons.Outlined.Code,
+                            label = "Jupyter",
+                            isSelected = selectedPluginType == null && selectedType == TabType.JUPYTER,
+                            onClick = {
+                                when (selectedType) {
+                                    TabType.URL -> urlText = inputText
+                                    TabType.FILE -> fileText = inputText
+                                    TabType.TERMINAL -> terminalCommand = inputText
+                                    else -> {}
+                                }
+                                selectedType = TabType.JUPYTER
+                                inputText = jupyterName
                             },
                             modifier = Modifier.weight(1f)
                         )
@@ -510,6 +536,39 @@ fun NewTabDialog(
                                 onDone = {
                                     handleCreateTab(selectedType, terminalCommand, onCreateTab, onDismiss)
                                 }
+                            )
+                        )
+                    } else if (selectedType == TabType.JUPYTER) {
+                        // Optional notebook name (blank = a new untitled notebook)
+                        val jupyterFocusRequester = remember { FocusRequester() }
+                        LaunchedEffect(selectedType) {
+                            if (selectedType == TabType.JUPYTER) jupyterFocusRequester.requestFocus()
+                        }
+                        OutlinedTextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            label = { Text("Notebook name (optional)", color = BossDarkTextSecondary) },
+                            placeholder = { Text("e.g., analysis", color = BossDarkTextMuted) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(jupyterFocusRequester)
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                        handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                        true
+                                    } else false
+                                },
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = { handleCreateTab(selectedType, inputText, onCreateTab, onDismiss) }
                             )
                         )
                     } else if (selectedType == TabType.FILE) {
@@ -1053,7 +1112,7 @@ fun NewTabDialog(
                         enabled = if (selectedPluginTypeInfo != null) {
                             selectedPluginTypeInfo.newTabSpec!!.inputOptional || pluginInput.isNotBlank()
                         } else {
-                            availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || inputText.isNotBlank())
+                            availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || selectedType == TabType.JUPYTER || inputText.isNotBlank())
                         },
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = BossDarkAccent,
@@ -1070,6 +1129,7 @@ fun NewTabDialog(
                                     TabType.URL -> "Fluck it"
                                     TabType.FILE -> "Open"
                                     TabType.TERMINAL -> "Open Terminal"
+                                    TabType.JUPYTER -> "New Notebook"
                                 }
                             }
                         )
@@ -1132,7 +1192,7 @@ private fun handleCreateTab(
     onCreateTab: (TabType, String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    if (type != TabType.TERMINAL && input.isBlank()) return
+    if (type != TabType.TERMINAL && type != TabType.JUPYTER && input.isBlank()) return
 
     val processedInput = when (type) {
         TabType.URL -> {
@@ -1152,6 +1212,7 @@ private fun handleCreateTab(
             // Pass the command (or empty string if none)
             input.trim()
         }
+        TabType.JUPYTER -> input.trim() // empty = new untitled notebook
     }
 
     onCreateTab(type, processedInput)

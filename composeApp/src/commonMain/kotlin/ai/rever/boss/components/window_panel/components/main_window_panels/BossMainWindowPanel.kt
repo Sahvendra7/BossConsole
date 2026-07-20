@@ -51,6 +51,7 @@ import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -82,7 +83,10 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.ViewColumn
+import ai.rever.boss.utils.revealInFileManager
+import ai.rever.boss.utils.revealInFileManagerLabel
 import androidx.compose.material.icons.outlined.Splitscreen
 import androidx.compose.runtime.*
 import androidx.compose.runtime.DisposableEffect
@@ -343,6 +347,27 @@ fun BossTabsComponent.BossMainTabBar(
                                         orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
                                         tabToMove = config
                                     )
+                                }))
+                                add(ContextMenuItem(isDivider = true))
+                            }
+
+                            // Reveal the tab's backing file in the OS file manager (file-backed tabs).
+                            // Host tab types expose filePath directly. Dynamic plugin tabs (e.g. the
+                            // editor-tab plugin's EditorTabData) live in a plugin classloader we can't
+                            // reference by type, so fall back to reading a `filePath` getter reflectively
+                            // — the same duck-typing the editor-tab plugin uses for host tab types.
+                            // The reflected value is assumed absolute: revealInFileManager resolves via
+                            // File(path).absolutePath, so a relative path would resolve against the CWD.
+                            val revealPath = when (val tab = config) {
+                                is EditorTabInfo -> tab.filePath
+                                is JupyterTabInfo -> tab.filePath
+                                else -> runCatching {
+                                    tab.javaClass.getMethod("getFilePath").invoke(tab) as? String
+                                }.getOrNull()
+                            }?.takeIf { it.isNotBlank() }
+                            if (revealPath != null) {
+                                add(ContextMenuItem(revealInFileManagerLabel(), Icons.Outlined.FolderOpen, onClick = {
+                                    revealInFileManager(revealPath)
                                 }))
                                 add(ContextMenuItem(isDivider = true))
                             }
@@ -611,6 +636,13 @@ fun BossTabsComponent.BossMainTabBar(
                             workingDirectory = projectPath.ifEmpty { null }
                         )
                         val tabIndex = addTab(terminalTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
+                    TabType.JUPYTER -> {
+                        val jupyterTab = JupyterTabInfo.createUntitled(path)
+                        val tabIndex = addTab(jupyterTab)
                         if (tabIndex >= 0) {
                             selectTab(tabIndex)
                         }
@@ -986,6 +1018,13 @@ fun BossTabsComponent.BossMainPanelContent(
                             workingDirectory = projectPath.ifEmpty { null }
                         )
                         val tabIndex = addTab(terminalTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
+                    TabType.JUPYTER -> {
+                        val jupyterTab = JupyterTabInfo.createUntitled(path)
+                        val tabIndex = addTab(jupyterTab)
                         if (tabIndex >= 0) {
                             selectTab(tabIndex)
                         }
@@ -1791,6 +1830,11 @@ private fun convertTabInfoToTabConfig(tabInfo: TabInfo): TabConfig {
         is TerminalTabInfo -> TabConfig(
             type = "terminal",
             title = tabInfo.title
+        )
+        is JupyterTabInfo -> TabConfig(
+            type = "jupyter",
+            title = tabInfo.title,
+            filePath = tabInfo.filePath
         )
         else -> TabConfig(
             type = "unknown",
