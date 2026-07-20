@@ -74,3 +74,8 @@ class FileIndexCache(
 
 // Platform-specific implementation with depth control - uses plugin types
 expect suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData?
+
+/**
+ * [scanDirectoryWithDepth] variant that can include hidden (dot) entries.
+ */
+expect suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int, showHidden: Boolean): FileNodeData?

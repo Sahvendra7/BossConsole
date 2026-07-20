@@ -42,6 +42,27 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
         return ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren(path)
     }
 
+    // This host honors the showHidden flag on the read-side scan overloads
+    // (api >= 1.0.66, the first published release with the opt-in).
+    // Plugins check this before relying on the flag.
+    override val supportsHiddenEntries: Boolean get() = true
+
+    override suspend fun scanDirectory(path: String, showHidden: Boolean): FileNodeData? {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            ai.rever.boss.components.plugin.panels.left_top.scanDirectory(path, showHidden)
+        }
+    }
+
+    override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int, showHidden: Boolean): FileNodeData? {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            platformScanDirectoryWithDepth(path, maxDepth, startDepth, showHidden)
+        }
+    }
+
+    override fun directoryHasChildren(path: String, showHidden: Boolean): Boolean {
+        return ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren(path, showHidden)
+    }
+
     override fun openFile(path: String, windowId: String) {
         ioScope.launch {
             FileEventBus.openFile(path, sourceWindowId = windowId)

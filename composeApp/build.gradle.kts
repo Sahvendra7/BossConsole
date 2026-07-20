@@ -695,6 +695,9 @@ kotlin {
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
             implementation("org.junit.jupiter:junit-jupiter:6.1.0")
+            // Test-only: lets the suite assert the IPC proxy's skip-list stays
+            // equal to the in-process scanner's (no production coupling).
+            implementation(projects.plugins.pluginApiIpc)
         }
     }
 }

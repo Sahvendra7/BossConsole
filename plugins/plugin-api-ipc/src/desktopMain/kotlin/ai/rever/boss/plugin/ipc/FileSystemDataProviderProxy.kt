@@ -44,14 +44,20 @@ class FileSystemDataProviderProxy(
     private val eventStub = EventBusServiceGrpcKt.EventBusServiceCoroutineStub(eventChannel)
 
     // ---- Data-access methods (via gRPC) ----
+    // Scan results are re-filtered through ProviderScanFilter: the kernel's
+    // general-purpose service doesn't enforce provider-contract semantics.
 
     override suspend fun scanDirectory(path: String): FileNodeData? =
+        scanDirectory(path, showHidden = false)
+
+    override suspend fun scanDirectory(path: String, showHidden: Boolean): FileNodeData? =
         withContext(Dispatchers.Default) {
             try {
                 val response = fsStub.scanDirectory(
                     ScanDirectoryRequest.newBuilder()
                         .setPath(path)
                         .setRecursive(false)
+                        .setIncludeHidden(showHidden)
                         .build()
                 )
                 if (response.errorMessage.isNotBlank()) return@withContext null
@@ -60,14 +66,16 @@ class FileSystemDataProviderProxy(
                     name = dir.name,
                     path = path,
                     isDirectory = true,
-                    children = response.entriesList.map { entry ->
-                        FileNodeData(
-                            name = entry.name,
-                            path = entry.path,
-                            isDirectory = entry.isDirectory,
-                            loadingState = NodeLoadingStateData.LOADED,
-                        )
-                    },
+                    children = response.entriesList
+                        .filter { ProviderScanFilter.isVisibleProviderEntry(path, it.path, showHidden) }
+                        .map { entry ->
+                            FileNodeData(
+                                name = entry.name,
+                                path = entry.path,
+                                isDirectory = entry.isDirectory,
+                                loadingState = NodeLoadingStateData.LOADED,
+                            )
+                        },
                     loadingState = NodeLoadingStateData.LOADED,
                 )
             } catch (_: Exception) {
@@ -76,6 +84,9 @@ class FileSystemDataProviderProxy(
         }
 
     override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? =
+        scanDirectoryWithDepth(path, maxDepth, startDepth, showHidden = false)
+
+    override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int, showHidden: Boolean): FileNodeData? =
         withContext(Dispatchers.Default) {
             try {
                 val response = fsStub.scanDirectory(
@@ -83,6 +94,7 @@ class FileSystemDataProviderProxy(
                         .setPath(path)
                         .setRecursive(maxDepth > 1)
                         .setMaxDepth(maxDepth)
+                        .setIncludeHidden(showHidden)
                         .build()
                 )
                 if (response.errorMessage.isNotBlank()) return@withContext null
@@ -91,14 +103,16 @@ class FileSystemDataProviderProxy(
                     name = dir.name,
                     path = path,
                     isDirectory = true,
-                    children = response.entriesList.map { entry ->
-                        FileNodeData(
-                            name = entry.name,
-                            path = entry.path,
-                            isDirectory = entry.isDirectory,
-                            loadingState = NodeLoadingStateData.LOADED,
-                        )
-                    },
+                    children = response.entriesList
+                        .filter { ProviderScanFilter.isVisibleProviderEntry(path, it.path, showHidden) }
+                        .map { entry ->
+                            FileNodeData(
+                                name = entry.name,
+                                path = entry.path,
+                                isDirectory = entry.isDirectory,
+                                loadingState = NodeLoadingStateData.LOADED,
+                            )
+                        },
                     loadingState = NodeLoadingStateData.LOADED,
                 )
             } catch (_: Exception) {
@@ -108,7 +122,17 @@ class FileSystemDataProviderProxy(
 
     /** Answered locally — cheap O(1) check without a gRPC round-trip. */
     override fun directoryHasChildren(path: String): Boolean =
-        File(path).listFiles()?.any { !it.name.startsWith(".") } ?: false
+        directoryHasChildren(path, showHidden = false)
+
+    override fun directoryHasChildren(path: String, showHidden: Boolean): Boolean =
+        File(path).listFiles()?.any { ProviderScanFilter.isVisibleLocalEntry(it.name, showHidden) } ?: false
+
+    // The FileSystemService proto has carried include_hidden since v1 and the
+    // kernel-side service honors it, so the showHidden overloads work
+    // end-to-end over IPC. The provider-contract skip-list (build/
+    // node_modules) is applied proxy-side via isVisibleProviderEntry so scan
+    // results match the in-process provider regardless of transport.
+    override val supportsHiddenEntries: Boolean get() = true
 
     override suspend fun createFile(parentPath: String, fileName: String): Result<String> =
         withContext(Dispatchers.Default) {

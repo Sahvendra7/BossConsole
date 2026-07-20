@@ -129,8 +129,24 @@ object ProjectState {
 // Note: CodeBaseComponent has been moved to plugin-panel-codebase module
 // The legacy component code has been removed - use CodeBasePanelPlugin.registerWithProviders() instead
 
+/** Directory names never shown in file trees, hidden toggle or not. */
+internal val scannerSkippedDirectoryNames = setOf("build", "node_modules")
+
+/**
+ * Shared visibility filter for the platform scanners — hoisted so the
+ * desktop/android actuals can't drift apart on the filter or skip-list.
+ */
+internal fun isVisibleScanEntry(name: String, showHidden: Boolean): Boolean =
+    (showHidden || !name.startsWith(".")) && name !in scannerSkippedDirectoryNames
+
 // Platform-specific file scanning - uses plugin types
 expect fun scanDirectory(path: String): FileNodeData?
+
+/**
+ * [scanDirectory] variant that can include hidden (dot) entries.
+ * `build`/`node_modules` stay skipped regardless of the flag.
+ */
+expect fun scanDirectory(path: String, showHidden: Boolean): FileNodeData?
 
 /**
  * IntelliJ's isAlwaysShowPlus() pattern implementation.
@@ -138,3 +154,8 @@ expect fun scanDirectory(path: String): FileNodeData?
  * This is much faster than scanning the full directory.
  */
 expect fun directoryHasChildren(path: String): Boolean
+
+/**
+ * [directoryHasChildren] variant that can also count hidden (dot) entries.
+ */
+expect fun directoryHasChildren(path: String, showHidden: Boolean): Boolean
