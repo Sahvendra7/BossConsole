@@ -12,6 +12,7 @@ import java.lang.reflect.InaccessibleObjectException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 import javax.swing.SwingUtilities
 
 internal fun nativeMacOSFullscreenStateForEvent(methodName: String): Boolean? =
@@ -30,6 +31,20 @@ internal fun hasFullscreenSignal(
     composeFullscreenIds: Set<String>,
     nativeFullscreenIds: Set<String>,
 ): Boolean = windowId in composeFullscreenIds || windowId in nativeFullscreenIds
+
+private val fullscreenExitListeners = CopyOnWriteArraySet<(String) -> Unit>()
+
+internal fun addWindowFullscreenExitListener(listener: (String) -> Unit) {
+    fullscreenExitListeners += listener
+}
+
+internal fun removeWindowFullscreenExitListener(listener: (String) -> Unit) {
+    fullscreenExitListeners -= listener
+}
+
+private fun notifyWindowFullscreenExit(windowId: String) {
+    fullscreenExitListeners.forEach { listener -> listener(windowId) }
+}
 
 private class MacOSFullscreenTracker(
     private val onFullscreenChanged: (windowId: String, isFullscreen: Boolean) -> Unit,
@@ -103,6 +118,8 @@ private class MacOSFullscreenTracker(
             logFailure("register", windowId, e)
         } catch (e: IllegalArgumentException) {
             logFailure("register", windowId, e)
+        } catch (e: ClassCastException) {
+            logFailure("register", windowId, e)
         } catch (e: SecurityException) {
             logFailure("register", windowId, e)
         }
@@ -121,6 +138,8 @@ private class MacOSFullscreenTracker(
         } catch (e: InaccessibleObjectException) {
             logFailure("unregister", windowId, e)
         } catch (e: IllegalArgumentException) {
+            logFailure("unregister", windowId, e)
+        } catch (e: ClassCastException) {
             logFailure("unregister", windowId, e)
         } catch (e: SecurityException) {
             logFailure("unregister", windowId, e)
@@ -200,6 +219,7 @@ actual object WindowFocusManager {
                 nativeFullscreenWindowIds += windowId
             } else {
                 nativeFullscreenWindowIds -= windowId
+                notifyWindowFullscreenExit(windowId)
             }
         }
 
@@ -229,7 +249,6 @@ actual object WindowFocusManager {
             "WindowFocusManager.registerWindow must run on the EDT"
         }
         windows[windowId] = window
-        macOSFullscreenTracker.register(windowId, window)
 
         // First window becomes the main window (backward compatibility).
         if (mainWindow == null) {
@@ -249,6 +268,10 @@ actual object WindowFocusManager {
 
         windowListeners[windowId] = listener
         window.addWindowFocusListener(listener)
+
+        // Native fullscreen tracking is optional and must not prevent the
+        // focus listener above from being installed if EAWT is unavailable.
+        macOSFullscreenTracker.register(windowId, window)
     }
 
     /**
@@ -279,6 +302,9 @@ actual object WindowFocusManager {
             composeFullscreenWindowIds += windowId
         } else {
             composeFullscreenWindowIds -= windowId
+            if (windowId !in nativeFullscreenWindowIds) {
+                notifyWindowFullscreenExit(windowId)
+            }
         }
     }
 
@@ -305,6 +331,7 @@ actual object WindowFocusManager {
         windows.remove(windowId)
         composeFullscreenWindowIds -= windowId
         nativeFullscreenWindowIds -= windowId
+        notifyWindowFullscreenExit(windowId)
         awtFocusTracker.onUnregistered(windowId)
         if (focusedWindowId == windowId) {
             // Preserve the existing last-focused flow contract for external

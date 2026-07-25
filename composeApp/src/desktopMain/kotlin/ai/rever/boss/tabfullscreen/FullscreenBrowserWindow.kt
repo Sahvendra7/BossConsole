@@ -1,8 +1,10 @@
 package ai.rever.boss.tabfullscreen
 
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.utils.addWindowFullscreenExitListener
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.removeWindowFullscreenExitListener
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.view.swing.BrowserView
 import java.awt.BorderLayout
@@ -11,11 +13,17 @@ import java.awt.Frame
 import java.awt.GraphicsEnvironment
 import java.awt.Rectangle
 import java.awt.Window
+import java.awt.event.ActionEvent
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.KeyEvent
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.lang.reflect.InvocationTargetException
+import javax.swing.AbstractAction
+import javax.swing.JComponent
 import javax.swing.JFrame
+import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 
@@ -41,6 +49,7 @@ object FullscreenBrowserWindow {
     @Volatile
     private var currentBrowser: Browser? = null
     private var currentOwnerWindowId: String? = null
+    private var ownerFullscreenExitListener: ((String) -> Unit)? = null
     private var onExitCallback: (() -> Unit)? = null
     private var isInFullscreenMode = false
     private var hasReachedFullscreen = false // True only after fullscreen animation completes
@@ -59,6 +68,7 @@ object FullscreenBrowserWindow {
     // Delay to allow Swing BrowserView to release rendering before Compose BrowserView activates
     // Exit needs more time because we need to ensure the Swing view fully releases the surface
     private const val SWING_RELEASE_DELAY_MS = 200
+    private const val EXIT_FULLSCREEN_ACTION = "exit-fullscreen"
 
     fun showFullscreen(
         browser: Browser,
@@ -124,6 +134,7 @@ object FullscreenBrowserWindow {
             frame.background = Color.BLACK
             frame.contentPane.background = Color.BLACK
             frame.contentPane.layout = BorderLayout()
+            installExitShortcut(frame)
 
             // Create BrowserView for existing browser instance
             // At this point, the Compose BrowserView should be detached from rendering
@@ -177,6 +188,7 @@ object FullscreenBrowserWindow {
                     frame.isVisible = true
                     usesNativeMacOSFullscreen = false
                     hasReachedFullscreen = true
+                    watchOwnerFullscreenExit(currentOwnerWindowId)
                     logger.info(
                         LogCategory.BROWSER,
                         "Opened fullscreen video as borderless overlay in existing fullscreen Space",
@@ -302,10 +314,49 @@ object FullscreenBrowserWindow {
         return fillsScreen(frame.bounds, screenBounds)
     }
 
+    private fun installExitShortcut(frame: JFrame) {
+        frame.rootPane
+            .getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+            .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), EXIT_FULLSCREEN_ACTION)
+        frame.rootPane.actionMap.put(
+            EXIT_FULLSCREEN_ACTION,
+            object : AbstractAction() {
+                override fun actionPerformed(event: ActionEvent?) {
+                    requestExit()
+                }
+            },
+        )
+    }
+
+    private fun watchOwnerFullscreenExit(ownerWindowId: String?) {
+        if (ownerWindowId == null) return
+        val listener: (String) -> Unit = { exitedWindowId ->
+            if (exitedWindowId == ownerWindowId) {
+                SwingUtilities.invokeLater {
+                    if (currentOwnerWindowId == ownerWindowId &&
+                        isInFullscreenMode &&
+                        !usesNativeMacOSFullscreen
+                    ) {
+                        logger.info(
+                            LogCategory.BROWSER,
+                            "Closing fullscreen video overlay because its host exited fullscreen",
+                            mapOf("ownerWindowId" to ownerWindowId),
+                        )
+                        performExitDirect()
+                    }
+                }
+            }
+        }
+        ownerFullscreenExitListener = listener
+        addWindowFullscreenExitListener(listener)
+    }
+
     /**
      * Reset all state variables.
      */
     private fun resetState() {
+        ownerFullscreenExitListener?.let(::removeWindowFullscreenExitListener)
+        ownerFullscreenExitListener = null
         fullscreenFrame = null
         currentBrowserView = null
         currentBrowser = null
@@ -331,36 +382,59 @@ object FullscreenBrowserWindow {
         browserView: BrowserView?,
         callback: (() -> Unit)?,
     ) {
-        SwingUtilities.invokeLater {
-            try {
-                // Hide and detach the Swing BrowserView to release rendering surface
-                browserView?.let { view ->
-                    view.isVisible = false
-                    view.repaint()
-                    frame.contentPane.remove(view)
-                }
-                frame.contentPane.revalidate()
-                frame.contentPane.repaint()
-                frame.dispose()
-                logger.info(LogCategory.BROWSER, "Fullscreen window disposed, waiting for rendering release")
-
-                // Delay before telling Compose to show its BrowserView
-                // This gives JxBrowser time to fully release the Swing rendering surface
-                Timer(SWING_RELEASE_DELAY_MS) {
-                    SwingUtilities.invokeLater {
-                        TabFullscreenStateManager.exitFullscreen()
-                        logger.info(LogCategory.BROWSER, "Fullscreen exit complete, Compose BrowserView enabled")
-                        callback?.invoke()
+        val cleanup =
+            Runnable {
+                try {
+                    // Hide and detach the Swing BrowserView to release rendering surface
+                    browserView?.let { view ->
+                        view.isVisible = false
+                        view.repaint()
+                        frame.contentPane.remove(view)
                     }
-                }.apply {
-                    isRepeats = false
-                    start()
+                    frame.contentPane.revalidate()
+                    frame.contentPane.repaint()
+                    frame.dispose()
+                    logger.info(LogCategory.BROWSER, "Fullscreen window disposed, waiting for rendering release")
+
+                    // Delay before telling Compose to show its BrowserView
+                    // This gives JxBrowser time to fully release the Swing rendering surface
+                    Timer(SWING_RELEASE_DELAY_MS) {
+                        SwingUtilities.invokeLater {
+                            TabFullscreenStateManager.exitFullscreen()
+                            logger.info(LogCategory.BROWSER, "Fullscreen exit complete, Compose BrowserView enabled")
+                            callback?.invoke()
+                        }
+                    }.apply {
+                        isRepeats = false
+                        start()
+                    }
+                } catch (e: Exception) {
+                    logger.error(LogCategory.BROWSER, "Error closing fullscreen window", error = e)
+                    TabFullscreenStateManager.exitFullscreen()
+                    callback?.invoke()
                 }
-            } catch (e: Exception) {
-                logger.error(LogCategory.BROWSER, "Error closing fullscreen window", error = e)
-                TabFullscreenStateManager.exitFullscreen()
-                callback?.invoke()
             }
+
+        if (SwingUtilities.isEventDispatchThread()) {
+            cleanup.run()
+        } else {
+            SwingUtilities.invokeLater(cleanup)
+        }
+    }
+
+    private fun runOnEventDispatchThreadAndWait(action: () -> Unit) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            action()
+            return
+        }
+
+        try {
+            SwingUtilities.invokeAndWait { action() }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            logger.warn(LogCategory.BROWSER, "Interrupted while closing fullscreen browser window", error = e)
+        } catch (e: InvocationTargetException) {
+            logger.warn(LogCategory.BROWSER, "Could not close fullscreen browser window", error = e.cause ?: e)
         }
     }
 
@@ -438,9 +512,13 @@ object FullscreenBrowserWindow {
         cleanupAndExit(frame, browserView, null)
     }
 
-    /** Closes fullscreen only when it belongs to the browser being disposed. */
+    /**
+     * Closes fullscreen only when it belongs to the browser being disposed.
+     * Blocks a background disposer until the Swing view has been detached, so
+     * the browser cannot close underneath the fullscreen window's cleanup.
+     */
     fun exitFullscreen(browser: Browser) {
-        SwingUtilities.invokeLater {
+        runOnEventDispatchThreadAndWait {
             if (currentBrowser === browser) {
                 exitFullscreen()
             }
