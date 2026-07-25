@@ -31,6 +31,22 @@ internal fun nativeMacOSFullscreenStateForEvent(methodName: String): Boolean? =
 
 internal fun isNativeMacOSFullscreenExitStarting(methodName: String): Boolean = methodName == "windowExitingFullScreen"
 
+/**
+ * Resolution policy behind [WindowFocusManager.resolveActionableWindowId], kept
+ * pure so the ordering can be asserted without live AWT windows.
+ *
+ * [lastFocusedWindowId] is set at registration and on every focus gain;
+ * [focusFlowWindowId] is only ever set inside the focus-gained listener, so it
+ * can lag or stay null when the caller (an MCP client or the CLI) holds OS focus
+ * itself. A registered window is still a usable target in that case, which is
+ * why [registeredWindowIds] is the last resort rather than "no window".
+ */
+internal fun resolveActionableWindowIdFrom(
+    lastFocusedWindowId: String?,
+    focusFlowWindowId: String?,
+    registeredWindowIds: Collection<String>,
+): String? = lastFocusedWindowId ?: focusFlowWindowId ?: registeredWindowIds.firstOrNull()
+
 internal fun hasFullscreenSignal(
     nativeStateAvailable: Boolean,
     nativeFullscreen: Boolean,
@@ -487,7 +503,12 @@ actual object WindowFocusManager {
      * available), falling back to any registered window. Returns null only if no
      * window is registered at all.
      */
-    fun resolveActionableWindowId(): String? = focusedWindowId ?: focusedWindowFlow.value ?: windows.keys.firstOrNull()
+    fun resolveActionableWindowId(): String? =
+        resolveActionableWindowIdFrom(
+            lastFocusedWindowId = focusedWindowId,
+            focusFlowWindowId = focusedWindowFlow.value,
+            registeredWindowIds = windows.keys,
+        )
 
     /**
      * Bring a specific window to front by its ID
