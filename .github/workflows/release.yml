@@ -63,43 +63,12 @@ on:
         required: false
         default: false
         type: boolean
-      build_id:
-        description: >-
-          macOS CFBundleVersion build identifier. Required, and deliberately has no
-          default: a called workflow's jobs belong to the caller's run, so
-          github.run_number here would be the caller's own counter (see the env block
-          below). Making it required turns "caller forgot" into a startup error instead of
-          a silently wrong CFBundleVersion.
-        required: true
-        type: string
   push:
     tags:
       - 'v*.*.*'
 
 env:
   GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
-  # macOS CFBundleVersion (the *build* identifier, not the marketing version).
-  # run_number only ever increases for this workflow, so a rebuild/re-notarization of
-  # the same app version is still distinguishable, and every platform job of one
-  # release run shares the same build id. See composeApp/build.gradle.kts
-  # (macBundleBuildVersion) for the fallbacks used outside this workflow.
-  #
-  # When this workflow is *called* (promote-release.yml), github.run_number is the
-  # CALLER's counter — an independent sequence that can collide with a direct release run.
-  # Callers pass a required build_id instead, which the macOS job (the only consumer of
-  # CFBundleVersion) prefers over this default. What that buys is COLLISION-FREEDOM, not
-  # global monotonicity: promotion ids come from a disjoint, much larger range, so a
-  # promoted build sorts above every direct release rather than in sequence with it.
-  # Uniqueness is what issue #38 needed; nothing reads CFBundleVersion today (the updater
-  # compares semver app.version), so do not build ordering logic on it without revisiting.
-  # Do NOT reference `inputs` from this workflow-level env. Observed on PR #49: with
-  # `${{ inputs.build_id || github.run_number }}` here, EVERY workflow run on the branch
-  # reported startup_failure with no jobs; reverting just this line (and putting the
-  # override on the macOS job below) turned all checks green. `inputs` is documented as
-  # available to workflow-level env, so the likely trigger is this workflow's non-input
-  # `push: tags` path, where the context does not exist — but the mechanism is inference,
-  # the failure is not. Job-level `inputs` references are fine and already used here.
-  BOSS_BUILD_ID: ${{ github.run_number }}
   # Production credentials for release builds
   JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -122,7 +91,28 @@ jobs:
       should-build: ${{ steps.check-changes.outputs.should-build }}
       updated-sha: ${{ steps.commit-version.outputs.updated-sha }}
       should-create-tag: ${{ steps.commit-version.outputs.should-create-tag }}
+      build-id: ${{ steps.build-id.outputs.build-id }}
     steps:
+      - name: 🔢 Compute macOS Build Identifier
+        id: build-id
+        # CFBundleVersion is macOS's *build* identifier (see macBundleBuildVersion in
+        # composeApp/build.gradle.kts). It has to differ for every shipped build of a
+        # version, so a re-notarized rebuild is distinguishable — issue #38.
+        #
+        # Computed here, once per run, and consumed by the macOS job. Deliberately a
+        # seconds-since-epoch stamp rather than github.run_number:
+        #   * run_number is per-workflow. This workflow is also called by
+        #     promote-release.yml, and a called workflow's jobs belong to the CALLER's run,
+        #     so run_number would be promote-release's independent counter there — able to
+        #     collide with, and permanently sort below/above, direct release builds.
+        #   * a clock is monotonic across every trigger and every caller, so ids from all
+        #     paths form one increasing sequence. Launch Services does consult
+        #     CFBundleVersion when disambiguating two copies of the same bundle id, so
+        #     ordering is worth having, not just uniqueness.
+        # Single non-negative integer, so Compose's CFBundleVersion validation accepts it;
+        # fits a signed 32-bit int until 2038. CI only — local builds use app.build.number,
+        # which is stable so packaging tasks stay up-to-date between runs.
+        run: echo "build-id=$(date +%s)" >> "$GITHUB_OUTPUT"
       - name: 📥 Checkout Repository
         uses: actions/checkout@v7
         with:
@@ -349,13 +339,12 @@ jobs:
     if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: macos-14  # Apple Silicon runner
     env:
-      # CFBundleVersion build identifier. Overrides the workflow-level default so a
-      # caller-supplied build_id wins: in a workflow_call run, github.run_number is the
-      # caller's own counter, which can collide with a direct release run. This is the only
-      # job that produces a macOS bundle, so it is the only place the value matters.
-      # This job-level `inputs` reference is the intentional exception to the warning on
-      # the workflow-level env above: job env is evaluated per trigger, so it is safe here.
-      BOSS_BUILD_ID: ${{ inputs.build_id || github.run_number }}
+      # CFBundleVersion build identifier, computed once in prepare-version (see the comment
+      # there). This is the only job that produces a macOS bundle, so it is the only place
+      # the value matters. Reading it from `needs` keeps every trigger — workflow_dispatch,
+      # workflow_call and the `push: tags` production path — on the same expression, with no
+      # `inputs` reference to resolve.
+      BOSS_BUILD_ID: ${{ needs.prepare-version.outputs.build-id }}
     # macOS minutes bill at 10×, and notarization can legitimately sit waiting
     # on Apple, so cap the job well below GitHub's 6h default: build (~20m) plus
     # the notarization budget in scripts/lib/notarize-dmg.sh (1h) fits inside
@@ -365,8 +354,9 @@ jobs:
     steps:
       - name: 🔢 Validate Build Identifier
         # composeApp/build.gradle.kts silently falls back to app.build.number (i.e. "1")
-        # for a non-numeric BOSS_BUILD_ID, so a malformed caller input would ship a wrong
-        # CFBundleVersion with a green build. Fail loudly instead.
+        # for a non-numeric BOSS_BUILD_ID, so an unresolved or malformed value would ship a
+        # wrong CFBundleVersion with a green build. Fail loudly instead — this also catches
+        # the prepare-version output failing to thread through.
         run: |
           case "$BOSS_BUILD_ID" in
             '' | *[!0-9]*)

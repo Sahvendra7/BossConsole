@@ -38,7 +38,6 @@ jobs:
       target-is-prerelease: ${{ steps.validate.outputs.target-is-prerelease }}
       target-suffix: ${{ steps.validate.outputs.target-suffix }}
       target-channel: ${{ steps.validate.outputs.target-channel }}
-      build-id: ${{ steps.build-id.outputs.build-id }}
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v7
@@ -194,20 +193,6 @@ jobs:
           echo "target-suffix=$TARGET_SUFFIX" >> $GITHUB_OUTPUT
           echo "target-channel=$TARGET_CHANNEL" >> $GITHUB_OUTPUT
 
-      - name: 🔢 Compute macOS Build Identifier
-        id: build-id
-        # release.yml stamps CFBundleVersion from BOSS_BUILD_ID, defaulting to
-        # github.run_number. A called workflow's jobs belong to the CALLER's run, so a
-        # promotion rebuild would otherwise stamp promote-release's own counter, which can
-        # COLLIDE with a release.yml run number — two different builds carrying the same
-        # CFBundleVersion is exactly the defect issue #38 set out to fix. A
-        # seconds-since-epoch stamp is unique and lands in a disjoint range no run_number
-        # reaches. It is NOT in sequence with release.yml's counter: promoted builds sort
-        # above every direct release. Collision-freedom is the property being bought here.
-        # (Single non-negative integer, so Compose's CFBundleVersion validation accepts it;
-        # fits a signed 32-bit int until 2038.)
-        run: echo "build-id=$(date +%s)" >> "$GITHUB_OUTPUT"
-
   promote-with-rebuild:
     needs: validate-and-prepare
     if: github.event.inputs.rebuild_artifacts == 'true'
@@ -218,7 +203,6 @@ jobs:
       prerelease_number: '1'
       create_release: true
       skip_version_increment: true
-      build_id: ${{ needs.validate-and-prepare.outputs.build-id }}
     secrets: inherit
 
   promote-without-rebuild:

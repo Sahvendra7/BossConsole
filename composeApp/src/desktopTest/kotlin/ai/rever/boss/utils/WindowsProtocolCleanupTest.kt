@@ -21,7 +21,7 @@ class WindowsProtocolCleanupTest {
     private val otherApp = """C:\Program Files\BOSS\BOSS.exe"""
 
     private fun classify(
-        rootPresent: Boolean = true,
+        rootPresent: Boolean? = true,
         command: CommandState,
         appPath: String? = thisApp,
         existing: Set<String> = setOf(thisApp, otherApp),
@@ -29,8 +29,9 @@ class WindowsProtocolCleanupTest {
 
     private fun regOutput(
         type: String = "REG_SZ",
+        name: String = "Default",
         value: String,
-    ) = "\n$PROTOCOL_KEY_TEST\\shell\\open\\command\n    (Default)    $type    $value\n\n"
+    ) = "\n$PROTOCOL_KEY_TEST\\shell\\open\\command\n    ($name)    $type    $value\n\n"
 
     // region parseCommandState
 
@@ -193,6 +194,28 @@ class WindowsProtocolCleanupTest {
         )
     }
 
+    /**
+     * Regression: supporting `REG_EXPAND_SZ` in the parser made an unexpanded path *readable*,
+     * and nothing expands `%LOCALAPPDATA%`, so `exeExists` says false and the old rule would
+     * have deleted a live installer-authored registration. Not evaluatable ⇒ leave alone.
+     */
+    @Test
+    fun `leaves an unexpanded environment-variable path alone`() {
+        assertEquals(
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
+            classify(command = CommandState.Present(""""%LOCALAPPDATA%\BOSS\BOSS.exe" "%1"""")),
+        )
+    }
+
+    /** A root-key query that could not be run is not evidence of absence. */
+    @Test
+    fun `reports unreadable when the root key could not be queried`() {
+        assertEquals(
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
+            classify(rootPresent = null, command = CommandState.Missing),
+        )
+    }
+
     /** Absent wins over everything: no key, nothing to decide. */
     @Test
     fun `absent takes precedence over a readable command`() {
@@ -200,6 +223,38 @@ class WindowsProtocolCleanupTest {
             CleanupDecision.Report(UnregisterOutcome.ABSENT),
             classify(rootPresent = false, command = CommandState.Present(""""$otherApp" "%1"""")),
         )
+    }
+
+    /** `reg.exe` emits CRLF; the parser must not carry the \r into the command. */
+    @Test
+    fun `strips carriage returns from a CRLF value line`() {
+        assertEquals(
+            CommandState.Present(""""$thisApp" "%1""""),
+            parseCommandState(0, "\r\n    (Default)    REG_SZ    \"$thisApp\" \"%1\"\r\n\r\n"),
+        )
+    }
+
+    /** The default-value name is localized; a German install must still parse. */
+    @Test
+    fun `parses a localized default value name`() {
+        assertEquals(
+            CommandState.Present(""""$thisApp" "%1""""),
+            parseCommandState(0, regOutput(name = "Standard", value = """"$thisApp" "%1"""")),
+        )
+    }
+
+    // endregion
+
+    // region exitCodeFor
+
+    @Test
+    fun `maps outcomes to the documented exit codes`() {
+        assertEquals(0, exitCodeFor(UnregisterOutcome.REMOVED))
+        assertEquals(0, exitCodeFor(UnregisterOutcome.ABSENT))
+        assertEquals(0, exitCodeFor(UnregisterOutcome.NOT_APPLICABLE))
+        assertEquals(1, exitCodeFor(UnregisterOutcome.OTHER_INSTALL))
+        assertEquals(1, exitCodeFor(UnregisterOutcome.UNREADABLE))
+        assertEquals(2, exitCodeFor(UnregisterOutcome.FAILED))
     }
 
     // endregion
