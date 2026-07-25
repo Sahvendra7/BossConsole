@@ -1,5 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { ChallengeType } from "../types/challenge.ts"
+import { normalizeBase64Url } from "./base64.ts"
+import { COSE_ALG_ES256 } from "./webauthn.ts"
+
+/**
+ * Normalises a PostgREST result that may be a single row or an array of rows.
+ */
+function rowsOf(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data
+  return data ? [data] : []
+}
 
 export interface PasskeyRecord {
   id: string
@@ -56,6 +66,38 @@ export async function verifyChallenge(
   }
 }
 
+/**
+ * Deletes a challenge row by id and reports whether *this* caller is the one
+ * that removed it.
+ *
+ * `DELETE ... RETURNING` is atomic per row, so of two concurrent ceremonies
+ * carrying the same challenge exactly one sees a row come back. Treating "no
+ * row deleted" as a rejection is what makes single-use deterministic instead of
+ * a race that both callers can win.
+ */
+export async function consumeChallengeRow(
+  supabase: SupabaseClient,
+  challengeRowId: string
+): Promise<{ consumed: boolean; error?: string }> {
+  const { data, error } = await supabase
+    .from('passkey_challenges')
+    .delete()
+    .eq('id', challengeRowId)
+    .select('id')
+
+  if (error) {
+    console.error('❌ Failed to consume challenge:', error)
+    return { consumed: false, error: error.message }
+  }
+
+  if (rowsOf(data).length === 0) {
+    console.error('❌ Challenge was already consumed by another request:', challengeRowId)
+    return { consumed: false, error: 'Challenge already used' }
+  }
+
+  return { consumed: true }
+}
+
 export async function verifyAndConsumeChallenge(
   supabase: SupabaseClient,
   challenge: string,
@@ -80,11 +122,11 @@ export async function verifyAndConsumeChallenge(
       return { success: false, error: 'Invalid or expired challenge' }
     }
 
-    // Delete the challenge after successful verification
-    await supabase
-      .from('passkey_challenges')
-      .delete()
-      .eq('id', data.id)
+    // Consume it, and only proceed if this request is the one that consumed it
+    const consumeResult = await consumeChallengeRow(supabase, data.id)
+    if (!consumeResult.consumed) {
+      return { success: false, error: consumeResult.error || 'Invalid or expired challenge' }
+    }
 
     console.log('Challenge verified and consumed successfully')
     return { success: true, challenge: data }
@@ -117,6 +159,23 @@ export async function storePasskeyInDB(
       // migration 20260725000000. If the function is deployed ahead of it,
       // registration would otherwise break outright — degrade instead, loudly.
       if (isUnknownColumnError(error)) {
+        // ...but only for ES256. An RS256 key is stored as SPKI DER, and without
+        // public_key_alg every future assertion would read it as a raw EC point
+        // and fail — a credential that registers and can never authenticate.
+        // A retryable error is strictly better than a silently dead credential.
+        const alg = passkey.public_key_alg ?? COSE_ALG_ES256
+        if (alg !== COSE_ALG_ES256) {
+          console.error(
+            `❌ Cannot store an alg ${alg} credential without the passkey verification columns — ` +
+            'apply migration 20260725000000_passkey_verification_columns.sql',
+            error
+          )
+          return {
+            success: false,
+            error: 'Passkey storage is not ready for this credential type - please try again later'
+          }
+        }
+
         console.error(
           '⚠️ user_passkeys is missing the passkey verification columns — apply migration ' +
           '20260725000000_passkey_verification_columns.sql. Storing the credential without them; ' +
@@ -166,30 +225,55 @@ function isUnknownColumnError(error: { code?: string; message?: string }): boole
  * `signCount` is only written when the authenticator maintains a counter — see
  * `evaluateSignCounter` in utils/webauthn.ts, which returns null for
  * authenticators that always report 0.
+ *
+ * When there *is* a counter the write is a compare-and-set: the row only
+ * advances if the stored counter is still below the new value. Two assertions
+ * carrying the same counter, submitted concurrently, would both verify — the
+ * CAS is what makes the second one observable (`advanced: false`) instead of
+ * silently overwriting the first.
  */
 export async function recordPasskeyUse(
   supabase: SupabaseClient,
   passkeyId: string,
   signCount: number | null
-) {
-  const update: Record<string, unknown> = { last_used_at: Date.now() }
-  if (signCount !== null) {
-    update.sign_count = signCount
+): Promise<{ success: boolean; advanced: boolean; error?: string }> {
+  if (signCount === null) {
+    // Counter-less authenticator: nothing to compare, just record the use
+    const { error } = await supabase
+      .from('user_passkeys')
+      .update({ last_used_at: Date.now() })
+      .eq('id', passkeyId)
+
+    if (error) {
+      // Non-fatal: the assertion itself was verified.
+      console.error('Failed to record passkey use:', error)
+      return { success: false, advanced: true, error: error.message }
+    }
+
+    return { success: true, advanced: true }
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('user_passkeys')
-    .update(update)
+    .update({ last_used_at: Date.now(), sign_count: signCount })
     .eq('id', passkeyId)
+    // Legacy rows have a NULL counter, which no comparison operator matches
+    .or(`sign_count.is.null,sign_count.lt.${signCount}`)
+    .select('id')
 
   if (error) {
-    // Non-fatal: the assertion itself was verified. Losing the counter update
-    // only costs clone detection on the *next* assertion, so log and continue.
+    // Non-fatal: losing the counter update only costs clone detection on the
+    // *next* assertion, so log and let the ceremony stand.
     console.error('Failed to record passkey use:', error)
-    return { success: false, error: error.message }
+    return { success: false, advanced: true, error: error.message }
   }
 
-  return { success: true }
+  if (rowsOf(data).length === 0) {
+    console.error('❌ Signature counter was already advanced past', signCount, 'for passkey', passkeyId)
+    return { success: false, advanced: false, error: 'Signature counter did not advance' }
+  }
+
+  return { success: true, advanced: true }
 }
 
 export async function getUserPasskeys(supabase: SupabaseClient, userId: string) {
@@ -221,21 +305,36 @@ export async function findPasskeyByCredentialId(
 ) {
   console.log('Finding passkey by credential ID:', credentialId)
 
-  try {
-    const { data, error } = await supabase
-      .from('user_passkeys')
-      .select('*')
-      .eq('credential_id', credentialId)
-      .eq('active', true)
-      .single()
+  // credential_id is stored canonicalised (unpadded base64url), so a client that
+  // emits standard base64 or padding still resolves to the same row. Everything
+  // else in the ceremony is alphabet-tolerant; an exact-match lookup here would
+  // otherwise fail as a misleading "Passkey not found".
+  const canonicalId = normalizeBase64Url(credentialId)
 
-    if (error || !data) {
-      console.error('Passkey not found:', error)
-      return { success: false, error: 'Passkey not found' }
+  const lookupIds = canonicalId && canonicalId !== credentialId
+    ? [canonicalId, credentialId] // fall back to the raw form for rows written before normalisation
+    : [credentialId]
+
+  try {
+    for (const lookupId of lookupIds) {
+      const { data, error } = await supabase
+        .from('user_passkeys')
+        .select('*')
+        .eq('credential_id', lookupId)
+        .eq('active', true)
+        .single()
+
+      if (!error && data) {
+        console.log('Found passkey for user:', data.user_id)
+        return { success: true, passkey: data }
+      }
+
+      if (lookupId === lookupIds[lookupIds.length - 1]) {
+        console.error('Passkey not found:', error)
+      }
     }
 
-    console.log('Found passkey for user:', data.user_id)
-    return { success: true, passkey: data }
+    return { success: false, error: 'Passkey not found' }
   } catch (error) {
     console.error('Exception finding passkey:', error)
     return { success: false, error: (error as Error).message }

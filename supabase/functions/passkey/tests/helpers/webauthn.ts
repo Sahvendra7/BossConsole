@@ -251,6 +251,8 @@ export interface RegistrationCredentialOptions {
   alg?: number
   rpId?: string
   rpIdHash?: Uint8Array
+  /** Override the flags byte, e.g. to clear User Present */
+  flags?: number
   signCount?: number
   origin?: string
   encoding?: PayloadEncoding
@@ -284,6 +286,7 @@ export async function createRegistrationCredential(
   const authData = await buildAuthenticatorData({
     rpId: options.rpId,
     rpIdHash: options.rpIdHash,
+    flags: options.flags,
     signCount: options.signCount ?? 0,
     credentialId,
     coseKey
@@ -296,14 +299,16 @@ export async function createRegistrationCredential(
     encoding: options.encoding
   })
 
+  const encoding = options.encoding ?? 'base64url'
+
   return {
     credential: {
-      id: encodeBase64Url(credentialId),
-      rawId: encodeBase64Url(credentialId),
+      id: encodePayload(credentialId, encoding),
+      rawId: encodePayload(credentialId, encoding),
       type: 'public-key',
       response: {
         clientDataJSON,
-        attestationObject: encodePayload(buildAttestationObject(authData), options.encoding ?? 'base64url')
+        attestationObject: encodePayload(buildAttestationObject(authData), encoding)
       }
     },
     keyPair,
@@ -321,6 +326,8 @@ export interface AssertionOptions {
   alg?: number
   rpId?: string
   rpIdHash?: Uint8Array
+  /** Override the flags byte, e.g. to clear User Present */
+  flags?: number
   signCount?: number
   origin?: string
   encoding?: PayloadEncoding
@@ -349,6 +356,7 @@ export async function createAssertion(options: AssertionOptions): Promise<TestAs
   const authenticatorData = await buildAuthenticatorData({
     rpId: options.rpId,
     rpIdHash: options.rpIdHash,
+    flags: options.flags,
     signCount: options.signCount ?? 1
   })
 
@@ -375,8 +383,11 @@ export async function createAssertion(options: AssertionOptions): Promise<TestAs
   const signature = alg === COSE_ALG_RS256 ? rawSignature : rawToDERSignature(rawSignature)
 
   return {
-    id: encodeBase64Url(options.credentialId),
-    rawId: encodeBase64Url(options.credentialId),
+    // Encoded with the same alphabet as the rest of the payload: a client using
+    // a standard-base64 encoder emits the credential id that way too, and the
+    // server has to resolve it to the same stored credential.
+    id: encodePayload(options.credentialId, encoding),
+    rawId: encodePayload(options.credentialId, encoding),
     type: 'public-key',
     response: {
       clientDataJSON: clientData.encoded,

@@ -4,7 +4,7 @@ import { verifyAndConsumeChallenge, storePasskeyInDB } from "../utils/database.t
 import { extractCredentialFromAttestation } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler } from "../utils/error-handler.ts"
-import { getAllowedRpIds } from "../utils/config.ts"
+import { ALLOWED_ORIGINS, getAllowedRpIds } from "../utils/config.ts"
 import { encodedValuesMatch, normalizeBase64Url } from "../utils/base64.ts"
 import {
   challengeMatches,
@@ -13,13 +13,9 @@ import {
   SUPPORTED_COSE_ALGS
 } from "../utils/webauthn.ts"
 
-export const ALLOWED_ORIGINS = [
-  'boss://authenticate',
-  'http://localhost:3000',
-  'http://localhost:54321',  // Supabase local functions
-  'https://risaboss.com',
-  'https://api.risaboss.com'
-]
+// Re-exported for the routes and for callers that imported it from here before
+// it moved to utils/config.ts (single source of truth).
+export { ALLOWED_ORIGINS }
 
 export interface RegistrationCredential {
   id: string
@@ -139,7 +135,9 @@ export const completeRegistration = withErrorHandler(
 
     // The challenge must have been issued for the user being registered,
     // otherwise a challenge minted for one account could enrol a credential on
-    // another.
+    // another. `storeChallenge` always records user_id on the registration path,
+    // so the null guard is defensive rather than an opt-out: a row without a
+    // user_id cannot be produced by any current code path.
     const challengeUserId = challengeResult.challenge?.user_id
     if (challengeUserId && challengeUserId !== userId) {
       console.error('❌ Registration challenge was issued for a different user')
@@ -149,8 +147,18 @@ export const completeRegistration = withErrorHandler(
       }
     }
 
-    // Extract public key, algorithm, initial counter and rpIdHash
+    // Extract public key, algorithm, initial counter, flags and rpIdHash
     const attested = await extractCredentialFromAttestation(attestationObject)
+
+    // User Presence is mandatory (WebAuthn L2 §7.1 step 16). A browser will not
+    // produce an attestation without it; a non-browser client can.
+    if (!attested.userPresent) {
+      console.error('❌ Attestation has no User Present flag')
+      return {
+        success: false,
+        error: 'User presence flag not set'
+      }
+    }
 
     // Verify the authenticator signed for one of our relying party IDs
     const matchedRpId = await matchRpIdHash(attested.rpIdHash, getAllowedRpIds())
@@ -173,10 +181,13 @@ export const completeRegistration = withErrorHandler(
       }
     }
 
-    // Store passkey
+    // Store passkey. The credential id is canonicalised (unpadded base64url) so
+    // that a client emitting standard base64 at login still resolves to this row
+    // and cannot register the same physical credential twice under two
+    // encodings — `findPasskeyByCredentialId` normalises the lookup to match.
     const passkeyData = {
       user_id: userId,
-      credential_id: credential.id,
+      credential_id: normalizeBase64Url(credential.id),
       public_key: attested.publicKey,
       public_key_alg: attested.alg,
       sign_count: attested.signCount,

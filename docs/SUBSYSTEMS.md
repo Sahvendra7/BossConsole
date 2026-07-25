@@ -28,10 +28,13 @@ edge function performs all of them on every ceremony:
 | Check | Where |
 |-------|-------|
 | `clientDataJSON.challenge` equals the challenge issued for the ceremony | `utils/webauthn.ts` → `challengeMatches` |
+| The challenge row is consumed atomically before a session is granted (single use, deterministic under concurrency) | `utils/database.ts` → `consumeChallengeRow` |
 | `authData.rpIdHash` is `SHA-256` of an allowed RP ID (pinned to `user_passkeys.rp_id` once recorded) | `utils/webauthn.ts` → `matchRpIdHash` |
-| Signature counter advances (authenticators that always report 0 are tolerated) | `utils/webauthn.ts` → `evaluateSignCounter` |
+| User Present flag is set | both services |
+| Signature counter advances, written compare-and-set (authenticators that always report 0 are tolerated) | `utils/webauthn.ts` → `evaluateSignCounter`, `utils/database.ts` → `recordPasskeyUse` |
 | Signature verifies for the credential's algorithm — ES256 and RS256 | `utils/crypto.ts` → `verifySignature` |
 | Origin is in `ALLOWED_ORIGINS` | route **and** service layer |
+| Ceremony principal binding: challenge ↔ user, credential ↔ challenge, attested ↔ stored credential id | both services |
 
 All transport payloads are decoded with `utils/base64.ts` → `decodeBase64Any`,
 which accepts base64 and base64url with or without padding. Locking a decoder to
@@ -39,8 +42,11 @@ one alphabet produces failures that depend on the bytes of the individual
 ceremony.
 
 **Environment**:
-- `PASSKEY_RP_ID` — RP ID for ceremonies (defaults to the host derived from `SUPABASE_URL`)
+- `PASSKEY_RP_ID` — **required in hosted deployments.** RP ID for ceremonies. The fallback derives it from `SUPABASE_URL`, which inside the edge runtime is the internal `kong` gateway and maps to `localhost` — not what the browser uses.
 - `PASSKEY_RP_ID_ALIASES` — comma-separated additional RP IDs accepted during verification
+- `PASSKEY_ALLOW_LOCALHOST` — set to `true` only for local development. Loopback RP IDs (`localhost`, `127.0.0.1`, `::1`) are rejected without it, since `localhost` is whatever host the client runs on rather than a BOSS-owned domain. A loopback `SUPABASE_URL` also counts as local.
+
+The tests are gated by `.github/workflows/edge-functions.yml` (`deno check` + `deno test`, scoped to `supabase/functions`).
 
 ## UI Architecture
 

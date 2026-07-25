@@ -16,6 +16,7 @@ import {
   COSE_ALG_ES256,
   COSE_ALG_RS256,
   parseAuthenticatorData,
+  sha256Bytes,
   type ParsedAuthenticatorData
 } from "./webauthn.ts"
 
@@ -30,6 +31,10 @@ export interface AttestedCredential {
   rpIdHash: Uint8Array
   /** Credential id from the attested credential data, base64url */
   credentialId: string | null
+  /** User Present flag from the attestation's authenticator data */
+  userPresent: boolean
+  /** User Verified flag from the attestation's authenticator data */
+  userVerified: boolean
 }
 
 /**
@@ -52,6 +57,16 @@ export async function extractCredentialFromAttestation(
       throw new Error('Missing authData in attestation')
     }
 
+    // NOTE: the attestation *statement* is deliberately not verified. Ceremonies
+    // request attestation: "none", so there is no trustworthy statement to check
+    // and no attestation trust anchors are configured. `fmt` is logged when it is
+    // anything else so that this stays a visible choice rather than an
+    // assumption — do not read the presence of an attStmt as proof of anything.
+    const fmt = attestation.fmt
+    if (typeof fmt === 'string' && fmt !== 'none') {
+      console.log(`ℹ️ Attestation statement present (fmt: ${fmt}) but not verified (attestation: "none")`)
+    }
+
     const authData: ParsedAuthenticatorData = parseAuthenticatorData(authDataBytes)
 
     if (!authData.attestedCredentialData || !authData.credentialPublicKey) {
@@ -66,7 +81,9 @@ export async function extractCredentialFromAttestation(
       alg,
       signCount: authData.signCount,
       rpIdHash: authData.rpIdHash,
-      credentialId: authData.credentialId ? encodeBase64UrlBytes(authData.credentialId) : null
+      credentialId: authData.credentialId ? encodeBase64UrlBytes(authData.credentialId) : null,
+      userPresent: authData.userPresent,
+      userVerified: authData.userVerified
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
@@ -189,7 +206,7 @@ export async function verifySignature(
       ? new TextEncoder().encode(clientData)
       : clientData
 
-    const clientDataHash = await sha256(clientDataBytes)
+    const clientDataHash = await sha256Bytes(clientDataBytes)
 
     // Create signed data (authenticatorData || clientDataHash)
     const signedData = new Uint8Array(authenticatorData.length + clientDataHash.length)
@@ -264,8 +281,16 @@ function parseDERSignature(derSignature: Uint8Array): Uint8Array {
     throw new Error('Invalid DER signature: missing SEQUENCE tag')
   }
 
-  // Skip length
-  offset++
+  // Validate the declared SEQUENCE length against what was actually sent. P-256
+  // signatures are always short-form (< 128 bytes of content), so a long-form
+  // length byte here is malformed rather than merely unexpected.
+  const declaredLength = derSignature[offset++]
+  if (declaredLength === undefined || declaredLength > 0x7f) {
+    throw new Error('Invalid DER signature: unsupported SEQUENCE length encoding')
+  }
+  if (declaredLength !== derSignature.length - 2) {
+    throw new Error('Invalid DER signature: SEQUENCE length does not match payload')
+  }
 
   // Parse r
   if (derSignature[offset++] !== 0x02) {
@@ -286,9 +311,9 @@ function parseDERSignature(derSignature: Uint8Array): Uint8Array {
     throw new Error('Invalid DER signature: empty r or s')
   }
 
-  // Remove leading zeros if present
-  const rValue = r[0] === 0 ? r.slice(1) : r
-  const sValue = s[0] === 0 ? s.slice(1) : s
+  // Remove leading zeros (DER pads a positive INTEGER whose high bit is set)
+  const rValue = stripLeadingZeros(r)
+  const sValue = stripLeadingZeros(s)
 
   if (rValue.length > 32 || sValue.length > 32) {
     throw new Error('Invalid DER signature: r or s longer than 32 bytes')
@@ -308,6 +333,15 @@ function parseDERSignature(derSignature: Uint8Array): Uint8Array {
   return rawSignature
 }
 
+function stripLeadingZeros(value: Uint8Array): Uint8Array {
+  let start = 0
+  while (start < value.length - 1 && value[start] === 0) start++
+  return value.slice(start)
+}
+
+/** Guards against a hostile attestation nesting maps/arrays without bound */
+const CBOR_MAX_DEPTH = 16
+
 /**
  * Simple CBOR decoder for WebAuthn attestation objects
  */
@@ -322,7 +356,7 @@ function decodeCBOR(buffer: Uint8Array): unknown {
   }
 
   function readBytes(length: number): Uint8Array {
-    if (offset + length > buffer.length) {
+    if (!Number.isSafeInteger(length) || length < 0 || offset + length > buffer.length) {
       throw new Error('Unexpected end of CBOR input')
     }
     const result = buffer.slice(offset, offset + length)
@@ -331,19 +365,40 @@ function decodeCBOR(buffer: Uint8Array): unknown {
   }
 
   function readUint16(): number {
+    if (offset + 2 > buffer.length) {
+      throw new Error('Unexpected end of CBOR input')
+    }
     const value = (buffer[offset] << 8) | buffer[offset + 1]
     offset += 2
     return value
   }
 
   function readUint32(): number {
-    const value = (buffer[offset] << 24) | (buffer[offset + 1] << 16) |
-                  (buffer[offset + 2] << 8) | buffer[offset + 3]
+    if (offset + 4 > buffer.length) {
+      throw new Error('Unexpected end of CBOR input')
+    }
+    // >>> 0 keeps values ≥ 2^31 unsigned: with `|` alone a huge declared length
+    // goes negative, and a negative length silently yields an empty slice
+    // instead of the error it should be.
+    const value = ((buffer[offset] << 24) | (buffer[offset + 1] << 16) |
+                  (buffer[offset + 2] << 8) | buffer[offset + 3]) >>> 0
     offset += 4
     return value
   }
 
-  function decode(): unknown {
+  /** Reads a definite length, rejecting indefinite and 64-bit forms */
+  function readLength(additionalInfo: number): number {
+    if (additionalInfo < 24) return additionalInfo
+    if (additionalInfo === 24) return readByte()
+    if (additionalInfo === 25) return readUint16()
+    if (additionalInfo === 26) return readUint32()
+    throw new Error(`Unsupported CBOR length encoding: ${additionalInfo}`)
+  }
+
+  function decode(depth = 0): unknown {
+    if (depth > CBOR_MAX_DEPTH) {
+      throw new Error('CBOR nesting too deep')
+    }
     const byte = readByte()
     const majorType = byte >> 5
     const additionalInfo = byte & 0x1f
@@ -364,42 +419,36 @@ function decodeCBOR(buffer: Uint8Array): unknown {
         throw new Error('Unsupported negative integer size')
 
       case 2: { // Byte string
-        const byteLength = additionalInfo < 24 ? additionalInfo :
-                          additionalInfo === 24 ? readByte() :
-                          additionalInfo === 25 ? readUint16() :
-                          readUint32()
-        return readBytes(byteLength)
+        return readBytes(readLength(additionalInfo))
       }
 
       case 3: { // Text string
-        const textLength = additionalInfo < 24 ? additionalInfo :
-                          additionalInfo === 24 ? readByte() :
-                          additionalInfo === 25 ? readUint16() :
-                          readUint32()
-        return new TextDecoder().decode(readBytes(textLength))
+        return new TextDecoder().decode(readBytes(readLength(additionalInfo)))
       }
 
       case 4: { // Array
-        const arrayLength = additionalInfo < 24 ? additionalInfo :
-                           additionalInfo === 24 ? readByte() :
-                           additionalInfo === 25 ? readUint16() :
-                           readUint32()
+        const arrayLength = readLength(additionalInfo)
+        // A declared length cannot exceed the bytes left to read, one per item
+        if (arrayLength > buffer.length - offset) {
+          throw new Error('Unexpected end of CBOR input')
+        }
         const array: unknown[] = []
         for (let i = 0; i < arrayLength; i++) {
-          array.push(decode())
+          array.push(decode(depth + 1))
         }
         return array
       }
 
       case 5: { // Map
-        const mapLength = additionalInfo < 24 ? additionalInfo :
-                         additionalInfo === 24 ? readByte() :
-                         additionalInfo === 25 ? readUint16() :
-                         readUint32()
+        const mapLength = readLength(additionalInfo)
+        // Each entry needs at least two bytes (key + value)
+        if (mapLength * 2 > buffer.length - offset) {
+          throw new Error('Unexpected end of CBOR input')
+        }
         const map: Record<string | number, unknown> = {}
         for (let i = 0; i < mapLength; i++) {
-          const key = decode()
-          const value = decode()
+          const key = decode(depth + 1)
+          const value = decode(depth + 1)
           map[key as string | number] = value
         }
         return map
@@ -420,10 +469,3 @@ function decodeCBOR(buffer: Uint8Array): unknown {
   return decode()
 }
 
-/**
- * Computes SHA-256 hash of input data
- */
-async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  const digest = await crypto.subtle.digest('SHA-256', asBufferSource(data))
-  return new Uint8Array(digest)
-}

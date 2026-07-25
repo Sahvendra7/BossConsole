@@ -142,8 +142,16 @@ auth.openapi(authCompleteRoute, async (ctx) => {
     const supabase = ctx.get("supabase")
     const { credential, challenge } = ctx.req.valid('json')
 
-    // Parse and validate origin (base64url-tolerant; see utils/base64.ts)
-    const { data: clientData } = parseClientDataJSON(credential.response.clientDataJSON)
+    // Parse and validate origin (base64url-tolerant; see utils/base64.ts).
+    // A payload we cannot decode is a bad request, not a server fault.
+    let clientData
+    try {
+      clientData = parseClientDataJSON(credential.response.clientDataJSON).data
+    } catch (error) {
+      console.error('❌ Malformed clientDataJSON on auth/complete:', (error as Error).message)
+      return ctx.json({ error: 'Invalid clientDataJSON' }, 400)
+    }
+
     if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
       return ctx.json({ error: 'Invalid origin' }, 403)
     }

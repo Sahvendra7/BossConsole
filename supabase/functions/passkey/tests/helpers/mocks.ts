@@ -18,6 +18,12 @@ export interface MockSupabaseResponse<T = unknown> {
 // deno-lint-ignore no-explicit-any
 type QueryParams = Record<string, any>
 
+/** A queued response, optionally scoped to the filters a query must carry */
+interface QueuedResponse {
+  response: MockSupabaseResponse
+  match?: Record<string, unknown>
+}
+
 export interface MockQueryBuilder extends Promise<MockSupabaseResponse> {
   select: (columns: string) => MockQueryBuilder
   insert: (data: unknown) => MockQueryBuilder
@@ -26,6 +32,7 @@ export interface MockQueryBuilder extends Promise<MockSupabaseResponse> {
   eq: (column: string, value: unknown) => MockQueryBuilder
   gt: (column: string, value: unknown) => MockQueryBuilder
   lt: (column: string, value: unknown) => MockQueryBuilder
+  or: (filters: string) => MockQueryBuilder
   limit: (count: number) => MockQueryBuilder
   single: () => Promise<MockSupabaseResponse>
   maybeSingle: () => Promise<MockSupabaseResponse>
@@ -37,7 +44,7 @@ export interface MockQueryBuilder extends Promise<MockSupabaseResponse> {
 
 export class MockSupabaseClient {
   // Store responses by table.operation key for more granular control
-  private mockResponses: Map<string, MockSupabaseResponse[]> = new Map()
+  private mockResponses: Map<string, QueuedResponse[]> = new Map()
   private queryHistory: Array<{ table: string; operation: string; params: QueryParams }> = []
   // email -> user id, used by the auth stub when minting a session
   private authUsers: Map<string, string> = new Map()
@@ -115,11 +122,22 @@ export class MockSupabaseClient {
   /**
    * Configure mock response for a specific table and operation
    * Multiple calls will queue responses (useful for sequential queries)
+   *
+   * `options.match` makes the response behave like an actual row: it is only
+   * served to a query that filtered on those column/value pairs, and a query
+   * with different filters gets "no rows found" instead. Without it the response
+   * is served to any query on the same table/operation, which cannot distinguish
+   * a lookup keyed on one column value from a lookup keyed on another.
    */
-  mockResponse(table: string, response: MockSupabaseResponse, operation = 'default'): void {
+  mockResponse(
+    table: string,
+    response: MockSupabaseResponse,
+    operation = 'default',
+    options?: { match?: Record<string, unknown> }
+  ): void {
     const key = `${table}.${operation}`
     const existing = this.mockResponses.get(key) || []
-    existing.push(response)
+    existing.push({ response, match: options?.match })
     this.mockResponses.set(key, existing)
   }
 
@@ -139,27 +157,52 @@ export class MockSupabaseClient {
   }
 
   /**
+   * Response for a query that matched no row, shaped like PostgREST's.
+   */
+  private static notFound(): MockSupabaseResponse {
+    return { data: null, error: { code: 'PGRST116', message: 'No rows found (mock filter mismatch)' } }
+  }
+
+  /**
+   * True when every column/value pair in `match` was filtered on by the query.
+   */
+  private static filtersSatisfy(match: Record<string, unknown>, params: QueryParams): boolean {
+    const filters = (params.eq ?? []) as Array<{ column: string; value: unknown }>
+
+    return Object.entries(match).every(([column, value]) =>
+      filters.some(filter => filter.column === column && filter.value === value)
+    )
+  }
+
+  /**
    * Get next response for a table.operation key
    */
-  private getNextResponse(table: string, operation: string): MockSupabaseResponse {
-    // Try specific operation first
-    const specificKey = `${table}.${operation}`
-    const specificResponses = this.mockResponses.get(specificKey)
-    if (specificResponses && specificResponses.length > 0) {
-      return specificResponses.shift()!
-    }
+  private getNextResponse(table: string, operation: string, params: QueryParams = {}): MockSupabaseResponse {
+    const queues = [
+      `${table}.${operation}`,
+      `${table}.default`,
+      table // legacy key (backward compatibility)
+    ]
 
-    // Fall back to default
-    const defaultKey = `${table}.default`
-    const defaultResponses = this.mockResponses.get(defaultKey)
-    if (defaultResponses && defaultResponses.length > 0) {
-      return defaultResponses.shift()!
-    }
+    for (const key of queues) {
+      const queue = this.mockResponses.get(key)
+      if (!queue || queue.length === 0) continue
 
-    // Fall back to legacy key (backward compatibility)
-    const legacyResponses = this.mockResponses.get(table)
-    if (legacyResponses && legacyResponses.length > 0) {
-      return legacyResponses.shift()!
+      // Filter-aware entries behave like rows: the query has to select them.
+      if (queue.some(entry => entry.match)) {
+        const index = queue.findIndex(
+          entry => !entry.match || MockSupabaseClient.filtersSatisfy(entry.match, params)
+        )
+
+        if (index === -1) {
+          // Queued rows exist but none match this query's filters
+          return MockSupabaseClient.notFound()
+        }
+
+        return queue.splice(index, 1)[0].response
+      }
+
+      return queue.shift()!.response
     }
 
     return { data: null, error: null }
@@ -183,7 +226,7 @@ export class MockSupabaseClient {
 
     const executeQuery = (): Promise<MockSupabaseResponse> => {
       this.queryHistory.push({ table, operation: currentOperation, params: currentParams })
-      const response = this.getNextResponse(table, currentOperation)
+      const response = this.getNextResponse(table, currentOperation, currentParams)
       return Promise.resolve(response)
     }
 
@@ -224,6 +267,10 @@ export class MockSupabaseClient {
       },
       lt: (column: string, value: unknown) => {
         currentParams.lt = { column, value }
+        return builder
+      },
+      or: (filters: string) => {
+        currentParams.or = filters
         return builder
       },
       limit: (count: number) => {

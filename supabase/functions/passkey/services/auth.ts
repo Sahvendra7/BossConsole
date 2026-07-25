@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { generateChallenge, storeChallenge } from "../utils/challenge.ts"
 import {
   verifyChallenge,
+  consumeChallengeRow,
   findPasskeyByCredentialId,
   getUserPasskeys,
   findUserByEmail,
@@ -12,7 +13,7 @@ import { verifySignature } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler, withStatusErrorHandler } from "../utils/error-handler.ts"
 import { generateSupabaseAccessToken } from "../utils/jwt.ts"
-import { getAllowedRpIds, getRpId } from "../utils/config.ts"
+import { ALLOWED_ORIGINS, getAllowedRpIds, getRpId } from "../utils/config.ts"
 import { normalizeBase64Url } from "../utils/base64.ts"
 import {
   challengeMatches,
@@ -23,13 +24,9 @@ import {
   parseClientDataJSON
 } from "../utils/webauthn.ts"
 
-export const ALLOWED_ORIGINS = [
-  'boss://authenticate',
-  'http://localhost:3000',
-  'http://localhost:54321',  // Supabase local functions
-  'https://risaboss.com',
-  'https://api.risaboss.com'
-]
+// Re-exported for the routes and for callers that imported it from here before
+// it moved to utils/config.ts (single source of truth).
+export { ALLOWED_ORIGINS }
 
 export interface AuthenticationCredential {
   id: string
@@ -199,7 +196,10 @@ export const completeAuthentication = withErrorHandler(
 
     const passkey = passkeyResult.passkey
 
-    // The credential must belong to the user this challenge was issued for
+    // The credential must belong to the user this challenge was issued for.
+    // `storeChallenge` always records user_id on the authentication path, so the
+    // null guard is defensive rather than an opt-out: a row without a user_id
+    // cannot be produced by any current code path.
     const challengeUserId = challengeResult.challengeData?.user_id
     if (challengeUserId && passkey.user_id && challengeUserId !== passkey.user_id) {
       console.error('❌ Credential does not belong to the user this challenge was issued for')
@@ -211,6 +211,16 @@ export const completeAuthentication = withErrorHandler(
 
     // Parse authenticator data for the relying party hash and signature counter
     const authData = parseAuthenticatorDataBase64(authenticatorData)
+
+    // User Presence is mandatory (WebAuthn L2 §7.2 step 15). A browser will not
+    // produce an assertion without it; a non-browser client can.
+    if (!authData.userPresent) {
+      console.error('❌ Assertion has no User Present flag')
+      return {
+        success: false,
+        error: 'User presence flag not set'
+      }
+    }
 
     // Verify the authenticator signed for our relying party. Credentials
     // registered after this change are pinned to the exact rpId recorded at
@@ -254,11 +264,40 @@ export const completeAuthentication = withErrorHandler(
       }
     }
 
-    // Record the successful assertion (last used + signature counter)
-    await recordPasskeyUse(supabase, passkey.id, counter.nextValue)
+    const challengeData = challengeResult.challengeData
+
+    // Consume the challenge now, before any session is granted, and only
+    // continue if *this* request is the one that consumed it.
+    //
+    // This used to happen only when the challenge carried a session_id (the QR
+    // flow), so on the direct path the row survived a completed ceremony for the
+    // rest of its 5-minute TTL — and the same captured assertion could be
+    // replayed against it, indistinguishably, for an authenticator whose counter
+    // is always 0. Consumption is unconditional and atomic; it runs after the
+    // signature check so that an unauthenticated request cannot burn a pending
+    // ceremony.
+    const consumeResult = await consumeChallengeRow(supabase, challengeData.id)
+    if (!consumeResult.consumed) {
+      console.error('❌ Refusing to complete: challenge was not consumed by this request')
+      return {
+        success: false,
+        error: 'Challenge already used'
+      }
+    }
+
+    // Record the successful assertion (last used + signature counter). With a
+    // real counter this is a compare-and-set: losing it means a concurrent
+    // assertion already claimed this counter value.
+    const useResult = await recordPasskeyUse(supabase, passkey.id, counter.nextValue)
+    if (!useResult.advanced) {
+      console.error('❌ Signature counter was claimed concurrently for passkey:', passkey.id)
+      return {
+        success: false,
+        error: 'Signature counter did not increase - possible cloned authenticator'
+      }
+    }
 
     // Store completed authentication if there's a session_id
-    const challengeData = challengeResult.challengeData
     console.log('🔍 Challenge data:', {
       has_session_id: !!challengeData.session_id,
       session_id: challengeData.session_id,
@@ -267,7 +306,7 @@ export const completeAuthentication = withErrorHandler(
 
     if (challengeData.session_id) {
       console.log('💾 Storing completed authentication for session:', challengeData.session_id)
-      const { data: insertData, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('completed_authentications')
         .insert({
           challenge: signedChallenge,  // Required NOT NULL field
@@ -278,25 +317,17 @@ export const completeAuthentication = withErrorHandler(
         .select()
 
       if (insertError) {
+        // The challenge is already consumed at this point, so the client has to
+        // start a new ceremony rather than retry this one. That is the safe
+        // direction: never leave a used challenge live to keep a retry cheap.
         console.error('❌ Failed to store completed authentication:', insertError)
-        console.error('❌ Insert error details:', JSON.stringify(insertError, null, 2))
-        console.error('❌ Insert error code:', insertError.code)
-        console.error('❌ Insert error message:', insertError.message)
-        // Don't consume challenge if we failed to store completed auth
         return {
           success: false,
           error: `Failed to store authentication result: ${insertError.message || insertError.code || 'Unknown error'}`
         }
-      } else {
-        console.log('✅ Stored completed authentication:', insertData)
-
-        // Now it's safe to delete the challenge
-        console.log('🗑️ Deleting consumed challenge')
-        await supabase
-          .from('passkey_challenges')
-          .delete()
-          .eq('id', challengeData.id)
       }
+
+      console.log('✅ Stored completed authentication')
     } else {
       console.warn('⚠️ No session_id in challenge data - completed authentication not stored')
     }
@@ -333,7 +364,8 @@ export const completeAuthentication = withErrorHandler(
           email: userEmail,
           access_token: tokens.accessToken,
           refresh_token: tokens.refreshToken,
-          expires_at: tokens.expiresAt
+          // Column is documented as epoch milliseconds; the API speaks seconds
+          expires_at: toEpochMillis(tokens.expiresAt)
         })
         .eq('session_id', challengeData.session_id)
 
@@ -356,6 +388,26 @@ export const completeAuthentication = withErrorHandler(
   'Failed to complete authentication',
   '🔐'
 )
+
+/**
+ * `completed_authentications.expires_at` is epoch **milliseconds** (see the
+ * column comment in 20251023000009_passkey_tables.sql), while the API and the
+ * Supabase session speak seconds. Converting at the boundary keeps the column
+ * honest and the responses unchanged.
+ */
+function toEpochMillis(expiresAtSeconds: number): number | null {
+  return Number.isFinite(expiresAtSeconds) ? Math.floor(expiresAtSeconds * 1000) : null
+}
+
+/**
+ * Reads a stored epoch-millisecond expiry, returning null when it is absent or
+ * unparseable — callers must treat that as "expired" rather than "valid".
+ */
+function parseStoredExpiryMillis(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const millis = Number(value)
+  return Number.isFinite(millis) ? millis : null
+}
 
 /**
  * Checks the status of an authentication session
@@ -403,11 +455,16 @@ export const checkAuthStatus = withStatusErrorHandler(
       // session on every poll churns auth.sessions rows (and invalidates the
       // refresh token a client may already be using) for clients that keep
       // polling after the first success.
-      const nowInSeconds = Math.floor(Date.now() / 1000)
+      //
+      // Fails closed: a missing or unparseable expiry means the token's remaining
+      // life is unknown, so mint a fresh session instead of replaying a possibly
+      // dead one. Minting is the fallback path anyway, so this costs nothing.
+      const storedExpiryMillis = parseStoredExpiryMillis(completedAuth.expires_at)
       if (
         completedAuth.access_token &&
         completedAuth.refresh_token &&
-        (!completedAuth.expires_at || Number(completedAuth.expires_at) > nowInSeconds + 30)
+        storedExpiryMillis !== null &&
+        storedExpiryMillis > Date.now() + 30_000
       ) {
         console.log('♻️ Returning the session minted when the ceremony completed')
         return {
@@ -417,7 +474,7 @@ export const checkAuthStatus = withStatusErrorHandler(
           completedAt: completedAuth.created_at,
           accessToken: completedAuth.access_token,
           refreshToken: completedAuth.refresh_token,
-          expiresAt: completedAuth.expires_at ? Number(completedAuth.expires_at) : undefined
+          expiresAt: Math.floor(storedExpiryMillis / 1000)
         }
       }
 
@@ -448,7 +505,8 @@ export const checkAuthStatus = withStatusErrorHandler(
           email: userResult.user.email,
           access_token: tokens.accessToken,
           refresh_token: tokens.refreshToken,
-          expires_at: tokens.expiresAt
+          // Column is documented as epoch milliseconds; the API speaks seconds
+          expires_at: toEpochMillis(tokens.expiresAt)
         })
         .eq('session_id', sessionId)
 
