@@ -174,12 +174,16 @@ object WindowsProtocolHandler {
      * Windows' generic "no app associated" error. Invoke via
      * `BOSS.exe --unregister-protocol` from an uninstall action or by hand.
      *
-     * Safety: the key is only deleted when it points at *this* installation or at an
-     * executable that no longer exists. A registration owned by a different, still
-     * present install is left alone — and so is one whose command this code cannot
-     * parse. "Unparseable" is deliberately NOT folded into "stale": an unquoted
-     * `shell\open\command` is what a WiX/MSI-authored registration typically looks
-     * like, so deleting it would break a working install.
+     * Safety: the key is only deleted when it points at *this* installation, at an
+     * executable that no longer exists, or has no command value at all (a partial
+     * registration this code produced). A registration owned by a different, still
+     * present install is left alone — and so is one whose command is present but
+     * unparseable: an unquoted `shell\open\command` is what a WiX/MSI-authored
+     * registration typically looks like, so deleting it would break a working install.
+     *
+     * Note this protection is delete-only. [registerProtocol] still overwrites an
+     * unparseable command (`commandPointsToValidExecutable` fails closed), so an
+     * installer-authored registration survives cleanup but not a re-registration.
      */
     fun unregisterProtocol(): UnregisterOutcome {
         if (!isWindows) return UnregisterOutcome.NOT_APPLICABLE
@@ -194,11 +198,26 @@ object WindowsProtocolHandler {
                 UnregisterOutcome.ABSENT
             }
 
+            // Root key exists with no shell\open\command value at all. That is a
+            // partial registration this code owns: performRegistration does four
+            // independent `reg add`s and only logs when some fail. registerProtocol
+            // already self-heals this state by re-registering, so cleanup must own it
+            // too rather than leaving orphan keys behind forever.
+            currentCommand == null -> {
+                logger.info(
+                    LogCategory.SYSTEM,
+                    "boss:// protocol is partially registered (no command value) - removing orphan keys",
+                )
+                deleteProtocolKey()
+            }
+
+            // Present, but not in a form this code can read — e.g. an unquoted,
+            // installer-authored command. Never delete what we cannot parse.
             registeredExe == null -> {
                 logger.info(
                     LogCategory.SYSTEM,
                     "boss:// protocol command could not be parsed - leaving it registered",
-                    mapOf("command" to currentCommand.orEmpty()),
+                    mapOf("command" to currentCommand),
                 )
                 UnregisterOutcome.UNREADABLE
             }

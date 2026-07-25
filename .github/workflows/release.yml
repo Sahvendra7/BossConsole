@@ -63,6 +63,14 @@ on:
         required: false
         default: false
         type: boolean
+      build_id:
+        description: >-
+          macOS CFBundleVersion build identifier. Callers MUST pass one: a called
+          workflow's jobs belong to the caller's run, so github.run_number would be the
+          caller's counter here (see the env block below).
+        required: false
+        default: ''
+        type: string
   push:
     tags:
       - 'v*.*.*'
@@ -74,7 +82,12 @@ env:
   # the same app version is still distinguishable, and every platform job of one
   # release run shares the same build id. See composeApp/build.gradle.kts
   # (macBundleBuildVersion) for the fallbacks used outside this workflow.
-  BOSS_BUILD_ID: ${{ github.run_number }}
+  #
+  # When this workflow is *called* (promote-release.yml), github.run_number is the
+  # CALLER's counter — an independent sequence that can collide with, or sort below, a
+  # direct release run. Callers therefore pass build_id explicitly (promote-release uses
+  # a seconds-since-epoch stamp, which no run_number reaches), and it wins here.
+  BOSS_BUILD_ID: ${{ inputs.build_id || github.run_number }}
   # Production credentials for release builds
   JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
