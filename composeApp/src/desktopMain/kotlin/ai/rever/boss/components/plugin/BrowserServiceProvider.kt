@@ -50,6 +50,9 @@ private class WindowScopedBrowserService(
     override fun getActiveBrowserCount(): Int = BrowserServiceImpl.getActiveBrowserCountForWindow(windowId)
 
     fun close() {
+        // Window-close routing calls this on the EDT. Keep that invariant while
+        // holding lifecycleLock: fullscreen BrowserView disposal may marshal to
+        // the EDT and must never wait for a lock owned by a background caller.
         synchronized(lifecycleLock) {
             if (closed) return
             closed = true

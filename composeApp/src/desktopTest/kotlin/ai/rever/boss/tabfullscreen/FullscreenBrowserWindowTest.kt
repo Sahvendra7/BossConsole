@@ -72,4 +72,47 @@ class FullscreenBrowserWindowTest {
             ),
         )
     }
+
+    @Test
+    fun `delayed fullscreen work is rejected after a newer lifecycle starts`() {
+        assertTrue(
+            isCurrentFullscreenLifecycle(
+                expectedEpoch = 4,
+                currentEpoch = 4,
+                isInFullscreenMode = true,
+            ),
+        )
+        assertFalse(
+            isCurrentFullscreenLifecycle(
+                expectedEpoch = 4,
+                currentEpoch = 5,
+                isInFullscreenMode = true,
+            ),
+        )
+        assertFalse(
+            isCurrentFullscreenLifecycle(
+                expectedEpoch = 4,
+                currentEpoch = 4,
+                isInFullscreenMode = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `old cleanup cannot clear a newer fullscreen tab state`() {
+        assertTrue(
+            shouldRestoreFullscreenTabState(
+                cleanupEpoch = 5,
+                currentEpoch = 5,
+                isInFullscreenMode = false,
+            ),
+        )
+        assertFalse(
+            shouldRestoreFullscreenTabState(
+                cleanupEpoch = 5,
+                currentEpoch = 6,
+                isInFullscreenMode = true,
+            ),
+        )
+    }
 }

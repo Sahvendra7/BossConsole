@@ -253,7 +253,7 @@ fun ApplicationScope.BossWindow(
         // Publish Compose's authoritative placement. Native macOS fullscreen does not
         // reliably report full-display AWT bounds, so browser-video fullscreen uses this
         // state to decide whether to overlay the existing fullscreen Space.
-        LaunchedEffect(windowState.id, isFullScreen) {
+        LaunchedEffect(windowState.id, window, isFullScreen) {
             WindowFocusManager.updateWindowFullscreen(windowState.id, isFullScreen)
         }
 

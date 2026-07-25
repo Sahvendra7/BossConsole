@@ -62,6 +62,34 @@ class WindowFocusManagerTest {
         assertFalse(shouldNotifyComposeFullscreenExit(wasComposeFullscreen = false, isNativeFullscreen = false))
         assertFalse(shouldNotifyComposeFullscreenExit(wasComposeFullscreen = true, isNativeFullscreen = true))
         assertTrue(shouldNotifyComposeFullscreenExit(wasComposeFullscreen = true, isNativeFullscreen = false))
+        assertFalse(
+            shouldNotifyNativeFullscreenExit(
+                hadNativeState = false,
+                wasNativeFullscreen = false,
+                composeFullscreen = false,
+            ),
+        )
+        assertTrue(
+            shouldNotifyNativeFullscreenExit(
+                hadNativeState = false,
+                wasNativeFullscreen = false,
+                composeFullscreen = true,
+            ),
+        )
+        assertTrue(
+            shouldNotifyNativeFullscreenExit(
+                hadNativeState = true,
+                wasNativeFullscreen = true,
+                composeFullscreen = false,
+            ),
+        )
+        assertFalse(
+            shouldNotifyNativeFullscreenExit(
+                hadNativeState = true,
+                wasNativeFullscreen = false,
+                composeFullscreen = true,
+            ),
+        )
     }
 
     @Test
@@ -70,11 +98,23 @@ class WindowFocusManagerTest {
         val exitedWindows = mutableListOf<String>()
         val listener: (String) -> Unit = exitedWindows::add
 
-        notifier.notify("before-registration")
+        notifier.notifyExit("before-registration")
         notifier.add(listener)
-        notifier.notify("window-a")
+        notifier.notifyExit("window-a")
         notifier.remove(listener)
-        notifier.notify("after-removal")
+        notifier.notifyExit("after-removal")
+
+        assertEquals(listOf("window-a"), exitedWindows)
+    }
+
+    @Test
+    fun `failing fullscreen exit listener does not skip remaining listeners`() {
+        val notifier = FullscreenExitNotifier()
+        val exitedWindows = mutableListOf<String>()
+
+        notifier.add { error("listener failure") }
+        notifier.add(exitedWindows::add)
+        notifier.notifyExit("window-a")
 
         assertEquals(listOf("window-a"), exitedWindows)
     }
