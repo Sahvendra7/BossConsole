@@ -194,6 +194,19 @@ internal object WindowsProtocolCleanup {
                 CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.UNREADABLE)
             }
 
+            // Exactly our own install path: safe to remove, and checked BEFORE the decode
+            // guards below. appPath comes from jpackage.app-path — a correctly decoded JVM
+            // string, and the very string performRegistration wrote — so an exact
+            // case-insensitive match is itself proof that the registry value decoded
+            // correctly. Ordering this after the ASCII rule would make cleanup refuse to
+            // remove *our own* registration for every account whose name is not ASCII
+            // (Björn, Müller, Łukasz), i.e. the hook's primary case: jpackage installs
+            // per-user under C:\Users\<account>\AppData\Local. A %VARIABLE%-bearing value
+            // can never equal a resolved absolute path, so nothing is weakened.
+            registeredExe.equals(appPath, ignoreCase = true) -> {
+                CleanupDecision.Delete
+            }
+
             // A REG_EXPAND_SZ path still contains %VARIABLE% references and nothing here expands
             // them, so exeExists() is always false for one — which would classify a perfectly
             // live installer-authored registration as dead and delete it. Not evaluatable means
@@ -224,8 +237,10 @@ internal object WindowsProtocolCleanup {
                 CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.UNREADABLE)
             }
 
-            // Ours, or pointing at an executable that is gone: safe to remove.
-            registeredExe.equals(appPath, ignoreCase = true) || !exeExists(registeredExe) -> {
+            // Pointing at an executable that is gone: safe to remove. Below the decode
+            // guards deliberately — a mis-decoded path is also a path that does not exist,
+            // and that must not license a delete.
+            !exeExists(registeredExe) -> {
                 CleanupDecision.Delete
             }
 

@@ -333,6 +333,24 @@ class WindowsProtocolCleanupTest {
         )
     }
 
+    /**
+     * The hook's primary case on a non-ASCII account: jpackage installs per-user under
+     * `C:\Users\<account>\AppData\Local`, so if the ASCII guard outranked the self-match,
+     * cleanup would refuse to remove our *own* registration for Björn, Müller, Łukasz, …
+     */
+    @Test
+    fun `deletes a non-ascii path that exactly matches this installation`() {
+        val nonAscii = """C:\Users\Bj\u00F6rn\AppData\Local\BOSS\BOSS.exe"""
+        assertEquals(
+            CleanupDecision.Delete,
+            classify(
+                command = CommandState.Present(""""$nonAscii" "%1""""),
+                appPath = nonAscii,
+                existing = setOf(nonAscii),
+            ),
+        )
+    }
+
     /** An offline UNC share is not the same as an uninstalled app. */
     @Test
     fun `leaves a UNC path alone`() {
