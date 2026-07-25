@@ -69,6 +69,7 @@ object FullscreenBrowserWindow {
     private var hasReachedFullscreen = false // True only after fullscreen animation completes
     private var usesNativeMacOSFullscreen = false
     private var isExiting = false // Prevent multiple exit calls
+    private var lifecycleEpoch = 0L
 
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
 
@@ -91,24 +92,58 @@ object FullscreenBrowserWindow {
         onEnter: () -> Unit,
         onExit: () -> Unit,
     ) {
-        if (!SwingUtilities.isEventDispatchThread()) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            handleFullscreenRequest(browser, tabId, ownerWindowId, onEnter, onExit)
+        } else {
             SwingUtilities.invokeLater {
-                showFullscreen(browser, tabId, ownerWindowId, onEnter, onExit)
+                handleFullscreenRequest(browser, tabId, ownerWindowId, onEnter, onExit)
             }
-            return
         }
+    }
 
-        // Prevent duplicate calls
-        if (browser.isClosed || fullscreenFrame != null || isInFullscreenMode) {
-            logger.warn(LogCategory.BROWSER, "Fullscreen already active, ignoring duplicate request")
-            runCatching { browser.fullScreen().exit() }
-                .onFailure { error ->
-                    logger.warn(LogCategory.BROWSER, "Could not reject duplicate browser fullscreen", error = error)
-                }
-            onExit()
-            return
+    private fun handleFullscreenRequest(
+        browser: Browser,
+        tabId: String,
+        ownerWindowId: String,
+        onEnter: () -> Unit,
+        onExit: () -> Unit,
+    ) {
+        val fullscreenActive = fullscreenFrame != null || isInFullscreenMode
+        when {
+            fullscreenActive && currentBrowser === browser -> {
+                logger.warn(LogCategory.BROWSER, "Ignoring duplicate fullscreen request from active browser")
+            }
+
+            browser.isClosed || fullscreenActive -> {
+                rejectFullscreenRequest(browser, onExit)
+            }
+
+            else -> {
+                beginFullscreenSession(browser, tabId, ownerWindowId, onEnter, onExit)
+            }
         }
+    }
 
+    /** Rejects a losing browser without publishing a false enter state. */
+    private fun rejectFullscreenRequest(
+        browser: Browser,
+        onExit: () -> Unit,
+    ) {
+        logger.warn(LogCategory.BROWSER, "Fullscreen already active, ignoring duplicate request")
+        runCatching { browser.fullScreen().exit() }
+            .onFailure { error ->
+                logger.warn(LogCategory.BROWSER, "Could not reject duplicate browser fullscreen", error = error)
+            }
+        onExit()
+    }
+
+    private fun beginFullscreenSession(
+        browser: Browser,
+        tabId: String,
+        ownerWindowId: String,
+        onEnter: () -> Unit,
+        onExit: () -> Unit,
+    ) {
         // Mark fullscreen state FIRST so Compose BrowserView hides immediately
         // This triggers recomposition in JxBrowserCompose.kt, replacing BrowserView with placeholder
         isInFullscreenMode = true
@@ -117,6 +152,8 @@ object FullscreenBrowserWindow {
         onExitCallback = onExit
         isExiting = false
         hasReachedFullscreen = false
+        lifecycleEpoch++
+        val expectedEpoch = lifecycleEpoch
         TabFullscreenStateManager.enterFullscreen(tabId)
         onEnter()
 
@@ -127,7 +164,9 @@ object FullscreenBrowserWindow {
         SwingUtilities.invokeLater {
             Timer(COMPOSE_DETACH_DELAY_MS) {
                 SwingUtilities.invokeLater {
-                    createFullscreenWindow(browser, tabId)
+                    if (isCurrentSession(expectedEpoch, browser)) {
+                        createFullscreenWindow(browser, tabId, expectedEpoch)
+                    }
                 }
             }.apply {
                 isRepeats = false
@@ -136,17 +175,33 @@ object FullscreenBrowserWindow {
         }
     }
 
+    private fun isCurrentSession(
+        expectedEpoch: Long,
+        browser: Browser,
+    ): Boolean =
+        lifecycleEpoch == expectedEpoch &&
+            isInFullscreenMode &&
+            currentBrowser === browser
+
+    private fun isCurrentFrameSession(
+        expectedEpoch: Long,
+        browser: Browser,
+        frame: JFrame,
+    ): Boolean = isCurrentSession(expectedEpoch, browser) && fullscreenFrame === frame
+
     /**
      * Creates and displays the fullscreen window with a Swing BrowserView.
      * Called after Compose BrowserView has had time to detach from rendering.
      */
+    @Suppress("LongMethod")
     private fun createFullscreenWindow(
         browser: Browser,
         tabId: String,
+        expectedEpoch: Long,
     ) {
         try {
             // Check if we've been cancelled during the delay
-            if (!isInFullscreenMode) {
+            if (!isCurrentSession(expectedEpoch, browser)) {
                 logger.warn(LogCategory.BROWSER, "Fullscreen cancelled during delay")
                 return
             }
@@ -190,10 +245,13 @@ object FullscreenBrowserWindow {
                         // Overlay and Windows/Linux frames are fixed-size and exit directly;
                         // resize-based native-Space exit detection is macOS-native only.
                         if (!usesNativeMacOSFullscreen || !hasReachedFullscreen) return
-                        if (!isInFullscreenMode || isExiting || fullscreenFrame == null) return
+                        if (!isCurrentFrameSession(expectedEpoch, browser, frame) || isExiting) return
 
                         SwingUtilities.invokeLater {
-                            if (!isWindowInFullscreen(frame) && !isExiting) {
+                            if (isCurrentFrameSession(expectedEpoch, browser, frame) &&
+                                !isWindowInFullscreen(frame) &&
+                                !isExiting
+                            ) {
                                 logger.info(LogCategory.BROWSER, "Native fullscreen exited via resize detection")
                                 performExit()
                             }
@@ -215,6 +273,7 @@ object FullscreenBrowserWindow {
                         frame = frame,
                         bounds = fullscreenHostBounds,
                         watchOwnerExit = true,
+                        expectedEpoch = expectedEpoch,
                     )
                     logger.info(
                         LogCategory.BROWSER,
@@ -230,10 +289,11 @@ object FullscreenBrowserWindow {
 
                     // Request native fullscreen toggle after window is visible
                     SwingUtilities.invokeLater {
+                        if (!isCurrentFrameSession(expectedEpoch, browser, frame)) return@invokeLater
                         if (toggleMacOSFullscreen(frame)) {
                             // Wait for fullscreen animation to complete before enabling exit detection
                             Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
-                                if (fullscreenFrame != null && isInFullscreenMode) {
+                                if (isCurrentFrameSession(expectedEpoch, browser, frame)) {
                                     if (isWindowInFullscreen(frame)) {
                                         hasReachedFullscreen = true
                                         logger.info(
@@ -249,6 +309,7 @@ object FullscreenBrowserWindow {
                                             frame = frame,
                                             bounds = displayBounds(frame),
                                             watchOwnerExit = false,
+                                            expectedEpoch = expectedEpoch,
                                         )
                                     }
                                 }
@@ -261,6 +322,7 @@ object FullscreenBrowserWindow {
                                 frame = frame,
                                 bounds = displayBounds(frame),
                                 watchOwnerExit = false,
+                                expectedEpoch = expectedEpoch,
                             )
                         }
                     }
@@ -282,10 +344,12 @@ object FullscreenBrowserWindow {
             logger.info(LogCategory.BROWSER, "Fullscreen window opened", mapOf("tabId" to tabId, "isMacOS" to isMacOS))
         } catch (e: Exception) {
             logger.error(LogCategory.BROWSER, "Failed to create fullscreen window", error = e)
-            val callback = onExitCallback
-            resetState()
-            TabFullscreenStateManager.exitFullscreen()
-            callback?.invoke()
+            if (isCurrentSession(expectedEpoch, browser)) {
+                val callback = onExitCallback
+                resetState()
+                TabFullscreenStateManager.exitFullscreen()
+                callback?.invoke()
+            }
         }
     }
 
@@ -293,7 +357,9 @@ object FullscreenBrowserWindow {
         frame: JFrame,
         bounds: Rectangle,
         watchOwnerExit: Boolean,
+        expectedEpoch: Long,
     ) {
+        if (lifecycleEpoch != expectedEpoch || fullscreenFrame !== frame) return
         if (frame.isDisplayable) {
             frame.dispose()
         }
@@ -307,7 +373,7 @@ object FullscreenBrowserWindow {
         usesNativeMacOSFullscreen = false
         hasReachedFullscreen = true
         if (watchOwnerExit) {
-            watchOwnerFullscreenExit(currentOwnerWindowId)
+            watchOwnerFullscreenExit(currentOwnerWindowId, expectedEpoch)
         }
     }
 
@@ -443,22 +509,22 @@ object FullscreenBrowserWindow {
         )
     }
 
-    private fun watchOwnerFullscreenExit(ownerWindowId: String?) {
+    private fun watchOwnerFullscreenExit(
+        ownerWindowId: String?,
+        expectedEpoch: Long,
+    ) {
         if (ownerWindowId == null) return
         ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
         val listener: (String) -> Unit = { exitedWindowId ->
             if (exitedWindowId == ownerWindowId) {
                 SwingUtilities.invokeLater {
-                    if (currentOwnerWindowId == ownerWindowId &&
-                        isInFullscreenMode &&
-                        !usesNativeMacOSFullscreen
-                    ) {
+                    if (isCurrentOwnerOverlay(ownerWindowId, expectedEpoch)) {
                         logger.info(
                             LogCategory.BROWSER,
                             "Closing fullscreen video overlay because its host exited fullscreen",
                             mapOf("ownerWindowId" to ownerWindowId),
                         )
-                        performExitDirect()
+                        requestPageExit()
                     }
                 }
             }
@@ -481,10 +547,20 @@ object FullscreenBrowserWindow {
         }
     }
 
+    private fun isCurrentOwnerOverlay(
+        ownerWindowId: String,
+        expectedEpoch: Long,
+    ): Boolean =
+        currentOwnerWindowId == ownerWindowId &&
+            lifecycleEpoch == expectedEpoch &&
+            isInFullscreenMode &&
+            !usesNativeMacOSFullscreen
+
     /**
      * Reset all state variables.
      */
-    private fun resetState() {
+    private fun resetState(): Long {
+        lifecycleEpoch++
         ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
         ownerFullscreenExitListener = null
         fullscreenFrame = null
@@ -496,6 +572,7 @@ object FullscreenBrowserWindow {
         hasReachedFullscreen = false
         usesNativeMacOSFullscreen = false
         isExiting = false
+        return lifecycleEpoch
     }
 
     /**
@@ -506,11 +583,13 @@ object FullscreenBrowserWindow {
      * @param frame The JFrame to dispose
      * @param browserView The BrowserView to detach (nullable)
      * @param callback Optional callback to invoke after cleanup completes
+     * @param cleanupEpoch Reset epoch that must still be current before Compose is restored
      */
     private fun cleanupAndExit(
         frame: JFrame,
         browserView: BrowserView?,
         callback: (() -> Unit)?,
+        cleanupEpoch: Long,
     ) {
         val cleanup =
             Runnable {
@@ -539,7 +618,7 @@ object FullscreenBrowserWindow {
                 // Delay before telling Compose to show its BrowserView
                 // This gives JxBrowser time to fully release the Swing rendering surface
                 Timer(SWING_RELEASE_DELAY_MS) {
-                    SwingUtilities.invokeLater {
+                    if (lifecycleEpoch == cleanupEpoch && !isInFullscreenMode) {
                         TabFullscreenStateManager.exitFullscreen()
                         logger.info(LogCategory.BROWSER, "Fullscreen exit complete, Compose BrowserView enabled")
                         callback?.invoke()
@@ -580,7 +659,7 @@ object FullscreenBrowserWindow {
 
     /** Called when the user manually triggers exit from the host UI. */
     private fun requestExit() {
-        logger.info(LogCategory.BROWSER, "Exit requested via placeholder click")
+        logger.info(LogCategory.BROWSER, "Fullscreen exit requested from host UI")
         requestPageExit()
     }
 
@@ -593,6 +672,7 @@ object FullscreenBrowserWindow {
         if (isExiting || !isInFullscreenMode) return
         isExiting = true
         val browser = currentBrowser
+        val exitEpoch = lifecycleEpoch
         if (browser == null ||
             runCatching { browser.fullScreen().exit() }
                 .onFailure { error ->
@@ -604,7 +684,10 @@ object FullscreenBrowserWindow {
         }
 
         Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
-            if (currentBrowser === browser && isInFullscreenMode) {
+            if (lifecycleEpoch == exitEpoch &&
+                currentBrowser === browser &&
+                isInFullscreenMode
+            ) {
                 logger.warn(LogCategory.BROWSER, "Browser fullscreen exit event timed out; closing host window")
                 performExitDirect()
             }
@@ -627,12 +710,17 @@ object FullscreenBrowserWindow {
      * Direct exit without relying on fullscreen toggle.
      */
     private fun performExitDirect() {
-        val frame = fullscreenFrame ?: return
+        val frame = fullscreenFrame
         val browserView = currentBrowserView
         val callback = onExitCallback
 
-        resetState()
-        cleanupAndExit(frame, browserView, callback)
+        val cleanupEpoch = resetState()
+        if (frame == null) {
+            TabFullscreenStateManager.exitFullscreen()
+            callback?.invoke()
+        } else {
+            cleanupAndExit(frame, browserView, callback, cleanupEpoch)
+        }
     }
 
     /**
@@ -652,8 +740,8 @@ object FullscreenBrowserWindow {
         }
         val browserView = currentBrowserView
 
-        resetState()
-        cleanupAndExit(frame, browserView, null)
+        val cleanupEpoch = resetState()
+        cleanupAndExit(frame, browserView, null, cleanupEpoch)
     }
 
     /** Closes fullscreen asynchronously only when it belongs to the browser emitting the event. */
