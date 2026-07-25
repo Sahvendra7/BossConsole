@@ -138,18 +138,13 @@ object FullscreenBrowserWindow {
                 object : ComponentAdapter() {
                     override fun componentResized(e: ComponentEvent?) {
                         // Only check for exit after we've confirmed fullscreen was reached
-                        if (
-                            usesNativeMacOSFullscreen &&
-                            hasReachedFullscreen &&
-                            isInFullscreenMode &&
-                            !isExiting &&
-                            fullscreenFrame != null
-                        ) {
-                            SwingUtilities.invokeLater {
-                                if (!isWindowInFullscreen(frame) && !isExiting) {
-                                    logger.info(LogCategory.BROWSER, "Native fullscreen exited via resize detection")
-                                    performExit()
-                                }
+                        if (!usesNativeMacOSFullscreen || !hasReachedFullscreen) return
+                        if (!isInFullscreenMode || isExiting || fullscreenFrame == null) return
+
+                        SwingUtilities.invokeLater {
+                            if (!isWindowInFullscreen(frame) && !isExiting) {
+                                logger.info(LogCategory.BROWSER, "Native fullscreen exited via resize detection")
+                                performExit()
                             }
                         }
                     }

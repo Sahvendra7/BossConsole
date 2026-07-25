@@ -20,6 +20,101 @@ internal fun nativeMacOSFullscreenStateForEvent(methodName: String): Boolean? =
         else -> null
     }
 
+private class MacOSFullscreenTracker(
+    private val onFullscreenChanged: (windowId: String, isFullscreen: Boolean) -> Unit,
+) {
+    private data class Registration(
+        val window: Window,
+        val listener: Any,
+        val listenerClass: Class<*>,
+        val removeMethod: Method,
+    )
+
+    private val logger = BossLogger.forComponent("MacOSFullscreenTracker")
+    private val registrations = mutableMapOf<String, Registration>()
+
+    fun register(
+        windowId: String,
+        window: Window,
+    ) {
+        if (!System.getProperty("os.name").lowercase().contains("mac")) return
+
+        unregister(windowId)
+        try {
+            val utilitiesClass = Class.forName("com.apple.eawt.FullScreenUtilities")
+            val listenerClass = Class.forName("com.apple.eawt.FullScreenListener")
+            val listener =
+                Proxy.newProxyInstance(listenerClass.classLoader, arrayOf(listenerClass)) { proxy, method, arguments ->
+                    when (method.name) {
+                        "equals" -> {
+                            proxy === arguments?.firstOrNull()
+                        }
+
+                        "hashCode" -> {
+                            System.identityHashCode(proxy)
+                        }
+
+                        "toString" -> {
+                            "BossMacOSFullscreenListener($windowId)"
+                        }
+
+                        else -> {
+                            nativeMacOSFullscreenStateForEvent(method.name)?.let { isFullscreen ->
+                                onFullscreenChanged(windowId, isFullscreen)
+                                logger.info(
+                                    LogCategory.UI,
+                                    "Native macOS fullscreen state changed",
+                                    mapOf("windowId" to windowId, "isFullscreen" to isFullscreen),
+                                )
+                            }
+                            null
+                        }
+                    }
+                }
+            val addMethod =
+                utilitiesClass.getMethod(
+                    "addFullScreenListenerTo",
+                    Window::class.java,
+                    listenerClass,
+                )
+            val removeMethod =
+                utilitiesClass.getMethod(
+                    "removeFullScreenListenerFrom",
+                    Window::class.java,
+                    listenerClass,
+                )
+
+            addMethod.invoke(null, window, listener)
+            registrations[windowId] = Registration(window, listener, listenerClass, removeMethod)
+        } catch (e: ReflectiveOperationException) {
+            logger.warn(
+                LogCategory.UI,
+                "Could not register native macOS fullscreen listener",
+                mapOf("windowId" to windowId),
+                e,
+            )
+        }
+    }
+
+    fun unregister(windowId: String) {
+        val registration = registrations.remove(windowId) ?: return
+        try {
+            registration.removeMethod.invoke(
+                null,
+                registration.window,
+                registration.listenerClass.cast(registration.listener),
+            )
+        } catch (e: ReflectiveOperationException) {
+            logger.warn(
+                LogCategory.UI,
+                "Could not unregister native macOS fullscreen listener",
+                mapOf("windowId" to windowId),
+                e,
+            )
+        }
+    }
+}
+
 /**
  * Captures AWT focus lifecycle events on the EDT and exposes a volatile
  * snapshot that JxBrowser callback threads can safely read.
@@ -70,17 +165,9 @@ internal class AwtWindowFocusTracker {
  * as deep links and file opens.
  */
 actual object WindowFocusManager {
-    private data class MacOSFullscreenRegistration(
-        val window: Window,
-        val listener: Any,
-        val listenerClass: Class<*>,
-        val removeMethod: Method,
-    )
-
-    private val logger = BossLogger.forComponent("WindowFocusManager")
     private val windows = ConcurrentHashMap<String, Window>()
     private val fullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
-    private val macOSFullscreenRegistrations = mutableMapOf<String, MacOSFullscreenRegistration>()
+    private val macOSFullscreenTracker = MacOSFullscreenTracker(::updateWindowFullscreen)
 
     // EDT-confined; registerWindow/unregisterWindow enforce this before mutation.
     private val windowListeners = mutableMapOf<String, WindowAdapter>()
@@ -108,7 +195,7 @@ actual object WindowFocusManager {
             "WindowFocusManager.registerWindow must run on the EDT"
         }
         windows[windowId] = window
-        registerMacOSFullscreenListener(windowId, window)
+        macOSFullscreenTracker.register(windowId, window)
 
         // First window becomes the main window (backward compatibility).
         if (mainWindow == null) {
@@ -185,7 +272,7 @@ actual object WindowFocusManager {
         windowListeners.remove(windowId)?.let { listener ->
             windows[windowId]?.removeWindowFocusListener(listener)
         }
-        unregisterMacOSFullscreenListener(windowId)
+        macOSFullscreenTracker.unregister(windowId)
 
         windows.remove(windowId)
         fullscreenWindowIds -= windowId
@@ -217,88 +304,6 @@ actual object WindowFocusManager {
      * window is registered at all.
      */
     fun resolveActionableWindowId(): String? = focusedWindowId ?: focusedWindowFlow.value ?: windows.keys.firstOrNull()
-
-    private fun registerMacOSFullscreenListener(
-        windowId: String,
-        window: Window,
-    ) {
-        if (!System.getProperty("os.name").lowercase().contains("mac")) return
-
-        unregisterMacOSFullscreenListener(windowId)
-        try {
-            val utilitiesClass = Class.forName("com.apple.eawt.FullScreenUtilities")
-            val listenerClass = Class.forName("com.apple.eawt.FullScreenListener")
-            val listener =
-                Proxy.newProxyInstance(listenerClass.classLoader, arrayOf(listenerClass)) { proxy, method, arguments ->
-                    when (method.name) {
-                        "equals" -> {
-                            proxy === arguments?.firstOrNull()
-                        }
-
-                        "hashCode" -> {
-                            System.identityHashCode(proxy)
-                        }
-
-                        "toString" -> {
-                            "BossMacOSFullscreenListener($windowId)"
-                        }
-
-                        else -> {
-                            nativeMacOSFullscreenStateForEvent(method.name)?.let { isFullscreen ->
-                                updateWindowFullscreen(windowId, isFullscreen)
-                                logger.info(
-                                    LogCategory.UI,
-                                    "Native macOS fullscreen state changed",
-                                    mapOf("windowId" to windowId, "isFullscreen" to isFullscreen),
-                                )
-                            }
-                            null
-                        }
-                    }
-                }
-            val addMethod =
-                utilitiesClass.getMethod(
-                    "addFullScreenListenerTo",
-                    Window::class.java,
-                    listenerClass,
-                )
-            val removeMethod =
-                utilitiesClass.getMethod(
-                    "removeFullScreenListenerFrom",
-                    Window::class.java,
-                    listenerClass,
-                )
-
-            addMethod.invoke(null, window, listener)
-            macOSFullscreenRegistrations[windowId] =
-                MacOSFullscreenRegistration(window, listener, listenerClass, removeMethod)
-        } catch (e: ReflectiveOperationException) {
-            logger.warn(
-                LogCategory.UI,
-                "Could not register native macOS fullscreen listener",
-                mapOf("windowId" to windowId),
-                e,
-            )
-        }
-    }
-
-    private fun unregisterMacOSFullscreenListener(windowId: String) {
-        val registration = macOSFullscreenRegistrations.remove(windowId) ?: return
-        try {
-            registration.removeMethod.invoke(
-                null,
-                registration.window,
-                registration.listenerClass.cast(registration.listener),
-            )
-        } catch (e: ReflectiveOperationException) {
-            logger.warn(
-                LogCategory.UI,
-                "Could not unregister native macOS fullscreen listener",
-                mapOf("windowId" to windowId),
-                e,
-            )
-        }
-    }
 
     /**
      * Bring a specific window to front by its ID
