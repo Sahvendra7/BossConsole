@@ -230,24 +230,15 @@ object WindowsProtocolHandler {
     }
 
     /**
-     * Check if the protocol is already registered
+     * Check if the protocol is already registered.
+     *
+     * Shares [queryRootKeyPresent] with the cleanup path, so this startup-path call gets the
+     * same argv invocation, 5s timeout and narrow error handling — a wedged `reg.exe` used to
+     * be able to block app init here, which is worse than hanging the uninstall hook the
+     * timeout was added for. An unknown answer stays `false`: callers only decide whether to
+     * (re-)register, and registration is idempotent.
      */
-    fun isProtocolRegistered(): Boolean {
-        if (!isWindows) return false
-
-        return try {
-            val process = Runtime.getRuntime().exec("""reg query "$PROTOCOL_KEY" """)
-            process.waitFor()
-            process.exitValue() == 0
-        } catch (e: Exception) {
-            logger.debug(
-                LogCategory.SYSTEM,
-                "reg query failed - treating boss:// protocol as unregistered",
-                mapOf("error" to e.toString()),
-            )
-            false
-        }
-    }
+    fun isProtocolRegistered(): Boolean = isWindows && queryRootKeyPresent() == true
 
     /**
      * Get the path to the running application
@@ -260,10 +251,18 @@ object WindowsProtocolHandler {
             if (!jpackagePath.isNullOrEmpty()) {
                 val file = File(jpackagePath)
                 if (file.exists()) {
-                    logger.debug(LogCategory.SYSTEM, "Detected jpackage installation", mapOf("path" to jpackagePath))
+                    logger.debug(
+                        LogCategory.SYSTEM,
+                        "Detected jpackage installation",
+                        mapOf("path" to WindowsProtocolCleanup.maskUserPath(jpackagePath)),
+                    )
                     return jpackagePath
                 } else {
-                    logger.warn(LogCategory.SYSTEM, "jpackage.app-path set but file doesn't exist", mapOf("path" to jpackagePath))
+                    logger.warn(
+                        LogCategory.SYSTEM,
+                        "jpackage.app-path set but file doesn't exist",
+                        mapOf("path" to WindowsProtocolCleanup.maskUserPath(jpackagePath)),
+                    )
                 }
             }
 

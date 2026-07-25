@@ -31,8 +31,8 @@ internal object WindowsProtocolCleanup {
     /** Leading quoted executable of a `shell\open\command` value. */
     private val QUOTED_EXECUTABLE = Regex("""^"([^"]+)"""")
 
-    /** Unicode replacement character — evidence that reg.exe's bytes were decoded wrongly. */
-    private const val REPLACEMENT_CHAR = '\uFFFD'
+    /** Highest code point that decodes identically under ANSI, OEM and UTF-8. */
+    private const val MAX_ASCII = 0x7F
 
     /**
      * What the registered `shell\open\command` currently holds.
@@ -196,10 +196,18 @@ internal object WindowsProtocolCleanup {
                 CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.UNREADABLE)
             }
 
-            // Same rule for a path that survived decoding badly: U+FFFD means the bytes
-            // reg.exe wrote could not be mapped, so the path we hold is not the path on disk
-            // and exeExists() would be answering about something else entirely.
-            registeredExe.contains(REPLACEMENT_CHAR) -> {
+            // Same rule for anything outside ASCII. reg.exe writes in the console output
+            // code page (GetConsoleOutputCP) while the JVM decodes with the ANSI one
+            // (native.encoding / GetACP) — different, and both single-byte, so a wrong
+            // decode produces a *plausible* wrong path (CP850 "ö" 0x94 read as
+            // windows-1252 is a curly quote) rather than U+FFFD. Such a path parses, is
+            // not ours, and is not on disk, which the rule below would read as "dead,
+            // delete it" against a live third-party registration. Bytes < 0x80 decode
+            // identically under ANSI, OEM and UTF-8; anything else is unverifiable here,
+            // and unverifiable means untouchable. Cost: cleanup reports UNREADABLE for a
+            // non-ASCII install path instead of removing it — an orphan key, versus
+            // deleting someone's working registration.
+            registeredExe.any { it.code > MAX_ASCII } -> {
                 CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.UNREADABLE)
             }
 

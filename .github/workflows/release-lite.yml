@@ -181,8 +181,12 @@ jobs:
     needs: prepare-version
     runs-on: macos-14
     env:
-      # CFBundleVersion build identifier — see prepare-version's build-id step. Only this
-      # job produces a macOS bundle, so it is the only place the value matters.
+      # CFBundleVersion build identifier — see prepare-version's build-id step. Only this job
+      # produces a macOS bundle, so it is the only place the value matters. NOTE this job
+      # builds a *different repo* (risa-labs-inc/BossConsoleLite); it is set on the assumption
+      # that Lite's composeApp/build.gradle.kts mirrors this one's macBundleBuildVersion. The
+      # validation step below makes a wrong assumption loud instead of shipping
+      # CFBundleVersion = 1 (Lite's fallback when the value is not numeric).
       BOSS_BUILD_ID: ${{ needs.prepare-version.outputs.build-id }}
     # macOS minutes bill at 10×, and notarization can legitimately sit waiting
     # on Apple, so cap the job well below GitHub's 6h default: build (~20m) plus
@@ -191,6 +195,18 @@ jobs:
     timeout-minutes: 120
 
     steps:
+      - name: 🔢 Validate Build Identifier
+        # Mirrors release.yml: a non-numeric value falls back to app.build.number ("1")
+        # silently, so fail loudly instead.
+        run: |
+          case "$BOSS_BUILD_ID" in
+            '' | *[!0-9]*)
+              echo "::error::BOSS_BUILD_ID must be a non-empty run of digits, got '$BOSS_BUILD_ID'"
+              exit 1
+              ;;
+          esac
+          echo "✅ CFBundleVersion build id: $BOSS_BUILD_ID"
+
       - name: 📥 Checkout BossConsoleLite
         uses: actions/checkout@v7
         with:

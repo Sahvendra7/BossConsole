@@ -105,10 +105,13 @@ val baseVersion = appVersion.substringBefore("-")
 // Finder shows it as "Version 9.2.60 (1785000000)". `app.bundle.version` used to feed
 // CFBundleVersion while always equalling app.version, so it has been deleted outright
 // along with its writers (version tasks, release/release-lite/promote-release).
+// Note the tiers are walked, not `?:`-chained: an Actions expression that resolves to
+// nothing sets the variable to "" rather than leaving it unset, so a chain would stop at the
+// empty BOSS_BUILD_ID and skip GITHUB_RUN_NUMBER entirely.
 val macBundleBuildVersion: String =
-    (System.getenv("BOSS_BUILD_ID") ?: System.getenv("GITHUB_RUN_NUMBER"))
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+    sequenceOf("BOSS_BUILD_ID", "GITHUB_RUN_NUMBER")
+        .mapNotNull { System.getenv(it)?.trim() }
+        .firstOrNull { it.isNotEmpty() && it.all(Char::isDigit) }
         ?: versionPropsProvider.map { it.getProperty("app.build.number", "1") }.get()
 
 // jpackage (and therefore Compose) derives CFBundleShortVersionString from

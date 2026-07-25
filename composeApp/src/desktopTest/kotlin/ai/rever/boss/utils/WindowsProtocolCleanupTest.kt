@@ -311,6 +311,28 @@ class WindowsProtocolCleanupTest {
         )
     }
 
+    /**
+     * The mis-decode that actually happens on Windows: reg.exe writes the console code page
+     * (CP850 `ö` = 0x94) and the JVM decodes the ANSI one, so the path comes back plausible
+     * but wrong — no U+FFFD to spot. Any non-ASCII character therefore means "unverifiable".
+     */
+    @Test
+    fun `leaves a plausible-but-wrong single-byte mis-decode alone`() {
+        assertEquals(
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
+            classify(command = CommandState.Present("\"C:\\Users\\Bj\u201Dorn\\BOSS\\BOSS.exe\" \"%1\"")),
+        )
+    }
+
+    /** A correctly decoded non-ASCII path is also left alone — it cannot be told from the above. */
+    @Test
+    fun `leaves a correctly decoded non-ascii path alone`() {
+        assertEquals(
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
+            classify(command = CommandState.Present("\"C:\\Users\\Bj\u00F6rn\\BOSS\\BOSS.exe\" \"%1\"")),
+        )
+    }
+
     /** A failed root-key read outranks an otherwise classifiable command. */
     @Test
     fun `unknown root key outranks a readable command`() {
