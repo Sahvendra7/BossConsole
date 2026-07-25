@@ -5,6 +5,7 @@ import ai.rever.boss.plugin.browser.BrowserHandle
 import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.browser.BrowserServiceImpl
 import java.util.concurrent.ConcurrentHashMap
+import javax.swing.SwingUtilities
 
 private val windowBrowserServices = ConcurrentHashMap<String, WindowScopedBrowserService>()
 
@@ -53,6 +54,9 @@ private class WindowScopedBrowserService(
         // Window-close routing calls this on the EDT. Keep that invariant while
         // holding lifecycleLock: fullscreen BrowserView disposal may marshal to
         // the EDT and must never wait for a lock owned by a background caller.
+        check(SwingUtilities.isEventDispatchThread()) {
+            "WindowScopedBrowserService.close must run on the EDT"
+        }
         synchronized(lifecycleLock) {
             if (closed) return
             closed = true

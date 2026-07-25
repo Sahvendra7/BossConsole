@@ -90,6 +90,14 @@ class WindowFocusManagerTest {
                 composeFullscreen = true,
             ),
         )
+        assertFalse(
+            shouldNotifyNativeFullscreenExit(
+                hadNativeState = true,
+                wasNativeFullscreen = true,
+                composeFullscreen = true,
+                exitAlreadyNotified = true,
+            ),
+        )
     }
 
     @Test

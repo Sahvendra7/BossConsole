@@ -2,6 +2,7 @@ package ai.rever.boss.tabfullscreen
 
 import java.awt.Rectangle
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -114,5 +115,58 @@ class FullscreenBrowserWindowTest {
                 isInFullscreenMode = true,
             ),
         )
+    }
+
+    @Test
+    fun `fullscreen request decisions preserve branch ordering`() {
+        assertEquals(
+            FullscreenRequestDecision.IGNORE_DUPLICATE,
+            fullscreenRequestDecision(
+                frameActive = true,
+                isInFullscreenMode = true,
+                isSameBrowser = true,
+                isBrowserClosed = true,
+            ),
+        )
+        assertEquals(
+            FullscreenRequestDecision.REJECT_CLOSED,
+            fullscreenRequestDecision(
+                frameActive = false,
+                isInFullscreenMode = false,
+                isSameBrowser = false,
+                isBrowserClosed = true,
+            ),
+        )
+        assertEquals(
+            FullscreenRequestDecision.REJECT_COMPETING,
+            fullscreenRequestDecision(
+                frameActive = true,
+                isInFullscreenMode = true,
+                isSameBrowser = false,
+                isBrowserClosed = false,
+            ),
+        )
+        assertEquals(
+            FullscreenRequestDecision.BEGIN,
+            fullscreenRequestDecision(
+                frameActive = false,
+                isInFullscreenMode = false,
+                isSameBrowser = false,
+                isBrowserClosed = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `exit callback gate suppresses duplicates until a new session begins`() {
+        val gate = FullscreenExitCallbackGate<String>()
+        var notifications = 0
+
+        assertTrue(gate.notifyOnce("browser-a") { notifications++ })
+        assertFalse(gate.notifyOnce("browser-a") { notifications++ })
+        gate.begin("browser-a")
+        assertTrue(gate.notifyOnce("browser-a") { notifications++ })
+
+        assertEquals(2, notifications)
     }
 }

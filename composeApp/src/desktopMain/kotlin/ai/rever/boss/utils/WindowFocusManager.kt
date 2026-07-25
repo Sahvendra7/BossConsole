@@ -51,7 +51,8 @@ internal fun shouldNotifyNativeFullscreenExit(
     hadNativeState: Boolean,
     wasNativeFullscreen: Boolean,
     composeFullscreen: Boolean,
-): Boolean = wasNativeFullscreen || (!hadNativeState && composeFullscreen)
+    exitAlreadyNotified: Boolean = false,
+): Boolean = !exitAlreadyNotified && (wasNativeFullscreen || (!hadNativeState && composeFullscreen))
 
 internal class FullscreenExitNotifier {
     private val logger = BossLogger.forComponent("FullscreenExitNotifier")
@@ -260,6 +261,7 @@ private data class WindowFullscreenSignals(
     val nativeTrackingAvailable: Boolean = false,
     val nativeStateAvailable: Boolean = false,
     val nativeFullscreen: Boolean = false,
+    val nativeExitAlreadyNotified: Boolean = false,
     val composeFullscreen: Boolean = false,
 )
 
@@ -285,10 +287,12 @@ actual object WindowFocusManager {
                             hadNativeState = previous.nativeStateAvailable,
                             wasNativeFullscreen = previous.nativeFullscreen,
                             composeFullscreen = previous.composeFullscreen,
+                            exitAlreadyNotified = previous.nativeExitAlreadyNotified,
                         )
                     previous.copy(
                         nativeStateAvailable = true,
                         nativeFullscreen = isFullscreen,
+                        nativeExitAlreadyNotified = false,
                     )
                 }
                 if (shouldNotifyExit) {
@@ -303,6 +307,7 @@ actual object WindowFocusManager {
                     (current ?: WindowFullscreenSignals()).copy(
                         nativeStateAvailable = true,
                         nativeFullscreen = true,
+                        nativeExitAlreadyNotified = true,
                     )
                 }
                 fullscreenExitNotifier.notifyExit(windowId)
@@ -362,6 +367,7 @@ actual object WindowFocusManager {
                 nativeTrackingAvailable = false,
                 nativeStateAvailable = false,
                 nativeFullscreen = false,
+                nativeExitAlreadyNotified = false,
             )
         }
         val nativeTrackingAvailable = macOSFullscreenTracker.register(windowId, window)
