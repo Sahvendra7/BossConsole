@@ -245,6 +245,38 @@ class WindowsProtocolCleanupTest {
 
     // endregion
 
+    // region parseRootKeyPresence
+
+    @Test
+    fun `root key present on exit zero`() {
+        assertEquals(true, parseRootKeyPresence(0, regOutput(value = """"$thisApp" "%1"""")))
+    }
+
+    @Test
+    fun `root key absent only on reg's not-found output`() {
+        assertEquals(
+            false,
+            parseRootKeyPresence(1, "ERROR: The system was unable to find the specified registry key or value."),
+        )
+    }
+
+    /**
+     * Regression: an access-denied or policy-blocked query also exits 1. Reporting that as
+     * "absent" would make cleanup return ABSENT → exit 0, telling an uninstaller nothing was
+     * left to clean while a live registration remains.
+     */
+    @Test
+    fun `root key presence is unknown when the query was blocked`() {
+        assertNull(parseRootKeyPresence(1, "ERROR: Access is denied."))
+    }
+
+    @Test
+    fun `root key presence is unknown for an unrecognized failure`() {
+        assertNull(parseRootKeyPresence(1, ""))
+    }
+
+    // endregion
+
     // region exitCodeFor
 
     @Test
