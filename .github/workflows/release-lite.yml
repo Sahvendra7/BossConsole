@@ -42,10 +42,6 @@ env:
   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_FUNCTION_URL: ${{ secrets.SUPABASE_FUNCTION_URL }}
-  # macOS CFBundleVersion (build identifier). Set here too so lite builds do not fall
-  # back to this workflow's own GITHUB_RUN_NUMBER, which is an independent counter from
-  # release.yml's and could collide with, or sort below, a full-release build.
-  BOSS_BUILD_ID: ${{ github.run_number }}
 
 # Prevent concurrent releases from racing to bump the version in BossConsoleLite
 concurrency:
@@ -63,8 +59,19 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
       is-prerelease: ${{ steps.get-version.outputs.is-prerelease }}
       updated-sha: ${{ steps.commit-version.outputs.updated-sha }}
+      build-id: ${{ steps.build-id.outputs.build-id }}
 
     steps:
+      - name: 🔢 Compute macOS Build Identifier
+        # Same clock as release.yml's prepare-version, deliberately: BOSS Lite ships the
+        # same bundle id (ai.rever.boss), so a per-workflow counter here would give one
+        # bundle id two independent CFBundleVersion sequences — lite builds sorting
+        # permanently below every direct release, and a lite run N able to stamp a value
+        # release.yml run N already shipped. Seconds-since-epoch keeps every path in one
+        # increasing sequence. See composeApp/build.gradle.kts (macBundleBuildVersion).
+        id: build-id
+        run: echo "build-id=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: 📥 Checkout BossConsoleLite
         uses: actions/checkout@v7
         with:
@@ -173,6 +180,10 @@ jobs:
   build-macos:
     needs: prepare-version
     runs-on: macos-14
+    env:
+      # CFBundleVersion build identifier — see prepare-version's build-id step. Only this
+      # job produces a macOS bundle, so it is the only place the value matters.
+      BOSS_BUILD_ID: ${{ needs.prepare-version.outputs.build-id }}
     # macOS minutes bill at 10×, and notarization can legitimately sit waiting
     # on Apple, so cap the job well below GitHub's 6h default: build (~20m) plus
     # the notarization budget in scripts/lib/notarize-dmg.sh (1h) fits inside

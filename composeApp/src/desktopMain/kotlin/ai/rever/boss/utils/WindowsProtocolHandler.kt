@@ -4,6 +4,7 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import java.io.IOException
+import java.nio.charset.Charset
 import java.util.concurrent.TimeUnit
 
 private val logger = BossLogger.forComponent("WindowsProtocolHandler")
@@ -87,26 +88,26 @@ object WindowsProtocolHandler {
                         logger.info(
                             LogCategory.SYSTEM,
                             "Protocol points to invalid path, re-registering",
-                            mapOf("command" to maskUserPath(currentCommand)),
+                            mapOf("command" to WindowsProtocolCleanup.maskUserPath(currentCommand)),
                         )
                         true
                     }
 
                     !currentCommand.contains(appPath, ignoreCase = true) -> {
                         // SAFETY CHECK: Only re-register if current path doesn't exist
-                        val currentExePath = extractExecutablePath(currentCommand)
+                        val currentExePath = WindowsProtocolCleanup.extractExecutablePath(currentCommand)
                         if (currentExePath != null && File(currentExePath).exists()) {
                             logger.info(
                                 LogCategory.SYSTEM,
                                 "Protocol already registered to different valid BOSS installation, skipping",
-                                mapOf("path" to maskUserPath(currentExePath)),
+                                mapOf("path" to WindowsProtocolCleanup.maskUserPath(currentExePath)),
                             )
                             false
                         } else {
                             logger.info(
                                 LogCategory.SYSTEM,
                                 "Protocol points to non-existent path, re-registering",
-                                mapOf("command" to maskUserPath(currentCommand)),
+                                mapOf("command" to WindowsProtocolCleanup.maskUserPath(currentCommand)),
                             )
                             true
                         }
@@ -134,7 +135,7 @@ object WindowsProtocolHandler {
         logger.info(
             LogCategory.SYSTEM,
             "Starting BOSS protocol registration",
-            mapOf("appPath" to maskUserPath(appPath)),
+            mapOf("appPath" to WindowsProtocolCleanup.maskUserPath(appPath)),
         )
 
         val commands =
@@ -204,7 +205,7 @@ object WindowsProtocolHandler {
 
         val command = queryProtocolCommand()
         val decision =
-            classifyProtocolCleanup(
+            WindowsProtocolCleanup.classifyProtocolCleanup(
                 rootPresent = queryRootKeyPresent(),
                 command = command,
                 appPath = getApplicationPath(),
@@ -212,8 +213,8 @@ object WindowsProtocolHandler {
             )
         logCleanupDecision(decision, command)
         return when (decision) {
-            is CleanupDecision.Report -> decision.outcome
-            CleanupDecision.Delete -> deleteProtocolKey()
+            is WindowsProtocolCleanup.CleanupDecision.Report -> decision.outcome
+            WindowsProtocolCleanup.CleanupDecision.Delete -> deleteProtocolKey()
         }
     }
 
@@ -225,7 +226,7 @@ object WindowsProtocolHandler {
     fun unregisterProtocolExitCode(): Int {
         val outcome = unregisterProtocol()
         logger.info(LogCategory.SYSTEM, "boss:// protocol cleanup finished", mapOf("outcome" to outcome.name))
-        return exitCodeFor(outcome)
+        return WindowsProtocolCleanup.exitCodeFor(outcome)
     }
 
     /**
@@ -317,13 +318,16 @@ object WindowsProtocolHandler {
      * or null when it is absent or unreadable. Callers that must tell those two apart
      * (cleanup does — see [classifyProtocolCleanup]) use [queryProtocolCommand] instead.
      */
-    private fun getCurrentRegistryCommand(): String? = (queryProtocolCommand() as? CommandState.Present)?.command
+    private fun getCurrentRegistryCommand(): String? {
+        val state = queryProtocolCommand()
+        return (state as? WindowsProtocolCleanup.CommandState.Present)?.command
+    }
 
     /**
      * Check if the command points to a valid executable file
      */
     private fun commandPointsToValidExecutable(command: String): Boolean {
-        val exePath = extractExecutablePath(command) ?: return false
+        val exePath = WindowsProtocolCleanup.extractExecutablePath(command) ?: return false
         return File(exePath).exists()
     }
 }
@@ -357,7 +361,7 @@ private fun runReg(vararg args: String): RegResult? {
                 .redirectOutput(outputFile)
                 .start()
         if (process.waitFor(REG_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            RegResult(process.exitValue(), outputFile.readText())
+            RegResult(process.exitValue(), outputFile.readText(consoleCharset()))
         } else {
             process.destroyForcibly()
             logger.warn(
@@ -385,10 +389,33 @@ private fun runReg(vararg args: String): RegResult? {
     }
 }
 
+/**
+ * Charset `reg.exe` writes in — the console/OEM code page, not the JVM default (UTF-8 on
+ * JDK 18+). Decoding with the default turns a non-ASCII install path
+ * (`C:\Users\Björn\…`) into U+FFFD, and a mangled path is a path that does not exist, which
+ * the cleanup policy would otherwise read as "dead registration, safe to delete".
+ * `native.encoding` (JDK 18+) is the closest portable handle; fall back to the default.
+ */
+private fun consoleCharset(): Charset =
+    try {
+        System.getProperty("native.encoding")?.let { Charset.forName(it) } ?: Charset.defaultCharset()
+    } catch (e: IllegalArgumentException) {
+        logger.debug(
+            LogCategory.SYSTEM,
+            "Unknown native.encoding, using the default charset",
+            mapOf("error" to e.toString()),
+        )
+        Charset.defaultCharset()
+    }
+
 /** Scratch file for [runReg]'s redirected output; null when even that fails. */
 private fun createRegOutputFile(): File? =
     try {
-        File.createTempFile("boss-reg", ".txt")
+        File.createTempFile("boss-reg", ".txt").apply {
+            // destroyForcibly() is asynchronous, so on Windows the child can still hold the
+            // handle when the `finally` delete runs; this keeps a timeout from leaking a file.
+            deleteOnExit()
+        }
     } catch (e: IOException) {
         logger.debug(
             LogCategory.SYSTEM,
@@ -442,9 +469,9 @@ private fun deleteProtocolKey(): WindowsProtocolHandler.UnregisterOutcome {
  * Read the registered `shell\open\command`, keeping the absent/unreadable distinction.
  * Process I/O only — the decision lives in [parseCommandState] so it can be tested.
  */
-private fun queryProtocolCommand(): CommandState {
-    val result = runReg("query", PROTOCOL_COMMAND_KEY, "/ve") ?: return CommandState.Unreadable
-    return parseCommandState(result.exitCode, result.output)
+private fun queryProtocolCommand(): WindowsProtocolCleanup.CommandState {
+    val result = runReg("query", PROTOCOL_COMMAND_KEY, "/ve") ?: return WindowsProtocolCleanup.CommandState.Unreadable
+    return WindowsProtocolCleanup.parseCommandState(result.exitCode, result.output)
 }
 
 /**
@@ -453,7 +480,7 @@ private fun queryProtocolCommand(): CommandState {
  */
 private fun queryRootKeyPresent(): Boolean? {
     val result = runReg("query", PROTOCOL_KEY) ?: return null
-    return parseRootKeyPresence(result.exitCode, result.output)
+    return WindowsProtocolCleanup.parseRootKeyPresence(result.exitCode, result.output)
 }
 
 /**
@@ -464,23 +491,24 @@ private fun queryRootKeyPresent(): Boolean? {
  * Registered paths embed a Windows username, so they are masked (AGENTS.md).
  */
 private fun logCleanupDecision(
-    decision: CleanupDecision,
-    command: CommandState,
+    decision: WindowsProtocolCleanup.CleanupDecision,
+    command: WindowsProtocolCleanup.CommandState,
 ) {
-    val registered = (command as? CommandState.Present)?.command
+    val registered = (command as? WindowsProtocolCleanup.CommandState.Present)?.command
     when {
-        decision is CleanupDecision.Report && decision.outcome == WindowsProtocolHandler.UnregisterOutcome.ABSENT -> {
+        decision is WindowsProtocolCleanup.CleanupDecision.Report &&
+            decision.outcome == WindowsProtocolHandler.UnregisterOutcome.ABSENT -> {
             logger.debug(LogCategory.SYSTEM, "boss:// protocol is not registered - nothing to clean up")
         }
 
-        decision is CleanupDecision.Report -> {
+        decision is WindowsProtocolCleanup.CleanupDecision.Report -> {
             logger.info(
                 LogCategory.SYSTEM,
                 "boss:// protocol left registered",
                 mapOf(
                     "key" to PROTOCOL_KEY,
                     "outcome" to decision.outcome.name,
-                    "command" to maskUserPath(registered),
+                    "command" to WindowsProtocolCleanup.maskUserPath(registered),
                 ),
             )
         }
@@ -489,24 +517,8 @@ private fun logCleanupDecision(
             logger.info(
                 LogCategory.SYSTEM,
                 "boss:// protocol will be removed",
-                mapOf("key" to PROTOCOL_KEY, "command" to maskUserPath(registered)),
+                mapOf("key" to PROTOCOL_KEY, "command" to WindowsProtocolCleanup.maskUserPath(registered)),
             )
         }
     }
-}
-
-/**
- * Strip the Windows account name out of a path before logging it.
- *
- * Covers `C:\Users\<name>\…`, the legacy `C:\Documents and Settings\<name>\…`, and an
- * unexpanded `%USERPROFILE%`-rooted path. AGENTS.md requires sanitizing user data in logs and
- * `LogSanitizer` has no path masker yet — a shared one belongs there (it lives in the
- * plugin-facing plugin-logging module), which is why this is local for now.
- */
-private fun maskUserPath(path: String?): String {
-    if (path == null) return "(none)"
-    return path
-        .replace(Regex("""(?i)(\\Users\\)([^\\"]+)"""), "$1***")
-        .replace(Regex("""(?i)(\\Documents and Settings\\)([^\\"]+)"""), "$1***")
-        .replace(Regex("""(?i)%USERPROFILE%"""), "%USERPROFILE%")
 }

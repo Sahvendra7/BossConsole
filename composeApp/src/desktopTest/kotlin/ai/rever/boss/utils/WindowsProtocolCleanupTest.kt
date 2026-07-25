@@ -1,5 +1,13 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.WindowsProtocolCleanup.CleanupDecision
+import ai.rever.boss.utils.WindowsProtocolCleanup.CommandState
+import ai.rever.boss.utils.WindowsProtocolCleanup.classifyProtocolCleanup
+import ai.rever.boss.utils.WindowsProtocolCleanup.exitCodeFor
+import ai.rever.boss.utils.WindowsProtocolCleanup.extractExecutablePath
+import ai.rever.boss.utils.WindowsProtocolCleanup.maskUserPath
+import ai.rever.boss.utils.WindowsProtocolCleanup.parseCommandState
+import ai.rever.boss.utils.WindowsProtocolCleanup.parseRootKeyPresence
 import ai.rever.boss.utils.WindowsProtocolHandler.UnregisterOutcome
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -287,6 +295,53 @@ class WindowsProtocolCleanupTest {
         assertEquals(1, exitCodeFor(UnregisterOutcome.OTHER_INSTALL))
         assertEquals(1, exitCodeFor(UnregisterOutcome.UNREADABLE))
         assertEquals(2, exitCodeFor(UnregisterOutcome.FAILED))
+    }
+
+    /**
+     * Regression: `reg.exe` writes in the console code page, so a mis-decoded non-ASCII
+     * install path arrives with U+FFFD. It parses, has no `%VARIABLE%`, does not equal our
+     * own path and does not exist on disk — which used to mean "dead, delete it" for a live
+     * install owned by someone else.
+     */
+    @Test
+    fun `leaves a mis-decoded path alone`() {
+        assertEquals(
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
+            classify(command = CommandState.Present("\"C:\\Users\\Bj\uFFFDrn\\BOSS\\BOSS.exe\" \"%1\"")),
+        )
+    }
+
+    /** A failed root-key read outranks an otherwise classifiable command. */
+    @Test
+    fun `unknown root key outranks a readable command`() {
+        assertEquals(
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
+            classify(rootPresent = null, command = CommandState.Present(""""$otherApp" "%1"""")),
+        )
+    }
+
+    /** The ordinary uninstall shape: it is ours *and* the exe is already gone. */
+    @Test
+    fun `deletes when the registration is ours and the executable is gone`() {
+        assertEquals(
+            CleanupDecision.Delete,
+            classify(command = CommandState.Present(""""$thisApp" "%1""""), existing = emptySet()),
+        )
+    }
+
+    // endregion
+
+    // region maskUserPath
+
+    @Test
+    fun `masks the account name out of logged paths`() {
+        assertEquals("""C:\Users\***\AppData\Local\BOSS\BOSS.exe""", maskUserPath(thisApp))
+        assertEquals(
+            """C:\Documents and Settings\***\BOSS\BOSS.exe""",
+            maskUserPath("""C:\Documents and Settings\me\BOSS\BOSS.exe"""),
+        )
+        assertEquals(otherApp, maskUserPath(otherApp))
+        assertEquals("(none)", maskUserPath(null))
     }
 
     // endregion

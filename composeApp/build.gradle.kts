@@ -87,20 +87,22 @@ val baseVersion = appVersion.substringBefore("-")
 // from the first 9.2.60 and anything keyed on it cannot tell the two apart.
 // Compose validates it as at most three non-negative integers, so "9.2.60.<n>" is
 // not expressible; we use Apple's usual convention of a plain monotonic counter:
-//   * CI release builds — BOSS_BUILD_ID. release.yml defaults it to github.run_number
-//     (shared by every platform job of one release run); a caller that invokes release.yml
-//     as a reusable workflow must pass its own build_id, because github.run_number would
-//     otherwise be the CALLER's counter (promote-release passes a date +%s stamp).
+//   * CI release builds — BOSS_BUILD_ID. release.yml's prepare-version job computes it
+//     once per run as a seconds-since-epoch stamp and the macOS job reads it from
+//     `needs`, so every trigger (workflow_dispatch, workflow_call from
+//     promote-release.yml, and the `push: tags` production path) resolves the same
+//     expression. A clock rather than github.run_number, because run numbers are
+//     per-workflow: a called workflow's jobs belong to the CALLER's run, so promotion
+//     rebuilds would draw from promote-release's independent counter and could collide
+//     with — or sort below — a direct release. One clock means ids from every path form
+//     a single increasing sequence, which matters because Launch Services consults
+//     CFBundleVersion when disambiguating two copies of the same bundle id.
 //   * any other CI build — GITHUB_RUN_NUMBER, so at least it is not a constant.
-// What that guarantees is UNIQUENESS, not global ordering: promotion ids come from a
-// disjoint, much larger range than run numbers, so a promoted build sorts above every
-// direct release rather than in sequence with it. Distinguishability is what issue #38
-// needed; do not build ordering logic on CFBundleVersion without revisiting this.
 //   * local builds — app.build.number from version.properties. Deliberately a
 //     *stable* value so packaging tasks stay up-to-date between local runs; a
 //     timestamp here would re-sign the whole app image on every build.
 // The value is intentionally NOT derived from app.version: it is a build counter, and
-// Finder shows it as "Version 9.2.60 (641)". `app.bundle.version` used to feed
+// Finder shows it as "Version 9.2.60 (1785000000)". `app.bundle.version` used to feed
 // CFBundleVersion while always equalling app.version, so it has been deleted outright
 // along with its writers (version tasks, release/release-lite/promote-release).
 val macBundleBuildVersion: String =
