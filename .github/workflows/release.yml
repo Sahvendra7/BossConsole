@@ -85,9 +85,11 @@ env:
   #
   # When this workflow is *called* (promote-release.yml), github.run_number is the
   # CALLER's counter — an independent sequence that can collide with, or sort below, a
-  # direct release run. Callers therefore pass build_id explicitly (promote-release uses
-  # a seconds-since-epoch stamp, which no run_number reaches), and it wins here.
-  BOSS_BUILD_ID: ${{ inputs.build_id || github.run_number }}
+  # direct release run. Callers pass build_id instead, which the macOS job (the only
+  # consumer of CFBundleVersion) prefers over this default. Do NOT reference `inputs`
+  # here: a workflow-level env is evaluated for every trigger, including the tag push,
+  # where that context does not exist — the run then fails at startup.
+  BOSS_BUILD_ID: ${{ github.run_number }}
   # Production credentials for release builds
   JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -336,6 +338,13 @@ jobs:
     needs: prepare-version
     if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: macos-14  # Apple Silicon runner
+    env:
+      # CFBundleVersion build identifier. Overrides the workflow-level default so a
+      # caller-supplied build_id wins: in a workflow_call run, github.run_number is the
+      # caller's own counter, which can collide with or sort below a direct release run.
+      # This is the only job that produces a macOS bundle, so it is the only place the
+      # value matters. Job-level `inputs` references are fine (unlike workflow-level env).
+      BOSS_BUILD_ID: ${{ inputs.build_id || github.run_number }}
     # macOS minutes bill at 10×, and notarization can legitimately sit waiting
     # on Apple, so cap the job well below GitHub's 6h default: build (~20m) plus
     # the notarization budget in scripts/lib/notarize-dmg.sh (1h) fits inside
