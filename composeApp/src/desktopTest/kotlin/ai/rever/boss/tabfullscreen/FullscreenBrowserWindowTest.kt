@@ -270,4 +270,10 @@ class FullscreenBrowserWindowTest {
             ),
         )
     }
+
+    @Test
+    fun `tracked native fullscreen gets a longer confirmation window`() {
+        assertEquals(1_500, VideoFullscreenConfirmationDecision.confirmationDelayMs(trackingAvailable = true))
+        assertEquals(600, VideoFullscreenConfirmationDecision.confirmationDelayMs(trackingAvailable = false))
+    }
 }

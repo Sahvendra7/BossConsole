@@ -215,6 +215,13 @@ internal enum class VideoFullscreenConfirmationDecision {
     ;
 
     companion object {
+        fun confirmationDelayMs(trackingAvailable: Boolean): Int =
+            if (trackingAvailable) {
+                NATIVE_FULLSCREEN_ACCEPTANCE_TIMEOUT_MS
+            } else {
+                FULLSCREEN_ANIMATION_DELAY_MS
+            }
+
         fun decide(
             trackingAvailable: Boolean,
             stateAvailable: Boolean,
@@ -234,6 +241,9 @@ internal enum class VideoFullscreenConfirmationDecision {
                 else -> USE_OVERLAY
             }
         }
+
+        private const val FULLSCREEN_ANIMATION_DELAY_MS = 600
+        private const val NATIVE_FULLSCREEN_ACCEPTANCE_TIMEOUT_MS = 1_500
     }
 }
 
@@ -404,6 +414,7 @@ private class FullscreenOverlayCoordinator(
         frame.addWindowFocusListener(
             object : WindowAdapter() {
                 override fun windowLostFocus(event: WindowEvent?) {
+                    if (event?.oppositeWindow === ownerWindow) return
                     if (isCurrentFrameOverlay(frame)) {
                         // Do not cover other applications when the user switches away from Boss.
                         frame.isAlwaysOnTop = false
@@ -420,6 +431,7 @@ private class FullscreenOverlayCoordinator(
         val listener =
             object : WindowAdapter() {
                 override fun windowLostFocus(event: WindowEvent?) {
+                    if (event?.oppositeWindow === frame) return
                     if (isCurrentFrameOverlay(frame)) {
                         // If the overlay never acquired focus, its own listener cannot
                         // observe app deactivation. The owner still can, so unpin here too.
@@ -554,8 +566,6 @@ object FullscreenBrowserWindow {
 
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
 
-    // macOS fullscreen animation takes ~500ms, wait before enabling exit detection.
-    private const val FULLSCREEN_ANIMATION_DELAY_MS = 600
     private const val COMPETING_REQUEST_EXIT_TIMEOUT_MS = 600
     private const val PAGE_EXIT_EVENT_TIMEOUT_MS = 1_000
 
@@ -902,9 +912,13 @@ object FullscreenBrowserWindow {
                     return@runFullscreenTransition
                 }
 
-                // Prefer the native event emitted by macOS. Geometry remains a fallback
-                // only when reflective listener registration is unavailable.
-                Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
+                // Geometry needs one animation interval; a tracked native toggle gets
+                // longer to publish its authoritative entry event before overlay fallback.
+                val confirmationDelayMs =
+                    VideoFullscreenConfirmationDecision.confirmationDelayMs(
+                        videoFullscreenTracker.trackingAvailable,
+                    )
+                Timer(confirmationDelayMs) {
                     runFullscreenTransition(frame, browser, expectedEpoch) {
                         videoFullscreenConfirmationHandler.handle(
                             tracker = videoFullscreenTracker,
