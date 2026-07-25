@@ -783,6 +783,14 @@ kotlin {
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
             implementation(libs.junit.jupiter)
+            // Compose UI testing (createComposeRule / onNodeWithText), so renderer
+            // behaviour can be asserted against a real composition instead of
+            // reasoned about. The API is JUnit 4 only; this module runs on the
+            // JUnit Platform, so the vintage engine is what actually executes
+            // those rules. Both engines are discovered side by side — the Jupiter
+            // suite is untouched.
+            implementation(compose.desktop.uiTestJUnit4)
+            runtimeOnly(libs.junit.vintage.engine)
             // Test-only: lets the suite assert the IPC proxy's skip-list stays
             // equal to the in-process scanner's (no production coupling).
             // Resolved by path with a presence guard, NOT the type-safe
@@ -801,10 +809,14 @@ kotlin {
         if (findProject(":plugin-platform:plugin-api-ipc") == null) {
             desktopTest.kotlin.exclude("**/SkipListDriftTest.kt")
         }
-        // Mirror of the desktopMain exclusion above: **/kernel/** isn't compiled on
-        // Windows ARM64 (no boss-ipc), so tests naming kernel types can't be either.
+        // Mirror of the desktopMain exclusions above: **/kernel/** and
+        // **/plugin/remote/** aren't compiled on Windows ARM64 (no boss-ipc, no
+        // boss-ui-sdk), so tests naming those types can't be either. The
+        // plugin/remote half was missed when the kernel one was added, which left
+        // RemoteWidgetRendererColorTest (it reads resolveBackgroundColor out of the
+        // excluded renderer) unable to compile on that platform.
         if (isWindowsArm64Build) {
-            desktopTest.kotlin.exclude("**/kernel/**")
+            desktopTest.kotlin.exclude("**/kernel/**", "**/plugin/remote/**")
         }
     }
 }

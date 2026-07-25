@@ -7,6 +7,7 @@ import ai.rever.boss.ipc.services.EventBusServiceImpl
 import ai.rever.boss.ipc.services.KernelServiceImpl
 import ai.rever.boss.ipc.services.StateServiceImpl
 import ai.rever.boss.kernel.services.*
+import ai.rever.boss.kernel.ui.RemoteUiSurfaceRegistry
 import ai.rever.boss.plugin.api.*
 import ai.rever.boss.process.ManagedProcess
 import ai.rever.boss.process.ProcessConfig
@@ -129,12 +130,22 @@ class KernelBootstrap(
         eventBusService = EventBusServiceImpl()
         stateService = StateServiceImpl()
 
-        // Start gRPC server
+        // Start gRPC server.
+        //
+        // PluginUIServiceBridge goes in here rather than in registerPluginServices() below, for two
+        // reasons. It has to exist before any plugin connects — processes are spawned immediately after
+        // this, and a plugin whose RegisterUI lands on a server that has no PluginUIService gets
+        // UNIMPLEMENTED and no UI at all. And BossIpcServer.addService() on a *running* server rebuilds
+        // it, which means tearing down the socket: harmless for the unary services registered that way,
+        // fatal for StreamUI, whose whole job is to stay open. registerPluginServices() also exists to
+        // gate each bridge on a host provider being present, and this one has no provider to gate on —
+        // its dependency is the surface registry, which the host owns for its whole lifetime.
         ipcServer =
             BossIpcServer(kernelAddress!!)
                 .addService(kernelService!!)
                 .addService(eventBusService!!)
                 .addService(stateService!!)
+                .addService(PluginUIServiceBridge(RemoteUiSurfaceRegistry.shared))
                 .start()
 
         // Wire IPC event bridge to forward events cross-process (M8 fix)

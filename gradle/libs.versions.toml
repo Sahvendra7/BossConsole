@@ -51,6 +51,10 @@ boss-plugin-api = "1.0.68"
 [libraries]
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+# Runs the JUnit 4 rules Compose UI testing is built on (createComposeRule) on the
+# JUnit Platform, alongside Jupiter. Versioned with junit-jupiter: both come out of
+# the same JUnit release train.
+junit-vintage-engine = { module = "org.junit.vintage:junit-vintage-engine", version.ref = "junit-jupiter" }
 clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
 androidx-lifecycle-viewmodel = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel", version.ref = "androidx-lifecycle" }
