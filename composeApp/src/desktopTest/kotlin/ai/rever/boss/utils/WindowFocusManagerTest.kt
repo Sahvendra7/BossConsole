@@ -22,34 +22,37 @@ class WindowFocusManagerTest {
     fun `native tracking is authoritative and does not leak across windows`() {
         assertTrue(
             hasFullscreenSignal(
-                windowId = "window-a",
-                composeFullscreenIds = setOf("window-a"),
-                nativeFullscreenIds = emptySet(),
-                nativeTrackedIds = emptySet(),
+                nativeStateAvailable = false,
+                nativeFullscreen = false,
+                composeFullscreen = true,
             ),
         )
         assertTrue(
             hasFullscreenSignal(
-                windowId = "window-a",
-                composeFullscreenIds = emptySet(),
-                nativeFullscreenIds = setOf("window-a"),
-                nativeTrackedIds = setOf("window-a"),
+                nativeStateAvailable = true,
+                nativeFullscreen = true,
+                composeFullscreen = false,
             ),
         )
         assertFalse(
             hasFullscreenSignal(
-                windowId = "window-a",
-                composeFullscreenIds = setOf("window-a"),
-                nativeFullscreenIds = emptySet(),
-                nativeTrackedIds = setOf("window-a"),
+                nativeStateAvailable = true,
+                nativeFullscreen = false,
+                composeFullscreen = true,
             ),
         )
         assertFalse(
             hasFullscreenSignal(
-                windowId = "window-b",
-                composeFullscreenIds = setOf("window-a"),
-                nativeFullscreenIds = setOf("window-a"),
-                nativeTrackedIds = setOf("window-a"),
+                nativeStateAvailable = false,
+                nativeFullscreen = true,
+                composeFullscreen = false,
+            ),
+        )
+        assertFalse(
+            hasFullscreenSignal(
+                nativeStateAvailable = false,
+                nativeFullscreen = false,
+                composeFullscreen = false,
             ),
         )
     }

@@ -1781,12 +1781,13 @@ object FluckEngine {
             logger.info(LogCategory.BROWSER, "Web content requested fullscreen", mapOf("tabId" to tabId))
 
             // Show fullscreen window
-            ai.rever.boss.tabfullscreen.FullscreenBrowserWindow.showFullscreen(browser, tabId, ownerWindowId) {
-                // This is called when exiting fullscreen via ESC or clicking placeholder
-                onFullscreenExit()
-            }
-
-            onFullscreenEnter()
+            ai.rever.boss.tabfullscreen.FullscreenBrowserWindow.showFullscreen(
+                browser = browser,
+                tabId = tabId,
+                ownerWindowId = ownerWindowId,
+                onEnter = onFullscreenEnter,
+                onExit = onFullscreenExit,
+            )
         }
 
         // Handle fullscreen exit using event listener

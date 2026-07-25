@@ -32,15 +32,14 @@ internal fun nativeMacOSFullscreenStateForEvent(methodName: String): Boolean? =
 internal fun isNativeMacOSFullscreenExitStarting(methodName: String): Boolean = methodName == "windowExitingFullScreen"
 
 internal fun hasFullscreenSignal(
-    windowId: String,
-    composeFullscreenIds: Set<String>,
-    nativeFullscreenIds: Set<String>,
-    nativeTrackedIds: Set<String>,
+    nativeStateAvailable: Boolean,
+    nativeFullscreen: Boolean,
+    composeFullscreen: Boolean,
 ): Boolean =
-    if (windowId in nativeTrackedIds) {
-        windowId in nativeFullscreenIds
+    if (nativeStateAvailable) {
+        nativeFullscreen
     } else {
-        windowId in composeFullscreenIds
+        composeFullscreen
     }
 
 internal fun shouldNotifyComposeFullscreenExit(
@@ -235,7 +234,7 @@ internal class AwtWindowFocusTracker {
 
 internal data class RegisteredWindowFullscreenState(
     val window: Window,
-    val nativeTrackingAvailable: Boolean,
+    val nativeStateAvailable: Boolean,
     val nativeFullscreen: Boolean,
     val composeFullscreen: Boolean,
 )
@@ -251,17 +250,31 @@ actual object WindowFocusManager {
     private val composeFullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
     private val nativeFullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
     private val nativeTrackedWindowIds = ConcurrentHashMap.newKeySet<String>()
+    private val nativeStateAvailableWindowIds = ConcurrentHashMap.newKeySet<String>()
     internal val fullscreenExitNotifier = FullscreenExitNotifier()
     private val macOSFullscreenTracker =
         MacOSFullscreenTracker(
             onFullscreenChanged = { windowId, isFullscreen ->
+                val hadNativeState = !nativeStateAvailableWindowIds.add(windowId)
                 if (isFullscreen) {
                     nativeFullscreenWindowIds += windowId
-                } else if (nativeFullscreenWindowIds.remove(windowId)) {
-                    fullscreenExitNotifier.notify(windowId)
+                } else {
+                    val wasNativeFullscreen = nativeFullscreenWindowIds.remove(windowId)
+                    if (wasNativeFullscreen ||
+                        (!hadNativeState && windowId in composeFullscreenWindowIds)
+                    ) {
+                        fullscreenExitNotifier.notify(windowId)
+                    }
                 }
             },
-            onFullscreenExitStarted = fullscreenExitNotifier::notify,
+            onFullscreenExitStarted = { windowId ->
+                // An exit-start event proves that the registered window still
+                // owns a native fullscreen Space even if registration missed
+                // its earlier enter transition.
+                nativeStateAvailableWindowIds += windowId
+                nativeFullscreenWindowIds += windowId
+                fullscreenExitNotifier.notify(windowId)
+            },
         )
 
     // EDT-confined; registerWindow/unregisterWindow enforce this before mutation.
@@ -312,6 +325,8 @@ actual object WindowFocusManager {
 
         // Native fullscreen tracking is optional and must not prevent the
         // focus listener above from being installed if EAWT is unavailable.
+        nativeFullscreenWindowIds -= windowId
+        nativeStateAvailableWindowIds -= windowId
         if (macOSFullscreenTracker.register(windowId, window)) {
             nativeTrackedWindowIds += windowId
         } else {
@@ -362,7 +377,11 @@ actual object WindowFocusManager {
         val window = windows[windowId] ?: return null
         return RegisteredWindowFullscreenState(
             window = window,
-            nativeTrackingAvailable = windowId in nativeTrackedWindowIds,
+            // A listener reports transitions, not initial state. Compose plus
+            // geometry remains the fallback until the first native event.
+            nativeStateAvailable =
+                windowId in nativeTrackedWindowIds &&
+                    windowId in nativeStateAvailableWindowIds,
             nativeFullscreen = windowId in nativeFullscreenWindowIds,
             composeFullscreen = windowId in composeFullscreenWindowIds,
         )
@@ -386,6 +405,7 @@ actual object WindowFocusManager {
         val wasComposeFullscreen = composeFullscreenWindowIds.remove(windowId)
         val wasNativeFullscreen = nativeFullscreenWindowIds.remove(windowId)
         nativeTrackedWindowIds -= windowId
+        nativeStateAvailableWindowIds -= windowId
         if (wasComposeFullscreen || wasNativeFullscreen) {
             fullscreenExitNotifier.notify(windowId)
         }
