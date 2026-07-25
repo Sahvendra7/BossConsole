@@ -1,5 +1,6 @@
 package ai.rever.boss.tabfullscreen
 
+import ai.rever.boss.utils.MacOSFullscreenTracker
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.utils.hasFullscreenSignal
 import ai.rever.boss.utils.logging.BossLogger
@@ -194,6 +195,207 @@ private fun runOnEventDispatchThreadAndWait(
     }
 }
 
+private class VideoFullscreenTracker(
+    private val onEntryObserved: () -> Unit,
+    private val onExitObserved: () -> Unit,
+) {
+    private val nativeTracker =
+        MacOSFullscreenTracker(
+            onFullscreenChanged = ::handleFullscreenChanged,
+            onFullscreenExitStarted = ::handleFullscreenExitStarted,
+        )
+    private var trackingId: String? = null
+    private var entryObserved = false
+
+    var trackingAvailable = false
+        private set
+    var stateAvailable = false
+        private set
+    var isFullscreen = false
+        private set
+
+    fun register(
+        frame: JFrame,
+        expectedEpoch: Long,
+    ) {
+        clear()
+        val newTrackingId = "fullscreen-video-$expectedEpoch"
+        trackingId = newTrackingId
+        trackingAvailable = nativeTracker.register(newTrackingId, frame)
+    }
+
+    fun clear() {
+        val previousTrackingId = trackingId
+        trackingId = null
+        trackingAvailable = false
+        stateAvailable = false
+        isFullscreen = false
+        entryObserved = false
+        previousTrackingId?.let(nativeTracker::unregister)
+    }
+
+    private fun handleFullscreenChanged(
+        eventTrackingId: String,
+        fullscreen: Boolean,
+    ) {
+        if (eventTrackingId != trackingId) return
+        stateAvailable = true
+        isFullscreen = fullscreen
+        if (fullscreen) {
+            entryObserved = true
+            onEntryObserved()
+        } else if (entryObserved) {
+            onExitObserved()
+        }
+    }
+
+    private fun handleFullscreenExitStarted(eventTrackingId: String) {
+        if (eventTrackingId != trackingId || !entryObserved) return
+        onExitObserved()
+    }
+}
+
+private data class FullscreenFrameView(
+    val frame: JFrame,
+    val browserView: BrowserView,
+)
+
+private fun prepareBorderlessOverlayFrame(
+    sourceFrame: JFrame,
+    sourceView: BrowserView?,
+    browser: Browser,
+    installExitShortcut: (JFrame) -> Unit,
+    installFrameListeners: (JFrame) -> Unit,
+): FullscreenFrameView {
+    if (!sourceFrame.isDisplayable) {
+        sourceFrame.isUndecorated = true
+        return FullscreenFrameView(sourceFrame, checkNotNull(sourceView))
+    }
+
+    val graphicsConfiguration = sourceFrame.graphicsConfiguration
+    sourceView?.let { view ->
+        view.isVisible = false
+        sourceFrame.contentPane.remove(view)
+    }
+    sourceFrame.contentPane.revalidate()
+    sourceFrame.contentPane.repaint()
+    sourceFrame.isVisible = false
+    sourceFrame.dispose()
+
+    val overlayFrame = graphicsConfiguration?.let(::JFrame) ?: JFrame()
+    overlayFrame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
+    overlayFrame.background = Color.BLACK
+    overlayFrame.contentPane.background = Color.BLACK
+    overlayFrame.contentPane.layout = BorderLayout()
+    overlayFrame.isUndecorated = true
+    installExitShortcut(overlayFrame)
+
+    val overlayView = BrowserView.newInstance(browser)
+    overlayView.background = Color.BLACK
+    overlayFrame.contentPane.add(overlayView, BorderLayout.CENTER)
+    installFrameListeners(overlayFrame)
+    return FullscreenFrameView(overlayFrame, overlayView)
+}
+
+private class FullscreenOverlayCoordinator(
+    private val isCurrentFrameOverlay: (JFrame) -> Boolean,
+    private val isCurrentOwnerOverlay: (String, Long) -> Boolean,
+    private val requestPageExit: () -> Unit,
+) {
+    private val logger = BossLogger.forComponent("FullscreenOverlayCoordinator")
+    private var ownerFullscreenExitListener: ((String) -> Unit)? = null
+    private var ownerWindow: Window? = null
+    private var ownerFocusListener: WindowAdapter? = null
+
+    fun installFocusBehavior(
+        frame: JFrame,
+        ownerWindowId: String?,
+    ) {
+        clearOwnerFocusListener()
+        frame.addWindowFocusListener(
+            object : WindowAdapter() {
+                override fun windowLostFocus(event: WindowEvent?) {
+                    if (isCurrentFrameOverlay(frame)) {
+                        // Do not cover other applications when the user switches away from Boss.
+                        frame.isAlwaysOnTop = false
+                    }
+                }
+
+                override fun windowGainedFocus(event: WindowEvent?) {
+                    restoreOverlayLevel(frame)
+                }
+            },
+        )
+
+        val hostWindow = ownerWindowId?.let(WindowFocusManager::getWindow) ?: return
+        val listener =
+            object : WindowAdapter() {
+                override fun windowGainedFocus(event: WindowEvent?) {
+                    restoreOverlayLevel(frame)
+                }
+            }
+        ownerWindow = hostWindow
+        ownerFocusListener = listener
+        hostWindow.addWindowFocusListener(listener)
+    }
+
+    fun watchOwnerExit(
+        ownerWindowId: String?,
+        expectedEpoch: Long,
+    ) {
+        if (ownerWindowId == null) return
+        ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
+        val listener: (String) -> Unit = { exitedWindowId ->
+            if (exitedWindowId == ownerWindowId) {
+                SwingUtilities.invokeLater {
+                    if (isCurrentOwnerOverlay(ownerWindowId, expectedEpoch)) {
+                        logger.info(
+                            LogCategory.BROWSER,
+                            "Closing fullscreen video overlay because its host exited fullscreen",
+                            mapOf("ownerWindowId" to ownerWindowId),
+                        )
+                        requestPageExit()
+                    }
+                }
+            }
+        }
+        ownerFullscreenExitListener = listener
+        WindowFocusManager.fullscreenExitNotifier.add(listener)
+
+        // The owner may have completed its exit between selecting overlay mode
+        // and registering this listener, so re-check after registration.
+        if (!isRegisteredWindowFullscreen(ownerWindowId)) {
+            SwingUtilities.invokeLater {
+                if (isCurrentOwnerOverlay(ownerWindowId, expectedEpoch)) {
+                    requestPageExit()
+                }
+            }
+        }
+    }
+
+    fun clear() {
+        ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
+        ownerFullscreenExitListener = null
+        clearOwnerFocusListener()
+    }
+
+    private fun restoreOverlayLevel(frame: JFrame) {
+        if (isCurrentFrameOverlay(frame)) {
+            frame.isAlwaysOnTop = true
+            frame.toFront()
+        }
+    }
+
+    private fun clearOwnerFocusListener() {
+        val listener = ownerFocusListener
+        if (ownerWindow != null && listener != null) {
+            ownerWindow?.removeWindowFocusListener(listener)
+        }
+        ownerWindow = null
+        ownerFocusListener = null
+    }
+}
+
 /**
  * Creates and manages a fullscreen Swing JFrame for browser content.
  * Uses the existing browser instance with a new BrowserView.
@@ -210,9 +412,6 @@ object FullscreenBrowserWindow {
     @Volatile // Read off-EDT only for the disposal fast path; mutated on the EDT.
     private var currentBrowser: Browser? = null
     private var currentOwnerWindowId: String? = null
-    private var ownerFullscreenExitListener: ((String) -> Unit)? = null
-    private var overlayOwnerWindow: Window? = null
-    private var overlayOwnerFocusListener: WindowAdapter? = null
     private var onExitCallback: (() -> Unit)? = null
     private var isInFullscreenMode = false
     private var hasReachedFullscreen = false // True only after fullscreen animation completes
@@ -220,6 +419,32 @@ object FullscreenBrowserWindow {
     private var isExiting = false // Prevent multiple exit calls
     private var lifecycleEpoch = 0L
     private val exitCallbackGate = FullscreenExitCallbackGate<Browser>()
+    private val videoFullscreenTracker =
+        VideoFullscreenTracker(
+            onEntryObserved = {
+                logger.info(LogCategory.BROWSER, "Native video fullscreen entry observed")
+            },
+            onExitObserved = {
+                if (usesNativeMacOSFullscreen && hasReachedFullscreen && !isExiting) {
+                    logger.info(LogCategory.BROWSER, "Native video fullscreen exit observed")
+                    requestPageExit()
+                }
+            },
+        )
+    private val overlayCoordinator =
+        FullscreenOverlayCoordinator(
+            isCurrentFrameOverlay = { frame ->
+                fullscreenFrame === frame && !usesNativeMacOSFullscreen
+            },
+            isCurrentOwnerOverlay = { ownerWindowId, expectedEpoch ->
+                if (currentOwnerWindowId != ownerWindowId) {
+                    false
+                } else {
+                    lifecycleEpoch == expectedEpoch && isInFullscreenMode && !usesNativeMacOSFullscreen
+                }
+            },
+            requestPageExit = ::requestPageExit,
+        )
 
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
 
@@ -371,6 +596,23 @@ object FullscreenBrowserWindow {
         frame: JFrame,
     ): Boolean = isCurrentSession(expectedEpoch, browser) && fullscreenFrame === frame
 
+    private fun runFullscreenTransition(
+        frame: JFrame,
+        browser: Browser,
+        expectedEpoch: Long,
+        action: () -> Unit,
+    ) {
+        if (!isCurrentFrameSession(expectedEpoch, browser, frame)) return
+        try {
+            action()
+        } catch (e: Exception) {
+            logger.error(LogCategory.BROWSER, "Fullscreen transition failed", error = e)
+            if (isCurrentSession(expectedEpoch, browser)) {
+                performExitDirect()
+            }
+        }
+    }
+
     /**
      * Creates and displays the fullscreen window with a Swing BrowserView.
      * Called after Compose BrowserView has had time to detach from rendering.
@@ -495,6 +737,7 @@ object FullscreenBrowserWindow {
             // that Space and cover it with an undecorated screen-sized window instead.
             showBorderlessOverlay(
                 frame = frame,
+                browser = browser,
                 bounds = fullscreenHostBounds,
                 watchOwnerExit = true,
                 expectedEpoch = expectedEpoch,
@@ -519,6 +762,7 @@ object FullscreenBrowserWindow {
             )
         }
         frame.isVisible = true
+        videoFullscreenTracker.register(frame, expectedEpoch)
         requestNativeMacOSFullscreen(frame, browser, expectedEpoch)
     }
 
@@ -528,115 +772,91 @@ object FullscreenBrowserWindow {
         expectedEpoch: Long,
     ) {
         SwingUtilities.invokeLater {
-            if (!isCurrentFrameSession(expectedEpoch, browser, frame)) return@invokeLater
-            if (!toggleMacOSFullscreen(frame)) {
-                showBorderlessOverlay(
-                    frame = frame,
-                    bounds = displayBounds(frame),
-                    watchOwnerExit = currentOwnerWindowId?.let(::isRegisteredWindowFullscreen) == true,
-                    expectedEpoch = expectedEpoch,
-                )
-                return@invokeLater
-            }
-
-            // Wait for fullscreen animation to complete before enabling exit detection.
-            Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
-                if (!isCurrentFrameSession(expectedEpoch, browser, frame)) return@Timer
-                if (isWindowInFullscreen(frame)) {
-                    hasReachedFullscreen = true
-                    logger.info(
-                        LogCategory.BROWSER,
-                        "Fullscreen animation completed, exit detection enabled",
-                    )
-                } else {
-                    logger.warn(
-                        LogCategory.BROWSER,
-                        "macOS ignored native fullscreen toggle; using borderless overlay",
-                    )
+            runFullscreenTransition(frame, browser, expectedEpoch) {
+                if (!toggleMacOSFullscreen(frame)) {
                     showBorderlessOverlay(
                         frame = frame,
+                        browser = browser,
                         bounds = displayBounds(frame),
                         watchOwnerExit = currentOwnerWindowId?.let(::isRegisteredWindowFullscreen) == true,
                         expectedEpoch = expectedEpoch,
                     )
+                    return@runFullscreenTransition
                 }
-            }.apply {
-                isRepeats = false
-                start()
+
+                // Prefer the native event emitted by macOS. Geometry remains a fallback
+                // only when reflective listener registration is unavailable.
+                Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
+                    runFullscreenTransition(frame, browser, expectedEpoch) {
+                        val fullscreenConfirmed =
+                            if (videoFullscreenTracker.trackingAvailable) {
+                                videoFullscreenTracker.stateAvailable && videoFullscreenTracker.isFullscreen
+                            } else {
+                                isWindowInFullscreen(frame)
+                            }
+                        if (fullscreenConfirmed) {
+                            hasReachedFullscreen = true
+                            logger.info(
+                                LogCategory.BROWSER,
+                                "Fullscreen animation completed, exit detection enabled",
+                                mapOf("nativeSignal" to videoFullscreenTracker.trackingAvailable),
+                            )
+                        } else {
+                            logger.warn(
+                                LogCategory.BROWSER,
+                                "macOS ignored native fullscreen toggle; using borderless overlay",
+                            )
+                            showBorderlessOverlay(
+                                frame = frame,
+                                browser = browser,
+                                bounds = displayBounds(frame),
+                                watchOwnerExit = currentOwnerWindowId?.let(::isRegisteredWindowFullscreen) == true,
+                                expectedEpoch = expectedEpoch,
+                            )
+                        }
+                    }
+                }.apply {
+                    isRepeats = false
+                    start()
+                }
             }
         }
     }
 
     private fun showBorderlessOverlay(
         frame: JFrame,
+        browser: Browser,
         bounds: Rectangle,
         watchOwnerExit: Boolean,
         expectedEpoch: Long,
     ) {
-        if (lifecycleEpoch != expectedEpoch || fullscreenFrame !== frame) return
-        if (frame.isDisplayable) {
-            frame.dispose()
-        }
-        frame.isUndecorated = true
-        frame.isAlwaysOnTop = true
-        frame.extendedState = JFrame.NORMAL
-        frame.setBounds(bounds)
-        frame.isVisible = true
-        frame.toFront()
-        installOverlayFocusBehavior(frame)
+        if (!isCurrentFrameSession(expectedEpoch, browser, frame)) return
+        videoFullscreenTracker.clear()
+
+        val overlay =
+            prepareBorderlessOverlayFrame(
+                sourceFrame = frame,
+                sourceView = currentBrowserView,
+                browser = browser,
+                installExitShortcut = ::installExitShortcut,
+                installFrameListeners = { replacement ->
+                    installFullscreenFrameListeners(replacement, browser, expectedEpoch)
+                },
+            )
+        fullscreenFrame = overlay.frame
+        currentBrowserView = overlay.browserView
+        overlay.frame.isAlwaysOnTop = true
+        overlay.frame.extendedState = JFrame.NORMAL
+        overlay.frame.setBounds(bounds)
+        overlay.frame.isVisible = true
+        overlay.frame.toFront()
+        overlay.browserView.requestFocusInWindow()
+        overlayCoordinator.installFocusBehavior(overlay.frame, currentOwnerWindowId)
         usesNativeMacOSFullscreen = false
         hasReachedFullscreen = true
         if (watchOwnerExit) {
-            watchOwnerFullscreenExit(currentOwnerWindowId, expectedEpoch)
+            overlayCoordinator.watchOwnerExit(currentOwnerWindowId, expectedEpoch)
         }
-    }
-
-    private fun installOverlayFocusBehavior(frame: JFrame) {
-        clearOverlayOwnerFocusListener()
-        frame.addWindowFocusListener(
-            object : WindowAdapter() {
-                override fun windowLostFocus(event: WindowEvent?) {
-                    if (fullscreenFrame === frame && !usesNativeMacOSFullscreen) {
-                        // Do not cover other applications when the user switches
-                        // away from Boss; restore the overlay level on return.
-                        frame.isAlwaysOnTop = false
-                    }
-                }
-
-                override fun windowGainedFocus(event: WindowEvent?) {
-                    restoreOverlayFocus(frame)
-                }
-            },
-        )
-
-        val ownerWindow = currentOwnerWindowId?.let(WindowFocusManager::getWindow) ?: return
-        val ownerListener =
-            object : WindowAdapter() {
-                override fun windowGainedFocus(event: WindowEvent?) {
-                    restoreOverlayFocus(frame)
-                    frame.requestFocus()
-                }
-            }
-        overlayOwnerWindow = ownerWindow
-        overlayOwnerFocusListener = ownerListener
-        ownerWindow.addWindowFocusListener(ownerListener)
-    }
-
-    private fun restoreOverlayFocus(frame: JFrame) {
-        if (fullscreenFrame === frame && !usesNativeMacOSFullscreen) {
-            frame.isAlwaysOnTop = true
-            frame.toFront()
-        }
-    }
-
-    private fun clearOverlayOwnerFocusListener() {
-        val ownerWindow = overlayOwnerWindow
-        val listener = overlayOwnerFocusListener
-        if (ownerWindow != null && listener != null) {
-            ownerWindow.removeWindowFocusListener(listener)
-        }
-        overlayOwnerWindow = null
-        overlayOwnerFocusListener = null
     }
 
     /**
@@ -644,6 +864,7 @@ object FullscreenBrowserWindow {
      * A new undecorated video window can cover that same fullscreen Space without
      * asking macOS to create a second native fullscreen Space.
      */
+
     private fun existingFullscreenWindowBounds(ownerWindowId: String): Rectangle? {
         val state = WindowFocusManager.getWindowFullscreenState(ownerWindowId)
         if (state == null ||
@@ -734,58 +955,13 @@ object FullscreenBrowserWindow {
         )
     }
 
-    private fun watchOwnerFullscreenExit(
-        ownerWindowId: String?,
-        expectedEpoch: Long,
-    ) {
-        if (ownerWindowId == null) return
-        ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
-        val listener: (String) -> Unit = { exitedWindowId ->
-            if (exitedWindowId == ownerWindowId) {
-                SwingUtilities.invokeLater {
-                    if (isCurrentOwnerOverlay(ownerWindowId, expectedEpoch)) {
-                        logger.info(
-                            LogCategory.BROWSER,
-                            "Closing fullscreen video overlay because its host exited fullscreen",
-                            mapOf("ownerWindowId" to ownerWindowId),
-                        )
-                        requestPageExit()
-                    }
-                }
-            }
-        }
-        ownerFullscreenExitListener = listener
-        WindowFocusManager.fullscreenExitNotifier.add(listener)
-
-        // The owner may have completed its exit between the state read that
-        // selected overlay mode and listener registration.
-        val stillFullscreen = isRegisteredWindowFullscreen(ownerWindowId)
-        if (!stillFullscreen) {
-            SwingUtilities.invokeLater {
-                if (isCurrentOwnerOverlay(ownerWindowId, expectedEpoch)) {
-                    requestPageExit()
-                }
-            }
-        }
-    }
-
-    private fun isCurrentOwnerOverlay(
-        ownerWindowId: String,
-        expectedEpoch: Long,
-    ): Boolean =
-        currentOwnerWindowId == ownerWindowId &&
-            lifecycleEpoch == expectedEpoch &&
-            isInFullscreenMode &&
-            !usesNativeMacOSFullscreen
-
     /**
      * Reset all state variables.
      */
     private fun resetState(): Long {
         lifecycleEpoch++
-        ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
-        ownerFullscreenExitListener = null
-        clearOverlayOwnerFocusListener()
+        overlayCoordinator.clear()
+        videoFullscreenTracker.clear()
         fullscreenFrame = null
         currentBrowserView = null
         currentBrowser = null

@@ -91,30 +91,35 @@ private class WindowScopedBrowserService(
             task.get(BROWSER_DISPOSAL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            disposeAfterMarshalFailure(task, "Interrupted while closing browser service", e)
+            disposeAfterMarshalFailure(
+                message = "Interrupted while waiting for browser service disposal; cleanup remains queued",
+                error = e,
+                retryOnEdt = false,
+            )
         } catch (e: TimeoutException) {
-            disposeAfterMarshalFailure(task, "Timed out closing browser service on the EDT", e)
+            disposeAfterMarshalFailure(
+                message = "Timed out waiting for browser service disposal; cleanup remains queued",
+                error = e,
+                retryOnEdt = false,
+            )
         } catch (e: ExecutionException) {
-            disposeAfterMarshalFailure(task, "Could not close browser service on the EDT", e.cause ?: e)
+            disposeAfterMarshalFailure(
+                message = "Browser service disposal failed on the EDT; scheduling one retry",
+                error = e.cause ?: e,
+                retryOnEdt = true,
+            )
         }
     }
 
     private fun disposeAfterMarshalFailure(
-        task: FutureTask<Unit>,
         message: String,
         error: Throwable,
+        retryOnEdt: Boolean,
     ) {
-        task.cancel(false)
         logger.warn(LogCategory.BROWSER, message, mapOf("windowId" to windowId), error)
-        runCatching(::disposeOwnedBrowsersOnce)
-            .onFailure { fallbackError ->
-                logger.error(
-                    LogCategory.BROWSER,
-                    "Browser service fallback disposal failed",
-                    mapOf("windowId" to windowId),
-                    fallbackError,
-                )
-            }
+        if (retryOnEdt) {
+            SwingUtilities.invokeLater(::disposeOwnedBrowsersOnce)
+        }
     }
 
     private fun disposeOwnedBrowsersOnce() {

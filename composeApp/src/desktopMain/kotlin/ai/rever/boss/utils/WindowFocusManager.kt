@@ -81,7 +81,7 @@ internal class FullscreenExitNotifier {
     }
 }
 
-private class MacOSFullscreenTracker(
+internal class MacOSFullscreenTracker(
     private val onFullscreenChanged: (windowId: String, isFullscreen: Boolean) -> Unit,
     private val onFullscreenExitStarted: (windowId: String) -> Unit,
 ) {
