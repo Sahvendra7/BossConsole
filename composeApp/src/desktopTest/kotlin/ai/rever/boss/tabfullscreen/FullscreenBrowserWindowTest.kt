@@ -169,4 +169,26 @@ class FullscreenBrowserWindowTest {
 
         assertEquals(2, notifications)
     }
+
+    @Test
+    fun `each competing fullscreen attempt receives one exit callback`() {
+        val gate = FullscreenExitCallbackGate<String>()
+        var notifications = 0
+
+        repeat(2) {
+            val decision =
+                fullscreenRequestDecision(
+                    frameActive = true,
+                    isInFullscreenMode = true,
+                    isSameBrowser = false,
+                    isBrowserClosed = false,
+                )
+            assertEquals(FullscreenRequestDecision.REJECT_COMPETING, decision)
+            gate.begin("browser-b")
+            assertTrue(gate.notifyOnce("browser-b") { notifications++ })
+            assertFalse(gate.notifyOnce("browser-b") { notifications++ })
+        }
+
+        assertEquals(2, notifications)
+    }
 }

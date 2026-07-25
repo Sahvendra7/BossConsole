@@ -4,6 +4,9 @@ import ai.rever.boss.plugin.browser.BrowserConfig
 import ai.rever.boss.plugin.browser.BrowserHandle
 import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.browser.BrowserServiceImpl
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import java.lang.reflect.InvocationTargetException
 import java.util.concurrent.ConcurrentHashMap
 import javax.swing.SwingUtilities
 
@@ -24,6 +27,7 @@ actual fun getBrowserServiceInstance(windowId: String?): BrowserService? =
 private class WindowScopedBrowserService(
     private val windowId: String,
 ) : BrowserService by BrowserServiceImpl {
+    private val logger = BossLogger.forComponent("WindowScopedBrowserService")
     private val lifecycleLock = Any()
     private var closed = false
 
@@ -51,12 +55,23 @@ private class WindowScopedBrowserService(
     override fun getActiveBrowserCount(): Int = BrowserServiceImpl.getActiveBrowserCountForWindow(windowId)
 
     fun close() {
-        // Window-close routing calls this on the EDT. Keep that invariant while
-        // holding lifecycleLock: fullscreen BrowserView disposal may marshal to
-        // the EDT and must never wait for a lock owned by a background caller.
-        check(SwingUtilities.isEventDispatchThread()) {
-            "WindowScopedBrowserService.close must run on the EDT"
+        if (!SwingUtilities.isEventDispatchThread()) {
+            logger.warn(
+                LogCategory.BROWSER,
+                "Browser service close called off-EDT; marshalling before disposal",
+                mapOf("windowId" to windowId),
+            )
+            try {
+                SwingUtilities.invokeAndWait { close() }
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                logger.warn(LogCategory.BROWSER, "Interrupted while closing browser service", error = e)
+            } catch (e: InvocationTargetException) {
+                logger.warn(LogCategory.BROWSER, "Could not close browser service on the EDT", error = e.cause ?: e)
+            }
+            return
         }
+
         synchronized(lifecycleLock) {
             if (closed) return
             closed = true

@@ -3,6 +3,7 @@ package ai.rever.boss.tabfullscreen
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.utils.hasFullscreenSignal
 import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.ComponentLogger
 import ai.rever.boss.utils.logging.LogCategory
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.view.swing.BrowserView
@@ -18,8 +19,11 @@ import java.awt.event.ComponentEvent
 import java.awt.event.KeyEvent
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
-import java.lang.reflect.InvocationTargetException
 import java.util.WeakHashMap
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import javax.swing.AbstractAction
 import javax.swing.JComponent
 import javax.swing.JFrame
@@ -100,6 +104,38 @@ internal class FullscreenExitCallbackGate<T : Any> {
     }
 }
 
+private fun runOnEventDispatchThreadAndWait(
+    logger: ComponentLogger,
+    timeoutMs: Long,
+    action: () -> Unit,
+) {
+    if (SwingUtilities.isEventDispatchThread()) {
+        action()
+        return
+    }
+
+    val task =
+        FutureTask<Unit> {
+            action()
+        }
+    SwingUtilities.invokeLater(task)
+    try {
+        task.get(timeoutMs, TimeUnit.MILLISECONDS)
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        logger.warn(LogCategory.BROWSER, "Interrupted while closing fullscreen browser window", error = e)
+    } catch (e: TimeoutException) {
+        task.cancel(false)
+        logger.warn(
+            LogCategory.BROWSER,
+            "Timed out waiting for fullscreen browser cleanup on the EDT",
+            error = e,
+        )
+    } catch (e: ExecutionException) {
+        logger.warn(LogCategory.BROWSER, "Could not close fullscreen browser window", error = e.cause ?: e)
+    }
+}
+
 /**
  * Creates and manages a fullscreen Swing JFrame for browser content.
  * Uses the existing browser instance with a new BrowserView.
@@ -139,6 +175,7 @@ object FullscreenBrowserWindow {
     // Delay to allow Swing BrowserView to release rendering before Compose BrowserView activates
     // Exit needs more time because we need to ensure the Swing view fully releases the surface
     private const val SWING_RELEASE_DELAY_MS = 200
+    private const val EDT_CLEANUP_TIMEOUT_MS = 2_000L
     private const val EXIT_FULLSCREEN_ACTION = "exit-fullscreen"
 
     fun showFullscreen(
@@ -164,14 +201,19 @@ object FullscreenBrowserWindow {
         onEnter: () -> Unit,
         onExit: () -> Unit,
     ) {
-        when (
+        val decision =
             fullscreenRequestDecision(
                 frameActive = fullscreenFrame != null,
                 isInFullscreenMode = isInFullscreenMode,
                 isSameBrowser = currentBrowser === browser,
                 isBrowserClosed = browser.isClosed,
             )
-        ) {
+        if (decision != FullscreenRequestDecision.IGNORE_DUPLICATE) {
+            // Deduplicate within one request/exit attempt, not forever for a
+            // browser that may lose several competing requests over its life.
+            exitCallbackGate.begin(browser)
+        }
+        when (decision) {
             FullscreenRequestDecision.IGNORE_DUPLICATE -> {
                 logger.debug(LogCategory.BROWSER, "Ignoring duplicate fullscreen request from active browser")
             }
@@ -226,7 +268,6 @@ object FullscreenBrowserWindow {
         hasReachedFullscreen = false
         lifecycleEpoch++
         val expectedEpoch = lifecycleEpoch
-        exitCallbackGate.begin(browser)
         TabFullscreenStateManager.enterFullscreen(tabId)
         onEnter()
 
@@ -773,22 +814,6 @@ object FullscreenBrowserWindow {
         }
     }
 
-    private fun runOnEventDispatchThreadAndWait(action: () -> Unit) {
-        if (SwingUtilities.isEventDispatchThread()) {
-            action()
-            return
-        }
-
-        try {
-            SwingUtilities.invokeAndWait { action() }
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            logger.warn(LogCategory.BROWSER, "Interrupted while closing fullscreen browser window", error = e)
-        } catch (e: InvocationTargetException) {
-            logger.warn(LogCategory.BROWSER, "Could not close fullscreen browser window", error = e.cause ?: e)
-        }
-    }
-
     /**
      * Keep the browser page and host window in sync: ask Chromium to leave
      * HTML fullscreen first, then tear down directly only if its exit event is
@@ -895,7 +920,7 @@ object FullscreenBrowserWindow {
      */
     fun exitFullscreen(browser: Browser) {
         if (currentBrowser !== browser) return
-        runOnEventDispatchThreadAndWait {
+        runOnEventDispatchThreadAndWait(logger, EDT_CLEANUP_TIMEOUT_MS) {
             if (currentBrowser === browser) {
                 exitFullscreen()
             }
