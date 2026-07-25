@@ -40,7 +40,24 @@ object ShellUtils {
      * Escape a string for safe use inside double quotes in shell.
      * Platform-aware escaping for Unix shells vs Windows PowerShell.
      */
-    fun escapeForDoubleQuotes(str: String): String =
+    fun escapeForDoubleQuotes(str: String): String = escapeForDoubleQuotes(str, isWindows)
+
+    /**
+     * Platform-explicit form of [escapeForDoubleQuotes].
+     *
+     * [isWindows] is fixed at class-load from the real OS, so the single-argument
+     * overload can only ever reach one branch on a given host. This overload takes
+     * the platform as a parameter so both the PowerShell and the POSIX branch are
+     * exercised by tests on every host, instead of relying on the CI matrix
+     * happening to include a Windows runner.
+     *
+     * @param str The string to escape
+     * @param isWindows Escape for Windows PowerShell when true, POSIX shells otherwise
+     */
+    internal fun escapeForDoubleQuotes(
+        str: String,
+        isWindows: Boolean,
+    ): String =
         if (isWindows) {
             // PowerShell escaping: backtick is the escape character
             str

@@ -397,8 +397,15 @@ actual object GitService {
         val indexStatus = parseStatusChar(indexChar)
         val workTreeStatus = parseStatusChar(workTreeChar)
 
-        // A file is staged if it has an index status (not space or ?)
-        val isStaged = indexStatus != null && indexStatus != GitFileStatusType.UNTRACKED
+        // A file is staged if it has an index status, except for the two porcelain v1
+        // codes that fill the index column without ever describing staged content:
+        // `?` (untracked, always emitted as "??") and `!` (ignored, always emitted as
+        // "!!" and only with --ignored). Every other modelled code can be staged —
+        // including `U` (unmerged), whose path does have index entries (stages 1/2/3).
+        val isStaged =
+            indexStatus != null &&
+                indexStatus != GitFileStatusType.UNTRACKED &&
+                indexStatus != GitFileStatusType.IGNORED
         // A file is unstaged if it has a worktree status (not space)
         val isUnstaged = workTreeStatus != null
 

@@ -1,6 +1,5 @@
 package ai.rever.boss.git
 
-import org.junit.jupiter.api.Disabled
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -125,16 +124,23 @@ class GitPorcelainParserTest {
         assertEquals(GitFileStatusType.IGNORED, status.workTreeStatus)
     }
 
-    @Disabled(
-        "documents bug: '!!' (ignored) sets isStaged=true because only UNTRACKED is " +
-            "carved out of the isStaged computation; an ignored file is never staged. " +
-            "Currently unreachable in production (getStatus never passes --ignored).",
-    )
     @Test
     fun `ignored file is not staged`() {
         val status = GitService.parseStatusLine("!! build/")
         assertNotNull(status)
+        // IGNORED, like UNTRACKED, fills the index column ("!!") but is never staged.
         assertFalse(status.isStaged)
+        // isUnstaged still follows the worktree column, matching the "??" treatment.
+        assertTrue(status.isUnstaged)
+    }
+
+    @Test
+    fun `unmerged index status is still staged - a conflicted path has index entries`() {
+        // UNTRACKED and IGNORED are the only codes carved out of isStaged: 'U' means the
+        // path holds conflict stages in the index, so it is not a "never staged" code.
+        val status = GitService.parseStatusLine("UD theirs-deleted.txt")
+        assertNotNull(status)
+        assertTrue(status.isStaged)
     }
 
     // ==================== parseStatusLine: renames and copies ====================
