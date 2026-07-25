@@ -225,6 +225,16 @@ fun main(args: Array<String>) {
                 System.err.println("Error stopping app update realtime: ${e.message}")
             }
             try {
+                // App-level updater teardown: the ONLY place the process-wide
+                // updater is shut down. Window close releases its UpdateHandle
+                // instead, so closing one window no longer stops periodic checks
+                // or cancels a download for the windows still open (#19, #37).
+                ai.rever.boss.updater.UpdateCoordinator.instance
+                    .shutdown()
+            } catch (e: Exception) {
+                System.err.println("Error shutting down updater: ${e.message}")
+            }
+            try {
                 // Shutdown plugin store
                 PluginStoreSetup.shutdown()
             } catch (e: Exception) {

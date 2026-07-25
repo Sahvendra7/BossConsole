@@ -205,7 +205,9 @@ actual class UpdateService {
         try {
             logger.info(LogCategory.SYSTEM, "Starting update download", mapOf("asset" to assetName, "size" to assetSize))
 
-            val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updates")
+            // Same constant the installer validates containment against, so the
+            // staging directory can't drift between download and install.
+            val tempDir = File(System.getProperty("java.io.tmpdir"), UPDATE_STAGING_DIR_NAME)
             tempDir.mkdirs()
 
             val downloadFile = File(tempDir, assetName)

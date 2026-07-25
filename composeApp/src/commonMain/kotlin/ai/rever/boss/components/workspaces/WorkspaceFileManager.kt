@@ -23,6 +23,19 @@ expect class WorkspaceFileManager() {
     ): String?
 
     /**
+     * Save a workspace to a file on the calling thread, returning only once the
+     * bytes have been written.
+     *
+     * For shutdown paths, where dispatching the write to another thread or scope
+     * risks the process exiting first. Everything else should use the suspending
+     * [saveWorkspace].
+     */
+    fun saveWorkspaceBlocking(
+        workspace: LayoutWorkspace,
+        fileName: String? = null,
+    ): String?
+
+    /**
      * Load a workspace from a file
      */
     suspend fun loadWorkspace(fileName: String): LayoutWorkspace?

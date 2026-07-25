@@ -19,6 +19,9 @@ private const val MACOS_APP_BUNDLE_SUFFIX = ".app"
 private const val MACOS_APPLICATIONS_DIRECTORY = "/Applications"
 private const val SPOTLIGHT_LOOKUP_TIMEOUT_SECONDS = 5L
 
+/** Staging directory (inside the platform temp directory) that downloads land in. */
+internal const val UPDATE_STAGING_DIR_NAME = "boss-updates"
+
 /** Return the outermost complete `.app` path segment in [path]. */
 internal fun macOSAppBundlePathIn(path: String): String? {
     val pathSegments = path.split('/')
@@ -86,32 +89,48 @@ object UpdateInstaller {
     private val logger = BossLogger.forComponent("UpdateInstaller")
 
     /**
-     * Validate download file for security concerns
+     * Validate a downloaded update file, failing closed.
      *
-     * Performs early validation to detect potentially malicious files:
-     * - File existence check
-     * - Extension validation (.dmg, .msi, .jar)
-     * - Path canonicalization to prevent directory traversal
-     * - Filename sanitization check
+     * Checks, in order (name before filesystem, so a hostile name is refused
+     * without touching disk):
+     * 1. Filename characters, via the same [UpdatePathValidator] rules
+     *    [UpdateScriptGenerator] uses - the filename is about to be interpolated
+     *    into a generated shell/batch script
+     * 2. Expected extension (.dmg, .msi, .jar, .deb, .rpm)
+     * 3. Existence
+     * 4. Canonical containment inside the staging directory
+     *
+     * Every failure throws. Previously a canonical path escaping the staging
+     * directory, or a filename carrying a dollar sign, a backtick or a semicolon,
+     * only logged a warning and the update installed anyway - while
+     * `UpdateScriptGenerator.validatePath` rejected the identical input, so
+     * whether a suspicious artifact was installed depended on which entry point
+     * ran (Issue #37).
      *
      * @param downloadFile The file to validate
      * @param expectedExtension Expected file extension (e.g., ".dmg")
      * @throws SecurityException if file is invalid or suspicious
      */
-    private fun validateDownloadFile(
+    internal fun validateDownloadFile(
         downloadFile: File,
         expectedExtension: String,
     ) {
+        val filename = downloadFile.name
+
+        // Filename characters: shared rules, hard failure. Checked before any
+        // filesystem access so a hostile name is refused outright.
+        UpdatePathValidator.validate(filename, "Download filename")
+
+        // Validate file extension
+        if (!filename.endsWith(expectedExtension, ignoreCase = true)) {
+            throw SecurityException(
+                "Invalid file extension. Expected $expectedExtension but got: $filename",
+            )
+        }
+
         // Check file exists
         if (!downloadFile.exists()) {
             throw SecurityException("Download file does not exist: ${downloadFile.absolutePath}")
-        }
-
-        // Validate file extension
-        if (!downloadFile.name.endsWith(expectedExtension, ignoreCase = true)) {
-            throw SecurityException(
-                "Invalid file extension. Expected $expectedExtension but got: ${downloadFile.name}",
-            )
         }
 
         // Canonicalize path to detect directory traversal attempts
@@ -127,31 +146,25 @@ object UpdateInstaller {
                 throw SecurityException("Failed to canonicalize path: ${downloadFile.absolutePath}")
             }
 
-        // Ensure canonicalized path is in expected temp directory
-        val expectedTempDir = File(System.getProperty("java.io.tmpdir"), "boss-updates").canonicalPath
-        if (!canonicalPath.startsWith(expectedTempDir)) {
-            logger.warn(
+        // The file must live inside the staging directory it was downloaded to.
+        // Compared with a trailing separator so a sibling directory such as
+        // "boss-updates-evil" cannot satisfy a bare prefix match.
+        val expectedTempDir = File(System.getProperty("java.io.tmpdir"), UPDATE_STAGING_DIR_NAME).canonicalPath
+        if (!canonicalPath.startsWith(expectedTempDir + File.separator)) {
+            logger.error(
                 LogCategory.SYSTEM,
-                "Download file outside expected directory",
+                "Download file escapes the staging directory - rejecting update file",
                 mapOf(
                     "expected" to expectedTempDir,
                     "actual" to canonicalPath,
                 ),
             )
+            throw SecurityException(
+                "Download file is outside the staging directory - rejected for security: $canonicalPath",
+            )
         }
 
-        // Check for suspicious characters in filename
-        val filename = downloadFile.name
-        if (filename.contains('\u0000') || filename.contains('\n') || filename.contains('\r')) {
-            throw SecurityException("Filename contains invalid characters: $filename")
-        }
-
-        // Check for shell metacharacters (defense in depth)
-        if (filename.contains('$') || filename.contains('`') || filename.contains(';')) {
-            logger.warn(LogCategory.SYSTEM, "Filename contains shell metacharacters", mapOf("filename" to filename))
-        }
-
-        logger.debug(LogCategory.SYSTEM, "Validated download file", mapOf("filename" to downloadFile.name))
+        logger.debug(LogCategory.SYSTEM, "Validated download file", mapOf("filename" to filename))
     }
 
     /**

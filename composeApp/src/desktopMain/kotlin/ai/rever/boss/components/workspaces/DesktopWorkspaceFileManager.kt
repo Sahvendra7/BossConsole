@@ -42,29 +42,38 @@ actual class WorkspaceFileManager {
         fileName: String?,
     ): String? =
         withContext(Dispatchers.IO) {
-            try {
-                ensureWorkspaceDirectory()
+            saveWorkspaceBlocking(workspace, fileName)
+        }
 
-                val actualFileName = fileName ?: WorkspaceFileManagerCommon.generateFileName(workspace.name)
-                val filePath = getWorkspaceFilePath(actualFileName)
-                val file = File(filePath)
-
-                // Serialize workspace
-                val json = WorkspaceSerializer.serialize(workspace)
-
-                // Write to file
-                file.writeText(json)
-
-                filePath
-            } catch (e: Exception) {
-                logger.warn(
-                    LogCategory.WORKSPACE,
-                    "Failed to save workspace to disk",
-                    mapOf("workspace" to workspace.name),
-                    error = e,
-                )
-                null
+    actual fun saveWorkspaceBlocking(
+        workspace: LayoutWorkspace,
+        fileName: String?,
+    ): String? =
+        try {
+            val dir = File(workspaceDirectory)
+            if (!dir.exists()) {
+                dir.mkdirs()
             }
+
+            val actualFileName = fileName ?: WorkspaceFileManagerCommon.generateFileName(workspace.name)
+            val filePath = getWorkspaceFilePath(actualFileName)
+            val file = File(filePath)
+
+            // Serialize workspace
+            val json = WorkspaceSerializer.serialize(workspace)
+
+            // Write to file
+            file.writeText(json)
+
+            filePath
+        } catch (e: Exception) {
+            logger.warn(
+                LogCategory.WORKSPACE,
+                "Failed to save workspace to disk",
+                mapOf("workspace" to workspace.name),
+                error = e,
+            )
+            null
         }
 
     actual suspend fun loadWorkspace(fileName: String): LayoutWorkspace? =
