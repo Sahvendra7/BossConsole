@@ -53,10 +53,11 @@ internal fun shouldUseComposeFullscreenOverlay(
  */
 object FullscreenBrowserWindow {
     private val logger = BossLogger.forComponent("FullscreenBrowserWindow")
+
+    // Fullscreen lifecycle state is EDT-confined. Public entry/exit methods
+    // marshal to the EDT before reading or mutating these fields.
     private var fullscreenFrame: JFrame? = null
     private var currentBrowserView: BrowserView? = null
-
-    @Volatile
     private var currentBrowser: Browser? = null
     private var currentOwnerWindowId: String? = null
     private var ownerFullscreenExitListener: ((String) -> Unit)? = null
@@ -86,6 +87,13 @@ object FullscreenBrowserWindow {
         ownerWindowId: String,
         onExit: () -> Unit,
     ) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater {
+                showFullscreen(browser, tabId, ownerWindowId, onExit)
+            }
+            return
+        }
+
         // Prevent duplicate calls
         if (fullscreenFrame != null || isInFullscreenMode) {
             logger.warn(LogCategory.BROWSER, "Fullscreen already active, ignoring duplicate request")
@@ -284,11 +292,33 @@ object FullscreenBrowserWindow {
         frame.setBounds(bounds)
         frame.isVisible = true
         frame.toFront()
+        installOverlayFocusBehavior(frame)
         usesNativeMacOSFullscreen = false
         hasReachedFullscreen = true
         if (watchOwnerExit) {
             watchOwnerFullscreenExit(currentOwnerWindowId)
         }
+    }
+
+    private fun installOverlayFocusBehavior(frame: JFrame) {
+        frame.addWindowFocusListener(
+            object : WindowAdapter() {
+                override fun windowLostFocus(event: WindowEvent?) {
+                    if (fullscreenFrame === frame && !usesNativeMacOSFullscreen) {
+                        // Do not cover other applications when the user switches
+                        // away from Boss; restore the overlay level on return.
+                        frame.isAlwaysOnTop = false
+                    }
+                }
+
+                override fun windowGainedFocus(event: WindowEvent?) {
+                    if (fullscreenFrame === frame && !usesNativeMacOSFullscreen) {
+                        frame.isAlwaysOnTop = true
+                        frame.toFront()
+                    }
+                }
+            },
+        )
     }
 
     /**
@@ -461,25 +491,30 @@ object FullscreenBrowserWindow {
                     }
                     frame.contentPane.revalidate()
                     frame.contentPane.repaint()
-                    frame.dispose()
-                    logger.info(LogCategory.BROWSER, "Fullscreen window disposed, waiting for rendering release")
-
-                    // Delay before telling Compose to show its BrowserView
-                    // This gives JxBrowser time to fully release the Swing rendering surface
-                    Timer(SWING_RELEASE_DELAY_MS) {
-                        SwingUtilities.invokeLater {
-                            TabFullscreenStateManager.exitFullscreen()
-                            logger.info(LogCategory.BROWSER, "Fullscreen exit complete, Compose BrowserView enabled")
-                            callback?.invoke()
-                        }
-                    }.apply {
-                        isRepeats = false
-                        start()
-                    }
                 } catch (e: Exception) {
-                    logger.error(LogCategory.BROWSER, "Error closing fullscreen window", error = e)
-                    TabFullscreenStateManager.exitFullscreen()
-                    callback?.invoke()
+                    logger.error(LogCategory.BROWSER, "Error detaching fullscreen browser view", error = e)
+                } finally {
+                    try {
+                        frame.isAlwaysOnTop = false
+                        frame.dispose()
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.BROWSER, "Error disposing fullscreen window", error = e)
+                    }
+                }
+
+                logger.info(LogCategory.BROWSER, "Fullscreen window disposed, waiting for rendering release")
+
+                // Delay before telling Compose to show its BrowserView
+                // This gives JxBrowser time to fully release the Swing rendering surface
+                Timer(SWING_RELEASE_DELAY_MS) {
+                    SwingUtilities.invokeLater {
+                        TabFullscreenStateManager.exitFullscreen()
+                        logger.info(LogCategory.BROWSER, "Fullscreen exit complete, Compose BrowserView enabled")
+                        callback?.invoke()
+                    }
+                }.apply {
+                    isRepeats = false
+                    start()
                 }
             }
 
@@ -522,7 +557,7 @@ object FullscreenBrowserWindow {
      * Called when user manually triggers exit (placeholder click).
      * On macOS, toggles fullscreen off which triggers the exit flow.
      */
-    fun requestExit() {
+    private fun requestExit() {
         if (isExiting) return
         logger.info(LogCategory.BROWSER, "Exit requested via placeholder click")
 
@@ -574,12 +609,14 @@ object FullscreenBrowserWindow {
      * Closes the fullscreen window.
      * Safe to call multiple times - will only close once.
      */
-    fun exitFullscreen() {
+    private fun exitFullscreen() {
         val frame = fullscreenFrame
         if (frame == null) {
             if (isInFullscreenMode) {
+                val callback = onExitCallback
                 resetState()
                 TabFullscreenStateManager.exitFullscreen()
+                callback?.invoke()
             }
             return
         }
@@ -612,6 +649,4 @@ object FullscreenBrowserWindow {
             }
         }
     }
-
-    fun isFullscreenActive(): Boolean = fullscreenFrame != null && isInFullscreenMode
 }
