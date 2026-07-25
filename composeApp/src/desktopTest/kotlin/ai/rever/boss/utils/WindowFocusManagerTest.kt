@@ -3,7 +3,6 @@ package ai.rever.boss.utils
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WindowFocusManagerTest {
@@ -11,8 +10,33 @@ class WindowFocusManagerTest {
     fun `native macOS fullscreen events map to authoritative state`() {
         assertEquals(true, nativeMacOSFullscreenStateForEvent("windowEnteringFullScreen"))
         assertEquals(true, nativeMacOSFullscreenStateForEvent("windowEnteredFullScreen"))
+        assertEquals(false, nativeMacOSFullscreenStateForEvent("windowExitingFullScreen"))
         assertEquals(false, nativeMacOSFullscreenStateForEvent("windowExitedFullScreen"))
-        assertNull(nativeMacOSFullscreenStateForEvent("windowExitingFullScreen"))
+    }
+
+    @Test
+    fun `fullscreen signals are combined without leaking across windows`() {
+        assertTrue(
+            hasFullscreenSignal(
+                windowId = "window-a",
+                composeFullscreenIds = setOf("window-a"),
+                nativeFullscreenIds = emptySet(),
+            ),
+        )
+        assertTrue(
+            hasFullscreenSignal(
+                windowId = "window-a",
+                composeFullscreenIds = emptySet(),
+                nativeFullscreenIds = setOf("window-a"),
+            ),
+        )
+        assertFalse(
+            hasFullscreenSignal(
+                windowId = "window-b",
+                composeFullscreenIds = setOf("window-a"),
+                nativeFullscreenIds = setOf("window-a"),
+            ),
+        )
     }
 
     @Test

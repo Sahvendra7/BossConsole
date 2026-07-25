@@ -27,4 +27,9 @@ class FullscreenBrowserWindowTest {
     fun `partial screen window is not fullscreen`() {
         assertFalse(fillsScreen(Rectangle(200, 100, 1200, 800), screen))
     }
+
+    @Test
+    fun `full-size window offset from the display is not fullscreen`() {
+        assertFalse(fillsScreen(Rectangle(1, 0, 1728, 1117), screen))
+    }
 }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.awt.Window
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.lang.reflect.InaccessibleObjectException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.ConcurrentHashMap
@@ -15,10 +16,20 @@ import javax.swing.SwingUtilities
 
 internal fun nativeMacOSFullscreenStateForEvent(methodName: String): Boolean? =
     when (methodName) {
+        // Treat "entering" as fullscreen immediately so a page request during
+        // the Space animation does not issue a competing native toggle.
         "windowEnteringFullScreen", "windowEnteredFullScreen" -> true
-        "windowExitedFullScreen" -> false
+
+        "windowExitingFullScreen", "windowExitedFullScreen" -> false
+
         else -> null
     }
+
+internal fun hasFullscreenSignal(
+    windowId: String,
+    composeFullscreenIds: Set<String>,
+    nativeFullscreenIds: Set<String>,
+): Boolean = windowId in composeFullscreenIds || windowId in nativeFullscreenIds
 
 private class MacOSFullscreenTracker(
     private val onFullscreenChanged: (windowId: String, isFullscreen: Boolean) -> Unit,
@@ -87,12 +98,13 @@ private class MacOSFullscreenTracker(
             addMethod.invoke(null, window, listener)
             registrations[windowId] = Registration(window, listener, listenerClass, removeMethod)
         } catch (e: ReflectiveOperationException) {
-            logger.warn(
-                LogCategory.UI,
-                "Could not register native macOS fullscreen listener",
-                mapOf("windowId" to windowId),
-                e,
-            )
+            logFailure("register", windowId, e)
+        } catch (e: InaccessibleObjectException) {
+            logFailure("register", windowId, e)
+        } catch (e: IllegalArgumentException) {
+            logFailure("register", windowId, e)
+        } catch (e: SecurityException) {
+            logFailure("register", windowId, e)
         }
     }
 
@@ -105,13 +117,27 @@ private class MacOSFullscreenTracker(
                 registration.listenerClass.cast(registration.listener),
             )
         } catch (e: ReflectiveOperationException) {
-            logger.warn(
-                LogCategory.UI,
-                "Could not unregister native macOS fullscreen listener",
-                mapOf("windowId" to windowId),
-                e,
-            )
+            logFailure("unregister", windowId, e)
+        } catch (e: InaccessibleObjectException) {
+            logFailure("unregister", windowId, e)
+        } catch (e: IllegalArgumentException) {
+            logFailure("unregister", windowId, e)
+        } catch (e: SecurityException) {
+            logFailure("unregister", windowId, e)
         }
+    }
+
+    private fun logFailure(
+        operation: String,
+        windowId: String,
+        error: Throwable,
+    ) {
+        logger.warn(
+            LogCategory.UI,
+            "Could not $operation native macOS fullscreen listener",
+            mapOf("windowId" to windowId),
+            error,
+        )
     }
 }
 
@@ -166,8 +192,16 @@ internal class AwtWindowFocusTracker {
  */
 actual object WindowFocusManager {
     private val windows = ConcurrentHashMap<String, Window>()
-    private val fullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
-    private val macOSFullscreenTracker = MacOSFullscreenTracker(::updateWindowFullscreen)
+    private val composeFullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
+    private val nativeFullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
+    private val macOSFullscreenTracker =
+        MacOSFullscreenTracker { windowId, isFullscreen ->
+            if (isFullscreen) {
+                nativeFullscreenWindowIds += windowId
+            } else {
+                nativeFullscreenWindowIds -= windowId
+            }
+        }
 
     // EDT-confined; registerWindow/unregisterWindow enforce this before mutation.
     private val windowListeners = mutableMapOf<String, WindowAdapter>()
@@ -236,29 +270,23 @@ actual object WindowFocusManager {
      */
     fun getWindow(windowId: String): Window? = windows[windowId]
 
-    /** Records the authoritative Compose placement for a registered window. */
+    /** Records Compose placement without overwriting the native macOS signal. */
     fun updateWindowFullscreen(
         windowId: String,
         isFullscreen: Boolean,
     ) {
         if (isFullscreen) {
-            fullscreenWindowIds += windowId
+            composeFullscreenWindowIds += windowId
         } else {
-            fullscreenWindowIds -= windowId
+            composeFullscreenWindowIds -= windowId
         }
     }
 
-    /**
-     * Returns a registered window whose Compose placement is fullscreen,
-     * preferring the last-focused window when multiple fullscreen Spaces exist.
-     */
-    fun getFullscreenWindow(): Window? {
-        val preferredId = resolveActionableWindowId()
-        if (preferredId != null && preferredId in fullscreenWindowIds) {
-            windows[preferredId]?.let { return it }
+    /** Returns the requested window only when either fullscreen signal is active. */
+    fun getFullscreenWindow(windowId: String): Window? =
+        windows[windowId]?.takeIf {
+            hasFullscreenSignal(windowId, composeFullscreenWindowIds, nativeFullscreenWindowIds)
         }
-        return fullscreenWindowIds.firstNotNullOfOrNull(windows::get)
-    }
 
     /**
      * Unregisters a window when it closes. Must run on the EDT.
@@ -275,7 +303,8 @@ actual object WindowFocusManager {
         macOSFullscreenTracker.unregister(windowId)
 
         windows.remove(windowId)
-        fullscreenWindowIds -= windowId
+        composeFullscreenWindowIds -= windowId
+        nativeFullscreenWindowIds -= windowId
         awtFocusTracker.onUnregistered(windowId)
         if (focusedWindowId == windowId) {
             // Preserve the existing last-focused flow contract for external
