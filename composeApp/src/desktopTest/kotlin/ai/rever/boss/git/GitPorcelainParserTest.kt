@@ -130,7 +130,10 @@ class GitPorcelainParserTest {
         assertNotNull(status)
         // IGNORED, like UNTRACKED, fills the index column ("!!") but is never staged.
         assertFalse(status.isStaged)
-        // isUnstaged still follows the worktree column, matching the "??" treatment.
+        // isUnstaged, by contrast, is a faithful reading of the worktree column, so it is
+        // true here just as it is for "??". That is *not* a claim that an ignored path is
+        // an unstaged change — it is why ignored entries are dropped wholesale by
+        // parseStatusOutput below rather than patched one boolean at a time.
         assertTrue(status.isUnstaged)
     }
 
@@ -141,6 +144,62 @@ class GitPorcelainParserTest {
         val status = GitService.parseStatusLine("UD theirs-deleted.txt")
         assertNotNull(status)
         assertTrue(status.isStaged)
+    }
+
+    // ==================== parseStatusOutput ====================
+    //
+    // The choke point both getStatus and getStatusForWindow feed their porcelain through.
+    // It decides which entries count as changes at all, which is where ignored paths are
+    // excluded — not in the per-line parser, which stays faithful to porcelain.
+
+    @Test
+    fun `parseStatusOutput drops ignored entries entirely, not just their staged flag`() {
+        val statuses =
+            GitService.parseStatusOutput(
+                """
+                M  src/App.kt
+                !! build/
+                ?? notes.md
+                !! .gradle/caches/
+                """.trimIndent(),
+            )
+        assertEquals(listOf("src/App.kt", "notes.md"), statuses.map { it.path })
+        // Nothing IGNORED survives in either column, so neither the commit dialog's
+        // staged list (isStaged) nor its unstaged list (isUnstaged || indexStatus ==
+        // UNTRACKED) — nor the plugin IPC bridge — can ever render one.
+        assertTrue(statuses.none { it.indexStatus == GitFileStatusType.IGNORED })
+        assertTrue(statuses.none { it.workTreeStatus == GitFileStatusType.IGNORED })
+    }
+
+    @Test
+    fun `parseStatusOutput keeps every non-ignored entry with its flags intact`() {
+        val statuses =
+            GitService.parseStatusOutput(
+                """
+                M  staged.kt
+                 M unstaged.kt
+                UU conflict.kt
+                R  old.kt -> new.kt
+                """.trimIndent(),
+            )
+        assertEquals(4, statuses.size)
+        assertTrue(statuses.single { it.path == "staged.kt" }.isStaged)
+        assertTrue(statuses.single { it.path == "unstaged.kt" }.isUnstaged)
+        assertEquals(GitFileStatusType.UNMERGED, statuses.single { it.path == "conflict.kt" }.indexStatus)
+        assertEquals("old.kt", statuses.single { it.path == "new.kt" }.originalPath)
+    }
+
+    @Test
+    fun `parseStatusOutput skips blank lines and unparseable lines`() {
+        val statuses =
+            GitService.parseStatusOutput("M  a.kt\n\n   \nM\n M b.kt\n")
+        assertEquals(listOf("a.kt", "b.kt"), statuses.map { it.path })
+    }
+
+    @Test
+    fun `parseStatusOutput of empty output is empty`() {
+        assertTrue(GitService.parseStatusOutput("").isEmpty())
+        assertTrue(GitService.parseStatusOutput("\n\n").isEmpty())
     }
 
     // ==================== parseStatusLine: renames and copies ====================

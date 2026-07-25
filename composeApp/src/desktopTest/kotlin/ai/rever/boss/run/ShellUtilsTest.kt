@@ -12,9 +12,15 @@ import kotlin.test.assertEquals
  * written per platform: the POSIX branch is verified on Unix runners and the
  * PowerShell branch on Windows runners.
  *
- * Because that leaves each branch covered by only one CI leg, the
- * `escapeForDoubleQuotes(str, isWindows)` section drives the platform explicitly
- * so both branches also run on every host.
+ * Because that leaves each branch covered by only one CI leg, the second half of
+ * this suite drives the platform explicitly through the `forWindows` overloads, so
+ * both branches of [ShellUtils.escapeForDoubleQuotes], [ShellUtils.separatorFor]
+ * and [ShellUtils.buildCommandWithWorkingDirectory] also run on every host. The
+ * host-resolved expectations above stay: they are the only check that
+ * [ShellUtils.isWindows] wires this OS to the right branch in the first place.
+ *
+ * [ShellUtils.chainCommands] has no platform-explicit overload — its only
+ * platform-dependent input is the separator, covered on both branches here.
  */
 class ShellUtilsTest {
     private val win = ShellUtils.isWindows
@@ -121,22 +127,59 @@ class ShellUtilsTest {
         )
     }
 
-    // ============ escapeForDoubleQuotes(str, isWindows): both branches on any host ============
+    // ============ platform-explicit overloads: both branches on any host ============
     //
-    // The tests above can only ever reach the host's own branch. These call the
-    // platform-explicit overload so the POSIX *and* the PowerShell branch are covered
-    // on every runner — dropping the Windows CI leg cannot silently untest a branch.
+    // The tests above can only ever reach the host's own branch. These pass the platform
+    // in, so the POSIX *and* the PowerShell branch are covered on every runner — dropping
+    // the Windows CI leg cannot silently untest a branch.
 
-    private fun unix(str: String): String = ShellUtils.escapeForDoubleQuotes(str, isWindows = false)
+    private fun unix(str: String): String = ShellUtils.escapeForDoubleQuotes(str, forWindows = false)
 
-    private fun powershell(str: String): String = ShellUtils.escapeForDoubleQuotes(str, isWindows = true)
+    private fun powershell(str: String): String = ShellUtils.escapeForDoubleQuotes(str, forWindows = true)
 
     @Test
     fun `single-argument overload delegates to the host branch`() {
         val nasty = "a\"b\\c\$d`e!f"
         assertEquals(
-            ShellUtils.escapeForDoubleQuotes(nasty, isWindows = win),
+            ShellUtils.escapeForDoubleQuotes(nasty, forWindows = win),
             ShellUtils.escapeForDoubleQuotes(nasty),
+        )
+    }
+
+    @Test
+    fun `separatorFor covers both branches and backs the host property`() {
+        assertEquals(" && ", ShellUtils.separatorFor(forWindows = false))
+        assertEquals("; ", ShellUtils.separatorFor(forWindows = true))
+        // commandSeparator is just this function applied to the host platform.
+        assertEquals(ShellUtils.separatorFor(forWindows = win), sep)
+    }
+
+    @Test
+    fun `buildCommandWithWorkingDirectory composes escaping and separator on both branches`() {
+        assertEquals(
+            "cd \"/data/\\\$USER files\" && ls",
+            ShellUtils.buildCommandWithWorkingDirectory("ls", "/data/\$USER files", forWindows = false),
+        )
+        assertEquals(
+            "cd \"C:\\Users\\dev\\My `\$Project\"; ls",
+            ShellUtils.buildCommandWithWorkingDirectory("ls", "C:\\Users\\dev\\My \$Project", forWindows = true),
+        )
+    }
+
+    @Test
+    fun `buildCommandWithWorkingDirectory skips the cd on both branches when there is no directory`() {
+        for (forWindows in listOf(false, true)) {
+            assertEquals("ls", ShellUtils.buildCommandWithWorkingDirectory("ls", null, forWindows))
+            assertEquals("ls", ShellUtils.buildCommandWithWorkingDirectory("ls", "  ", forWindows))
+        }
+    }
+
+    @Test
+    fun `two-argument buildCommandWithWorkingDirectory delegates to the host branch`() {
+        val dir = "/data/\$USER files"
+        assertEquals(
+            ShellUtils.buildCommandWithWorkingDirectory("ls", dir, forWindows = win),
+            ShellUtils.buildCommandWithWorkingDirectory("ls", dir),
         )
     }
 
