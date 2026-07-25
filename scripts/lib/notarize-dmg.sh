@@ -29,8 +29,16 @@ NOTARIZE_RETRY_DELAY="${NOTARIZE_RETRY_DELAY:-30}"
 # notarytool hung rather than erroring, and then the retry loop below never
 # gets control and the job burns to GitHub's 6h ceiling — the same lost
 # release, harder to diagnose. Bounding each attempt is what makes "N bounded
-# attempts" actually bounded.
-NOTARIZE_ATTEMPT_TIMEOUT="${NOTARIZE_ATTEMPT_TIMEOUT:-30m}"
+# attempts" actually bounded. 15m rather than 30m because notarization normally
+# settles well under that, and macOS runner minutes bill at 10×, so a generous
+# per-attempt bound multiplied by the retries is what costs real money during
+# an Apple outage.
+NOTARIZE_ATTEMPT_TIMEOUT="${NOTARIZE_ATTEMPT_TIMEOUT:-15m}"
+# Hard ceiling on total time in this function, checked between attempts. Bounds
+# the bill regardless of how NOTARIZE_MAX_ATTEMPTS and the per-attempt timeout
+# multiply out — attempts × timeout is not a cost anyone reasons about when
+# bumping one of them.
+NOTARIZE_TOTAL_BUDGET="${NOTARIZE_TOTAL_BUDGET:-3600}"
 # Stapling fetches the ticket from Apple; error 68 is usually just ticket
 # propagation lag, which wants minutes rather than seconds.
 NOTARIZE_STAPLE_ATTEMPTS="${NOTARIZE_STAPLE_ATTEMPTS:-5}"
@@ -45,9 +53,20 @@ _NOTARIZE_ID_RE='^[[:space:]]*id: [0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
 
 # Failures that no amount of retrying will fix, and that must NOT be reported
 # as network trouble: an expired app-specific password or an empty team id
-# otherwise costs three attempts, minutes of sleeps, and a log line pointing
-# the on-call reader away from the real cause.
-_NOTARIZE_FATAL_RE='HTTP status code: 40[013]|Unauthorized|[Ii]nvalid credentials|unable to (validate|authenticate)'
+# otherwise costs five attempts, minutes of sleeps, and a log line pointing
+# the on-call reader away from the real cause. Matched case-INSENSITIVELY:
+# notarytool says "Unable to authenticate" and can emit it with no HTTP status
+# code at all (a malformed app-specific password is rejected client-side), so a
+# case-sensitive pattern silently classifies that as transient.
+_NOTARIZE_FATAL_RE='HTTP status code: 40[013]|unauthorized|invalid credentials|unable to (validate|authenticate)'
+
+# notarytool prints "Submission ID received / id: …" BEFORE the upload
+# finishes. Latching on that alone means a connection dropped mid-upload of a
+# several-hundred-MB DMG leaves us waiting on a submission Apple never fully
+# received — every remaining attempt burning its full timeout on something that
+# can never reach a verdict, where re-submitting would have recovered. So the
+# latch also requires the upload to have completed.
+_NOTARIZE_UPLOADED_RE='Successfully uploaded file'
 
 # notarize_dmg <dmg_path>
 #
@@ -82,24 +101,34 @@ notarize_dmg() {
     return 1
   fi
 
-  # Two arrays rather than one plus an optional: on the macOS runners' bash 3.2,
-  # expanding an EMPTY array as "${arr[@]}" under `set -u` is an unbound-variable
-  # error, so both of these are always non-empty. `creds` is what the log fetch
-  # uses (--timeout is only meaningful while waiting).
+  # Separate arrays rather than one plus an optional: on the macOS runners' bash
+  # 3.2, expanding an EMPTY array as "${arr[@]}" under `set -u` is an
+  # unbound-variable error, so all of these are always non-empty. `creds` is
+  # what the log fetch uses (--timeout is only meaningful while waiting), and
+  # submit/resume are probed independently — see below.
   local creds=(--apple-id "$APPLE_ID" --password "$APP_PASSWORD" --team-id "$TEAM_ID")
-  local wait_args=("${creds[@]}")
+  local submit_args=("${creds[@]}") resume_args=("${creds[@]}")
 
   # Probe rather than assume: passing an unsupported flag would fail every
-  # attempt instantly and turn a runner-image change into a lost release.
+  # attempt instantly, be classified transient by the fallthrough below, and
+  # turn a runner-image change into a lost release. Probed per subcommand
+  # because `submit` advertising the flag says nothing about `wait`, and the
+  # resume path is the one that carries the retry.
   if xcrun notarytool submit --help 2>&1 | grep -q -- "--timeout"; then
-    wait_args+=(--timeout "$NOTARIZE_ATTEMPT_TIMEOUT")
+    submit_args+=(--timeout "$NOTARIZE_ATTEMPT_TIMEOUT")
   else
-    echo "⚠️ notarytool has no --timeout on this runner; attempts are unbounded"
+    echo "⚠️ notarytool submit has no --timeout on this runner; that attempt is unbounded"
+  fi
+  if xcrun notarytool wait --help 2>&1 | grep -q -- "--timeout"; then
+    resume_args+=(--timeout "$NOTARIZE_ATTEMPT_TIMEOUT")
+  else
+    echo "⚠️ notarytool wait has no --timeout on this runner; resume attempts are unbounded"
   fi
 
   local submission_id="" verdict="" output exit_code attempt delay
+  local started=$SECONDS
 
-  echo "⏱ Up to ${NOTARIZE_MAX_ATTEMPTS} attempts, each bounded at ${NOTARIZE_ATTEMPT_TIMEOUT}"
+  echo "⏱ Up to ${NOTARIZE_MAX_ATTEMPTS} attempts, each bounded at ${NOTARIZE_ATTEMPT_TIMEOUT}, ${NOTARIZE_TOTAL_BUDGET}s total"
 
   for ((attempt = 1; attempt <= NOTARIZE_MAX_ATTEMPTS; attempt++)); do
     # `set +e` around the command substitution is load-bearing: callers run
@@ -111,11 +140,11 @@ notarize_dmg() {
     set +e
     if [[ -z "$submission_id" ]]; then
       echo "🔐 Submitting DMG for notarization (attempt ${attempt}/${NOTARIZE_MAX_ATTEMPTS})..."
-      output=$(xcrun notarytool submit "$dmg_path" "${wait_args[@]}" --wait 2>&1)
+      output=$(xcrun notarytool submit "$dmg_path" "${submit_args[@]}" --wait 2>&1)
     else
       # Resume the existing submission — never re-upload. See the header.
       echo "🔁 Resuming wait on submission ${submission_id} (attempt ${attempt}/${NOTARIZE_MAX_ATTEMPTS})..."
-      output=$(xcrun notarytool wait "$submission_id" "${wait_args[@]}" 2>&1)
+      output=$(xcrun notarytool wait "$submission_id" "${resume_args[@]}" 2>&1)
     fi
     exit_code=$?
     if ((errexit_was_set)); then set -e; fi
@@ -128,7 +157,7 @@ notarize_dmg() {
     # no-match is expected: the pipeline only returns 0 today because awk is
     # last, so a later simplification to a bare grep — or adding
     # `set -o pipefail` — would otherwise kill the step under bash -e.
-    if [[ -z "$submission_id" ]]; then
+    if [[ -z "$submission_id" ]] && echo "$output" | grep -q "$_NOTARIZE_UPLOADED_RE"; then
       submission_id=$(echo "$output" | grep -m1 -oE "$_NOTARIZE_ID_RE" | awk '{print $2}' || true)
       if [[ -n "$submission_id" ]]; then echo "📋 Submission ID: ${submission_id}"; fi
     fi
@@ -146,7 +175,7 @@ notarize_dmg() {
     fi
 
     # Credentials or entitlements — retrying just multiplies the same 401.
-    if echo "$output" | grep -qE "$_NOTARIZE_FATAL_RE"; then
+    if echo "$output" | grep -qiE "$_NOTARIZE_FATAL_RE"; then
       verdict="Fatal"
       break
     fi
@@ -157,6 +186,13 @@ notarize_dmg() {
     echo "⚠️ No verdict parsed from notarytool output (exit ${exit_code}) — treating as transient"
     if ((attempt < NOTARIZE_MAX_ATTEMPTS)); then
       delay=$((NOTARIZE_RETRY_DELAY * (1 << (attempt - 1))))
+      # Stop on the total budget rather than letting attempts × timeout decide:
+      # macOS minutes bill at 10×, so an Apple outage should cost an hour, not
+      # a day, before we give up and let a human resume the submission.
+      if ((SECONDS - started + delay >= NOTARIZE_TOTAL_BUDGET)); then
+        echo "   Total notarization budget of ${NOTARIZE_TOTAL_BUDGET}s reached after $((SECONDS - started))s — stopping"
+        break
+      fi
       echo "   Retrying in ${delay}s"
       sleep "$delay"
     fi
@@ -172,6 +208,17 @@ notarize_dmg() {
     if [[ -n "$submission_id" ]]; then
       echo "📜 Fetching detailed notarization log..."
       xcrun notarytool log "$submission_id" "${creds[@]}" || true
+
+      # Apple most likely accepted this build — the ticket just wasn't
+      # witnessed. Say so, because the alternative the operator reaches for is
+      # re-running the whole signed build.
+      if [[ "$verdict" != "Rejected" ]]; then
+        echo ""
+        echo "💡 The submission may still have been accepted. To finish it without rebuilding,"
+        echo "   download this job's DMG artifact and run:"
+        echo "     xcrun notarytool wait ${submission_id} --apple-id \"\$APPLE_ID\" --password \"\$APP_PASSWORD\" --team-id \"\$TEAM_ID\" \\"
+        echo "       && xcrun stapler staple <path-to-dmg>"
+      fi
     fi
     return 1
   fi

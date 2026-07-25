@@ -318,6 +318,11 @@ jobs:
     needs: prepare-version
     if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: macos-14  # Apple Silicon runner
+    # macOS minutes bill at 10×, and notarization can legitimately sit waiting
+    # on Apple, so cap the job well below GitHub's 6h default: build (~20m) plus
+    # the notarization budget in scripts/lib/notarize-dmg.sh (1h) fits inside
+    # this with room to spare.
+    timeout-minutes: 120
 
     steps:
       - name: 📥 Checkout Repository

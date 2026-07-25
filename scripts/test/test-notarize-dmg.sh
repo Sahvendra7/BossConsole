@@ -172,6 +172,13 @@ if [[ "$(count 'notarytool submit')" == 1 ]]; then
 else
   bad "expected exactly one submit, got $(count 'notarytool submit')"
 fi
+# The resume path carries the retry, so it needs its own bound — `submit`
+# advertising --timeout says nothing about `wait`.
+if [[ "$(grep -cxF -- '--timeout' "$TD/args")" == 2 ]]; then
+  ok "--timeout bounds the resume attempt as well as the submit"
+else
+  bad "expected --timeout on both calls, saw $(grep -cxF -- '--timeout' "$TD/args")"
+fi
 
 # ------------------------------------------------------------ Apple verdict
 # A rejection is settled: fail fast with the log, no retry attempts.
@@ -232,6 +239,7 @@ scenario "unparseable submission id is not latched"
 write_stub <<'STUB'
 if [[ "$1 $2" == "notarytool submit" ]]; then
   if [[ $N == 1 ]]; then
+    echo "Successfully uploaded file"
     echo "Warning: no valid id: <none> reported"
     echo "id: not-a-uuid"
     echo 'Error: HTTPError(statusCode: nil, error: Code=-1001 "The request timed out.")'
@@ -358,6 +366,119 @@ if [[ $rc == 0 ]] && ! grep -qxF -- "--timeout" "$TD/args" && grep -q "no --time
   ok "unsupported --timeout is omitted, with a warning (rc=0)"
 else
   bad "timeout probe (rc=$rc args=$(tr '\n' ' ' < "$TD/args"))"; cat "$TD/out" >&2
+fi
+
+# ------------------------------------------- id reported, upload never landed
+# notarytool prints the submission id BEFORE the upload completes. Latching on
+# that would leave every remaining attempt waiting on a submission Apple never
+# fully received — each burning its whole timeout, ~2h of 10×-billed runner for
+# a verdict that can never arrive, where re-submitting recovers.
+scenario "id reported but the upload never completed"
+write_stub <<'STUB'
+if [[ "$1 $2" == "notarytool submit" ]]; then
+  if [[ $N == 1 ]]; then
+    echo "Conducting pre-submission checks for BOSS-9.2.59.dmg..."
+    echo "Submission ID received"
+    echo "  id: 55346c79-b132-4357-bb42-ad5f3a791418"
+    echo 'Error: HTTPError(statusCode: nil, error: Code=-1001 "The request timed out.")'
+    exit 1
+  fi
+  echo "Successfully uploaded file"
+  echo "  id: 55346c79-b132-4357-bb42-ad5f3a791418"
+  echo "  status: Accepted"
+  exit 0
+fi
+[[ "$1 $2" == "stapler staple" ]] && echo "The staple and validate action worked!"
+STUB
+run
+if [[ $rc == 0 ]] && [[ "$(count 'notarytool wait')" == 0 ]] && [[ "$(count 'notarytool submit')" == 2 ]]; then
+  ok "id without a completed upload is not latched → re-submits"
+else
+  bad "premature id (rc=$rc calls=$(calls))"; cat "$TD/out" >&2
+fi
+
+# ------------------------------------ auth error with no HTTP status code
+# notarytool rejects a malformed app-specific password client-side, printing
+# "Unable to authenticate" and nothing else. A case-SENSITIVE pattern reads
+# that as transient and retries it five times while blaming the network.
+scenario "Unable to authenticate with no status code"
+write_stub <<'STUB'
+if [[ "$1 $2" == "notarytool submit" ]]; then
+  echo "Error: Unable to authenticate. Check that your app-specific password is correct."
+  exit 1
+fi
+STUB
+run
+if [[ $rc != 0 ]] && [[ "$(calls)" == "notarytool submit" ]] && grep -q "credentials or account problem" "$TD/out"; then
+  ok "bare 'Unable to authenticate' fails fast, not retried as network"
+else
+  bad "bare auth error (rc=$rc calls=$(calls))"; cat "$TD/out" >&2
+fi
+
+# --------------------------------------------------------- total time budget
+# attempts × per-attempt timeout is not a number anyone recomputes when bumping
+# one of them, so total elapsed time is capped independently.
+scenario "total budget stops the retries early"
+write_stub <<STUB
+case "\$1 \$2" in
+  "notarytool submit") cat <<'OUT'
+$(timeout_output)
+OUT
+    exit 1 ;;
+  "notarytool wait") echo 'Error: Code=-1001 "The request timed out."'; exit 1 ;;
+  "notarytool log") echo "no log available" ;;
+esac
+STUB
+set +e
+( set -e; export NOTARIZE_TOTAL_BUDGET=0; source "$LIB"; notarize_dmg "$DMG" ) > "$TD/out" 2>&1
+rc=$?
+set -e
+if [[ $rc != 0 ]] && [[ "$(count 'notarytool submit')" == 1 ]] && [[ "$(count 'notarytool wait')" == 0 ]] \
+   && grep -q "Total notarization budget" "$TD/out"; then
+  ok "elapsed budget stops after the first attempt instead of all five"
+else
+  bad "total budget (rc=$rc calls=$(calls))"; cat "$TD/out" >&2
+fi
+
+# ------------------------------------------------------- recovery hint
+# On a terminal transient failure Apple has probably accepted the build; the
+# operator should resume that submission, not re-run the whole signed build.
+scenario "terminal failure prints the resume command"
+write_stub <<STUB
+case "\$1 \$2" in
+  "notarytool submit") cat <<'OUT'
+$(timeout_output)
+OUT
+    exit 1 ;;
+  "notarytool wait") echo 'Error: Code=-1001 "The request timed out."'; exit 1 ;;
+  "notarytool log") echo "no log available" ;;
+esac
+STUB
+run
+if [[ $rc != 0 ]] && grep -q "xcrun notarytool wait ${SUBMISSION_ID}" "$TD/out" && grep -q "stapler staple" "$TD/out"; then
+  ok "exhausted attempts print the wait+staple recovery command with the id"
+else
+  bad "recovery hint missing (rc=$rc)"; cat "$TD/out" >&2
+fi
+
+# --------------------------------------- no recovery hint on a real rejection
+# Telling someone to resume a submission Apple rejected would be actively
+# misleading.
+scenario "rejection does not print a resume hint"
+write_stub <<STUB
+case "\$1 \$2" in
+  "notarytool submit") cat <<'OUT'
+$(invalid_output)
+OUT
+    exit 1 ;;
+  "notarytool log") echo '{"issues":[{"message":"The binary is not signed."}]}' ;;
+esac
+STUB
+run
+if [[ $rc != 0 ]] && ! grep -q "may still have been accepted" "$TD/out"; then
+  ok "rejection omits the resume hint"
+else
+  bad "rejection printed a resume hint (rc=$rc)"; cat "$TD/out" >&2
 fi
 
 # --------------------------------------------------------------- missing DMG
