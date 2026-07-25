@@ -1,5 +1,6 @@
 package ai.rever.boss.tabfullscreen
 
+import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import com.teamdev.jxbrowser.browser.Browser
@@ -7,6 +8,7 @@ import com.teamdev.jxbrowser.view.swing.BrowserView
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.GraphicsEnvironment
+import java.awt.Rectangle
 import java.awt.Window
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
@@ -15,6 +17,13 @@ import java.awt.event.WindowEvent
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
 import javax.swing.Timer
+
+internal fun fillsScreen(
+    windowBounds: Rectangle,
+    screenBounds: Rectangle,
+): Boolean =
+    windowBounds.width >= screenBounds.width &&
+        windowBounds.height >= screenBounds.height
 
 /**
  * Creates and manages a fullscreen Swing JFrame for browser content.
@@ -28,6 +37,7 @@ object FullscreenBrowserWindow {
     private var onExitCallback: (() -> Unit)? = null
     private var isInFullscreenMode = false
     private var hasReachedFullscreen = false // True only after fullscreen animation completes
+    private var usesNativeMacOSFullscreen = false
     private var isExiting = false // Prevent multiple exit calls
 
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
@@ -128,7 +138,13 @@ object FullscreenBrowserWindow {
                 object : ComponentAdapter() {
                     override fun componentResized(e: ComponentEvent?) {
                         // Only check for exit after we've confirmed fullscreen was reached
-                        if (hasReachedFullscreen && isInFullscreenMode && !isExiting && fullscreenFrame != null) {
+                        if (
+                            usesNativeMacOSFullscreen &&
+                            hasReachedFullscreen &&
+                            isInFullscreenMode &&
+                            !isExiting &&
+                            fullscreenFrame != null
+                        ) {
                             SwingUtilities.invokeLater {
                                 if (!isWindowInFullscreen(frame) && !isExiting) {
                                     logger.info(LogCategory.BROWSER, "Native fullscreen exited via resize detection")
@@ -144,25 +160,45 @@ object FullscreenBrowserWindow {
             currentBrowserView = browserView
 
             if (isMacOS) {
-                // Use native macOS fullscreen (creates new Space)
-                frame.rootPane.putClientProperty("apple.awt.fullscreenable", true)
-                frame.setSize(800, 600) // Initial size before fullscreen
-                frame.setLocationRelativeTo(null)
-                frame.isVisible = true
+                val fullscreenHostBounds = existingFullscreenWindowBounds()
+                if (fullscreenHostBounds != null) {
+                    // macOS can ignore a second native fullscreen-Space request while another
+                    // window from this app already owns a fullscreen Space. Keep the video in
+                    // that Space and cover it with an undecorated screen-sized window instead.
+                    frame.isUndecorated = true
+                    frame.setBounds(fullscreenHostBounds)
+                    frame.isVisible = true
+                    usesNativeMacOSFullscreen = false
+                    hasReachedFullscreen = true
+                    logger.info(
+                        LogCategory.BROWSER,
+                        "Opened fullscreen video as borderless overlay in existing fullscreen Space",
+                    )
+                } else {
+                    // Use native macOS fullscreen (creates new Space)
+                    usesNativeMacOSFullscreen = true
+                    frame.rootPane.putClientProperty("apple.awt.fullscreenable", true)
+                    frame.setSize(800, 600) // Initial size before fullscreen
+                    frame.setLocationRelativeTo(null)
+                    frame.isVisible = true
 
-                // Request native fullscreen toggle after window is visible
-                SwingUtilities.invokeLater {
-                    requestMacOSFullscreen(frame)
+                    // Request native fullscreen toggle after window is visible
+                    SwingUtilities.invokeLater {
+                        requestMacOSFullscreen(frame)
 
-                    // Wait for fullscreen animation to complete before enabling exit detection
-                    Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
-                        if (fullscreenFrame != null && isInFullscreenMode) {
-                            hasReachedFullscreen = true
-                            logger.info(LogCategory.BROWSER, "Fullscreen animation completed, exit detection enabled")
+                        // Wait for fullscreen animation to complete before enabling exit detection
+                        Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
+                            if (fullscreenFrame != null && isInFullscreenMode) {
+                                hasReachedFullscreen = true
+                                logger.info(
+                                    LogCategory.BROWSER,
+                                    "Fullscreen animation completed, exit detection enabled",
+                                )
+                            }
+                        }.apply {
+                            isRepeats = false
+                            start()
                         }
-                    }.apply {
-                        isRepeats = false
-                        start()
                     }
                 }
             } else {
@@ -189,6 +225,27 @@ object FullscreenBrowserWindow {
     }
 
     /**
+     * Returns the display bounds of an already-fullscreen window in this process.
+     * A new undecorated video window can cover that same fullscreen Space without
+     * asking macOS to create a second native fullscreen Space.
+     */
+    private fun existingFullscreenWindowBounds(): Rectangle? {
+        WindowFocusManager
+            .getFullscreenWindow()
+            ?.graphicsConfiguration
+            ?.bounds
+            ?.let { return it }
+
+        // Fallback for fullscreen windows not created by BossWindow or observed before
+        // Compose placement was published.
+        return Window.getWindows().firstNotNullOfOrNull { window ->
+            if (!window.isShowing) return@firstNotNullOfOrNull null
+            val screenBounds = window.graphicsConfiguration?.bounds ?: return@firstNotNullOfOrNull null
+            screenBounds.takeIf { fillsScreen(window.bounds, screenBounds) }
+        }
+    }
+
+    /**
      * Request native macOS fullscreen using reflection.
      * Uses com.apple.eawt.Application.requestToggleFullScreen() which creates
      * a proper macOS fullscreen Space (like Chrome/Safari behavior).
@@ -205,6 +262,7 @@ object FullscreenBrowserWindow {
             logger.info(LogCategory.BROWSER, "Requested macOS native fullscreen")
         } catch (e: Exception) {
             logger.warn(LogCategory.BROWSER, "Could not request macOS fullscreen, using fallback", error = e)
+            usesNativeMacOSFullscreen = false
             // Fallback: maximize window
             (window as? JFrame)?.extendedState = JFrame.MAXIMIZED_BOTH
             hasReachedFullscreen = true
@@ -216,10 +274,8 @@ object FullscreenBrowserWindow {
      * On macOS in fullscreen, the window bounds match the screen bounds exactly.
      */
     private fun isWindowInFullscreen(frame: JFrame): Boolean {
-        val gd = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
-        val screenBounds = gd.defaultConfiguration.bounds
-        val frameBounds = frame.bounds
-        return frameBounds.width >= screenBounds.width && frameBounds.height >= screenBounds.height
+        val screenBounds = frame.graphicsConfiguration?.bounds ?: return false
+        return fillsScreen(frame.bounds, screenBounds)
     }
 
     /**
@@ -231,6 +287,7 @@ object FullscreenBrowserWindow {
         onExitCallback = null
         isInFullscreenMode = false
         hasReachedFullscreen = false
+        usesNativeMacOSFullscreen = false
         isExiting = false
     }
 
@@ -303,7 +360,7 @@ object FullscreenBrowserWindow {
 
         val frame = fullscreenFrame ?: return
 
-        if (isMacOS && hasReachedFullscreen) {
+        if (isMacOS && usesNativeMacOSFullscreen && hasReachedFullscreen) {
             // Toggle fullscreen off (will trigger componentResized -> performExit)
             isExiting = true
             requestMacOSFullscreen(frame)

@@ -1,10 +1,20 @@
 package ai.rever.boss.utils
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WindowFocusManagerTest {
+    @Test
+    fun `native macOS fullscreen events map to authoritative state`() {
+        assertEquals(true, nativeMacOSFullscreenStateForEvent("windowEnteringFullScreen"))
+        assertEquals(true, nativeMacOSFullscreenStateForEvent("windowEnteredFullScreen"))
+        assertEquals(false, nativeMacOSFullscreenStateForEvent("windowExitedFullScreen"))
+        assertNull(nativeMacOSFullscreenStateForEvent("windowExitingFullScreen"))
+    }
+
     @Test
     fun `registration snapshots an already focused window`() {
         val tracker = AwtWindowFocusTracker()
