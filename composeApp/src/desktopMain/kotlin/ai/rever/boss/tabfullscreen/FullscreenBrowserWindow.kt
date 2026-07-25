@@ -1,10 +1,8 @@
 package ai.rever.boss.tabfullscreen
 
 import ai.rever.boss.utils.WindowFocusManager
-import ai.rever.boss.utils.addWindowFullscreenExitListener
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.utils.removeWindowFullscreenExitListener
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.view.swing.BrowserView
 import java.awt.BorderLayout
@@ -35,6 +33,18 @@ internal fun fillsScreen(
         windowBounds.y <= screenBounds.y &&
         windowBounds.maxX >= screenBounds.maxX &&
         windowBounds.maxY >= screenBounds.maxY
+
+internal fun shouldUseComposeFullscreenOverlay(
+    composeSignalActive: Boolean,
+    isShowing: Boolean,
+    isMaximized: Boolean,
+    windowBounds: Rectangle,
+    screenBounds: Rectangle,
+): Boolean =
+    composeSignalActive &&
+        isShowing &&
+        !isMaximized &&
+        fillsScreen(windowBounds, screenBounds)
 
 /**
  * Creates and manages a fullscreen Swing JFrame for browser content.
@@ -129,7 +139,8 @@ object FullscreenBrowserWindow {
                 return
             }
 
-            val frame = JFrame()
+            val ownerWindow = currentOwnerWindowId?.let(WindowFocusManager::getWindow)
+            val frame = ownerWindow?.graphicsConfiguration?.let(::JFrame) ?: JFrame()
             frame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
             frame.background = Color.BLACK
             frame.contentPane.background = Color.BLACK
@@ -182,13 +193,11 @@ object FullscreenBrowserWindow {
                     // macOS can ignore a second native fullscreen-Space request while another
                     // window from this app already owns a fullscreen Space. Keep the video in
                     // that Space and cover it with an undecorated screen-sized window instead.
-                    frame.isUndecorated = true
-                    frame.isAlwaysOnTop = true
-                    frame.setBounds(fullscreenHostBounds)
-                    frame.isVisible = true
-                    usesNativeMacOSFullscreen = false
-                    hasReachedFullscreen = true
-                    watchOwnerFullscreenExit(currentOwnerWindowId)
+                    showBorderlessOverlay(
+                        frame = frame,
+                        bounds = fullscreenHostBounds,
+                        watchOwnerExit = true,
+                    )
                     logger.info(
                         LogCategory.BROWSER,
                         "Opened fullscreen video as borderless overlay in existing fullscreen Space",
@@ -207,20 +216,34 @@ object FullscreenBrowserWindow {
                             // Wait for fullscreen animation to complete before enabling exit detection
                             Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
                                 if (fullscreenFrame != null && isInFullscreenMode) {
-                                    hasReachedFullscreen = true
-                                    logger.info(
-                                        LogCategory.BROWSER,
-                                        "Fullscreen animation completed, exit detection enabled",
-                                    )
+                                    if (isWindowInFullscreen(frame)) {
+                                        hasReachedFullscreen = true
+                                        logger.info(
+                                            LogCategory.BROWSER,
+                                            "Fullscreen animation completed, exit detection enabled",
+                                        )
+                                    } else {
+                                        logger.warn(
+                                            LogCategory.BROWSER,
+                                            "macOS ignored native fullscreen toggle; using borderless overlay",
+                                        )
+                                        showBorderlessOverlay(
+                                            frame = frame,
+                                            bounds = frame.graphicsConfiguration.bounds,
+                                            watchOwnerExit = false,
+                                        )
+                                    }
                                 }
                             }.apply {
                                 isRepeats = false
                                 start()
                             }
                         } else {
-                            usesNativeMacOSFullscreen = false
-                            frame.extendedState = JFrame.MAXIMIZED_BOTH
-                            hasReachedFullscreen = true
+                            showBorderlessOverlay(
+                                frame = frame,
+                                bounds = frame.graphicsConfiguration.bounds,
+                                watchOwnerExit = false,
+                            )
                         }
                     }
                 }
@@ -247,31 +270,75 @@ object FullscreenBrowserWindow {
         }
     }
 
+    private fun showBorderlessOverlay(
+        frame: JFrame,
+        bounds: Rectangle,
+        watchOwnerExit: Boolean,
+    ) {
+        if (frame.isDisplayable) {
+            frame.dispose()
+        }
+        frame.isUndecorated = true
+        frame.isAlwaysOnTop = true
+        frame.extendedState = JFrame.NORMAL
+        frame.setBounds(bounds)
+        frame.isVisible = true
+        frame.toFront()
+        usesNativeMacOSFullscreen = false
+        hasReachedFullscreen = true
+        if (watchOwnerExit) {
+            watchOwnerFullscreenExit(currentOwnerWindowId)
+        }
+    }
+
     /**
      * Returns the display bounds of an already-fullscreen window in this process.
      * A new undecorated video window can cover that same fullscreen Space without
      * asking macOS to create a second native fullscreen Space.
      */
-    private fun existingFullscreenWindowBounds(ownerWindowId: String): Rectangle? =
-        WindowFocusManager
-            .getFullscreenWindow(ownerWindowId)
-            ?.graphicsConfiguration
-            ?.bounds
-            ?: ownerWindowBoundsFallback(ownerWindowId)
+    private fun existingFullscreenWindowBounds(ownerWindowId: String): Rectangle? {
+        val state = WindowFocusManager.getWindowFullscreenState(ownerWindowId)
+        return when {
+            state == null -> {
+                null
+            }
 
-    private fun ownerWindowBoundsFallback(ownerWindowId: String): Rectangle? {
+            state.nativeTrackingAvailable -> {
+                state.window.graphicsConfiguration
+                    ?.bounds
+                    .takeIf { state.nativeFullscreen }
+            }
+
+            else -> {
+                ownerWindowBoundsFallback(
+                    ownerWindowId = ownerWindowId,
+                    ownerWindow = state.window,
+                    composeSignalActive = state.composeFullscreen,
+                )
+            }
+        }
+    }
+
+    private fun ownerWindowBoundsFallback(
+        ownerWindowId: String,
+        ownerWindow: Window,
+        composeSignalActive: Boolean,
+    ): Rectangle? {
         // Best-effort fallback only for the browser's owning window. Never scan
         // another Boss window or treat an ordinary maximized frame as fullscreen.
-        val ownerWindow = WindowFocusManager.getWindow(ownerWindowId)
-        val screenBounds = ownerWindow?.graphicsConfiguration?.bounds
+        val screenBounds = ownerWindow.graphicsConfiguration?.bounds
         val isMaximized =
             ownerWindow is Frame &&
                 ownerWindow.extendedState and Frame.MAXIMIZED_BOTH != 0
         val fallbackBounds =
             screenBounds?.takeIf {
-                ownerWindow.isShowing &&
-                    !isMaximized &&
-                    fillsScreen(ownerWindow.bounds, screenBounds)
+                shouldUseComposeFullscreenOverlay(
+                    composeSignalActive = composeSignalActive,
+                    isShowing = ownerWindow.isShowing,
+                    isMaximized = isMaximized,
+                    windowBounds = ownerWindow.bounds,
+                    screenBounds = screenBounds,
+                )
             }
 
         if (fallbackBounds != null) {
@@ -330,6 +397,7 @@ object FullscreenBrowserWindow {
 
     private fun watchOwnerFullscreenExit(ownerWindowId: String?) {
         if (ownerWindowId == null) return
+        ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
         val listener: (String) -> Unit = { exitedWindowId ->
             if (exitedWindowId == ownerWindowId) {
                 SwingUtilities.invokeLater {
@@ -348,14 +416,14 @@ object FullscreenBrowserWindow {
             }
         }
         ownerFullscreenExitListener = listener
-        addWindowFullscreenExitListener(listener)
+        WindowFocusManager.fullscreenExitNotifier.add(listener)
     }
 
     /**
      * Reset all state variables.
      */
     private fun resetState() {
-        ownerFullscreenExitListener?.let(::removeWindowFullscreenExitListener)
+        ownerFullscreenExitListener?.let(WindowFocusManager.fullscreenExitNotifier::remove)
         ownerFullscreenExitListener = null
         fullscreenFrame = null
         currentBrowserView = null
@@ -481,6 +549,15 @@ object FullscreenBrowserWindow {
         }
     }
 
+    /** Requests exit only if fullscreen belongs to this browser, without blocking its callback thread. */
+    fun requestExit(browser: Browser) {
+        SwingUtilities.invokeLater {
+            if (currentBrowser === browser) {
+                requestExit()
+            }
+        }
+    }
+
     /**
      * Direct exit without relying on fullscreen toggle.
      */
@@ -512,10 +589,21 @@ object FullscreenBrowserWindow {
         cleanupAndExit(frame, browserView, null)
     }
 
+    /** Closes fullscreen asynchronously only when it belongs to the browser emitting the event. */
+    fun exitFullscreenAsync(browser: Browser) {
+        SwingUtilities.invokeLater {
+            if (currentBrowser === browser) {
+                exitFullscreen()
+            }
+        }
+    }
+
     /**
      * Closes fullscreen only when it belongs to the browser being disposed.
      * Blocks a background disposer until the Swing view has been detached, so
      * the browser cannot close underneath the fullscreen window's cleanup.
+     * Callers must not hold a lock that the EDT could need; current disposal
+     * paths either already run on the EDT or hold only owner-local lifecycle state.
      */
     fun exitFullscreen(browser: Browser) {
         runOnEventDispatchThreadAndWait {

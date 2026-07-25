@@ -1795,7 +1795,7 @@ object FluckEngine {
 
             // Close fullscreen window
             ai.rever.boss.tabfullscreen.FullscreenBrowserWindow
-                .exitFullscreen()
+                .exitFullscreenAsync(browser)
 
             onFullscreenExit()
         }

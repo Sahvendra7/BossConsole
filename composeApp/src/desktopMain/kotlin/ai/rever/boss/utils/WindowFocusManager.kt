@@ -21,33 +21,52 @@ internal fun nativeMacOSFullscreenStateForEvent(methodName: String): Boolean? =
         // the Space animation does not issue a competing native toggle.
         "windowEnteringFullScreen", "windowEnteredFullScreen" -> true
 
-        "windowExitingFullScreen", "windowExitedFullScreen" -> false
+        // Keep the state true through the exit animation. The separate
+        // exit-start signal closes overlays immediately without allowing a
+        // competing native toggle before the Space has actually gone away.
+        "windowExitedFullScreen" -> false
 
         else -> null
     }
+
+internal fun isNativeMacOSFullscreenExitStarting(methodName: String): Boolean = methodName == "windowExitingFullScreen"
 
 internal fun hasFullscreenSignal(
     windowId: String,
     composeFullscreenIds: Set<String>,
     nativeFullscreenIds: Set<String>,
-): Boolean = windowId in composeFullscreenIds || windowId in nativeFullscreenIds
+    nativeTrackedIds: Set<String>,
+): Boolean =
+    if (windowId in nativeTrackedIds) {
+        windowId in nativeFullscreenIds
+    } else {
+        windowId in composeFullscreenIds
+    }
 
-private val fullscreenExitListeners = CopyOnWriteArraySet<(String) -> Unit>()
+internal fun shouldNotifyComposeFullscreenExit(
+    wasComposeFullscreen: Boolean,
+    isNativeFullscreen: Boolean,
+): Boolean = wasComposeFullscreen && !isNativeFullscreen
 
-internal fun addWindowFullscreenExitListener(listener: (String) -> Unit) {
-    fullscreenExitListeners += listener
-}
+internal class FullscreenExitNotifier {
+    private val listeners = CopyOnWriteArraySet<(String) -> Unit>()
 
-internal fun removeWindowFullscreenExitListener(listener: (String) -> Unit) {
-    fullscreenExitListeners -= listener
-}
+    fun add(listener: (String) -> Unit) {
+        listeners += listener
+    }
 
-private fun notifyWindowFullscreenExit(windowId: String) {
-    fullscreenExitListeners.forEach { listener -> listener(windowId) }
+    fun remove(listener: (String) -> Unit) {
+        listeners -= listener
+    }
+
+    fun notify(windowId: String) {
+        listeners.forEach { listener -> listener(windowId) }
+    }
 }
 
 private class MacOSFullscreenTracker(
     private val onFullscreenChanged: (windowId: String, isFullscreen: Boolean) -> Unit,
+    private val onFullscreenExitStarted: (windowId: String) -> Unit,
 ) {
     private data class Registration(
         val window: Window,
@@ -57,16 +76,19 @@ private class MacOSFullscreenTracker(
     )
 
     private val logger = BossLogger.forComponent("MacOSFullscreenTracker")
+    private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+
+    // EDT-confined through WindowFocusManager.registerWindow/unregisterWindow.
     private val registrations = mutableMapOf<String, Registration>()
 
     fun register(
         windowId: String,
         window: Window,
-    ) {
-        if (!System.getProperty("os.name").lowercase().contains("mac")) return
+    ): Boolean {
+        if (!isMacOS) return false
 
         unregister(windowId)
-        try {
+        return runReflection("register", windowId) {
             val utilitiesClass = Class.forName("com.apple.eawt.FullScreenUtilities")
             val listenerClass = Class.forName("com.apple.eawt.FullScreenListener")
             val listener =
@@ -85,6 +107,9 @@ private class MacOSFullscreenTracker(
                         }
 
                         else -> {
+                            if (isNativeMacOSFullscreenExitStarting(method.name)) {
+                                onFullscreenExitStarted(windowId)
+                            }
                             nativeMacOSFullscreenStateForEvent(method.name)?.let { isFullscreen ->
                                 onFullscreenChanged(windowId, isFullscreen)
                                 logger.info(
@@ -112,39 +137,44 @@ private class MacOSFullscreenTracker(
 
             addMethod.invoke(null, window, listener)
             registrations[windowId] = Registration(window, listener, listenerClass, removeMethod)
-        } catch (e: ReflectiveOperationException) {
-            logFailure("register", windowId, e)
-        } catch (e: InaccessibleObjectException) {
-            logFailure("register", windowId, e)
-        } catch (e: IllegalArgumentException) {
-            logFailure("register", windowId, e)
-        } catch (e: ClassCastException) {
-            logFailure("register", windowId, e)
-        } catch (e: SecurityException) {
-            logFailure("register", windowId, e)
         }
     }
 
     fun unregister(windowId: String) {
         val registration = registrations.remove(windowId) ?: return
-        try {
+        runReflection("unregister", windowId) {
             registration.removeMethod.invoke(
                 null,
                 registration.window,
                 registration.listenerClass.cast(registration.listener),
             )
-        } catch (e: ReflectiveOperationException) {
-            logFailure("unregister", windowId, e)
-        } catch (e: InaccessibleObjectException) {
-            logFailure("unregister", windowId, e)
-        } catch (e: IllegalArgumentException) {
-            logFailure("unregister", windowId, e)
-        } catch (e: ClassCastException) {
-            logFailure("unregister", windowId, e)
-        } catch (e: SecurityException) {
-            logFailure("unregister", windowId, e)
         }
     }
+
+    private fun runReflection(
+        operation: String,
+        windowId: String,
+        block: () -> Unit,
+    ): Boolean =
+        try {
+            block()
+            true
+        } catch (e: ReflectiveOperationException) {
+            logFailure(operation, windowId, e)
+            false
+        } catch (e: InaccessibleObjectException) {
+            logFailure(operation, windowId, e)
+            false
+        } catch (e: IllegalArgumentException) {
+            logFailure(operation, windowId, e)
+            false
+        } catch (e: ClassCastException) {
+            logFailure(operation, windowId, e)
+            false
+        } catch (e: SecurityException) {
+            logFailure(operation, windowId, e)
+            false
+        }
 
     private fun logFailure(
         operation: String,
@@ -203,6 +233,13 @@ internal class AwtWindowFocusTracker {
     fun isFocused(windowId: String): Boolean = focusedWindowId == windowId
 }
 
+internal data class RegisteredWindowFullscreenState(
+    val window: Window,
+    val nativeTrackingAvailable: Boolean,
+    val nativeFullscreen: Boolean,
+    val composeFullscreen: Boolean,
+)
+
 /**
  * Handles multi-window focus tracking with two intentionally different views:
  * [isWindowFocused] is the live AWT focus used to gate browser input, while
@@ -213,15 +250,19 @@ actual object WindowFocusManager {
     private val windows = ConcurrentHashMap<String, Window>()
     private val composeFullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
     private val nativeFullscreenWindowIds = ConcurrentHashMap.newKeySet<String>()
+    private val nativeTrackedWindowIds = ConcurrentHashMap.newKeySet<String>()
+    internal val fullscreenExitNotifier = FullscreenExitNotifier()
     private val macOSFullscreenTracker =
-        MacOSFullscreenTracker { windowId, isFullscreen ->
-            if (isFullscreen) {
-                nativeFullscreenWindowIds += windowId
-            } else {
-                nativeFullscreenWindowIds -= windowId
-                notifyWindowFullscreenExit(windowId)
-            }
-        }
+        MacOSFullscreenTracker(
+            onFullscreenChanged = { windowId, isFullscreen ->
+                if (isFullscreen) {
+                    nativeFullscreenWindowIds += windowId
+                } else if (nativeFullscreenWindowIds.remove(windowId)) {
+                    fullscreenExitNotifier.notify(windowId)
+                }
+            },
+            onFullscreenExitStarted = fullscreenExitNotifier::notify,
+        )
 
     // EDT-confined; registerWindow/unregisterWindow enforce this before mutation.
     private val windowListeners = mutableMapOf<String, WindowAdapter>()
@@ -271,7 +312,11 @@ actual object WindowFocusManager {
 
         // Native fullscreen tracking is optional and must not prevent the
         // focus listener above from being installed if EAWT is unavailable.
-        macOSFullscreenTracker.register(windowId, window)
+        if (macOSFullscreenTracker.register(windowId, window)) {
+            nativeTrackedWindowIds += windowId
+        } else {
+            nativeTrackedWindowIds -= windowId
+        }
     }
 
     /**
@@ -301,18 +346,27 @@ actual object WindowFocusManager {
         if (isFullscreen) {
             composeFullscreenWindowIds += windowId
         } else {
-            composeFullscreenWindowIds -= windowId
-            if (windowId !in nativeFullscreenWindowIds) {
-                notifyWindowFullscreenExit(windowId)
+            val wasComposeFullscreen = composeFullscreenWindowIds.remove(windowId)
+            if (shouldNotifyComposeFullscreenExit(
+                    wasComposeFullscreen,
+                    windowId in nativeFullscreenWindowIds,
+                )
+            ) {
+                fullscreenExitNotifier.notify(windowId)
             }
         }
     }
 
-    /** Returns the requested window only when either fullscreen signal is active. */
-    fun getFullscreenWindow(windowId: String): Window? =
-        windows[windowId]?.takeIf {
-            hasFullscreenSignal(windowId, composeFullscreenWindowIds, nativeFullscreenWindowIds)
-        }
+    /** Returns the requested window and its independently tracked fullscreen signals. */
+    internal fun getWindowFullscreenState(windowId: String): RegisteredWindowFullscreenState? {
+        val window = windows[windowId] ?: return null
+        return RegisteredWindowFullscreenState(
+            window = window,
+            nativeTrackingAvailable = windowId in nativeTrackedWindowIds,
+            nativeFullscreen = windowId in nativeFullscreenWindowIds,
+            composeFullscreen = windowId in composeFullscreenWindowIds,
+        )
+    }
 
     /**
      * Unregisters a window when it closes. Must run on the EDT.
@@ -329,9 +383,12 @@ actual object WindowFocusManager {
         macOSFullscreenTracker.unregister(windowId)
 
         windows.remove(windowId)
-        composeFullscreenWindowIds -= windowId
-        nativeFullscreenWindowIds -= windowId
-        notifyWindowFullscreenExit(windowId)
+        val wasComposeFullscreen = composeFullscreenWindowIds.remove(windowId)
+        val wasNativeFullscreen = nativeFullscreenWindowIds.remove(windowId)
+        nativeTrackedWindowIds -= windowId
+        if (wasComposeFullscreen || wasNativeFullscreen) {
+            fullscreenExitNotifier.notify(windowId)
+        }
         awtFocusTracker.onUnregistered(windowId)
         if (focusedWindowId == windowId) {
             // Preserve the existing last-focused flow contract for external

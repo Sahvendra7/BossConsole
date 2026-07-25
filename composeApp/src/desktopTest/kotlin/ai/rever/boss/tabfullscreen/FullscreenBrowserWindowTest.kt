@@ -32,4 +32,44 @@ class FullscreenBrowserWindowTest {
     fun `full-size window offset from the display is not fullscreen`() {
         assertFalse(fillsScreen(Rectangle(1, 0, 1728, 1117), screen))
     }
+
+    @Test
+    fun `compose fallback requires signal and fullscreen geometry`() {
+        assertTrue(
+            shouldUseComposeFullscreenOverlay(
+                composeSignalActive = true,
+                isShowing = true,
+                isMaximized = false,
+                windowBounds = screen,
+                screenBounds = screen,
+            ),
+        )
+        assertFalse(
+            shouldUseComposeFullscreenOverlay(
+                composeSignalActive = false,
+                isShowing = true,
+                isMaximized = false,
+                windowBounds = screen,
+                screenBounds = screen,
+            ),
+        )
+        assertFalse(
+            shouldUseComposeFullscreenOverlay(
+                composeSignalActive = true,
+                isShowing = true,
+                isMaximized = true,
+                windowBounds = screen,
+                screenBounds = screen,
+            ),
+        )
+        assertFalse(
+            shouldUseComposeFullscreenOverlay(
+                composeSignalActive = true,
+                isShowing = true,
+                isMaximized = false,
+                windowBounds = Rectangle(200, 100, 1200, 800),
+                screenBounds = screen,
+            ),
+        )
+    }
 }

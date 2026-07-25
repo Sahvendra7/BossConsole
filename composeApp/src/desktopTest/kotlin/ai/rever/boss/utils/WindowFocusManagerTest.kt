@@ -3,6 +3,7 @@ package ai.rever.boss.utils
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WindowFocusManagerTest {
@@ -10,17 +11,21 @@ class WindowFocusManagerTest {
     fun `native macOS fullscreen events map to authoritative state`() {
         assertEquals(true, nativeMacOSFullscreenStateForEvent("windowEnteringFullScreen"))
         assertEquals(true, nativeMacOSFullscreenStateForEvent("windowEnteredFullScreen"))
-        assertEquals(false, nativeMacOSFullscreenStateForEvent("windowExitingFullScreen"))
+        assertNull(nativeMacOSFullscreenStateForEvent("windowExitingFullScreen"))
         assertEquals(false, nativeMacOSFullscreenStateForEvent("windowExitedFullScreen"))
+        assertNull(nativeMacOSFullscreenStateForEvent("toString"))
+        assertTrue(isNativeMacOSFullscreenExitStarting("windowExitingFullScreen"))
+        assertFalse(isNativeMacOSFullscreenExitStarting("windowExitedFullScreen"))
     }
 
     @Test
-    fun `fullscreen signals are combined without leaking across windows`() {
+    fun `native tracking is authoritative and does not leak across windows`() {
         assertTrue(
             hasFullscreenSignal(
                 windowId = "window-a",
                 composeFullscreenIds = setOf("window-a"),
                 nativeFullscreenIds = emptySet(),
+                nativeTrackedIds = emptySet(),
             ),
         )
         assertTrue(
@@ -28,6 +33,15 @@ class WindowFocusManagerTest {
                 windowId = "window-a",
                 composeFullscreenIds = emptySet(),
                 nativeFullscreenIds = setOf("window-a"),
+                nativeTrackedIds = setOf("window-a"),
+            ),
+        )
+        assertFalse(
+            hasFullscreenSignal(
+                windowId = "window-a",
+                composeFullscreenIds = setOf("window-a"),
+                nativeFullscreenIds = emptySet(),
+                nativeTrackedIds = setOf("window-a"),
             ),
         )
         assertFalse(
@@ -35,8 +49,31 @@ class WindowFocusManagerTest {
                 windowId = "window-b",
                 composeFullscreenIds = setOf("window-a"),
                 nativeFullscreenIds = setOf("window-a"),
+                nativeTrackedIds = setOf("window-a"),
             ),
         )
+    }
+
+    @Test
+    fun `fullscreen exit notifications require a real transition`() {
+        assertFalse(shouldNotifyComposeFullscreenExit(wasComposeFullscreen = false, isNativeFullscreen = false))
+        assertFalse(shouldNotifyComposeFullscreenExit(wasComposeFullscreen = true, isNativeFullscreen = true))
+        assertTrue(shouldNotifyComposeFullscreenExit(wasComposeFullscreen = true, isNativeFullscreen = false))
+    }
+
+    @Test
+    fun `fullscreen exit listener stops firing after removal`() {
+        val notifier = FullscreenExitNotifier()
+        val exitedWindows = mutableListOf<String>()
+        val listener: (String) -> Unit = exitedWindows::add
+
+        notifier.notify("before-registration")
+        notifier.add(listener)
+        notifier.notify("window-a")
+        notifier.remove(listener)
+        notifier.notify("after-removal")
+
+        assertEquals(listOf("window-a"), exitedWindows)
     }
 
     @Test

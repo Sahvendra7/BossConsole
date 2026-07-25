@@ -1328,7 +1328,7 @@ internal class BrowserHandleImpl(
     }
 
     override fun requestExitFullscreen() {
-        FullscreenBrowserWindow.requestExit()
+        FullscreenBrowserWindow.requestExit(browser)
     }
 
     // ============================================================
