@@ -16,6 +16,39 @@ This guide explains how the Windows deep link support works for the BOSS desktop
    - If BOSS is not running, Windows launches it with the URL as a command line argument
    - If BOSS is already running, the behavior depends on Windows version (may launch a new instance)
 
+## Registration Lifecycle (and why uninstall needs a hook)
+
+Registration is done by the **running app**, not by the MSI. That is a deliberate
+limitation, not a preference: the Compose Desktop Gradle plugin exposes no WiX
+authoring hook (no `--resource-dir` override, no registry DSL), so the installer
+cannot own the `boss:` keys without hand-maintaining a full jpackage `main.wxs`
+replacement — which is tied to the JDK version that built it and cannot be verified
+outside a Windows + WiX runner.
+
+Consequences and the mitigations in place:
+
+| Situation | Behavior |
+|---|---|
+| Fresh install, first launch | App registers `HKCU\Software\Classes\boss` (`WindowsProtocolHandler.registerProtocol`) |
+| Moved/reinstalled to a new path | Startup re-registers when the stored command points at a missing exe (self-heal) |
+| Another BOSS install still present and valid | Left alone — the app never steals a working registration |
+| **Uninstalled** | The key survives and points at a deleted exe unless cleaned up (below) |
+
+### Cleaning up the registration
+
+```powershell
+# Preferred: let the app remove its own registration (exit code 0 = removed,
+# 1 = left in place because it belongs to another live installation)
+& "$env:LOCALAPPDATA\BOSS\BOSS.exe" --unregister-protocol
+
+# Manual equivalent
+reg delete "HKEY_CURRENT_USER\Software\Classes\boss" /f
+```
+
+Run this **before** uninstalling, or wire it as an uninstall action when installer-owned
+registration lands (tracked as follow-up work to issue #38 — the Rust host is expected
+to register the protocol from its installer instead).
+
 ## Email Verification Flow
 
 1. User clicks the verification link in their email

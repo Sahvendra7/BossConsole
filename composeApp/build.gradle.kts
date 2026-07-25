@@ -78,11 +78,45 @@ val versionPropsProvider =
         parameters.propertiesFile.set(versionPropsFile)
     }
 val appVersion = versionPropsProvider.map { it.getProperty("app.version", "8.8.0") }.get()
-val bundleVersion = versionPropsProvider.map { it.getProperty("app.bundle.version", "8.8.0") }.get()
 // Base version (without prerelease suffix) for native package formats that don't support semver prereleases
 val baseVersion = appVersion.substringBefore("-")
 
+// CFBundleVersion is macOS's *build* identifier, not the marketing version
+// (CFBundleShortVersionString) — it has to change for every shipped build of a
+// given version, otherwise a re-notarized rebuild of 9.2.60 is indistinguishable
+// from the first 9.2.60 and anything keyed on it cannot tell the two apart.
+// Compose validates it as at most three non-negative integers, so "9.2.60.<n>" is
+// not expressible; we use Apple's usual convention of a plain monotonic counter:
+//   * CI release builds — BOSS_BUILD_ID, which release.yml sets to github.run_number
+//     (monotonic per workflow, and shared by every platform job of one release run).
+//   * any other CI build — GITHUB_RUN_NUMBER, so at least it is not a constant.
+//   * local builds — app.build.number from version.properties. Deliberately a
+//     *stable* value so packaging tasks stay up-to-date between local runs; a
+//     timestamp here would re-sign the whole app image on every build.
+// The value is intentionally NOT derived from app.version: it is a build counter,
+// and Finder shows it as "Version 9.2.60 (641)". `app.bundle.version` (which used to
+// feed CFBundleVersion and always equalled app.version) is no longer read here; it
+// survives in version.properties as display-only metadata for ./gradlew showVersion.
+val macBundleBuildVersion: String =
+    (System.getenv("BOSS_BUILD_ID") ?: System.getenv("GITHUB_RUN_NUMBER"))
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+        ?: versionPropsProvider.map { it.getProperty("app.build.number", "1") }.get()
+
+// jpackage (and therefore Compose) derives CFBundleShortVersionString from
+// packageVersion, which must be a plain MAJOR.MINOR.PATCH — so a prerelease build
+// would show "9.2.60" in Finder instead of "9.2.60-beta.1". Re-declare the key
+// (the last declaration in a plist dict wins) only when a suffix is actually
+// present, so stable builds carry exactly one CFBundleShortVersionString.
+val macPrereleaseShortVersionKey: String =
+    if (appVersion != baseVersion) {
+        "<key>CFBundleShortVersionString</key><string>$appVersion</string>"
+    } else {
+        ""
+    }
+
 println("📦 Building BOSS Version: $appVersion")
+println("🔢 macOS CFBundleVersion (build id): $macBundleBuildVersion")
 
 // Path to libs.versions.toml for reading JxBrowser version (single source of truth)
 val libsVersionsFile = layout.projectDirectory.file("../gradle/libs.versions.toml")
@@ -971,6 +1005,27 @@ compose.desktop {
                 dmgPackageVersion = baseVersion
                 dmgPackageBuildVersion = "1"
 
+                // Real platform floor, not the app's own floor: the browser-engine
+                // bundle BOSS downloads (~/.boss/boss-chromium/BOSS.app) declares
+                // LSMinimumSystemVersion 12.0 and its framework is built with
+                // LC_BUILD_VERSION minos 12.0. On 10.15/11 the app installed and
+                // launched fine and then died in dyld the first time an engine
+                // loaded — a broken browser tab instead of "unsupported OS".
+                // Declaring 12.0 here makes the installer refuse the install
+                // instead. Keep in lockstep with chromium-branding / the engine
+                // bundle's own LSMinimumSystemVersion.
+                minimumSystemVersion = "12.0"
+
+                // Was jpackage's placeholder "Unknown" (Compose's default when this
+                // is unset), which leaves Launchpad/Finder categorization empty.
+                // BOSS is a terminal + editor + console for developers.
+                appCategory = "public.app-category.developer-tools"
+
+                // CFBundleVersion — see macBundleBuildVersion above. Set through the
+                // DSL (not infoPlist.extraKeysRawXml) so exactly one CFBundleVersion
+                // key ends up in Info.plist.
+                packageBuildVersion = macBundleBuildVersion
+
                 // Note: bundleJRE is not a valid property in current Compose Desktop
                 // The JVM is automatically bundled when creating native distributions
                 // Use includeAllModules = true above to ensure all JVM modules are included
@@ -993,20 +1048,18 @@ compose.desktop {
                 // Entitlements
                 entitlementsFile.set(project.file("src/desktopMain/resources/BOSS.entitlements"))
 
-                // DMG customization
+                // Extra Info.plist keys.
+                //
+                // Only keys Compose does NOT already emit belong here: LSMinimumSystemVersion,
+                // LSApplicationCategoryType, CFBundleShortVersionString, CFBundleVersion,
+                // NSHighResolutionCapable and NSSupportsAutomaticGraphicsSwitching are all
+                // written by the Compose plugin from the DSL settings above. Declaring them
+                // again produced a plist with duplicate keys that only worked because the
+                // last declaration wins — the single-source DSL settings replace that.
                 infoPlist {
                     extraKeysRawXml =
                         """
-                        <key>LSMinimumSystemVersion</key>
-                        <string>10.15</string>
-                        <key>CFBundleShortVersionString</key>
-                        <string>$appVersion</string>
-                        <key>CFBundleVersion</key>
-                        <string>$bundleVersion</string>
-                        <key>NSHighResolutionCapable</key>
-                        <true/>
-                        <key>NSSupportsAutomaticGraphicsSwitching</key>
-                        <true/>
+                        $macPrereleaseShortVersionKey
                         <key>NSCameraUsageDescription</key>
                         <string>BOSS needs access to your camera for video conferencing and screen sharing.</string>
                         <key>NSMicrophoneUsageDescription</key>
@@ -1528,6 +1581,22 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
                 }
             }
 
+            // Soften the generated dependency on xdg-utils.
+            //
+            // jpackage lists xdg-utils in the .deb's `Depends:` field (its postinst
+            // uses xdg-desktop-menu / xdg-icon-resource), so on a headless image
+            // without that package `dpkg -i` fails during dependency resolution —
+            // before postinst exists to be guarded, which is why the postinst fix
+            // above only closed half of the headless problem. Desktop integration is
+            // best-effort here, so xdg-utils belongs under `Recommends:`: apt still
+            // pulls it in by default on desktop systems, while a headless install no
+            // longer hard-fails.
+            val controlFile = File(workDir, "DEBIAN/control")
+            if (controlFile.isFile && softenXdgUtilsDependency(controlFile)) {
+                println("✅ Moved xdg-utils from Depends to Recommends in DEBIAN/control (headless installs)")
+                modified = true
+            }
+
             if (modified) {
                 // Repack deb using dpkg-deb --build
                 execOps.exec {
@@ -1541,6 +1610,79 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
         } finally {
             workDir.deleteRecursively()
         }
+    }
+
+    /**
+     * Moves `xdg-utils` out of the .deb's `Depends:` field and into `Recommends:`.
+     * Returns true when the control file was rewritten (false when there is nothing
+     * to do, which keeps the whole task idempotent across repacks).
+     *
+     * Debian field folding (continuation lines start with a space or tab) is honored
+     * for the two fields this touches; every other field is copied through verbatim.
+     * An entry is only dropped when *all* of its alternatives are xdg-utils, so a
+     * hypothetical `xdg-utils | something-else` is left alone. Assumes the file opens
+     * with a field rather than a comment/blank line, which is true of jpackage output.
+     */
+    private fun softenXdgUtilsDependency(controlFile: File): Boolean {
+        val fieldStart = Regex("^([A-Za-z0-9][A-Za-z0-9-]*):(.*)$")
+        val packageName = Regex("^[A-Za-z0-9][A-Za-z0-9+.-]*")
+
+        // Group the file into fields, keeping each field's original lines so
+        // untouched fields survive byte-for-byte.
+        val fields = mutableListOf<Pair<String, MutableList<String>>>()
+        controlFile.readLines().forEach { line ->
+            val match = fieldStart.find(line)
+            if (match != null) {
+                fields += match.groupValues[1] to mutableListOf(line)
+            } else if (fields.isNotEmpty()) {
+                // Continuation of the previous field (or a trailing blank line).
+                fields.last().second += line
+            }
+        }
+
+        val dependsIndex = fields.indexOfFirst { it.first.equals("Depends", ignoreCase = true) }
+        if (dependsIndex < 0) return false
+
+        val dependsField = fields[dependsIndex]
+        val dependsValue =
+            dependsField.second
+                .joinToString(" ") { it.substringAfter(':', it).trim() }
+                .trim()
+        val entries = dependsValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val isXdgUtils = { entry: String ->
+            entry.split("|").all { packageName.find(it.trim())?.value == "xdg-utils" }
+        }
+        if (entries.none(isXdgUtils)) return false
+
+        val kept = entries.filterNot(isXdgUtils)
+        if (kept.isEmpty()) {
+            fields.removeAt(dependsIndex)
+        } else {
+            fields[dependsIndex] = dependsField.first to mutableListOf("${dependsField.first}: ${kept.joinToString(", ")}")
+        }
+
+        val recommendsIndex = fields.indexOfFirst { it.first.equals("Recommends", ignoreCase = true) }
+        if (recommendsIndex < 0) {
+            // Put it where Depends was, so the field order still reads naturally.
+            val insertAt = if (kept.isEmpty()) dependsIndex else dependsIndex + 1
+            fields.add(insertAt, "Recommends" to mutableListOf("Recommends: xdg-utils"))
+        } else {
+            val recommendsField = fields[recommendsIndex]
+            val existing =
+                recommendsField.second
+                    .joinToString(" ") { it.substringAfter(':', it).trim() }
+                    .trim()
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            if (existing.none(isXdgUtils)) {
+                fields[recommendsIndex] =
+                    recommendsField.first to mutableListOf("${recommendsField.first}: ${(existing + "xdg-utils").joinToString(", ")}")
+            }
+        }
+
+        controlFile.writeText(fields.flatMap { it.second }.joinToString("\n").trimEnd('\n') + "\n")
+        return true
     }
 }
 
