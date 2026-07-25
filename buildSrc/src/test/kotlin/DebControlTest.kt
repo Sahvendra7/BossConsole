@@ -163,6 +163,24 @@ class DebControlTest {
         )
     }
 
+    /**
+     * The realistic jpackage shape: a folded `Description` is the final field, so the
+     * appended `Recommends` has to land after continuation lines. Works because a
+     * column-0 field terminates the folded field — this is the case that would break if
+     * the emit order ever changed.
+     */
+    @Test
+    fun `appends Recommends after a folded final Description`() {
+        assertEquals(
+            "Package: boss\nDepends: libc6\nRecommends: xdg-utils\nDescription: BOSS\n" +
+                " Business Operating System Service\n .\n Second paragraph\n",
+            soften(
+                "Package: boss\nDepends: xdg-utils, libc6\nDescription: BOSS\n" +
+                    " Business Operating System Service\n .\n Second paragraph\n",
+            ),
+        )
+    }
+
     @Test
     fun `leaves every other field byte-for-byte alone`() {
         val rewritten =

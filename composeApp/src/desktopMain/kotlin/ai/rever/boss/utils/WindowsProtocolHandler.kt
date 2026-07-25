@@ -28,7 +28,7 @@ object WindowsProtocolHandler {
      * not parse would break a working install.
      */
     enum class UnregisterOutcome {
-        /** The registration was ours (or pointed at a deleted exe) and was removed. */
+        /** The registration was ours, pointed at a deleted exe, or had no command value — and was removed. */
         REMOVED,
 
         /** Nothing was registered. */
@@ -174,12 +174,14 @@ object WindowsProtocolHandler {
      * Windows' generic "no app associated" error. Invoke via
      * `BOSS.exe --unregister-protocol` from an uninstall action or by hand.
      *
-     * Safety: the key is only deleted when it points at *this* installation, at an
-     * executable that no longer exists, or has no command value at all (a partial
-     * registration this code produced). A registration owned by a different, still
-     * present install is left alone — and so is one whose command is present but
-     * unparseable: an unquoted `shell\open\command` is what a WiX/MSI-authored
-     * registration typically looks like, so deleting it would break a working install.
+     * Safety policy lives in [classifyProtocolCleanup] (pure, and unit-tested): the key is
+     * deleted only when it points at *this* installation, at an executable that no longer
+     * exists, or carries no command value at all — a partial registration this code
+     * produced, identified by `reg query`'s exit code rather than by "the value did not
+     * parse". Anything else is left alone: a registration owned by a different live
+     * install, a command in a form this code does not read (`REG_EXPAND_SZ`, unquoted —
+     * what a WiX/MSI-authored registration looks like), and any registry read that failed.
+     * Failing to *read* must never escalate to *deleting*.
      *
      * Note this protection is delete-only. [registerProtocol] still overwrites an
      * unparseable command (`commandPointsToValidExecutable` fails closed), so an
@@ -188,54 +190,19 @@ object WindowsProtocolHandler {
     fun unregisterProtocol(): UnregisterOutcome {
         if (!isWindows) return UnregisterOutcome.NOT_APPLICABLE
 
-        val currentCommand = getCurrentRegistryCommand()
-        val registeredExe = currentCommand?.let { extractExecutablePath(it) }
-        val appPath = getApplicationPath()
-
-        return when {
-            !isProtocolRegistered() -> {
-                logger.debug(LogCategory.SYSTEM, "boss:// protocol is not registered - nothing to clean up")
-                UnregisterOutcome.ABSENT
-            }
-
-            // Root key exists with no shell\open\command value at all. That is a
-            // partial registration this code owns: performRegistration does four
-            // independent `reg add`s and only logs when some fail. registerProtocol
-            // already self-heals this state by re-registering, so cleanup must own it
-            // too rather than leaving orphan keys behind forever.
-            currentCommand == null -> {
-                logger.info(
-                    LogCategory.SYSTEM,
-                    "boss:// protocol is partially registered (no command value) - removing orphan keys",
-                )
-                deleteProtocolKey()
-            }
-
-            // Present, but not in a form this code can read — e.g. an unquoted,
-            // installer-authored command. Never delete what we cannot parse.
-            registeredExe == null -> {
-                logger.info(
-                    LogCategory.SYSTEM,
-                    "boss:// protocol command could not be parsed - leaving it registered",
-                    mapOf("command" to currentCommand),
-                )
-                UnregisterOutcome.UNREADABLE
-            }
-
-            // Ours, or pointing at an executable that is gone: safe to remove.
-            registeredExe.equals(appPath, ignoreCase = true) || !File(registeredExe).exists() -> {
-                deleteProtocolKey()
-            }
-
-            else -> {
-                logger.info(
-                    LogCategory.SYSTEM,
-                    "boss:// protocol points at another live BOSS installation - leaving it registered",
-                    mapOf("path" to registeredExe),
-                )
-                UnregisterOutcome.OTHER_INSTALL
-            }
-        }
+        val blocker =
+            classifyProtocolCleanup(
+                rootPresent = isProtocolRegistered(),
+                command = queryProtocolCommand(),
+                appPath = getApplicationPath(),
+                exeExists = { File(it).exists() },
+            )
+        logger.info(
+            LogCategory.SYSTEM,
+            "boss:// protocol cleanup decision",
+            mapOf("key" to PROTOCOL_KEY, "decision" to (blocker?.name ?: "DELETE")),
+        )
+        return blocker ?: deleteProtocolKey()
     }
 
     /**
@@ -338,41 +305,11 @@ object WindowsProtocolHandler {
     }
 
     /**
-     * Get the current command registered in the Windows registry for boss:// protocol
+     * Get the current command registered in the Windows registry for boss:// protocol,
+     * or null when it is absent or unreadable. Callers that must tell those two apart
+     * (cleanup does — see [classifyProtocolCleanup]) use [queryProtocolCommand] instead.
      */
-    private fun getCurrentRegistryCommand(): String? =
-        try {
-            val process =
-                ProcessBuilder(
-                    "reg",
-                    "query",
-                    """$PROTOCOL_KEY\shell\open\command""",
-                    "/ve",
-                ).redirectErrorStream(true).start()
-
-            val output = process.inputStream.bufferedReader().readText()
-            process.waitFor()
-
-            // Parse: "    (Default)    REG_SZ    C:\Path\To\BOSS.exe "%1""
-            val match = Regex("""REG_SZ\s+(.+)$""", RegexOption.MULTILINE).find(output)
-            match?.groupValues?.get(1)?.trim()
-        } catch (e: Exception) {
-            logger.debug(
-                LogCategory.SYSTEM,
-                "Could not read protocol handler command from registry",
-                mapOf("error" to e.toString()),
-            )
-            null
-        }
-
-    /**
-     * Extract executable path from registry command string
-     * Example: "C:\Path\To\BOSS.exe" "%1" -> C:\Path\To\BOSS.exe
-     */
-    private fun extractExecutablePath(command: String): String? {
-        val match = Regex("""^"([^"]+)"""").find(command)
-        return match?.groupValues?.get(1)
-    }
+    private fun getCurrentRegistryCommand(): String? = (queryProtocolCommand() as? CommandState.Present)?.command
 
     /**
      * Check if the command points to a valid executable file
@@ -417,3 +354,128 @@ private fun deleteProtocolKey(): WindowsProtocolHandler.UnregisterOutcome =
         logger.error(LogCategory.SYSTEM, "Interrupted while removing boss:// protocol registration", error = e)
         WindowsProtocolHandler.UnregisterOutcome.FAILED
     }
+
+/**
+ * What `HKCU\Software\Classes\boss\shell\open\command` currently holds.
+ *
+ * The distinction matters for cleanup: "the value is not there" is a partial registration
+ * this code produced and may delete, while "the value is there but I cannot read it" must
+ * be left alone — it can be a perfectly working registration written by someone else (an
+ * installer authoring a `REG_EXPAND_SZ` or unquoted command), and a transient failure to
+ * *read* the registry must never escalate to *deleting* it.
+ */
+internal sealed interface CommandState {
+    /** `reg query` reports the key/value as absent. */
+    object Missing : CommandState
+
+    /** Present, but not readable here: unexpected value type, no value text, or the query failed. */
+    object Unreadable : CommandState
+
+    /** Present and read. */
+    data class Present(
+        val command: String,
+    ) : CommandState
+}
+
+/**
+ * Read the registered `shell\open\command`, keeping the absent/unreadable distinction.
+ *
+ * `reg query <key> /ve` exits non-zero when the key or its default value does not exist,
+ * which is the only signal that separates "nothing registered here" from "registered in a
+ * form this code does not parse". `REG_EXPAND_SZ` is matched as well as `REG_SZ`: an
+ * installer-authored command such as `"%LOCALAPPDATA%\BOSS\BOSS.exe" "%1"` is ordinary
+ * and must not be mistaken for a missing value.
+ */
+private fun queryProtocolCommand(): CommandState =
+    try {
+        val process =
+            ProcessBuilder(
+                "reg",
+                "query",
+                """$PROTOCOL_KEY\shell\open\command""",
+                "/ve",
+            ).redirectErrorStream(true).start()
+
+        val output = process.inputStream.bufferedReader().readText()
+        val exitCode = process.waitFor()
+
+        // Parse: "    (Default)    REG_SZ    C:\Path\To\BOSS.exe "%1""
+        val match = Regex("""REG_(?:EXPAND_)?SZ\s+(.+)$""", RegexOption.MULTILINE).find(output)
+        val command =
+            match
+                ?.groupValues
+                ?.get(1)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+        when {
+            exitCode != 0 -> CommandState.Missing
+            command != null -> CommandState.Present(command)
+            else -> CommandState.Unreadable
+        }
+    } catch (e: IOException) {
+        logger.debug(
+            LogCategory.SYSTEM,
+            "Could not read protocol handler command from registry",
+            mapOf("error" to e.toString()),
+        )
+        CommandState.Unreadable
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        logger.debug(
+            LogCategory.SYSTEM,
+            "Interrupted reading protocol handler command from registry",
+            mapOf("error" to e.toString()),
+        )
+        CommandState.Unreadable
+    }
+
+/**
+ * Extract executable path from registry command string.
+ * Example: `"C:\Path\To\BOSS.exe" "%1"` -> `C:\Path\To\BOSS.exe`
+ *
+ * Only the quoted form is recognized; an unquoted command yields null, which callers must
+ * treat as "unreadable", never as "stale".
+ */
+internal fun extractExecutablePath(command: String): String? {
+    val match = Regex("""^"([^"]+)"""").find(command)
+    return match?.groupValues?.get(1)
+}
+
+/**
+ * Decide whether the `boss:` registration may be deleted — the whole safety policy of
+ * [WindowsProtocolHandler.unregisterProtocol], kept pure so every branch is testable off
+ * Windows (see `WindowsProtocolCleanupTest`). Only the `reg delete` itself needs a real
+ * registry.
+ *
+ * @param rootPresent whether `HKCU\Software\Classes\boss` exists at all
+ * @param command state of its `shell\open\command` value
+ * @param appPath this installation's executable, or null when it cannot be determined
+ *   (development runs)
+ * @param exeExists existence check for the registered executable
+ * @return the outcome to report, or null when deleting the key is the right move
+ */
+internal fun classifyProtocolCleanup(
+    rootPresent: Boolean,
+    command: CommandState,
+    appPath: String?,
+    exeExists: (String) -> Boolean,
+): WindowsProtocolHandler.UnregisterOutcome? {
+    val registeredExe = (command as? CommandState.Present)?.command?.let { extractExecutablePath(it) }
+    return when {
+        !rootPresent -> WindowsProtocolHandler.UnregisterOutcome.ABSENT
+
+        // Root key exists with no command value: a partial registration this code
+        // produced (performRegistration issues four independent `reg add`s and only logs
+        // when some fail). registerProtocol already self-heals it by re-registering, so
+        // cleanup owns it too rather than leaving orphan keys behind forever.
+        command is CommandState.Missing -> null
+
+        // Present but not readable here. Never delete what we cannot parse.
+        registeredExe == null -> WindowsProtocolHandler.UnregisterOutcome.UNREADABLE
+
+        // Ours, or pointing at an executable that is gone: safe to remove.
+        registeredExe.equals(appPath, ignoreCase = true) || !exeExists(registeredExe) -> null
+
+        else -> WindowsProtocolHandler.UnregisterOutcome.OTHER_INSTALL
+    }
+}

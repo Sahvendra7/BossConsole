@@ -65,11 +65,12 @@ on:
         type: boolean
       build_id:
         description: >-
-          macOS CFBundleVersion build identifier. Callers MUST pass one: a called
-          workflow's jobs belong to the caller's run, so github.run_number would be the
-          caller's counter here (see the env block below).
-        required: false
-        default: ''
+          macOS CFBundleVersion build identifier. Required, and deliberately has no
+          default: a called workflow's jobs belong to the caller's run, so
+          github.run_number here would be the caller's own counter (see the env block
+          below). Making it required turns "caller forgot" into a startup error instead of
+          a silently wrong CFBundleVersion.
+        required: true
         type: string
   push:
     tags:
@@ -84,11 +85,15 @@ env:
   # (macBundleBuildVersion) for the fallbacks used outside this workflow.
   #
   # When this workflow is *called* (promote-release.yml), github.run_number is the
-  # CALLER's counter — an independent sequence that can collide with, or sort below, a
-  # direct release run. Callers pass build_id instead, which the macOS job (the only
-  # consumer of CFBundleVersion) prefers over this default. Do NOT reference `inputs`
-  # here: a workflow-level env is evaluated for every trigger, including the tag push,
-  # where that context does not exist — the run then fails at startup.
+  # CALLER's counter — an independent sequence that can collide with a direct release run.
+  # Callers pass a required build_id instead, which the macOS job (the only consumer of
+  # CFBundleVersion) prefers over this default. What that buys is COLLISION-FREEDOM, not
+  # global monotonicity: promotion ids come from a disjoint, much larger range, so a
+  # promoted build sorts above every direct release rather than in sequence with it.
+  # Uniqueness is what issue #38 needed; nothing reads CFBundleVersion today (the updater
+  # compares semver app.version), so do not build ordering logic on it without revisiting.
+  # Do NOT reference `inputs` here: a workflow-level env is evaluated for every trigger,
+  # including the tag push, where that context does not exist — the run fails at startup.
   BOSS_BUILD_ID: ${{ github.run_number }}
   # Production credentials for release builds
   JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
@@ -341,9 +346,10 @@ jobs:
     env:
       # CFBundleVersion build identifier. Overrides the workflow-level default so a
       # caller-supplied build_id wins: in a workflow_call run, github.run_number is the
-      # caller's own counter, which can collide with or sort below a direct release run.
-      # This is the only job that produces a macOS bundle, so it is the only place the
-      # value matters. Job-level `inputs` references are fine (unlike workflow-level env).
+      # caller's own counter, which can collide with a direct release run. This is the only
+      # job that produces a macOS bundle, so it is the only place the value matters.
+      # This job-level `inputs` reference is the intentional exception to the warning on
+      # the workflow-level env above: job env is evaluated per trigger, so it is safe here.
       BOSS_BUILD_ID: ${{ inputs.build_id || github.run_number }}
     # macOS minutes bill at 10×, and notarization can legitimately sit waiting
     # on Apple, so cap the job well below GitHub's 6h default: build (~20m) plus
@@ -352,6 +358,19 @@ jobs:
     timeout-minutes: 120
 
     steps:
+      - name: 🔢 Validate Build Identifier
+        # composeApp/build.gradle.kts silently falls back to app.build.number (i.e. "1")
+        # for a non-numeric BOSS_BUILD_ID, so a malformed caller input would ship a wrong
+        # CFBundleVersion with a green build. Fail loudly instead.
+        run: |
+          case "$BOSS_BUILD_ID" in
+            '' | *[!0-9]*)
+              echo "::error::BOSS_BUILD_ID must be a non-empty run of digits, got '$BOSS_BUILD_ID'"
+              exit 1
+              ;;
+          esac
+          echo "✅ CFBundleVersion build id: $BOSS_BUILD_ID"
+
       - name: 📥 Checkout Repository
         uses: actions/checkout@v7
         with:
