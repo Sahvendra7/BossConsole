@@ -67,8 +67,14 @@ class UpdateDownloadValidationTest {
     }
 
     /**
-     * Containment is decided on the canonical path, so a symlink *inside* staging
-     * that points outside it is still rejected.
+     * A symlink *inside* staging that points outside it must be rejected.
+     *
+     * This one caught a real Windows-only hole: containment used to compare
+     * `File.getCanonicalPath()`, and on Windows that does not resolve reparse
+     * points (JDK 17's `canonicalize_md.c` has no reparse handling at all), so the
+     * link kept a canonical path inside staging and the escape was accepted. It now
+     * compares `Path.toRealPath()`, which is specified to resolve links on every
+     * platform. macOS/Linux always passed; only the Windows CI leg failed.
      */
     @Test
     fun `a symlink inside staging pointing outside it is rejected`() {
@@ -91,6 +97,32 @@ class UpdateDownloadValidationTest {
             exception.message?.contains("outside the staging directory") == true,
             "A symlink out of staging must fail closed, got: ${exception.message}",
         )
+    }
+
+    /**
+     * Both sides are resolved, not just the artifact: where the staging directory
+     * itself is reached through a symlink - macOS `$TMPDIR` lives under
+     * `/var`, which is a link to `/private/var` - a legitimate download inside it
+     * must still be accepted. Resolving only the file side would reject every
+     * update on those systems.
+     */
+    @Test
+    fun `a legitimate artifact is accepted when the staging directory itself is a symlink`() {
+        val realStaging = File(tempDir.toFile(), "real-staging").also { it.mkdirs() }
+        val linkedStaging = File(tempDir.toFile(), "linked-staging")
+        try {
+            Files.createSymbolicLink(linkedStaging.toPath(), realStaging.toPath())
+        } catch (e: UnsupportedOperationException) {
+            assumeTrue(false, "Filesystem does not support symlinks: ${e.message}")
+        } catch (e: java.io.IOException) {
+            assumeTrue(false, "Could not create a symlink (Windows needs privileges): ${e.message}")
+        }
+        val artifact = File(linkedStaging, "BOSS-9.9.9-Universal.dmg").also { it.writeText("installer") }
+
+        // Staging passed in as the symlink, artifact addressed through it.
+        UpdateInstaller.validateDownloadFile(artifact, ".dmg", linkedStaging)
+        // And with staging passed in as the real directory.
+        UpdateInstaller.validateDownloadFile(artifact, ".dmg", realStaging)
     }
 
     /**

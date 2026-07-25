@@ -9,6 +9,7 @@ import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.nio.file.Paths
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
@@ -101,7 +102,8 @@ object UpdateInstaller {
      *    into a generated shell/batch script
      * 2. Expected extension (.dmg, .msi, .jar, .deb, .rpm)
      * 3. Existence
-     * 4. Canonical containment inside the staging directory
+     * 4. Containment inside the staging directory, decided on the **real** path
+     *    (symlinks resolved)
      *
      * Every failure throws. Previously a canonical path escaping the staging
      * directory, or a filename carrying a dollar sign, a backtick or a semicolon,
@@ -137,34 +139,57 @@ object UpdateInstaller {
             throw SecurityException("Download file does not exist: ${downloadFile.absolutePath}")
         }
 
-        // Canonicalize path to detect directory traversal attempts
-        val canonicalPath =
+        // Resolve BOTH sides to their real paths - symlinks followed - and compare
+        // as paths, not strings.
+        //
+        // File.getCanonicalPath() is not sound for this on Windows: JDK 17's
+        // windows/native/libjava/canonicalize_md.c has no reparse-point handling
+        // at all (it normalises via _wfullpath and fixes casing via
+        // FindFirstFileW), so a symlink inside the staging directory keeps a
+        // canonical path inside the staging directory and the containment check
+        // passed. Current JDKs added a getFinalPath() call, but deliberately
+        // best-effort - "Do not fail if the final path cannot be obtained" -
+        // returning the unresolved path when it fails, which is still no basis for
+        // a security decision. Path.toRealPath() is specified to resolve symbolic
+        // links on every platform and to fail rather than degrade. (java.io.File's
+        // own javadoc points at Path#toRealPath.) Caught by the Windows CI leg.
+        val realPath =
             try {
-                downloadFile.canonicalPath
-            } catch (e: Exception) {
+                downloadFile.toPath().toRealPath()
+            } catch (e: IOException) {
                 logger.warn(
                     LogCategory.SYSTEM,
-                    "Failed to canonicalize downloaded file path - rejecting update file",
+                    "Failed to resolve the real path of the downloaded file - rejecting update file",
                     error = e,
                 )
-                throw SecurityException("Failed to canonicalize path: ${downloadFile.absolutePath}")
+                throw SecurityException("Failed to resolve path: ${downloadFile.absolutePath}", e)
+            }
+        val realStagingDir =
+            try {
+                stagingDir.toPath().toRealPath()
+            } catch (e: IOException) {
+                logger.warn(
+                    LogCategory.SYSTEM,
+                    "Failed to resolve the real path of the staging directory - rejecting update file",
+                    error = e,
+                )
+                throw SecurityException("Failed to resolve staging directory: ${stagingDir.absolutePath}", e)
             }
 
-        // The file must live inside the staging directory it was downloaded to.
-        // Compared with a trailing separator so a sibling directory such as
-        // "boss-updates-evil" cannot satisfy a bare prefix match.
-        val expectedTempDir = stagingDir.canonicalPath
-        if (!canonicalPath.startsWith(expectedTempDir + File.separator)) {
+        // Path.startsWith compares name elements, so a sibling directory such as
+        // "boss-updates-evil" cannot satisfy it the way a string prefix could. The
+        // artifact must also be something *inside* the directory, not the directory.
+        if (realPath == realStagingDir || !realPath.startsWith(realStagingDir)) {
             logger.error(
                 LogCategory.SYSTEM,
                 "Download file escapes the staging directory - rejecting update file",
                 mapOf(
-                    "expected" to expectedTempDir,
-                    "actual" to canonicalPath,
+                    "expected" to realStagingDir.toString(),
+                    "actual" to realPath.toString(),
                 ),
             )
             throw SecurityException(
-                "Download file is outside the staging directory - rejected for security: $canonicalPath",
+                "Download file is outside the staging directory - rejected for security: $realPath",
             )
         }
 
