@@ -1051,7 +1051,7 @@
     <ID>ReturnCount:CrossDeviceAuthService.kt$CrossDeviceAuthService$suspend fun pollForAuthenticationCompletion( challenge: String, sessionId: String? = null, ): Result&lt;PasskeyAuthenticationResult&gt;</ID>
     <ID>ReturnCount:DeepLinkHandler.kt$DeepLinkHandler$actual fun extractVerificationToken(uri: String): String?</ID>
     <ID>ReturnCount:DeepLinkHandler.kt$DeepLinkHandler$actual fun extractVerificationType(uri: String): String?</ID>
-    <ID>ReturnCount:DeepLinkHandler.kt$DeepLinkHandler$private fun handleFolderLink( uri: String, targetWindowId: String?, )</ID>
+    <ID>ReturnCount:DeepLinkHandler.kt$DeepLinkHandler$private fun handlePluginLink( uri: String, targetWindowId: String?, )</ID>
     <ID>ReturnCount:DefaultPlugin.kt$ApiActiveTabsProviderAdapter$override fun getFaviconCacheKey(tabId: String): String?</ID>
     <ID>ReturnCount:DefaultPlugin.kt$ApiActiveTabsProviderAdapter$override fun getTabUrl(tabId: String): String?</ID>
     <ID>ReturnCount:DesktopBrowserAccessor.kt$BrowserAccessor$actual fun getActiveBrowserIntegration(): BrowserIntegration?</ID>
