@@ -15,12 +15,14 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import ai.rever.boss.ipc.proto.DiffOperation as ProtoDiffOp
 
 /**
  * The rendezvous rules that let a surface's two halves start, stop and restart independently.
@@ -263,6 +265,70 @@ class RemoteUiSurfaceRegistryTest {
     }
 
     @Test
+    fun `a diff whose base version does not match keeps the local numbering so the next one trips too`() {
+        // Adopting the sender's newVersion after a divergence would make every SUBSEQUENT base_version
+        // check pass, and the surface would be permanently, invisibly wrong. "The next full tree repairs
+        // it" is no comfort to a plugin that sends one full tree and then only diffs — the steady state.
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        surface.pushTree(tree("before").copy(version = 4))
+
+        surface.applyUpdate(diffUpdate("after", baseVersion = 9, newVersion = 10))
+
+        assertEquals("after", surface.tree?.label(), "still applied — refusing would freeze the surface")
+        assertEquals(5L, surface.tree?.version, "but the sender's numbering is not adopted")
+    }
+
+    @Test
+    fun `a diff carrying operations this build cannot decode keeps the local numbering`() {
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        surface.pushTree(tree("before").copy(version = 4))
+
+        // A structural op that cannot be decoded cannot be reconstructed from its neighbours, so the tree
+        // below is knowingly not the plugin's — and must not claim to be at the plugin's version.
+        val undecodable =
+            diffUpdate("after", baseVersion = 4, newVersion = 5)
+                .toBuilder()
+                .apply { diffBuilder.addOperations(ProtoDiffOp.getDefaultInstance()) }
+                .build()
+        surface.applyUpdate(undecodable)
+
+        assertEquals("after", surface.tree?.label())
+        assertEquals(5L, surface.tree?.version)
+        assertEquals(4L + 1, surface.tree?.version, "local increment, not the sender's newVersion")
+    }
+
+    @Test
+    fun `a reclaimed surface cannot publish over the one that replaced it`() {
+        // claim() installs the replacement before closing what it reclaimed, and the publish lock is
+        // per-instance — so without an ownership check a predecessor's close() could report "disconnected"
+        // after its successor had already reported a live stream, with trees still arriving.
+        val host = RecordingHost()
+        registry.attach(SURFACE, host)
+        val abandoned = registry.register(SURFACE, PROCESS).accepted()
+        val replacement = registry.register(SURFACE, PROCESS).accepted()
+        assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
+        val connectionsAfterHandover = host.connections.toList()
+
+        abandoned.pushTree(tree("from-the-dead-one"))
+
+        assertTrue(host.trees.isEmpty(), "a replaced surface must not publish")
+        assertEquals(connectionsAfterHandover, host.connections, "nor report the connection state")
+        replacement.pushTree(tree("from-the-live-one"))
+        assertEquals(listOf("from-the-live-one"), host.trees.map { it.label() })
+    }
+
+    @Test
+    fun `a surface refuses a second event consumer`() {
+        // Two consumers would each drain part of the queue, splitting one ordered event sequence.
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        surface.events()
+
+        val failure = assertFailsWith<IllegalStateException> { surface.events() }
+
+        assertContains(failure.message.orEmpty(), SURFACE)
+    }
+
+    @Test
     fun `a diff arriving before any full tree is dropped rather than applied to nothing`() {
         val host = RecordingHost()
         registry.attach(SURFACE, host)
@@ -337,6 +403,20 @@ class RemoteUiSurfaceRegistryTest {
         )
 
     private fun WidgetTree.label(): String? = nodes[NODE]?.properties?.get("label")
+
+    private fun diffUpdate(
+        label: String,
+        baseVersion: Long,
+        newVersion: Long,
+    ): WidgetUpdate =
+        WidgetUpdate
+            .newBuilder()
+            .setSurfaceId(SURFACE)
+            .setDiff(
+                listOf<DiffOperation>(
+                    DiffOperation.NodeUpdated(NODE, mapOf("label" to label), null),
+                ).toProtoDiff(baseVersion, newVersion),
+            ).build()
 
     private fun textChange(value: String): UIEvent =
         UIEvent

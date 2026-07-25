@@ -1,6 +1,6 @@
 package ai.rever.boss.ui.sdk
 
-import ai.rever.boss.ui.sdk.WidgetProtoConverter.toDiffOperations
+import ai.rever.boss.ui.sdk.WidgetProtoConverter.decodeOperations
 import ai.rever.boss.ui.sdk.WidgetProtoConverter.toProtoDiff
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -43,9 +43,10 @@ class WidgetDiffWireTest {
                 DiffOperation.NodeMoved("moved", "new-parent", 1),
             )
 
-        val decoded = operations.toProtoDiff(baseVersion = 7, newVersion = 8).toDiffOperations()
+        val decoded = operations.toProtoDiff(baseVersion = 7, newVersion = 8).decodeOperations()
 
-        assertEquals(operations, decoded)
+        assertEquals(operations, decoded.operations)
+        assertEquals(0, decoded.skipped)
     }
 
     @Test
@@ -54,7 +55,7 @@ class WidgetDiffWireTest {
         // reset a node's whole layout on every property-only update.
         val operations = listOf<DiffOperation>(DiffOperation.NodeUpdated("n", mapOf("value" to "x"), null))
 
-        val decoded = operations.toDiffOperations(baseVersion = 1, newVersion = 2).single()
+        val decoded = operations.roundTrip(baseVersion = 1, newVersion = 2).operations.single()
 
         assertNull((decoded as DiffOperation.NodeUpdated).newModifier)
     }
@@ -78,9 +79,10 @@ class WidgetDiffWireTest {
                     listOf<DiffOperation>(DiffOperation.NodeRemoved("real")).toProtoDiff(0, 0).getOperations(0),
                 ).build()
 
-        val decoded = diff.toDiffOperations()
+        val decoded = diff.decodeOperations()
 
-        assertEquals(listOf<DiffOperation>(DiffOperation.NodeRemoved("real")), decoded)
+        assertEquals(listOf<DiffOperation>(DiffOperation.NodeRemoved("real")), decoded.operations)
+        assertEquals(1, decoded.skipped, "a caller must be able to see that the tree may now diverge")
     }
 
     @Test
@@ -104,14 +106,14 @@ class WidgetDiffWireTest {
             }
 
         val wire = WidgetDiffEngine.diff(before, after).toProtoDiff(before.version, after.version)
-        val applied = WidgetDiffEngine.apply(before, wire.toDiffOperations())
+        val applied = WidgetDiffEngine.apply(before, wire.decodeOperations().operations)
 
         assertEquals(after.nodes, applied.nodes)
         assertTrue(wire.operationsCount > 0, "a changed tree must produce operations")
     }
 
-    private fun List<DiffOperation>.toDiffOperations(
+    private fun List<DiffOperation>.roundTrip(
         baseVersion: Long,
         newVersion: Long,
-    ): List<DiffOperation> = toProtoDiff(baseVersion, newVersion).toDiffOperations()
+    ): DecodedWidgetDiff = toProtoDiff(baseVersion, newVersion).decodeOperations()
 }

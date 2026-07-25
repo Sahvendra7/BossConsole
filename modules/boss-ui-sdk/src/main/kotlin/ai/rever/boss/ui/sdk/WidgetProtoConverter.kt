@@ -11,6 +11,20 @@ import ai.rever.boss.ipc.proto.WidgetNode as ProtoWidgetNode
 import ai.rever.boss.ipc.proto.WidgetTree as ProtoWidgetTree
 import ai.rever.boss.ipc.proto.WidgetType as ProtoWidgetType
 
+/**
+ * A wire diff read back into SDK operations.
+ *
+ * @property skipped operations whose `oneof` was unset — a sender built against a newer proto, or a
+ *   malformed one. **Non-zero means the receiver's tree may now differ structurally from the sender's**:
+ *   a dropped `NodeAdded` or `NodeRemoved` cannot be reconstructed from the operations around it, so a
+ *   caller that applies the rest should stop trusting its own version numbering rather than pretend the
+ *   diff landed whole.
+ */
+data class DecodedWidgetDiff(
+    val operations: List<DiffOperation>,
+    val skipped: Int,
+)
+
 object WidgetProtoConverter {
     fun WidgetTree.toProto(): ProtoWidgetTree =
         ProtoWidgetTree
@@ -35,39 +49,52 @@ object WidgetProtoConverter {
      * why the host transport only ever handled full trees. Operations whose `oneof` is unset are
      * skipped rather than guessed at — a sender built against a newer proto is not a reason to
      * misapply the ops around it.
+     *
+     * The skipped count is returned rather than swallowed: a dropped `NodeAdded` or `NodeRemoved` leaves
+     * the receiver's tree structurally different from the sender's, and a caller that cannot see that
+     * happened has no way to stop trusting its own copy.
      */
-    fun ProtoWidgetDiff.toDiffOperations(): List<DiffOperation> =
-        operationsList.mapNotNull { op ->
-            when (op.opCase) {
-                ProtoDiffOp.OpCase.ADDED -> {
-                    DiffOperation.NodeAdded(op.added.node.toKotlin(), op.added.parentId, op.added.index)
-                }
+    fun ProtoWidgetDiff.decodeOperations(): DecodedWidgetDiff {
+        // Inlined rather than a named helper: WidgetProtoConverter sits one function below detekt's
+        // TooManyFunctions threshold for objects, and splitting the whole converter to name this would
+        // trade a real seam for a cosmetic one.
+        val decoded: List<DiffOperation?> =
+            operationsList.map { op ->
+                when (op.opCase) {
+                    ProtoDiffOp.OpCase.ADDED -> {
+                        DiffOperation.NodeAdded(op.added.node.toKotlin(), op.added.parentId, op.added.index)
+                    }
 
-                ProtoDiffOp.OpCase.REMOVED -> {
-                    DiffOperation.NodeRemoved(op.removed.nodeId)
-                }
+                    ProtoDiffOp.OpCase.REMOVED -> {
+                        DiffOperation.NodeRemoved(op.removed.nodeId)
+                    }
 
-                ProtoDiffOp.OpCase.UPDATED -> {
-                    DiffOperation.NodeUpdated(
-                        nodeId = op.updated.nodeId,
-                        changedProperties = op.updated.changedPropertiesMap.toMap(),
-                        // `NodeUpdated.modifier` documents "null = no change", and proto3 message presence
-                        // is the only thing that distinguishes that from "reset every field to its
-                        // default" — reading the field unconditionally would silently wipe a node's
-                        // layout on any property-only update.
-                        newModifier = if (op.updated.hasModifier()) op.updated.modifier.toKotlin() else null,
-                    )
-                }
+                    ProtoDiffOp.OpCase.UPDATED -> {
+                        DiffOperation.NodeUpdated(
+                            nodeId = op.updated.nodeId,
+                            changedProperties = op.updated.changedPropertiesMap.toMap(),
+                            // `NodeUpdated.modifier` documents "null = no change", and proto3 message presence
+                            // is the only thing that distinguishes that from "reset every field to its
+                            // default" — reading the field unconditionally would silently wipe a node's
+                            // layout on any property-only update.
+                            newModifier = if (op.updated.hasModifier()) op.updated.modifier.toKotlin() else null,
+                        )
+                    }
 
-                ProtoDiffOp.OpCase.MOVED -> {
-                    DiffOperation.NodeMoved(op.moved.nodeId, op.moved.newParentId, op.moved.newIndex)
-                }
+                    ProtoDiffOp.OpCase.MOVED -> {
+                        DiffOperation.NodeMoved(op.moved.nodeId, op.moved.newParentId, op.moved.newIndex)
+                    }
 
-                ProtoDiffOp.OpCase.OP_NOT_SET, null -> {
-                    null
+                    ProtoDiffOp.OpCase.OP_NOT_SET, null -> {
+                        null
+                    }
                 }
             }
-        }
+        return DecodedWidgetDiff(
+            operations = decoded.filterNotNull(),
+            skipped = decoded.count { it == null },
+        )
+    }
 
     private fun ProtoWidgetNode.toKotlin(): WidgetNode =
         WidgetNode(

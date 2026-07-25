@@ -11,6 +11,9 @@ import ai.rever.boss.ipc.proto.WidgetType
 import ai.rever.boss.ipc.proto.WidgetUpdate
 import ai.rever.boss.kernel.ui.RemoteUiSurfaceHost
 import ai.rever.boss.kernel.ui.RemoteUiSurfaceRegistry
+import ai.rever.boss.kernel.ui.SurfaceRegistration
+import ai.rever.boss.ui.sdk.DiffOperation
+import ai.rever.boss.ui.sdk.WidgetProtoConverter.toProtoDiff
 import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
 import io.grpc.Server
@@ -37,6 +40,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ai.rever.boss.ipc.proto.WidgetTree as ProtoWidgetTree
@@ -225,6 +229,103 @@ class PluginUIServiceBridgeTest {
         }
 
     @Test
+    fun `a plugin that dies right after binding leaves no stuck claim behind`() =
+        runBlocking {
+            // The claim happens inside the request pump, so a `finally` guarding only the event collection
+            // missed it: an RPC cancelled between `openStream()` returning Bound and the response side
+            // resuming from `await()` left the surface streaming forever — the component reading
+            // *connected* for a dead plugin, and every respawn refused for the rest of the session, since
+            // reclaiming only takes over surfaces that are not streaming.
+            //
+            // Which side of the `await()` the cancellation lands on is not forceable from out here, so the
+            // assertion is the invariant rather than the interleaving: after the plugin is gone, nothing
+            // is left claiming a stream and the id is usable again.
+            assertTrue(plugin.registerUI(registration(PANEL)).success)
+            val updates = Channel<WidgetUpdate>(Channel.UNLIMITED)
+
+            coroutineScope {
+                val stream = holdStream(updates)
+                updates.send(fullTree(PANEL))
+                awaitTrue { registry.surfaceOf(PANEL)?.streaming == true }
+                channel.shutdownNow()
+                stream.join()
+            }
+
+            awaitTrue { registry.surfaceOf(PANEL)?.streaming != true }
+            assertIs<SurfaceRegistration.Accepted>(registry.register(PANEL, "plugin-a"))
+        }
+
+    @Test
+    fun `a diff sent over the wire is applied to the surface's tree`() =
+        runBlocking {
+            // Diffs are the intended steady state after the first full tree, and until this PR the host
+            // could not decode one at all. Exercised over the wire, not just through applyUpdate.
+            val host = RecordingHost()
+            registry.attach(PANEL, host)
+            assertTrue(plugin.registerUI(registration(PANEL)).success)
+            val updates = Channel<WidgetUpdate>(Channel.UNLIMITED)
+
+            coroutineScope {
+                val stream = holdStream(updates)
+                updates.send(fullTree(PANEL, label = "Save"))
+                awaitTrue { host.trees.isNotEmpty() }
+
+                updates.send(
+                    WidgetUpdate
+                        .newBuilder()
+                        .setSurfaceId(PANEL)
+                        .setDiff(
+                            listOf<DiffOperation>(
+                                DiffOperation.NodeUpdated(BUTTON_NODE, mapOf("label" to "Saving…"), null),
+                            ).toProtoDiff(baseVersion = 1, newVersion = 2),
+                        ).build(),
+                )
+
+                awaitTrue { host.trees.size > 1 }
+                assertEquals(
+                    "Saving…",
+                    host.trees
+                        .last()
+                        .nodes
+                        .getValue(BUTTON_NODE)
+                        .properties["label"],
+                )
+                assertEquals(2L, registry.surfaceOf(PANEL)?.tree?.version)
+                stream.cancel()
+            }
+        }
+
+    @Test
+    fun `an update naming a surface this stream is not bound to is ignored`() =
+        runBlocking {
+            // One call, one surface. A second surface_id on the same stream must not reach the other
+            // surface — that would be the cross-delivery the per-surface routing exists to prevent.
+            val panelHost = RecordingHost()
+            val tabHost = RecordingHost()
+            registry.attach(PANEL, panelHost)
+            registry.attach(TAB, tabHost)
+            assertTrue(plugin.registerUI(registration(PANEL)).success)
+            assertTrue(plugin.registerUI(registration(TAB)).success)
+            val updates = Channel<WidgetUpdate>(Channel.UNLIMITED)
+
+            coroutineScope {
+                val stream = holdStream(updates)
+                updates.send(fullTree(PANEL, label = "Mine"))
+                awaitTrue { panelHost.trees.isNotEmpty() }
+
+                updates.send(fullTree(TAB, label = "Not mine"))
+                // The stream stays healthy — the stray update is dropped, not fatal.
+                updates.send(fullTree(PANEL, label = "Still mine"))
+                awaitTrue { panelHost.trees.size > 1 }
+
+                assertEquals(listOf("Mine", "Still mine"), panelHost.trees.map { it.label() })
+                assertTrue(tabHost.trees.isEmpty(), "the other surface must not have been written to")
+                assertNull(registry.surfaceOf(TAB)?.tree)
+                stream.cancel()
+            }
+        }
+
+    @Test
     fun `a duplicate surface id is rejected and says why`() =
         runBlocking {
             assertTrue(plugin.registerUI(registration(PANEL, process = "plugin-a")).success)
@@ -348,6 +449,8 @@ class PluginUIServiceBridgeTest {
         launch {
             runCatching { plugin.streamUI(updates.consumeAsFlow()).toList() }
         }
+
+    private fun SdkWidgetTree.label(): String? = nodes[BUTTON_NODE]?.properties?.get("label")
 
     /** Poll until [condition] holds. The host applies inbound updates on a gRPC thread. */
     private suspend fun awaitTrue(condition: () -> Boolean) {

@@ -5,7 +5,7 @@ import ai.rever.boss.ipc.proto.WidgetUpdate
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import ai.rever.boss.ui.sdk.WidgetDiffEngine
-import ai.rever.boss.ui.sdk.WidgetProtoConverter.toDiffOperations
+import ai.rever.boss.ui.sdk.WidgetProtoConverter.decodeOperations
 import ai.rever.boss.ui.sdk.WidgetProtoConverter.toKotlin
 import ai.rever.boss.ui.sdk.WidgetTree
 import kotlinx.coroutines.channels.BufferOverflow
@@ -47,8 +47,15 @@ class RemoteUiSurface internal constructor(
      * later for data it already carries.
      */
     val descriptor: RemoteUiSurfaceDescriptor = RemoteUiSurfaceDescriptor(),
-    private val publishTree: (WidgetTree) -> Unit,
-    private val publishConnected: (Boolean) -> Unit,
+    /**
+     * Deliver to whichever host component currently owns this surface's id.
+     *
+     * Both take the surface as their first argument so the registry can drop a publication from a surface
+     * that has already been replaced — a reclaimed predecessor's `close()` would otherwise report
+     * "disconnected" over its successor's live stream.
+     */
+    private val publishTree: (RemoteUiSurface, WidgetTree) -> Unit,
+    private val publishConnected: (RemoteUiSurface, Boolean) -> Unit,
 ) {
     /**
      * Serializes publication against a host component attaching.
@@ -88,6 +95,7 @@ class RemoteUiSurface internal constructor(
 
     private val streamClaimed = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
+    private val eventsTaken = AtomicBoolean(false)
     private val buffered = AtomicInteger(0)
     private val shed = AtomicLong(0)
 
@@ -119,7 +127,7 @@ class RemoteUiSurface internal constructor(
      */
     internal fun claimStream(): Boolean {
         val claimed = streamClaimed.compareAndSet(false, true)
-        if (claimed) synchronized(publishLock) { publishConnected(true) }
+        if (claimed) synchronized(publishLock) { publishConnected(this, true) }
         return claimed
     }
 
@@ -136,8 +144,19 @@ class RemoteUiSurface internal constructor(
         }
     }
 
-    /** The outgoing event stream. Consumable exactly once — see [claimStream]. */
-    internal fun events(): Flow<UIEvent> = outgoing.consumeAsFlow().onEach { buffered.decrementAndGet() }
+    /**
+     * The outgoing event stream, consumable exactly once.
+     *
+     * Enforced here rather than left to [claimStream]'s convention: a second consumer would drain part of
+     * [outgoing] and split one ordered event sequence across two readers, which is the failure the queue
+     * exists to prevent, and the underlying channel's own error for that says nothing about surfaces.
+     */
+    internal fun events(): Flow<UIEvent> {
+        check(eventsTaken.compareAndSet(false, true)) {
+            "surface '$surfaceId' already has an event consumer — one StreamUI call per surface"
+        }
+        return outgoing.consumeAsFlow().onEach { buffered.decrementAndGet() }
+    }
 
     /**
      * Queue one user event for the plugin.
@@ -172,7 +191,7 @@ class RemoteUiSurface internal constructor(
     internal fun pushTree(next: WidgetTree) {
         synchronized(publishLock) {
             tree = next
-            publishTree(next)
+            publishTree(this, next)
         }
     }
 
@@ -215,7 +234,7 @@ class RemoteUiSurface internal constructor(
         if (!closed.compareAndSet(false, true)) return
         outgoing.close()
         streamClaimed.set(false)
-        synchronized(publishLock) { publishConnected(false) }
+        synchronized(publishLock) { publishConnected(this, false) }
     }
 
     private fun applyDiff(diff: ProtoWidgetDiff) {
@@ -230,19 +249,34 @@ class RemoteUiSurface internal constructor(
             )
             return
         }
-        if (diff.baseVersion != 0L && diff.baseVersion != base.version) {
-            // Best-effort rather than fatal: refusing would freeze the surface permanently, whereas the
-            // next full tree from the plugin repairs whatever this misapplies.
+        val stale = diff.baseVersion != 0L && diff.baseVersion != base.version
+        if (stale) {
+            // Best-effort rather than fatal: refusing would freeze the surface permanently, whereas any
+            // later full tree from the plugin repairs whatever this misapplies.
             logger.warn(
                 LogCategory.UI,
                 "Widget diff base version does not match the surface's tree — applying anyway",
                 mapOf("surfaceId" to surfaceId, "expected" to base.version, "actual" to diff.baseVersion),
             )
         }
-        val applied = WidgetDiffEngine.apply(base, diff.toDiffOperations())
-        // WidgetDiffEngine bumps the version by one; honour the sender's numbering when it supplied
-        // some, so the next diff's base_version check compares against what the plugin believes.
-        pushTree(if (diff.newVersion != 0L) applied.copy(version = diff.newVersion) else applied)
+        val decoded = diff.decodeOperations()
+        if (decoded.skipped > 0) {
+            // Structural ops that could not be decoded cannot be reconstructed from their neighbours, so
+            // the tree below is knowingly not the one the plugin has.
+            logger.warn(
+                LogCategory.UI,
+                "Widget diff contained operations this build cannot decode — the tree may now diverge",
+                mapOf("surfaceId" to surfaceId, "skipped" to decoded.skipped, "applied" to decoded.operations.size),
+            )
+        }
+        val applied = WidgetDiffEngine.apply(base, decoded.operations)
+        // WidgetDiffEngine bumps the version by one; adopt the sender's numbering only when we believe we
+        // applied the diff faithfully. Adopting it after a divergence would make every SUBSEQUENT
+        // base_version check pass and the surface permanently, invisibly wrong — and "the next full tree
+        // repairs it" is no comfort to a plugin that sends one full tree and then only diffs, which is
+        // the intended steady state. Keeping the local version instead makes the next diff trip too.
+        val faithful = !stale && decoded.skipped == 0
+        pushTree(if (faithful && diff.newVersion != 0L) applied.copy(version = diff.newVersion) else applied)
     }
 
     companion object {

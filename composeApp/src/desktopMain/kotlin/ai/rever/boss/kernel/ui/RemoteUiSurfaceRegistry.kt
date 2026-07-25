@@ -58,6 +58,26 @@ sealed interface SurfaceStream {
 }
 
 /**
+ * Whether [surface] may still publish under its id, given the currently registered surfaces.
+ *
+ * `claim()` installs a replacement *before* closing the surface it reclaimed, and the publish lock is
+ * per-instance, so those two do not serialize against each other: without this check a predecessor's
+ * `close()` could announce "disconnected" *after* its successor had already announced a live stream,
+ * leaving the component reading disconnected while trees kept arriving.
+ *
+ * A surface whose id is now **free** still publishes — that is `closeStream`'s remove-then-close order
+ * delivering the legitimate "your plugin died" notice, and suppressing it would recreate the frozen
+ * surface this transport exists to avoid.
+ *
+ * A file-level predicate rather than a member: it needs nothing but the map, and reads as a question
+ * about the map.
+ */
+private fun Map<String, RemoteUiSurface>.stillOwnedBy(surface: RemoteUiSurface): Boolean {
+    val current = this[surface.surfaceId]
+    return current == null || current === surface
+}
+
+/**
  * Directory of live remote UI surfaces, and the seam the two sides of a surface meet at.
  *
  * The problem this solves is that a surface's two halves start independently: the plugin process
@@ -104,8 +124,12 @@ class RemoteUiSurfaceRegistry {
                 surfaceId = surfaceId,
                 processId = processId,
                 descriptor = descriptor,
-                publishTree = { tree -> hosts[surfaceId]?.onTreeUpdated(tree) },
-                publishConnected = { connected -> hosts[surfaceId]?.onConnectionChanged(connected) },
+                publishTree = { from, tree ->
+                    if (surfaces.stillOwnedBy(from)) hosts[surfaceId]?.onTreeUpdated(tree)
+                },
+                publishConnected = { from, connected ->
+                    if (surfaces.stillOwnedBy(from)) hosts[surfaceId]?.onConnectionChanged(connected)
+                },
             )
         val stale = claim(surfaceId, created)
         return if (stale != null) {

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Kernel-side implementation of `PluginUIService` — the transport that makes out-of-process plugin UI
@@ -85,10 +86,19 @@ class PluginUIServiceBridge(
     override fun streamUI(requests: Flow<WidgetUpdate>): Flow<UIEvent> =
         channelFlow {
             val bound = CompletableDeferred<RemoteUiSurface>()
-            val pump = launch { pumpUpdates(requests, bound) }
-            // Throws the StatusException the pump resolved this with when the id is unusable.
-            val surface = bound.await()
+            // Written by the pump the instant it claims, and read by the finally below. The claim happens
+            // inside the pump, so a `finally` guarding only the collect would miss it: an RPC cancelled
+            // between `openStream()` returning Bound and this coroutine resuming from `await()` would
+            // leave the surface in the registry with `streaming == true` forever — the component reading
+            // *connected* for a dead plugin, and every respawn's RegisterUI refused for the rest of the
+            // session, because the reclaim rule only takes over claims that are not streaming. That is
+            // precisely the frozen-not-disconnected state this transport exists to avoid, and it is the
+            // likeliest crash: a plugin dying right after its first WidgetUpdate.
+            val claimed = AtomicReference<RemoteUiSurface>(null)
+            val pump = launch { pumpUpdates(requests, bound, claimed) }
             try {
+                // Throws the StatusException the pump resolved this with when the id is unusable.
+                val surface = bound.await()
                 // One collector for one queue: this is the hop that turns interaction order into wire
                 // order, so it must stay single — see RemoteUiSurface.claimStream.
                 surface.events().collect { event -> send(event) }
@@ -99,7 +109,8 @@ class PluginUIServiceBridge(
                 // never ended, so `UnregisterUI` looked like it had silently frozen the stream. The
                 // surface is gone by now, so there is nothing left for the pump to route.
                 pump.cancel()
-                registry.closeStream(surface)
+                // Safe to reach twice — closeStream removes by identity and close() is idempotent.
+                claimed.get()?.let(registry::closeStream)
             }
         }
 
@@ -125,6 +136,7 @@ class PluginUIServiceBridge(
     private suspend fun pumpUpdates(
         requests: Flow<WidgetUpdate>,
         bound: CompletableDeferred<RemoteUiSurface>,
+        claimed: AtomicReference<RemoteUiSurface>,
     ) {
         var surface: RemoteUiSurface? = null
         var refused = false
@@ -148,6 +160,9 @@ class PluginUIServiceBridge(
                         when (val opened = registry.openStream(update.surfaceId)) {
                             is SurfaceStream.Bound -> {
                                 surface = opened.surface
+                                // Recorded before anything can suspend, so the claim is never held by a
+                                // coroutine that no longer has a way to release it.
+                                claimed.set(opened.surface)
                                 bound.complete(opened.surface)
                                 opened.surface.applyUpdate(update)
                             }
@@ -171,8 +186,10 @@ class PluginUIServiceBridge(
                     "Plugin widget-update stream ended abnormally",
                     mapOf("surfaceId" to surface?.surfaceId, "error" to cause.message),
                 )
-            }.onCompletion {
-                if (surface == null && !refused) {
+            }.onCompletion { cause ->
+                // Only when the stream ended of its own accord: a cancellation is not an unbindable
+                // stream, and reporting it as one puts a misleading status on a dead RPC.
+                if (cause == null && surface == null && !refused) {
                     bound.completeExceptionally(
                         StatusException(Status.INVALID_ARGUMENT.withDescription(UNIDENTIFIED_STREAM)),
                     )
