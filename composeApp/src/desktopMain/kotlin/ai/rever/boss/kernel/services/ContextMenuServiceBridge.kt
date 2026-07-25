@@ -2,7 +2,8 @@ package ai.rever.boss.kernel.services
 
 import ai.rever.boss.ipc.proto.Empty
 import ai.rever.boss.ipc.proto.services.*
-import org.slf4j.LoggerFactory
+import ai.rever.boss.plugin.logging.BossLogger
+import ai.rever.boss.plugin.logging.LogCategory
 
 /**
  * Kernel-side stub for `ContextMenuService` — **intentionally passive**.
@@ -46,17 +47,23 @@ import org.slf4j.LoggerFactory
 class ContextMenuServiceBridge : ContextMenuServiceGrpcKt.ContextMenuServiceCoroutineImplBase() {
     override suspend fun registerContextMenu(request: RegisterContextMenuRequest): Empty {
         logger.debug(
-            "Dropping context menu registration (host does not render OOP context menus, issue #30): " +
-                "id={}, node={}, items={}",
-            request.contextMenuId,
-            request.nodeId,
-            request.itemsCount,
+            LogCategory.SYSTEM,
+            "Dropping context menu registration — the host does not render out-of-process context menus (issue #30)",
+            mapOf(
+                "contextMenuId" to request.contextMenuId,
+                "nodeId" to request.nodeId,
+                "items" to request.itemsCount,
+            ),
         )
         return Empty.getDefaultInstance()
     }
 
     override suspend fun unregisterContextMenu(request: ContextMenuIdRequest): Empty {
-        logger.debug("Ignoring context menu unregistration (nothing was registered): id={}", request.contextMenuId)
+        logger.debug(
+            LogCategory.SYSTEM,
+            "Ignoring context menu unregistration — nothing was registered",
+            mapOf("contextMenuId" to request.contextMenuId),
+        )
         return Empty.getDefaultInstance()
     }
 
@@ -65,14 +72,14 @@ class ContextMenuServiceBridge : ContextMenuServiceGrpcKt.ContextMenuServiceCoro
         // ever fires, a plugin is calling the RPC by hand — see the class KDoc for
         // why the kernel cannot route it anywhere.
         logger.debug(
-            "Ignoring context menu action (host renders no OOP context menus): id={}, action={}",
-            request.contextMenuId,
-            request.actionId,
+            LogCategory.SYSTEM,
+            "Ignoring context menu action — the host renders no out-of-process context menus",
+            mapOf("contextMenuId" to request.contextMenuId, "actionId" to request.actionId),
         )
         return Empty.getDefaultInstance()
     }
 
     private companion object {
-        private val logger = LoggerFactory.getLogger(ContextMenuServiceBridge::class.java)
+        val logger = BossLogger.forComponent("ContextMenuServiceBridge")
     }
 }
