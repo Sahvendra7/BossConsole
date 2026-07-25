@@ -158,6 +158,28 @@ class FullscreenBrowserWindowTest {
     }
 
     @Test
+    fun `same browser re-entry resumes a session with an exit pending`() {
+        assertTrue(
+            FullscreenRequestDecision.shouldResumeAfterDuplicateRequest(
+                decision = FullscreenRequestDecision.IGNORE_DUPLICATE,
+                isExiting = true,
+            ),
+        )
+        assertFalse(
+            FullscreenRequestDecision.shouldResumeAfterDuplicateRequest(
+                decision = FullscreenRequestDecision.IGNORE_DUPLICATE,
+                isExiting = false,
+            ),
+        )
+        assertFalse(
+            FullscreenRequestDecision.shouldResumeAfterDuplicateRequest(
+                decision = FullscreenRequestDecision.BEGIN,
+                isExiting = true,
+            ),
+        )
+    }
+
+    @Test
     fun `exit callback gate suppresses duplicates until a new session begins`() {
         val gate = FullscreenExitCallbackGate<String>()
         var notifications = 0

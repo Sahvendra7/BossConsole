@@ -87,6 +87,14 @@ internal enum class FullscreenRequestDecision {
     REJECT_CLOSED,
     REJECT_COMPETING,
     BEGIN,
+    ;
+
+    companion object {
+        fun shouldResumeAfterDuplicateRequest(
+            decision: FullscreenRequestDecision,
+            isExiting: Boolean,
+        ): Boolean = decision == IGNORE_DUPLICATE && isExiting
+    }
 }
 
 internal fun fullscreenRequestDecision(
@@ -411,6 +419,14 @@ private class FullscreenOverlayCoordinator(
         val hostWindow = ownerWindowId?.let(WindowFocusManager::getWindow) ?: return
         val listener =
             object : WindowAdapter() {
+                override fun windowLostFocus(event: WindowEvent?) {
+                    if (isCurrentFrameOverlay(frame)) {
+                        // If the overlay never acquired focus, its own listener cannot
+                        // observe app deactivation. The owner still can, so unpin here too.
+                        frame.isAlwaysOnTop = false
+                    }
+                }
+
                 override fun windowGainedFocus(event: WindowEvent?) {
                     restoreOverlayLevel(frame)
                 }
@@ -500,6 +516,7 @@ object FullscreenBrowserWindow {
     private var hasReachedFullscreen = false // True only after fullscreen animation completes
     private var usesNativeMacOSFullscreen = false
     private var isExiting = false // Prevent multiple exit calls
+    private var pageExitFallbackTimer: Timer? = null
     private var lifecycleEpoch = 0L
     private val exitCallbackGate = FullscreenExitCallbackGate<Browser>()
     private val videoFullscreenTracker =
@@ -592,7 +609,17 @@ object FullscreenBrowserWindow {
             }
         when (decision) {
             FullscreenRequestDecision.IGNORE_DUPLICATE -> {
-                logger.debug(LogCategory.BROWSER, "Ignoring duplicate fullscreen request from active browser")
+                if (FullscreenRequestDecision.shouldResumeAfterDuplicateRequest(decision, isExiting)) {
+                    pageExitFallbackTimer?.stop()
+                    pageExitFallbackTimer = null
+                    isExiting = false
+                    logger.info(
+                        LogCategory.BROWSER,
+                        "Keeping fullscreen active after browser re-entered during pending exit",
+                    )
+                } else {
+                    logger.debug(LogCategory.BROWSER, "Ignoring duplicate fullscreen request from active browser")
+                }
             }
 
             FullscreenRequestDecision.REJECT_CLOSED -> {
@@ -1048,6 +1075,8 @@ object FullscreenBrowserWindow {
         hasReachedFullscreen = false
         usesNativeMacOSFullscreen = false
         isExiting = false
+        pageExitFallbackTimer?.stop()
+        pageExitFallbackTimer = null
         return lifecycleEpoch
     }
 
@@ -1139,18 +1168,20 @@ object FullscreenBrowserWindow {
             return
         }
 
-        Timer(PAGE_EXIT_EVENT_TIMEOUT_MS) {
-            if (lifecycleEpoch == exitEpoch &&
-                currentBrowser === browser &&
-                isInFullscreenMode
-            ) {
-                logger.warn(LogCategory.BROWSER, "Browser fullscreen exit event timed out; closing host window")
-                performExitDirect()
+        pageExitFallbackTimer =
+            Timer(PAGE_EXIT_EVENT_TIMEOUT_MS) {
+                if (lifecycleEpoch == exitEpoch &&
+                    currentBrowser === browser
+                ) {
+                    if (isInFullscreenMode && isExiting) {
+                        logger.warn(LogCategory.BROWSER, "Browser fullscreen exit event timed out; closing host window")
+                        performExitDirect()
+                    }
+                }
+            }.apply {
+                isRepeats = false
+                start()
             }
-        }.apply {
-            isRepeats = false
-            start()
-        }
     }
 
     /** Requests exit only if fullscreen belongs to this browser, without blocking its callback thread. */
