@@ -188,6 +188,23 @@ fun main(args: Array<String>) {
     Runtime.getRuntime().addShutdownHook(
         Thread {
             try {
+                // Save "Last Session" for the exits that never dispose a Compose
+                // composition, so the window-dispose save never runs: macOS
+                // app-menu Quit / Cmd+Q (the JDK's default QuitStrategy is
+                // NORMAL_EXIT, i.e. System.exit(0) - see com.apple.eawt
+                // ._AppEventHandler, and nothing here opts into
+                // CLOSE_ALL_WINDOWS), ApplicationRestarter's exitProcess paths
+                // (including quit-for-update), and SIGTERM.
+                //
+                // Runs first in the hook: window state is still live here, and
+                // BossLogger is shut down further down. No-op when a window
+                // dispose already saved this session (#19).
+                ai.rever.boss.app.LastSessionCoordinator.instance
+                    .saveOnProcessExit()
+            } catch (e: Exception) {
+                System.err.println("Error saving Last Session on exit: ${e.message}")
+            }
+            try {
                 // Stop performance monitoring to cancel background coroutines
                 ai.rever.boss.performance.PerformanceMonitor
                     .stop()
@@ -328,8 +345,9 @@ fun main(args: Array<String>) {
     startupScope.launch {
         ai.rever.boss.updater.AppUpdateRealtimeService.instance.apply {
             onReleaseChanged = {
-                ai.rever.boss.updater.UpdateManager.instance
-                    .checkForUpdates()
+                // App-level trigger through the app-level owner.
+                ai.rever.boss.updater.UpdateCoordinator.instance
+                    .checkForUpdatesInBackground()
             }
             start()
         }

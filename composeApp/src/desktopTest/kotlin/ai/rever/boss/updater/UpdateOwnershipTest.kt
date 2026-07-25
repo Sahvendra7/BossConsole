@@ -6,7 +6,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -140,7 +142,11 @@ class UpdateOwnershipTest {
 
                 val result = handle.checkForUpdates(force = true)
 
-                assertEquals(UpdateResult.NoUpdateAvailable, result, "A released handle should go inert")
+                assertEquals(
+                    UpdateResult.HandleReleased,
+                    result,
+                    "A released handle should report that distinctly, not as a real 'up to date' answer",
+                )
                 assertEquals(UpdateState.Idle, manager.updateState.value, "No state transition should have happened")
                 assertNull(manager.lastCheckTime.value, "A real check would have stamped the last check time")
             } finally {
@@ -191,6 +197,83 @@ class UpdateOwnershipTest {
 
             assertFalse(manager.isPeriodicCheckActive, "A shut-down updater must not be restarted")
         }
+
+    /**
+     * The headline regression the coordinator exists to prevent: every window used
+     * to call `startPeriodicChecks()`, which opens with `periodicCheckJob?.cancel()`,
+     * so N windows cancelled and restarted the loop N times and re-fired N startup
+     * checks. Job identity is the proof that only the first call did anything.
+     */
+    @Test
+    fun `ensureStarted starts the periodic loop once however many windows ask`() =
+        runBlocking {
+            val autoCheckWas = UpdateSettings.autoCheckEnabled
+            UpdateSettings.autoCheckEnabled = true
+            val manager = newManager()
+            val coordinator = UpdateCoordinator(manager)
+            try {
+                coordinator.handleFor("window-1")
+                coordinator.ensureStarted()
+                val firstJob = manager.periodicCheckJobOrNull
+                assertNotNull(firstJob, "The first window should have started the periodic loop")
+                assertTrue(manager.isPeriodicCheckActive)
+
+                // Two more windows open and each asks, as BossAppStartupEffects does.
+                coordinator.handleFor("window-2")
+                coordinator.ensureStarted()
+                coordinator.handleFor("window-3")
+                coordinator.ensureStarted()
+
+                assertSame(
+                    firstJob,
+                    manager.periodicCheckJobOrNull,
+                    "Later windows must not cancel and restart the periodic loop",
+                )
+                assertTrue(manager.isPeriodicCheckActive)
+            } finally {
+                coordinator.shutdown()
+                UpdateSettings.autoCheckEnabled = autoCheckWas
+            }
+        }
+
+    @Test
+    fun `ensureStarted does nothing when auto-check is disabled`() =
+        runBlocking {
+            val autoCheckWas = UpdateSettings.autoCheckEnabled
+            UpdateSettings.autoCheckEnabled = false
+            val manager = newManager()
+            val coordinator = UpdateCoordinator(manager)
+            try {
+                coordinator.ensureStarted()
+
+                assertFalse(manager.isPeriodicCheckActive)
+                assertNull(manager.periodicCheckJobOrNull)
+            } finally {
+                coordinator.shutdown()
+                UpdateSettings.autoCheckEnabled = autoCheckWas
+            }
+        }
+
+    /**
+     * `handleFor` tests `isShutDown` and then publishes the handle; those are not
+     * one atomic step. If `shutdown()` runs in between - clearing the map before the
+     * handle lands in it - the window is left holding a live handle to a cancelled
+     * manager, and `activeWindowCount` sticks at 1 forever. The seam reproduces
+     * exactly that interleaving; without the post-publish re-check this fails.
+     */
+    @Test
+    fun `a handle acquired while shutdown interleaves is not left live`() {
+        val manager = newManager()
+        val coordinator = UpdateCoordinator(manager)
+        coordinator.beforePublishHook = { coordinator.shutdown() }
+
+        val handle = coordinator.handleFor("window-1")
+
+        assertTrue(handle.isReleased, "A handle that lost the race with shutdown must be inert")
+        assertEquals(0, coordinator.activeWindowCount, "activeWindowCount must not stick after shutdown")
+        assertFalse(manager.isActive)
+        assertFalse(runsBackgroundWork(manager, timeoutMs = 500))
+    }
 
     /**
      * The ownership split has to be visible in the API, not just in a comment:

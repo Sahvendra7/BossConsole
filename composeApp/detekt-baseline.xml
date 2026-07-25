@@ -147,7 +147,7 @@
     <ID>CyclomaticComplexMethod:TopOfMindDialog.kt$@Composable private fun ActiveTabDialogItem( activeTab: ActiveTab, isSelected: Boolean, onTabClick: () -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:UpdateInstaller.kt$UpdateInstaller$private fun detectLinuxDistroType(): String</ID>
     <ID>CyclomaticComplexMethod:UpdateInstaller.kt$UpdateInstaller$suspend fun installUpdate(downloadPath: String): InstallResult</ID>
-    <ID>CyclomaticComplexMethod:UpdateUI.kt$@Composable fun UpdateSettingsSection(updateManager: UpdateManager = UpdateManager.instance)</ID>
+    <ID>CyclomaticComplexMethod:UpdateUI.kt$@Composable fun UpdateSettingsSection(updateCoordinator: UpdateCoordinator = UpdateCoordinator.instance)</ID>
     <ID>CyclomaticComplexMethod:UpdateUI.kt$private fun formatTime(instant: kotlin.time.Instant): String</ID>
     <ID>CyclomaticComplexMethod:UserExistenceService.kt$UserExistenceService$suspend fun checkUserExists(email: String): Result&lt;UserExistence&gt;</ID>
     <ID>CyclomaticComplexMethod:WizardComponents.kt$@Composable fun CheckboxCard( title: String, description: String, icon: ImageVector? = null, isChecked: Boolean, onCheckedChange: (Boolean) -&gt; Unit, enabled: Boolean = true, modifier: Modifier = Modifier, )</ID>
@@ -408,7 +408,7 @@
     <ID>LongMethod:UpdateScriptGenerator.kt$UpdateScriptGenerator$fun generateLinuxDebUpdateScript( debPath: String, appPid: Long, ): File</ID>
     <ID>LongMethod:UpdateScriptGenerator.kt$UpdateScriptGenerator$fun generateLinuxRpmUpdateScript( rpmPath: String, appPid: Long, ): File</ID>
     <ID>LongMethod:UpdateScriptGenerator.kt$UpdateScriptGenerator$fun generateMacOSUpdateScript( dmgPath: String, targetAppPath: String, appPid: Long, ): File</ID>
-    <ID>LongMethod:UpdateUI.kt$@Composable fun UpdateSettingsSection(updateManager: UpdateManager = UpdateManager.instance)</ID>
+    <ID>LongMethod:UpdateUI.kt$@Composable fun UpdateSettingsSection(updateCoordinator: UpdateCoordinator = UpdateCoordinator.instance)</ID>
     <ID>LongMethod:UserExistenceService.kt$UserExistenceService$suspend fun checkUserExists(email: String): Result&lt;UserExistence&gt;</ID>
     <ID>LongMethod:VersionSelectionDialog.kt$@Composable fun VersionSelectionDialog( currentVersion: Version, versions: List&lt;VersionInfo&gt;, isLoading: Boolean, error: String? = null, onVersionSelected: (VersionInfo) -&gt; Unit, onDismiss: () -&gt; Unit, )</ID>
     <ID>LongMethod:VersionSelectionDialog.kt$@Composable private fun VersionItem( versionInfo: VersionInfo, isCurrent: Boolean, isLatest: Boolean = false, onClick: () -&gt; Unit, )</ID>
@@ -1144,8 +1144,9 @@
     <ID>SpreadOperator:CrashHandler.kt$CrashHandler$(javaBin, *getRestartArgs())</ID>
     <ID>SpreadOperator:DesktopGitService.kt$GitService$(projectPath, *args.toTypedArray())</ID>
     <ID>SpreadOperator:FilePickerProviderFactory.kt$DesktopFilePickerProvider$( filters.joinToString(", ") { "*.$it" }, *filters.toTypedArray(), )</ID>
-    <ID>ThrowsCount:UpdateInstaller.kt$UpdateInstaller$internal fun validateDownloadFile( downloadFile: File, expectedExtension: String, )</ID>
-    <ID>ThrowsCount:UpdatePathValidator.kt$UpdatePathValidator$fun validate( path: String, description: String, )</ID>
+    <ID>ThrowsCount:UpdateInstaller.kt$UpdateInstaller$internal fun validateDownloadFile( downloadFile: File, expectedExtension: String, stagingDir: File = defaultStagingDir(), )</ID>
+    <ID>ThrowsCount:UpdatePathValidator.kt$UpdatePathValidator$fun validatePath( path: String, description: String, )</ID>
+    <ID>TooGenericExceptionCaught:LastSessionCoordinator.kt$LastSessionCoordinator$e: Exception</ID>
     <ID>TooGenericExceptionCaught:AWTKeyboardInterceptor.kt$AWTKeyboardInterceptor$e: Exception</ID>
     <ID>TooGenericExceptionCaught:AppThemeSettingsManager.kt$AppThemeSettingsManager$e: Exception</ID>
     <ID>TooGenericExceptionCaught:AppUpdateRealtimeService.kt$AppUpdateRealtimeService$e: Exception</ID>

@@ -30,44 +30,16 @@ internal fun resolveUpdaterLogFile(
 ): File = File(resolveUpdaterTempDir(tempDirPath), "update-$timestamp.log")
 
 /**
- * The updater temp directory, created if needed and restricted to the current
- * user. The parent temp directory is shared with every other local user, so the
- * helper scripts we are about to run (on Linux, under `pkexec`) live in a
- * directory only we can enter.
+ * The updater temp directory, created owner-only (0700) or not used at all.
+ *
+ * The parent temp directory is shared with every other local user, and the helper
+ * scripts written here are subsequently executed - on Linux under `pkexec`/`sudo`.
+ * [createRestrictedDir] therefore throws rather than degrading if an owner-only
+ * directory can't be guaranteed.
+ *
+ * @throws SecurityException if the directory cannot be created or secured.
  */
-private fun updaterTempDir(): File {
-    val dir = resolveUpdaterTempDir()
-    dir.mkdirs()
-    restrictToOwner(dir)
-    return dir
-}
-
-/** Best-effort chmod 700. Silently skipped on non-POSIX filesystems (Windows). */
-private fun restrictToOwner(file: File) {
-    try {
-        Files.setPosixFilePermissions(
-            file.toPath(),
-            setOf(
-                PosixFilePermission.OWNER_READ,
-                PosixFilePermission.OWNER_WRITE,
-                PosixFilePermission.OWNER_EXECUTE,
-            ),
-        )
-    } catch (e: UnsupportedOperationException) {
-        // Not a POSIX filesystem (Windows) - ignore
-        logger.debug(
-            LogCategory.SYSTEM,
-            "Could not restrict POSIX permissions (probably Windows)",
-            mapOf("file" to file.name, "error" to e.toString()),
-        )
-    } catch (e: IOException) {
-        logger.debug(
-            LogCategory.SYSTEM,
-            "Could not restrict POSIX permissions",
-            mapOf("file" to file.name, "error" to e.toString()),
-        )
-    }
-}
+internal fun updaterTempDir(): File = createRestrictedDir(resolveUpdaterTempDir())
 
 /**
  * Generates platform-specific update helper scripts
@@ -125,7 +97,10 @@ object UpdateScriptGenerator {
      *
      * Delegates to [UpdatePathValidator] so this and [UpdateInstaller] apply the
      * same rules: a path or filename refused here cannot be waved through by the
-     * other entry point (Issue #37).
+     * other entry point (Issue #37). The whole path gets the unescapable-character
+     * rules; its filename component - the part the release catalog chose - gets the
+     * full denylist. Denylisting the whole path also rejected legitimate Windows
+     * account names such as `Bob!`, permanently breaking auto-update for them.
      *
      * @param path The path to validate
      * @param description Description for error messages (e.g., "DMG path")
@@ -134,7 +109,7 @@ object UpdateScriptGenerator {
     private fun validatePath(
         path: String,
         description: String,
-    ) = UpdatePathValidator.validate(path, description)
+    ) = UpdatePathValidator.validatePathAndFileName(path, description)
 
     /**
      * Generate macOS update script
@@ -370,6 +345,7 @@ object UpdateScriptGenerator {
         logger.debug(LogCategory.SYSTEM, "Security: Validated and escaped Linux DEB update script parameters")
 
         val tempDir = updaterTempDir()
+        val escapedUpdaterDir = escapeShellArg(tempDir.absolutePath)
 
         val scriptFile = File(tempDir, "update_boss_${System.currentTimeMillis()}.sh")
 
@@ -378,7 +354,10 @@ object UpdateScriptGenerator {
             #!/bin/bash
 
             # BOSS Update Helper Script (Debian/Ubuntu)
-            LOG_FILE="/tmp/boss-update-debug-${'$'}(date +%s).log"
+            # mktemp inside the updater's own 0700 directory: O_EXCL + an
+            # unpredictable name, so a pre-created symlink in a world-writable
+            # /tmp can no longer capture the write.
+            LOG_FILE=${'$'}(mktemp $escapedUpdaterDir/boss-update-debug-XXXXXX)
 
             # Log everything
             exec > >(tee -a "${'$'}LOG_FILE") 2>&1
@@ -470,7 +449,7 @@ object UpdateScriptGenerator {
 
             # Fallback to sudo with graphical askpass if pkexec failed
             if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
-                ASKPASS_SCRIPT="/tmp/boss-askpass-${'$'}${'$'}.sh"
+                ASKPASS_SCRIPT=${'$'}(mktemp $escapedUpdaterDir/boss-askpass-XXXXXX)
                 if command -v zenity &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
                     echo "Using sudo with zenity for graphical authentication..."
                     cat > "${'$'}ASKPASS_SCRIPT" << 'ASKPASS_EOF'
@@ -575,6 +554,7 @@ ASKPASS_EOF
         logger.debug(LogCategory.SYSTEM, "Security: Validated and escaped Linux RPM update script parameters")
 
         val tempDir = updaterTempDir()
+        val escapedUpdaterDir = escapeShellArg(tempDir.absolutePath)
 
         val scriptFile = File(tempDir, "update_boss_${System.currentTimeMillis()}.sh")
 
@@ -583,7 +563,10 @@ ASKPASS_EOF
             #!/bin/bash
 
             # BOSS Update Helper Script (Fedora/RHEL)
-            LOG_FILE="/tmp/boss-update-debug-${'$'}(date +%s).log"
+            # mktemp inside the updater's own 0700 directory: O_EXCL + an
+            # unpredictable name, so a pre-created symlink in a world-writable
+            # /tmp can no longer capture the write.
+            LOG_FILE=${'$'}(mktemp $escapedUpdaterDir/boss-update-debug-XXXXXX)
 
             # Log everything
             exec > >(tee -a "${'$'}LOG_FILE") 2>&1
@@ -680,7 +663,7 @@ ASKPASS_EOF
 
             # Fallback to sudo with graphical askpass if pkexec failed
             if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
-                ASKPASS_SCRIPT="/tmp/boss-askpass-${'$'}${'$'}.sh"
+                ASKPASS_SCRIPT=${'$'}(mktemp $escapedUpdaterDir/boss-askpass-XXXXXX)
                 if command -v zenity &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
                     echo "Using sudo with zenity for graphical authentication..."
                     cat > "${'$'}ASKPASS_SCRIPT" << 'ASKPASS_EOF'
@@ -849,28 +832,32 @@ ASKPASS_EOF
      * @param file The file to make executable
      */
     fun makeExecutable(file: File) {
+        val path = file.toPath()
+
+        // 0700, not 0755: these scripts sit in a temp directory other local users
+        // can enumerate and are then executed (on Linux, under pkexec) with
+        // elevated privileges. Nothing but the owner needs to read them.
+        val permissions =
+            setOf(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.OWNER_EXECUTE,
+            )
+
         try {
-            val path = file.toPath()
-
-            // 0700, not 0755: these scripts sit in a temp directory other local
-            // users can enumerate and are then executed (on Linux, under pkexec)
-            // with elevated privileges. Nothing but the owner needs to read them.
-            val permissions =
-                setOf(
-                    PosixFilePermission.OWNER_READ,
-                    PosixFilePermission.OWNER_WRITE,
-                    PosixFilePermission.OWNER_EXECUTE,
-                )
-
             Files.setPosixFilePermissions(path, permissions)
             logger.debug(LogCategory.SYSTEM, "Set executable permissions", mapOf("file" to file.name))
-        } catch (e: Exception) {
-            // Not a POSIX system (Windows) - ignore
+        } catch (expected: UnsupportedOperationException) {
+            // Not a POSIX filesystem (Windows) - nothing to enforce
             logger.debug(
                 LogCategory.SYSTEM,
                 "Could not set POSIX permissions (probably Windows)",
-                mapOf("error" to e.toString()),
+                mapOf("error" to expected.toString()),
             )
+        } catch (e: IOException) {
+            // Fail closed: a script we cannot lock down must not be handed to
+            // sudo/pkexec (Issue #37).
+            throw SecurityException("Could not restrict helper script ${file.absolutePath} to its owner", e)
         }
     }
 }

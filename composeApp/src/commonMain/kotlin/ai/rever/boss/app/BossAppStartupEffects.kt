@@ -116,17 +116,28 @@ internal fun BossAppStartupEffects(state: BossAppState) {
         }
     }
 
-    // Release this window's update handle when the window goes away.
+    // App-level window lifecycle, in one place and keyed only on windowId.
     //
-    // Its own effect, keyed exactly like where the handle is acquired
-    // (rememberBossAppState), so acquire and release stay in lockstep - a handle
-    // released while its window lives on would leave that window's update banner
-    // and dialog inert. release() is bookkeeping only: the updater is
-    // process-wide, and a window closing must never tear it down (#19, #37).
-    // App-level teardown is UpdateCoordinator.shutdown() in main.kt.
-    DisposableEffect(windowId, state.updateHandle) {
+    // Registers how to extract this window's layout so whoever ends up writing
+    // "Last Session" (the last window disposing, or the shutdown hook for the
+    // exits that never dispose - macOS Cmd+Q, quitForUpdate, SIGTERM) can read it,
+    // and hands the layout write to LastSessionCoordinator, which allows exactly
+    // one writer per session (#19).
+    //
+    // Deliberately NOT hung off the seven-key DefaultPlugin effect: a key change
+    // there would re-run onDispose and, in a single-window app, perform a
+    // mid-session app-level write.
+    DisposableEffect(windowId) {
+        LastSessionCoordinator.instance.register(
+            windowId = windowId,
+            isFirstWindow = isFirstWindow,
+        ) {
+            // Invoked at teardown, possibly from the shutdown-hook thread, so read
+            // live state here rather than closing over a recomposition snapshot.
+            extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
+        }
         onDispose {
-            state.updateHandle.release()
+            LastSessionCoordinator.instance.onWindowDisposed(windowId)
         }
     }
 
@@ -354,12 +365,6 @@ internal fun BossAppStartupEffects(state: BossAppState) {
         state.currentDefaultPlugin = plugin
         state.draggablePanelComponent.update()
 
-        // Track this window as live so app-level teardown (the single "Last Session"
-        // workspace) can be gated on the last window closing instead of running
-        // once per window. Registered here so register/release stay symmetric with
-        // the onDispose below.
-        WindowShutdownGate.register(windowId)
-
         // Initialize BookmarkAPIAccess so UI code can access bookmarks via the plugin system
         BookmarkAPIAccess.initialize(plugin)
 
@@ -375,35 +380,9 @@ internal fun BossAppStartupEffects(state: BossAppState) {
             // Browsers must be disposed BEFORE Compose disposal begins, not during it
             // See main.kt onCloseRequest for the disposeAllBrowsersBlocking() call
 
-            // Save the layout as "Last Session" — but only when this is the last
-            // window closing. "Last Session" is one app-level workspace, so a
-            // per-window save meant whichever window disposed last won, and
-            // closing a secondary window overwrote the primary's session (#19).
-            val isLastWindow = WindowShutdownGate.releaseAndWasLast(windowId)
-            if (isLastWindow) {
-                try {
-                    // saveLastSessionBlocking writes on this thread and returns once
-                    // the bytes are on disk. The old code wrapped a fire-and-forget
-                    // Dispatchers.Main save in runBlocking, which awaited nothing and
-                    // could be outrun by process exit.
-                    val currentLayout = extractCurrentWorkspace(splitViewState, selectedProject.path)
-                    workspaceManager.saveLastSessionBlocking(currentLayout)
-                } catch (e: Exception) {
-                    // Shutdown path: never block window teardown, but leave a breadcrumb —
-                    // a silently lost "Last Session" is exactly what users report as
-                    // "my layout disappeared".
-                    logger.warn(LogCategory.WORKSPACE, "Last Session save on window close failed", error = e)
-                }
-            } else {
-                logger.debug(
-                    LogCategory.WORKSPACE,
-                    "Skipping Last Session save - other windows are still open",
-                    mapOf(
-                        "windowId" to windowId,
-                        "liveWindows" to WindowShutdownGate.liveWindowCount.toString(),
-                    ),
-                )
-            }
+            // NOTE: the "Last Session" write is NOT here. It is app-level, not
+            // per-window (#19), and lives in the windowId-keyed lifecycle effect
+            // above via LastSessionCoordinator.
 
             // Cleanup plugin coroutines
             plugin.dispose()
@@ -411,8 +390,8 @@ internal fun BossAppStartupEffects(state: BossAppState) {
             // NOTE: the updater is NOT torn down here. It is process-wide; the
             // first window to close used to cancel periodic checks and in-flight
             // downloads for every window still open (#19, #37). This window's
-            // handle is released by its own effect above, and app-level teardown
-            // is UpdateCoordinator.shutdown() in the main.kt shutdown hook.
+            // handle is released by rememberBossAppState, which also acquired it,
+            // and app-level teardown is UpdateCoordinator.shutdown() in main.kt.
 
             // Unregister this window's state from the global registries
             SplitViewStateRegistry.unregister(windowId)

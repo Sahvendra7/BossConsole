@@ -154,30 +154,27 @@ internal fun BossAppScaffold(
                 // Update banner - always visible (even in focus mode)
                 val updateHandle = state.updateHandle
                 val updateState by updateHandle.updateState.collectAsState()
+                // Every action runs on the manager's scope, never this window's
+                // rememberCoroutineScope(): that scope dies with the composition, so
+                // closing the window mid-install used to cancel the install (leaving
+                // UpdateState on Installing) and could drop a persisted dismissal.
                 UpdateBanner(
                     updateState = updateState,
                     onCheckForUpdates = {
-                        coroutineScope.launch {
-                            // Manual retry: bypass per-version dismissal
-                            updateHandle.checkForUpdates(force = true)
-                        }
+                        // Manual retry: bypass per-version dismissal
+                        updateHandle.checkForUpdatesInBackground(force = true)
                     },
                     onDownloadUpdate = { updateInfo ->
-                        // Manager-owned scope: the download must survive this window closing
                         updateHandle.downloadUpdateInBackground(updateInfo)
                     },
                     onInstallUpdate = { downloadPath ->
-                        coroutineScope.launch {
-                            updateHandle.installUpdate(downloadPath)
-                        }
+                        updateHandle.installUpdateInBackground(downloadPath)
                     },
                     onDismiss = {
                         val currentState = updateState
                         if (currentState is UpdateState.UpdateAvailable) {
                             // Persist dismissal so this version doesn't re-prompt
-                            coroutineScope.launch {
-                                updateHandle.dismissVersion(currentState.updateInfo.latestVersion)
-                            }
+                            updateHandle.dismissVersionInBackground(currentState.updateInfo.latestVersion)
                         } else {
                             updateHandle.resetState()
                         }
@@ -199,9 +196,7 @@ internal fun BossAppScaffold(
                             updateHandle.downloadUpdateInBackground(updateStateForDialog.updateInfo)
                         },
                         onLater = {
-                            coroutineScope.launch {
-                                updateHandle.dismissVersion(updateStateForDialog.updateInfo.latestVersion)
-                            }
+                            updateHandle.dismissVersionInBackground(updateStateForDialog.updateInfo.latestVersion)
                         },
                     )
                 }

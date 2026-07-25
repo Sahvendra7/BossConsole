@@ -22,6 +22,9 @@ private const val SPOTLIGHT_LOOKUP_TIMEOUT_SECONDS = 5L
 /** Staging directory (inside the platform temp directory) that downloads land in. */
 internal const val UPDATE_STAGING_DIR_NAME = "boss-updates"
 
+/** Resolve the download staging directory without creating it. */
+internal fun defaultStagingDir(): File = File(System.getProperty("java.io.tmpdir"), UPDATE_STAGING_DIR_NAME)
+
 /** Return the outermost complete `.app` path segment in [path]. */
 internal fun macOSAppBundlePathIn(path: String): String? {
     val pathSegments = path.split('/')
@@ -114,12 +117,13 @@ object UpdateInstaller {
     internal fun validateDownloadFile(
         downloadFile: File,
         expectedExtension: String,
+        stagingDir: File = defaultStagingDir(),
     ) {
         val filename = downloadFile.name
 
         // Filename characters: shared rules, hard failure. Checked before any
         // filesystem access so a hostile name is refused outright.
-        UpdatePathValidator.validate(filename, "Download filename")
+        UpdatePathValidator.validateFileName(filename, "Download filename")
 
         // Validate file extension
         if (!filename.endsWith(expectedExtension, ignoreCase = true)) {
@@ -149,7 +153,7 @@ object UpdateInstaller {
         // The file must live inside the staging directory it was downloaded to.
         // Compared with a trailing separator so a sibling directory such as
         // "boss-updates-evil" cannot satisfy a bare prefix match.
-        val expectedTempDir = File(System.getProperty("java.io.tmpdir"), UPDATE_STAGING_DIR_NAME).canonicalPath
+        val expectedTempDir = stagingDir.canonicalPath
         if (!canonicalPath.startsWith(expectedTempDir + File.separator)) {
             logger.error(
                 LogCategory.SYSTEM,
@@ -287,6 +291,14 @@ object UpdateInstaller {
     suspend fun installUpdate(downloadPath: String): InstallResult {
         return try {
             val downloadFile = File(downloadPath)
+
+            // Before ANY filesystem access: the artifact name came from the release
+            // catalog and is interpolated into a generated install script. The
+            // per-platform validateDownloadFile below repeats this; hoisting it here
+            // makes "validated before we touch the file" true for the whole entry
+            // point, not just inside that helper (Issue #37).
+            UpdatePathValidator.validateFileName(downloadFile.name, "Download filename")
+
             if (!downloadFile.exists()) {
                 logger.error(LogCategory.SYSTEM, "Update file not found", mapOf("path" to downloadPath))
                 return InstallResult.Error("Update file not found")

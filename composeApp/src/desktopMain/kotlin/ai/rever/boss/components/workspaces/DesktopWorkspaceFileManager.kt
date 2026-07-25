@@ -1,6 +1,7 @@
 package ai.rever.boss.components.workspaces
 
 import ai.rever.boss.utils.SystemUtils
+import ai.rever.boss.utils.atomicWriteText
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -13,12 +14,16 @@ import java.nio.file.StandardOpenOption
 /**
  * Desktop implementation of WorkspaceFileManager
  */
-actual class WorkspaceFileManager {
+actual class WorkspaceFileManager actual constructor(
+    directoryOverride: String?,
+) {
     private val logger = BossLogger.forComponent("WorkspaceFileManager")
     private val workspaceDirectory: String by lazy {
-        val userHome = SystemUtils.getUserHome()
-        val documentsPath = Paths.get(userHome, "Documents", WorkspaceFileManagerCommon.getDefaultWorkspaceDirectoryName())
-        documentsPath.toString()
+        directoryOverride ?: run {
+            val userHome = SystemUtils.getUserHome()
+            val documentsPath = Paths.get(userHome, "Documents", WorkspaceFileManagerCommon.getDefaultWorkspaceDirectoryName())
+            documentsPath.toString()
+        }
     }
 
     actual fun getDefaultWorkspaceDirectory(): String = workspaceDirectory
@@ -62,8 +67,11 @@ actual class WorkspaceFileManager {
             // Serialize workspace
             val json = WorkspaceSerializer.serialize(workspace)
 
-            // Write to file
-            file.writeText(json)
+            // Atomic: temp sibling + rename. This is the shutdown path, so the
+            // process can die mid-write - an in-place writeText would leave a
+            // truncated JSON that fails to deserialize on next launch, which is
+            // strictly worse than the stale-but-valid file (#19 review).
+            file.atomicWriteText(json)
 
             filePath
         } catch (e: Exception) {

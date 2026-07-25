@@ -2,9 +2,13 @@ package ai.rever.boss.updater
 
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -15,6 +19,9 @@ import kotlin.test.assertTrue
  * - helper scripts are 0700, not 0755
  */
 class UpdateScriptGeneratorHardeningTest {
+    @TempDir
+    lateinit var tempDir: Path
+
     private val isWindows = System.getProperty("os.name").lowercase().contains("win")
 
     @Test
@@ -140,5 +147,178 @@ class UpdateScriptGeneratorHardeningTest {
         } finally {
             scriptFile.delete()
         }
+    }
+
+    /**
+     * `chmod 700` fixes the mode but not the name: the log and askpass files were
+     * still created by `cat >` / `tee -a` at a guessable path in a world-writable
+     * /tmp, so a pre-created symlink got followed (and then chmod'd). They must be
+     * created with mktemp inside the updater's own 0700 directory.
+     */
+    @Test
+    fun `generated Linux scripts create temp files with mktemp inside the updater directory`() {
+        val updaterDir = resolveUpdaterTempDir().absolutePath
+        listOf(
+            UpdateScriptGenerator.generateLinuxDebUpdateScript("/tmp/BOSS-9.9.9-amd64.deb", 12345),
+            UpdateScriptGenerator.generateLinuxRpmUpdateScript("/tmp/BOSS-9.9.9-amd64.rpm", 12345),
+        ).forEach { scriptFile ->
+            try {
+                val script = scriptFile.readText()
+                assertFalse(
+                    script.contains("\"/tmp/boss-update-debug-"),
+                    "Log file must not be a predictable /tmp path",
+                )
+                assertFalse(
+                    script.contains("\"/tmp/boss-askpass-"),
+                    "Askpass helper must not be a predictable /tmp path",
+                )
+                assertTrue(
+                    script.contains("mktemp '$updaterDir'/boss-update-debug-XXXXXX"),
+                    "Log file should be mktemp'd inside the updater's 0700 directory",
+                )
+                assertTrue(
+                    script.contains("mktemp '$updaterDir'/boss-askpass-XXXXXX"),
+                    "Askpass helper should be mktemp'd inside the updater's 0700 directory",
+                )
+            } finally {
+                scriptFile.delete()
+            }
+        }
+    }
+
+    // ==================== Owner-only directories, fail closed ====================
+
+    @Test
+    fun `createRestrictedDir creates a fresh directory owner-only`() {
+        assumeTrue(!isWindows, "POSIX permissions are not applicable on Windows")
+        val dir = File(tempDir.toFile(), "fresh-updater-dir")
+
+        createRestrictedDir(dir)
+
+        assertTrue(dir.isDirectory)
+        assertEquals(
+            setOf(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.OWNER_EXECUTE,
+            ),
+            Files.getPosixFilePermissions(dir.toPath()),
+        )
+    }
+
+    /**
+     * The realistic case: the directory already exists from an older build with
+     * 0755. We own it, so it gets tightened rather than rejected.
+     */
+    @Test
+    fun `createRestrictedDir tightens an existing directory it owns`() {
+        assumeTrue(!isWindows, "POSIX permissions are not applicable on Windows")
+        val dir = File(tempDir.toFile(), "pre-existing").also { it.mkdirs() }
+        Files.setPosixFilePermissions(dir.toPath(), PosixFilePermissions.fromString("rwxr-xr-x"))
+
+        createRestrictedDir(dir)
+
+        assertEquals(
+            PosixFilePermissions.fromString("rwx------"),
+            Files.getPosixFilePermissions(dir.toPath()),
+        )
+    }
+
+    /**
+     * A symlink where the updater directory should be is someone else redirecting
+     * our privileged writes. Fail closed rather than following it.
+     */
+    @Test
+    fun `createRestrictedDir refuses a symlinked directory`() {
+        assumeTrue(!isWindows, "Symlink semantics differ on Windows")
+        val realDir = File(tempDir.toFile(), "real-target").also { it.mkdirs() }
+        val link = File(tempDir.toFile(), "linked-updater-dir")
+        try {
+            Files.createSymbolicLink(link.toPath(), realDir.toPath())
+        } catch (e: java.io.IOException) {
+            assumeTrue(false, "Could not create a symlink: ${e.message}")
+        }
+
+        val exception = assertThrows<SecurityException> { createRestrictedDir(link) }
+        assertTrue(
+            exception.message?.contains("symlink") == true,
+            "Expected a symlink rejection, got: ${exception.message}",
+        )
+    }
+
+    @Test
+    fun `createRestrictedDir refuses a path that is a regular file`() {
+        val notADir = File(tempDir.toFile(), "not-a-dir").also { it.writeText("x") }
+
+        assertThrows<SecurityException> { createRestrictedDir(notADir) }
+    }
+
+    // ==================== Validator split: path vs filename ====================
+
+    /**
+     * The whole-path denylist made a legitimate Windows account name a permanent
+     * auto-update failure: `C:\Users\Bob!\...` was rejected as
+     * "command separator characters", with no way for the user to fix it. Only the
+     * filename component - the part the release catalog chose - gets the full
+     * denylist now.
+     */
+    @Test
+    fun `a Windows account name with batch metacharacters still updates`() {
+        listOf(
+            "C:\\Users\\Bob!\\AppData\\Local\\Temp\\boss-updates\\BOSS-9.9.9.msi",
+            "C:\\Users\\A&B\\AppData\\Local\\Temp\\boss-updates\\BOSS-9.9.9.msi",
+            "C:\\Users\\100%Bob\\AppData\\Local\\Temp\\boss-updates\\BOSS-9.9.9.msi",
+            "C:\\Users\\Bob^Jr\\AppData\\Local\\Temp\\boss-updates\\BOSS-9.9.9.msi",
+        ).forEach { msiPath ->
+            val scriptFile =
+                UpdateScriptGenerator.generateWindowsUpdateScript(
+                    msiPath = msiPath,
+                    appPid = 12345,
+                )
+            try {
+                // The escaper is what makes the directory safe: quoted, % doubled.
+                val script = scriptFile.readText()
+                assertTrue(
+                    script.contains("\"" + msiPath.replace("%", "%%") + "\""),
+                    "The MSI path should be quoted and percent-escaped in the batch file",
+                )
+            } finally {
+                scriptFile.delete()
+            }
+        }
+    }
+
+    @Test
+    fun `the same metacharacters in the artifact name are still rejected`() {
+        listOf(
+            "C:\\Users\\Bob\\Temp\\BOSS-9.9.9!evil!.msi",
+            "C:\\Users\\Bob\\Temp\\BOSS-9.9.9%PATH%.msi",
+            "C:\\Users\\Bob\\Temp\\BOSS-9.9.9&calc.msi",
+            "C:\\Users\\Bob\\Temp\\BOSS-9.9.9^x.msi",
+        ).forEach { msiPath ->
+            assertThrows<SecurityException>("Should reject artifact name in: $msiPath") {
+                UpdateScriptGenerator.generateWindowsUpdateScript(msiPath = msiPath, appPid = 12345)
+            }
+        }
+    }
+
+    @Test
+    fun `traversal and newlines are still rejected anywhere in the path`() {
+        assertThrows<SecurityException> {
+            UpdateScriptGenerator.generateWindowsUpdateScript("C:\\Users\\..\\..\\x\\BOSS.msi", 12345)
+        }
+        assertThrows<SecurityException> {
+            UpdateScriptGenerator.generateWindowsUpdateScript("C:\\Users\\Bob\nevil\\BOSS.msi", 12345)
+        }
+    }
+
+    @Test
+    fun `fileNameComponent splits both separator styles`() {
+        assertEquals("BOSS-9.9.9.msi", UpdatePathValidator.fileNameComponent("C:\\Users\\Bob!\\BOSS-9.9.9.msi"))
+        assertEquals(
+            "BOSS-9.9.9.dmg",
+            UpdatePathValidator.fileNameComponent("/var/folders/x/boss-updates/BOSS-9.9.9.dmg"),
+        )
+        assertEquals("BOSS.dmg", UpdatePathValidator.fileNameComponent("BOSS.dmg"))
     }
 }

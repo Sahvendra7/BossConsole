@@ -3,7 +3,13 @@ package ai.rever.boss.components.workspaces
 /**
  * Manages file-based workspace storage
  */
-expect class WorkspaceFileManager() {
+expect class WorkspaceFileManager(
+    /**
+     * Directory to store workspaces in. Defaults to the per-user documents
+     * location; overridden by tests so they never write to a real home directory.
+     */
+    directoryOverride: String? = null,
+) {
     /**
      * Get the default workspace directory path
      */

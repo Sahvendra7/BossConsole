@@ -41,7 +41,11 @@ class UpdateManager {
     private val _showUpdateDialog = MutableStateFlow(false)
     val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
 
-    // Background job for periodic checks
+    // Background job for periodic checks.
+    // @Volatile: written by the settings UI (start/stopPeriodicChecks) and by
+    // UpdateCoordinator.ensureStarted on other threads, and read by
+    // isPeriodicCheckActive - which ensureStarted's idempotency check relies on.
+    @Volatile
     private var periodicCheckJob: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -56,6 +60,14 @@ class UpdateManager {
     /** Whether the periodic check loop is currently running. */
     val isPeriodicCheckActive: Boolean
         get() = periodicCheckJob?.isActive == true
+
+    /**
+     * The periodic loop's current job, for the idempotency test: [startPeriodicChecks]
+     * cancels and replaces it, so "the same job is still there" is how a caller
+     * proves the loop was not restarted.
+     */
+    internal val periodicCheckJobOrNull: Job?
+        get() = periodicCheckJob
 
     companion object {
         val instance = UpdateManager()

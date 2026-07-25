@@ -34,13 +34,29 @@ interface UpdateHandle {
 
     val showUpdateDialog: StateFlow<Boolean>
 
+    /**
+     * Awaitable check, for a caller that needs the answer. Everything else is
+     * fire-and-forget below: a window must not await update work on a scope that
+     * dies with its composition.
+     */
     suspend fun checkForUpdates(force: Boolean = false): UpdateResult
 
     fun downloadUpdateInBackground(updateInfo: UpdateInfo)
 
-    suspend fun installUpdate(downloadPath: String): Boolean
+    /**
+     * Fire-and-forget variants for UI callbacks.
+     *
+     * Window UI must not run update work on `rememberCoroutineScope()`: that scope
+     * dies with the composition, so closing the window mid-install cancelled the
+     * install and left [UpdateState] stuck on `Installing`, and a cancelled
+     * [dismissVersion] silently lost a persisted dismissal. These run on the
+     * manager's own scope instead, which only app-level shutdown cancels.
+     */
+    fun checkForUpdatesInBackground(force: Boolean = false)
 
-    suspend fun dismissVersion(version: Version)
+    fun installUpdateInBackground(downloadPath: String)
+
+    fun dismissVersionInBackground(version: Version)
 
     fun dismissDialogOnly()
 
@@ -86,20 +102,46 @@ class UpdateCoordinator internal constructor(
      */
     fun handleFor(windowId: String): UpdateHandle {
         val handle = WindowUpdateHandle(windowId)
-        if (isShutDown) {
-            // The process is going away; hand back an inert handle rather than
-            // registering interest in an updater that can never run again.
-            handle.markReleased()
-            return handle
-        }
-        handles.put(windowId, handle)?.markReleased()
-        logger.debug(
-            LogCategory.SYSTEM,
-            "Window acquired update handle",
-            mapOf("windowId" to windowId, "activeWindows" to handles.size.toString()),
-        )
+        // The process is going away; hand back an inert handle rather than
+        // registering interest in an updater that can never run again.
+        if (isShutDown) handle.markReleased() else publish(windowId, handle)
         return handle
     }
+
+    private fun publish(
+        windowId: String,
+        handle: WindowUpdateHandle,
+    ) {
+        beforePublishHook?.invoke()
+        handles.put(windowId, handle)?.markReleased()
+
+        // The isShutDown test in handleFor and this put are not one atomic step, so
+        // a concurrent shutdown() can clear the map in between and leave the handle
+        // registered and un-released - live against a cancelled manager, with
+        // activeWindowCount stuck forever. Re-check after publishing.
+        if (isShutDown) {
+            handles.remove(windowId, handle)
+            handle.markReleased()
+            logger.debug(
+                LogCategory.SYSTEM,
+                "Discarded update handle acquired during shutdown",
+                mapOf("windowId" to windowId),
+            )
+        } else {
+            logger.debug(
+                LogCategory.SYSTEM,
+                "Window acquired update handle",
+                mapOf("windowId" to windowId, "activeWindows" to handles.size.toString()),
+            )
+        }
+    }
+
+    /**
+     * Test-only seam: invoked after [handleFor] has tested [isShutDown] but before
+     * the handle is published, so a test can interleave [shutdown] into exactly the
+     * window where a handle would otherwise be left live against a dead manager.
+     */
+    internal var beforePublishHook: (() -> Unit)? = null
 
     /**
      * Start periodic checks (plus the one startup check) if auto-check is enabled
@@ -124,9 +166,62 @@ class UpdateCoordinator internal constructor(
                 }
             }
 
-        if (startedNow && manager.shouldCheckForUpdates()) {
-            manager.checkForUpdates()
+        if (startedNow) {
+            // No explicit startup check here: startPeriodicChecks' first loop
+            // iteration already runs one, and checkMutex would coalesce a second
+            // one away anyway.
+            logger.debug(LogCategory.SYSTEM, "Started periodic update checks")
         }
+    }
+
+    /**
+     * App-level "Check for Updates" (window menu, settings): runs on the manager's
+     * scope so it isn't tied to whichever UI triggered it.
+     */
+    fun checkForUpdatesInBackground(force: Boolean = false) {
+        if (isShutDown) return
+        manager.launchInBackground { manager.checkForUpdates(force) }
+    }
+
+    /** Enable or disable the periodic check loop (settings toggle). */
+    suspend fun setPeriodicChecksEnabled(enabled: Boolean) {
+        if (isShutDown) return
+        if (enabled) ensureStarted() else manager.stopPeriodicChecks()
+    }
+
+    /**
+     * App-level read-only state and actions, for UI that belongs to the app rather
+     * than to one window (the Settings window, the window menu). Routing these
+     * through the owner keeps `UpdateManager.instance` out of UI code, and every
+     * action runs on the manager's scope so closing the window that started it
+     * can't cancel it.
+     */
+    val updateState: StateFlow<UpdateState>
+        get() = manager.updateState
+
+    val lastCheckTime: StateFlow<kotlin.time.Instant?>
+        get() = manager.lastCheckTime
+
+    /** The running app version. */
+    fun currentVersion(): Version = manager.getCurrentVersion()
+
+    /** Service handle for the version-list UI. */
+    internal val updateService: UpdateService
+        get() = manager.updateService
+
+    fun downloadUpdateInBackground(updateInfo: UpdateInfo) {
+        if (isShutDown) return
+        manager.downloadUpdateInBackground(updateInfo)
+    }
+
+    fun downloadSpecificVersionInBackground(versionInfo: VersionInfo) {
+        if (isShutDown) return
+        manager.launchInBackground { manager.downloadSpecificVersion(versionInfo) }
+    }
+
+    fun installUpdateInBackground(downloadPath: String) {
+        if (isShutDown) return
+        manager.launchInBackground { manager.installUpdate(downloadPath) }
     }
 
     /**
@@ -160,17 +255,22 @@ class UpdateCoordinator internal constructor(
             get() = manager.showUpdateDialog
 
         override suspend fun checkForUpdates(force: Boolean): UpdateResult =
-            if (guard("checkForUpdates")) manager.checkForUpdates(force) else UpdateResult.NoUpdateAvailable
+            if (guard("checkForUpdates")) manager.checkForUpdates(force) else UpdateResult.HandleReleased
+
+        override fun checkForUpdatesInBackground(force: Boolean) {
+            if (guard("checkForUpdatesInBackground")) manager.launchInBackground { manager.checkForUpdates(force) }
+        }
+
+        override fun installUpdateInBackground(downloadPath: String) {
+            if (guard("installUpdateInBackground")) manager.launchInBackground { manager.installUpdate(downloadPath) }
+        }
+
+        override fun dismissVersionInBackground(version: Version) {
+            if (guard("dismissVersionInBackground")) manager.launchInBackground { manager.dismissVersion(version) }
+        }
 
         override fun downloadUpdateInBackground(updateInfo: UpdateInfo) {
             if (guard("downloadUpdateInBackground")) manager.downloadUpdateInBackground(updateInfo)
-        }
-
-        override suspend fun installUpdate(downloadPath: String): Boolean =
-            if (guard("installUpdate")) manager.installUpdate(downloadPath) else false
-
-        override suspend fun dismissVersion(version: Version) {
-            if (guard("dismissVersion")) manager.dismissVersion(version)
         }
 
         override fun dismissDialogOnly() {

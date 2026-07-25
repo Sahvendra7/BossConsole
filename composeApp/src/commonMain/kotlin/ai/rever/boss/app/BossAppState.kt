@@ -31,6 +31,7 @@ import ai.rever.boss.window.WindowProjectStateRegistry
 import ai.rever.boss.window.WindowRunnerState
 import ai.rever.boss.window.WindowRunnerStateRegistry
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -181,9 +182,16 @@ internal fun ComponentContext.rememberBossAppState(
     val coroutineScope = rememberCoroutineScope()
 
     // This window's view of the process-wide updater. A handle can observe and act
-    // but cannot shut the updater down; it is released in BossAppStartupEffects'
-    // dispose (see UpdateCoordinator for the ownership split).
+    // but cannot shut the updater down (see UpdateCoordinator for the ownership
+    // split). Acquired and released in the same composable, keyed alike, so the
+    // pairing can't drift: a handle released while its window lives on would leave
+    // that window's update banner and dialog inert.
     val updateHandle = remember(windowId) { UpdateCoordinator.instance.handleFor(windowId) }
+    DisposableEffect(updateHandle) {
+        onDispose {
+            updateHandle.release()
+        }
+    }
 
     return remember(windowId, panelRegistry, splitViewState) {
         BossAppState(
