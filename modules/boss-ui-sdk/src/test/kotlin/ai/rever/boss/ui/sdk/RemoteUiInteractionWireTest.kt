@@ -160,27 +160,56 @@ class RemoteUiInteractionWireTest {
         assertEquals(listOf("first", "second", "third"), list.resolveListItems())
     }
 
+    /** A tree as a plugin that builds the proto directly would send it: `alpha` never touched. */
+    private fun protoTextTree(): ProtoWidgetTree =
+        ProtoWidgetTree
+            .newBuilder()
+            .setRootId("t1")
+            .addNodes(
+                ProtoWidgetNode
+                    .newBuilder()
+                    .setId("t1")
+                    .setType(ProtoWidgetType.WIDGET_TYPE_TEXT)
+                    .putProperties("value", "Hello")
+                    // Modifier present, alpha never set.
+                    .setModifier(ProtoWidgetModifier.newBuilder().setPaddingTop(4)),
+            ).build()
+
     @Test
     fun `a sender that never touches alpha is treated as unset, not invisible`() {
-        // The real-world shape of issue #34 item 4: any plugin that builds the proto directly (or in
-        // another language) leaves `alpha` at proto3's default 0.0, which must not mean "transparent".
-        val protoTree =
-            ProtoWidgetTree
-                .newBuilder()
-                .setRootId("t1")
-                .addNodes(
-                    ProtoWidgetNode
-                        .newBuilder()
-                        .setId("t1")
-                        .setType(ProtoWidgetType.WIDGET_TYPE_TEXT)
-                        .putProperties("value", "Hello")
-                        // Modifier present, alpha never set.
-                        .setModifier(ProtoWidgetModifier.newBuilder().setPaddingTop(4)),
-                ).build()
+        // The real-world shape of issue #34 item 4: proto3's default 0.0 must not mean "transparent".
+        val text = protoTextTree().toKotlin().nodes.getValue("t1")
 
-        val text = protoTree.toKotlin().nodes.getValue("t1")
-        assertEquals(0f, text.modifier.alpha)
-        assertNull(text.modifier.effectiveAlpha(), "0f must not be rendered as fully transparent")
+        assertEquals(1f, text.modifier.alpha, "an unset wire alpha is canonicalized to opaque")
+        assertNull(text.modifier.effectiveAlpha(), "and composites nothing")
+    }
+
+    @Test
+    fun `a wire-originated tree diffs clean against an identical local one`() {
+        // Before alpha was canonicalized at the boundary, the wire side carried 0f and the local side
+        // 1f for the same opaque widget, so WidgetModifier equality failed and the FIRST diff after a
+        // tree arrived reported a modifier change for every single node.
+        val fromWire = protoTextTree().toKotlin()
+        val local =
+            WidgetTree(
+                rootId = "t1",
+                nodes =
+                    mapOf(
+                        "t1" to
+                            WidgetNode(
+                                "t1",
+                                WidgetType.TEXT,
+                                properties = mapOf("value" to "Hello"),
+                                modifier = WidgetModifier(paddingTop = 4),
+                            ),
+                    ),
+            )
+
+        assertEquals(local.nodes, fromWire.nodes)
+        assertTrue(
+            WidgetDiffEngine.diff(fromWire, local).isEmpty(),
+            "expected no ops, got: ${WidgetDiffEngine.diff(fromWire, local)}",
+        )
     }
 
     @Test

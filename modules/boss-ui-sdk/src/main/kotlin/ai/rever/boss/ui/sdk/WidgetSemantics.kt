@@ -36,11 +36,9 @@ private const val OPAQUE_ALPHA = 1f
  * (so already-shipped hosts work) and renderers accept either (so already-shipped plugins work).
  */
 fun WidgetNode.resolveClickEventId(): String =
-    sequenceOf(
-        properties[PROP_CLICK_EVENT_ID],
-        properties[PROP_ON_CLICK_EVENT],
-        modifier.clickEventId,
-    ).firstOrNull { !it.isNullOrEmpty() } ?: ""
+    properties[PROP_CLICK_EVENT_ID]?.takeIf(String::isNotEmpty)
+        ?: properties[PROP_ON_CLICK_EVENT]?.takeIf(String::isNotEmpty)
+        ?: modifier.clickEventId
 
 /**
  * Row labels for a `LIST` node that carries no child nodes.
@@ -54,6 +52,16 @@ fun WidgetNode.resolveListItems(): List<String> = splitCommaProperty(PROP_ITEMS)
 /** Option labels for a `DROPDOWN` node. Empty (not `[""]`) when the property is absent or blank. */
 fun WidgetNode.resolveDropdownOptions(): List<String> = splitCommaProperty(PROP_OPTIONS)
 
+/**
+ * Split a comma-joined property. The rule, stated once so both renderers agree (and repeated in
+ * `ui_protocol.proto`):
+ *
+ * - split on `,`; **no escaping, no trimming** — `"Buy milk, eggs"` is two entries, the second
+ *   being `" eggs"`. A value that contains a comma must be sent as child nodes instead.
+ * - an *absent or empty* property yields no entries. This is not the same as an intentionally empty
+ *   element: `"a,,b"` is three entries, the middle one blank. Kotlin's `"".split(",")` would
+ *   otherwise hand a renderer one blank entry for a property nobody set.
+ */
 private fun WidgetNode.splitCommaProperty(key: String): List<String> =
     properties[key]?.takeIf { it.isNotEmpty() }?.split(",") ?: emptyList()
 
@@ -69,6 +77,27 @@ fun WidgetModifier.effectiveAlpha(): Float? =
         alpha.isNaN() -> null
         alpha <= UNSET_ALPHA -> null
         alpha >= OPAQUE_ALPHA -> null
+        else -> alpha
+    }
+
+/**
+ * Canonicalize an `alpha` value arriving off the wire: everything the sentinel treats as "nothing to
+ * apply" becomes [OPAQUE_ALPHA], the Kotlin default.
+ *
+ * Without this, the *same* widget is unequal to itself depending on where it came from — a builder
+ * modifier carries `alpha = 1f` while an untouched proto field arrives as `0f`, and both mean
+ * "opaque". [WidgetDiffEngine] compares whole [WidgetModifier]s, so a diff whose old side came off
+ * the wire reported a modifier change for **every node** on the first update. Normalizing at the
+ * boundary keeps the sentinel and makes structural equality mean semantic equality.
+ *
+ * The cost is that `toProto(toKotlin(p))` rewrites an unset `0.0` as `1.0`. Those encode the same
+ * rendering, so the round trip is semantics-preserving rather than byte-preserving.
+ */
+fun normalizeWireAlpha(alpha: Float): Float =
+    when {
+        alpha.isNaN() -> OPAQUE_ALPHA
+        alpha <= UNSET_ALPHA -> OPAQUE_ALPHA
+        alpha > OPAQUE_ALPHA -> OPAQUE_ALPHA
         else -> alpha
     }
 

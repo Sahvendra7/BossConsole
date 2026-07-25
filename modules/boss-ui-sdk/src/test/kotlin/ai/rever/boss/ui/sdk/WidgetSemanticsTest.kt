@@ -101,6 +101,30 @@ class WidgetSemanticsTest {
         assertNull(WidgetModifier(alpha = Float.NaN).effectiveAlpha())
     }
 
+    @Test
+    fun `wire alpha canonicalizes everything that composites nothing to opaque`() {
+        // So that structural equality means semantic equality — WidgetDiffEngine compares whole
+        // modifiers, and the wire's unset 0f vs the Kotlin default 1f otherwise look like a change.
+        assertEquals(1f, normalizeWireAlpha(0f))
+        assertEquals(1f, normalizeWireAlpha(-1f))
+        assertEquals(1f, normalizeWireAlpha(1f))
+        assertEquals(1f, normalizeWireAlpha(2f))
+        assertEquals(1f, normalizeWireAlpha(Float.NaN))
+        // Real values pass through untouched.
+        assertEquals(0.25f, normalizeWireAlpha(0.25f))
+    }
+
+    @Test
+    fun `canonicalized alphas agree with the sentinel`() {
+        for (raw in listOf(-1f, 0f, 0.5f, 1f, 2f, Float.NaN)) {
+            assertEquals(
+                WidgetModifier(alpha = raw).effectiveAlpha(),
+                WidgetModifier(alpha = normalizeWireAlpha(raw)).effectiveAlpha(),
+                "normalizing must not change what gets composited (raw=$raw)",
+            )
+        }
+    }
+
     // ---- Item 5: background color ----
 
     @Test

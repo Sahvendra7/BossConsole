@@ -29,6 +29,24 @@ class RemoteWidgetRendererColorTest {
     }
 
     @Test
+    fun `the token vocabulary covers the whole color scheme`() {
+        // `ui_protocol.proto` now publishes the token list as part of the contract, so a colour added
+        // to BossColorScheme must not silently stay unaddressable. Counting the data class's
+        // componentN accessors avoids a kotlin-reflect dependency (Color is a value class, so the
+        // backing fields are primitives and would not be recognizable by type).
+        val schemeProperties =
+            ai.rever.boss.plugin.ui.BossColorScheme::class.java.declaredMethods
+                .count { it.name.startsWith("component") }
+
+        assertEquals(
+            schemeProperties,
+            ThemeToken.entries.size,
+            "BossColorScheme has $schemeProperties colours but ThemeToken names ${ThemeToken.entries.size}; " +
+                "add the missing token (and its row in themeTokenColors + the proto comment)",
+        )
+    }
+
+    @Test
     fun `tokens resolve against the active scheme`() {
         assertEquals(BossDarkColorScheme.panel, resolveBackgroundColor("panel", BossDarkColorScheme))
         assertEquals(BossLightColorScheme.panel, resolveBackgroundColor("panel", BossLightColorScheme))

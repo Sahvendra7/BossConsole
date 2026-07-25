@@ -145,7 +145,7 @@ class UIEventMapperTest {
             )
         // One per proto oneof case (EVENT_NOT_SET excluded): a new sealed variant without a mapping is
         // a compile error, and a new proto case without a variant shows up here as a count mismatch.
-        assertEquals(ProtoUIEvent.EventCase.values().size - 1, allVariants.size)
+        assertEquals(ProtoUIEvent.EventCase.entries.size - 1, allVariants.size)
         for (event in allVariants) {
             val wire = UIEventMapper.toProto(surface, node, event, timestamp)
             assertOneofSet(wire)

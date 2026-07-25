@@ -53,26 +53,29 @@ private fun RenderNode(
     when (node.type) {
         WidgetType.COLUMN -> {
             Column(modifier = modifier) {
-                RenderChildren(node = node, tree = tree, onEvent = onEvent)
+                RenderChildren(node, tree, onEvent)
             }
         }
 
         WidgetType.ROW -> {
             Row(modifier = modifier) {
-                RenderChildren(node = node, tree = tree, onEvent = onEvent)
+                RenderChildren(node, tree, onEvent)
             }
         }
 
         WidgetType.BOX -> {
             Box(modifier = modifier) {
-                RenderChildren(node = node, tree = tree, onEvent = onEvent)
+                RenderChildren(node, tree, onEvent)
             }
         }
 
         WidgetType.SCROLL -> {
             val scrollState = rememberScrollState()
             Column(modifier = modifier.verticalScroll(scrollState)) {
-                RenderChildren(node = node, tree = tree, onEvent = onEvent)
+                // Everything below is measured with an unbounded max height — see the LIST branch.
+                CompositionLocalProvider(LocalUnboundedHeight provides true) {
+                    RenderChildren(node, tree, onEvent)
+                }
             }
         }
 
@@ -98,10 +101,8 @@ private fun RenderNode(
         }
 
         WidgetType.TEXT_FIELD -> {
-            // Keyed by node id: the plugin's `value` seeds the buffer, and the buffer survives tree
-            // updates that keep the node's identity (see WidgetTreeBuilder's deterministic ids).
-            var value by remember(node.id) { mutableStateOf(node.properties["value"] ?: "") }
             val placeholder = node.properties["placeholder"] ?: ""
+            var value by rememberPushableState(node.id, node.properties["value"] ?: "")
             OutlinedTextField(
                 value = value,
                 onValueChange = { newValue ->
@@ -109,15 +110,12 @@ private fun RenderNode(
                     onEvent(node.id, WidgetEvent.TextChange(newValue))
                 },
                 placeholder = { Text(placeholder) },
-                modifier =
-                    modifier.onFocusChanged { focusState ->
-                        onEvent(node.id, WidgetEvent.Focus(focusState.isFocused))
-                    },
+                modifier = modifier.notifyFocusChanges(node.id, onEvent),
             )
         }
 
         WidgetType.CHECKBOX -> {
-            var checked by remember(node.id) { mutableStateOf(node.properties["checked"]?.toBoolean() ?: false) }
+            var checked by rememberPushableState(node.id, node.properties["checked"].toBossBoolean())
             val label = node.properties["label"] ?: ""
             Row(modifier = modifier, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Checkbox(
@@ -135,7 +133,7 @@ private fun RenderNode(
         }
 
         WidgetType.TOGGLE -> {
-            var checked by remember(node.id) { mutableStateOf(node.properties["checked"]?.toBoolean() ?: false) }
+            var checked by rememberPushableState(node.id, node.properties["checked"].toBossBoolean())
             Switch(
                 checked = checked,
                 onCheckedChange = { newChecked ->
@@ -166,16 +164,29 @@ private fun RenderNode(
         }
 
         WidgetType.LIST -> {
+            // A LazyColumn measured with an unbounded max height throws, so a plugin could crash the
+            // host surface purely by nesting LIST inside SCROLL (or inside another LIST). Inside such
+            // a parent, fall back to a plain Column: no virtualization, but the surface survives
+            // whatever tree shape arrives over IPC.
+            // Read the ambient value BEFORE providing our own, or every list looks nested.
+            val unboundedParent = LocalUnboundedHeight.current
             val children = node.childIds.mapNotNull { tree.nodes[it] }
-            LazyColumn(modifier = modifier) {
-                if (children.isNotEmpty()) {
-                    items(items = children, key = { it.id }) { child ->
-                        RenderNode(node = child, tree = tree, onEvent = onEvent)
+            // WidgetTreeBuilder.list() carries rows as an `items` property rather than child nodes;
+            // walking childIds alone drew an empty list.
+            val rows = if (children.isEmpty()) node.resolveListItems() else emptyList()
+            CompositionLocalProvider(LocalUnboundedHeight provides true) {
+                if (unboundedParent) {
+                    Column(modifier = modifier) {
+                        children.forEach { child -> key(child.id) { RenderNode(child, tree, onEvent) } }
+                        rows.forEach { row -> Text(text = row) }
                     }
                 } else {
-                    // WidgetTreeBuilder.list() carries rows as an `items` property rather than child
-                    // nodes; walking childIds alone drew an empty list.
-                    items(node.resolveListItems()) { row -> Text(text = row) }
+                    LazyColumn(modifier = modifier) {
+                        items(items = children, key = { it.id }) { child ->
+                            RenderNode(child, tree, onEvent)
+                        }
+                        items(rows) { row -> Text(text = row) }
+                    }
                 }
             }
         }
@@ -256,17 +267,80 @@ private fun RenderChildren(
     node.childIds.forEach { childId ->
         tree.nodes[childId]?.let { child ->
             key(child.id) {
-                RenderNode(node = child, tree = tree, onEvent = onEvent)
+                RenderNode(child, tree, onEvent)
             }
         }
     }
 }
 
 /**
+ * Whether the surrounding layout measures its children with an unbounded max height.
+ *
+ * `LazyColumn` throws when measured that way, so a plugin could crash the host surface purely by
+ * nesting `LIST` inside `SCROLL` (or inside another `LIST`) — tree *shape* arriving over IPC, not a
+ * host bug. Ambient rather than a parameter: it describes the enclosing layout, and threading it
+ * through every branch would put it in `RenderNode`'s signature for one consumer.
+ */
+private val LocalUnboundedHeight = compositionLocalOf { false }
+
+/**
+ * Local widget state that the user edits and the **plugin can still push to**.
+ *
+ * A plain `remember(nodeId) { mutableStateOf(incoming) }` seeds once per node identity and then
+ * ignores the property forever, which means a plugin cannot drive its own widgets: no clearing a
+ * search box after submit, no echoing back a normalized value, no rejecting a toggle. Tracking the
+ * last value seen on the wire separates "the user typed" (leave the buffer alone) from "the plugin
+ * sent something new" (the plugin wins). An unchanged property re-sent on every tree update does
+ * *not* clobber in-flight typing.
+ */
+@Composable
+private fun <T> rememberPushableState(
+    nodeId: String,
+    incoming: T,
+): MutableState<T> {
+    val state = remember(nodeId) { mutableStateOf(incoming) }
+    val lastIncoming = remember(nodeId) { mutableStateOf(incoming) }
+    LaunchedEffect(nodeId, incoming) {
+        if (lastIncoming.value != incoming) {
+            lastIncoming.value = incoming
+            state.value = incoming
+        }
+    }
+    return state
+}
+
+/**
+ * Report focus transitions, and only transitions.
+ *
+ * `onFocusChanged` also fires when a node's focus state is first resolved on attach, so wiring it
+ * straight through made every text field announce focus *loss* the moment it rendered — a plugin
+ * could not tell that from a real blur. Gate on the previous value, seeded to `false` because a
+ * freshly composed (or re-keyed) node genuinely starts unfocused: that attach callback is not a
+ * transition, while an auto-focused field's `true` is one and still reports.
+ */
+@Composable
+private fun Modifier.notifyFocusChanges(
+    nodeId: String,
+    onEvent: (nodeId: String, event: WidgetEvent) -> Unit,
+): Modifier {
+    val lastFocused = remember(nodeId) { mutableStateOf(false) }
+    return onFocusChanged { focusState ->
+        val isFocused = focusState.isFocused
+        if (lastFocused.value != isFocused) {
+            lastFocused.value = isFocused
+            onEvent(nodeId, WidgetEvent.Focus(isFocused))
+        }
+    }
+}
+
+/** `String.toBoolean()` semantics for an absent property, matching the SDK's wire conventions. */
+private fun String?.toBossBoolean(): Boolean = this?.toBoolean() ?: false
+
+/**
  * Resolve a design-system token to a color from the host's active scheme.
  *
  * A table rather than a `when` so [ThemeToken] coverage is asserted by
- * `RemoteWidgetRendererThemeTokenTest` instead of being spread across the renderer.
+ * `RemoteWidgetRendererColorTest` instead of being spread across the renderer.
  */
 internal val themeTokenColors: Map<ThemeToken, BossColorScheme.() -> Color> =
     mapOf(
@@ -339,10 +413,12 @@ private fun WidgetModifier.toComposeModifier(
             )
     }
 
-    if (backgroundColor.isNotEmpty()) {
-        resolveBackgroundColor(backgroundColor, BossTheme.colors)?.let { color ->
-            m = m.background(color)
-        }
+    // Memoized: this runs for every node on every recomposition, and resolving a spec allocates
+    // (token normalization builds two strings, hex parsing more).
+    val colors = BossTheme.colors
+    val background = remember(backgroundColor, colors) { resolveBackgroundColor(backgroundColor, colors) }
+    if (background != null) {
+        m = m.background(background)
     }
 
     // After background, so a translucent widget keeps its own backdrop crisp — matches the native

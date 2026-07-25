@@ -229,6 +229,143 @@ class WidgetDiffEngineTest {
     }
 
     @Test
+    fun `two siblings added to the same existing parent converge in either order`() {
+        val base = simpleTree()
+        val expected =
+            WidgetTree(
+                rootId = "col1",
+                nodes =
+                    mapOf(
+                        "col1" to WidgetNode("col1", WidgetType.COLUMN, childIds = listOf("text1", "a", "b")),
+                        "text1" to WidgetNode("text1", WidgetType.TEXT, properties = mapOf("value" to "Hello")),
+                        "a" to WidgetNode("a", WidgetType.TEXT, properties = mapOf("value" to "A")),
+                        "b" to WidgetNode("b", WidgetType.TEXT, properties = mapOf("value" to "B")),
+                    ),
+            )
+
+        val ops = WidgetDiffEngine.diff(base, expected)
+        val forward = WidgetDiffEngine.apply(base, ops)
+        val reversed = WidgetDiffEngine.apply(base, ops.reversed())
+
+        assertEquals(expected.nodes, forward.nodes)
+        assertEquals(listOf("text1", "a", "b"), reversed.nodes["col1"]!!.childIds)
+    }
+
+    // ---- Sibling reorder (review finding 4) ----
+
+    private fun columnOf(vararg children: String): WidgetTree =
+        WidgetTree(
+            rootId = "col1",
+            nodes =
+                buildMap {
+                    put("col1", WidgetNode("col1", WidgetType.COLUMN, childIds = children.toList()))
+                    for (child in children) {
+                        put(child, WidgetNode(child, WidgetType.TEXT, properties = mapOf("value" to child)))
+                    }
+                },
+        )
+
+    @Test
+    fun `swapping two siblings produces operations`() {
+        val before = columnOf("a", "b")
+        val after = columnOf("b", "a")
+
+        val ops = WidgetDiffEngine.diff(before, after)
+
+        // Used to be empty: NodeMoved was only emitted when the PARENT changed, so a reorder was
+        // invisible and apply(old, diff(old, new)) != new.
+        assertTrue(ops.isNotEmpty(), "a reorder must be expressible")
+        assertEquals(after.nodes, WidgetDiffEngine.apply(before, ops).nodes)
+    }
+
+    @Test
+    fun `reorder round-trips for every permutation of three siblings`() {
+        val before = columnOf("a", "b", "c")
+        val permutations =
+            listOf(
+                listOf("a", "b", "c"),
+                listOf("a", "c", "b"),
+                listOf("b", "a", "c"),
+                listOf("b", "c", "a"),
+                listOf("c", "a", "b"),
+                listOf("c", "b", "a"),
+            )
+
+        for (order in permutations) {
+            val after = columnOf(*order.toTypedArray())
+            val result = WidgetDiffEngine.apply(before, WidgetDiffEngine.diff(before, after))
+            assertEquals(order, result.nodes["col1"]!!.childIds, "reorder to $order")
+        }
+    }
+
+    @Test
+    fun `an insertion alone is not reported as a reorder`() {
+        val before = columnOf("a", "b")
+        val after = columnOf("a", "x", "b")
+
+        val ops = WidgetDiffEngine.diff(before, after)
+
+        // `a` and `b` shift index but keep their relative order, so the add is the whole story.
+        assertEquals(1, ops.size, "expected only the add, got: $ops")
+        assertIs<DiffOperation.NodeAdded>(ops.single())
+        assertEquals(after.nodes, WidgetDiffEngine.apply(before, ops).nodes)
+    }
+
+    @Test
+    fun `reorder combined with an insertion round-trips`() {
+        val before = columnOf("a", "b")
+        val after = columnOf("x", "b", "a")
+
+        val result = WidgetDiffEngine.apply(before, WidgetDiffEngine.diff(before, after))
+
+        assertEquals(after.nodes, result.nodes)
+    }
+
+    @Test
+    fun `reorder combined with a removal round-trips`() {
+        val before = columnOf("a", "b", "c")
+        val after = columnOf("c", "a")
+
+        val result = WidgetDiffEngine.apply(before, WidgetDiffEngine.diff(before, after))
+
+        assertEquals(after.nodes, result.nodes)
+    }
+
+    @Test
+    fun `a cross-parent move alongside a reorder round-trips`() {
+        val before =
+            WidgetTree(
+                rootId = "root",
+                nodes =
+                    mapOf(
+                        "root" to WidgetNode("root", WidgetType.COLUMN, childIds = listOf("p1", "p2")),
+                        "p1" to WidgetNode("p1", WidgetType.ROW, childIds = listOf("a", "b", "c")),
+                        "p2" to WidgetNode("p2", WidgetType.ROW, childIds = emptyList()),
+                        "a" to WidgetNode("a", WidgetType.TEXT),
+                        "b" to WidgetNode("b", WidgetType.TEXT),
+                        "c" to WidgetNode("c", WidgetType.TEXT),
+                    ),
+            )
+        val after =
+            WidgetTree(
+                rootId = "root",
+                nodes =
+                    mapOf(
+                        "root" to WidgetNode("root", WidgetType.COLUMN, childIds = listOf("p1", "p2")),
+                        "p1" to WidgetNode("p1", WidgetType.ROW, childIds = listOf("c", "b")),
+                        "p2" to WidgetNode("p2", WidgetType.ROW, childIds = listOf("a")),
+                        "a" to WidgetNode("a", WidgetType.TEXT),
+                        "b" to WidgetNode("b", WidgetType.TEXT),
+                        "c" to WidgetNode("c", WidgetType.TEXT),
+                    ),
+            )
+
+        val result = WidgetDiffEngine.apply(before, WidgetDiffEngine.diff(before, after))
+
+        assertEquals(after.nodes, result.nodes)
+    }
+
+    @Test
     fun `apply NodeMoved within the same parent re-indexes without duplicating`() {
         val base =
             WidgetTree(

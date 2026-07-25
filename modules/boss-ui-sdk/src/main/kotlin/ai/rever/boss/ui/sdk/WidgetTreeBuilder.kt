@@ -22,9 +22,20 @@ fun widgetTree(block: WidgetTreeBuilder.() -> Unit): WidgetTree {
  * away — the visible symptom being a text field that lost what the user was typing whenever the
  * plugin refreshed its tree.
  *
- * The consequence to be aware of: ids track *position*, so inserting a widget renumbers the ones
- * after it. That is the same trade-off Compose's positional memoization makes and keeps the common
- * "rebuild the same shape with new values" case free.
+ * ## The limit of positional ids
+ *
+ * Ids track *position*, so **inserting or removing a widget renumbers everything after it in
+ * creation order**. For that suffix the diff degenerates to remove-all/add-all and any host-side
+ * state keyed by node id is discarded — the same symptom this addresses, triggered structurally
+ * instead of on every rebuild. Deterministic ids fix the common case (rebuild the same shape with
+ * new values, which is what a plugin does on nearly every update) and leave structural edits no
+ * worse than before.
+ *
+ * Real stability under insertion needs a caller-supplied key
+ * (`button(label, event, key = "search")`), where the id derives from the key rather than the
+ * counter. That is a follow-up: it touches every builder entry point, and adding a defaulted
+ * parameter to each would change their JVM descriptors — a binary break for plugins that pin an
+ * older `boss-ui-sdk` jar. It wants overloads and a deprecation window, not a drive-by parameter.
  */
 class WidgetTreeBuilder {
     private val allNodes = mutableMapOf<String, WidgetNode>()
