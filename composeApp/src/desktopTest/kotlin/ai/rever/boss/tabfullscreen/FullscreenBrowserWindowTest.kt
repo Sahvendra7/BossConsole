@@ -191,4 +191,17 @@ class FullscreenBrowserWindowTest {
 
         assertEquals(2, notifications)
     }
+
+    @Test
+    fun `stale competing fallback cannot notify a newer attempt`() {
+        val gate = FullscreenExitCallbackGate<String>()
+        var notifications = 0
+
+        val staleAttempt = gate.begin("browser-b")
+        val currentAttempt = gate.begin("browser-b")
+
+        assertFalse(gate.notifyOnce("browser-b", staleAttempt) { notifications++ })
+        assertTrue(gate.notifyOnce("browser-b", currentAttempt) { notifications++ })
+        assertEquals(1, notifications)
+    }
 }

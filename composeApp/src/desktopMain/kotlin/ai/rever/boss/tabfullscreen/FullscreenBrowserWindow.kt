@@ -19,7 +19,7 @@ import java.awt.event.ComponentEvent
 import java.awt.event.KeyEvent
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
-import java.util.WeakHashMap
+import java.lang.ref.WeakReference
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
@@ -64,6 +64,23 @@ internal fun shouldRestoreFullscreenTabState(
     isInFullscreenMode: Boolean,
 ): Boolean = cleanupEpoch == currentEpoch && !isInFullscreenMode
 
+private fun displayBounds(frame: JFrame): Rectangle =
+    frame.graphicsConfiguration?.bounds
+        ?: GraphicsEnvironment
+            .getLocalGraphicsEnvironment()
+            .defaultScreenDevice.defaultConfiguration.bounds
+
+private fun isWindowInFullscreen(frame: JFrame): Boolean = fillsScreen(frame.bounds, displayBounds(frame))
+
+private fun isRegisteredWindowFullscreen(ownerWindowId: String): Boolean {
+    val state = WindowFocusManager.getWindowFullscreenState(ownerWindowId) ?: return false
+    return hasFullscreenSignal(
+        nativeStateAvailable = state.nativeStateAvailable,
+        nativeFullscreen = state.nativeFullscreen,
+        composeFullscreen = state.composeFullscreen,
+    )
+}
+
 internal enum class FullscreenRequestDecision {
     IGNORE_DUPLICATE,
     REJECT_CLOSED,
@@ -88,19 +105,60 @@ internal fun fullscreenRequestDecision(
 
 /** EDT-confined once installed in [FullscreenBrowserWindow]. */
 internal class FullscreenExitCallbackGate<T : Any> {
-    private val notifiedOwners = WeakHashMap<T, Unit>()
+    private data class Entry<T : Any>(
+        val owner: WeakReference<T>,
+        var attempt: Long,
+        var notified: Boolean,
+    )
 
-    fun begin(owner: T) {
-        notifiedOwners.remove(owner)
+    private val entries = mutableListOf<Entry<T>>()
+    private var nextAttempt = 0L
+
+    fun begin(owner: T): Long {
+        val attempt = ++nextAttempt
+        val entry = findEntry(owner)
+        if (entry == null) {
+            entries += Entry(WeakReference(owner), attempt, notified = false)
+        } else {
+            entry.attempt = attempt
+            entry.notified = false
+        }
+        return attempt
     }
 
     fun notifyOnce(
         owner: T,
         callback: () -> Unit,
+    ): Boolean = notifyOnceInternal(owner, expectedAttempt = null, callback)
+
+    fun notifyOnce(
+        owner: T,
+        expectedAttempt: Long,
+        callback: () -> Unit,
+    ): Boolean = notifyOnceInternal(owner, expectedAttempt, callback)
+
+    private fun notifyOnceInternal(
+        owner: T,
+        expectedAttempt: Long?,
+        callback: () -> Unit,
     ): Boolean {
-        if (notifiedOwners.put(owner, Unit) != null) return false
-        callback()
-        return true
+        val entry =
+            findEntry(owner)
+                ?: Entry(WeakReference(owner), ++nextAttempt, notified = false)
+                    .also(entries::add)
+        val shouldNotify =
+            (expectedAttempt == null || entry.attempt == expectedAttempt) &&
+                !entry.notified
+        if (shouldNotify) {
+            entry.notified = true
+            callback()
+        }
+        return shouldNotify
+    }
+
+    private fun findEntry(owner: T): Entry<T>? {
+        entries.removeAll { it.owner.get() == null }
+        return entries.firstOrNull { it.owner.get() === owner }
     }
 }
 
@@ -208,11 +266,14 @@ object FullscreenBrowserWindow {
                 isSameBrowser = currentBrowser === browser,
                 isBrowserClosed = browser.isClosed,
             )
-        if (decision != FullscreenRequestDecision.IGNORE_DUPLICATE) {
-            // Deduplicate within one request/exit attempt, not forever for a
-            // browser that may lose several competing requests over its life.
-            exitCallbackGate.begin(browser)
-        }
+        val exitAttempt =
+            if (decision != FullscreenRequestDecision.IGNORE_DUPLICATE) {
+                // Deduplicate within one request/exit attempt, not forever for a
+                // browser that may lose several competing requests over its life.
+                exitCallbackGate.begin(browser)
+            } else {
+                null
+            }
         when (decision) {
             FullscreenRequestDecision.IGNORE_DUPLICATE -> {
                 logger.debug(LogCategory.BROWSER, "Ignoring duplicate fullscreen request from active browser")
@@ -220,11 +281,11 @@ object FullscreenBrowserWindow {
 
             FullscreenRequestDecision.REJECT_CLOSED -> {
                 logger.warn(LogCategory.BROWSER, "Ignoring fullscreen request from closed browser")
-                exitCallbackGate.notifyOnce(browser, onExit)
+                exitCallbackGate.notifyOnce(browser, checkNotNull(exitAttempt), onExit)
             }
 
             FullscreenRequestDecision.REJECT_COMPETING -> {
-                rejectFullscreenRequest(browser, onExit)
+                rejectFullscreenRequest(browser, checkNotNull(exitAttempt), onExit)
             }
 
             FullscreenRequestDecision.BEGIN -> {
@@ -236,6 +297,7 @@ object FullscreenBrowserWindow {
     /** Rejects a losing browser without publishing a false enter state. */
     private fun rejectFullscreenRequest(
         browser: Browser,
+        exitAttempt: Long,
         onExit: () -> Unit,
     ) {
         logger.warn(LogCategory.BROWSER, "Rejecting fullscreen request while another browser is active")
@@ -245,9 +307,16 @@ object FullscreenBrowserWindow {
                     logger.warn(LogCategory.BROWSER, "Could not reject competing browser fullscreen", error = error)
                 }.isSuccess
         // A successful request emits FullScreenExited, whose normal observer
-        // publishes the callback. Fall back locally only when no event can follow.
+        // publishes the callback. Bound the wait in case that event is lost.
         if (!exitRequested) {
-            exitCallbackGate.notifyOnce(browser, onExit)
+            exitCallbackGate.notifyOnce(browser, exitAttempt, onExit)
+        } else {
+            Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
+                exitCallbackGate.notifyOnce(browser, exitAttempt, onExit)
+            }.apply {
+                isRepeats = false
+                start()
+            }
         }
     }
 
@@ -464,7 +533,7 @@ object FullscreenBrowserWindow {
                 showBorderlessOverlay(
                     frame = frame,
                     bounds = displayBounds(frame),
-                    watchOwnerExit = false,
+                    watchOwnerExit = currentOwnerWindowId?.let(::isRegisteredWindowFullscreen) == true,
                     expectedEpoch = expectedEpoch,
                 )
                 return@invokeLater
@@ -487,7 +556,7 @@ object FullscreenBrowserWindow {
                     showBorderlessOverlay(
                         frame = frame,
                         bounds = displayBounds(frame),
-                        watchOwnerExit = false,
+                        watchOwnerExit = currentOwnerWindowId?.let(::isRegisteredWindowFullscreen) == true,
                         expectedEpoch = expectedEpoch,
                     )
                 }
@@ -650,18 +719,6 @@ object FullscreenBrowserWindow {
             false
         }
 
-    /**
-     * Check if window is currently in fullscreen state (macOS).
-     * On macOS in fullscreen, the window bounds match the screen bounds exactly.
-     */
-    private fun isWindowInFullscreen(frame: JFrame): Boolean = fillsScreen(frame.bounds, displayBounds(frame))
-
-    private fun displayBounds(frame: JFrame): Rectangle =
-        frame.graphicsConfiguration?.bounds
-            ?: GraphicsEnvironment
-                .getLocalGraphicsEnvironment()
-                .defaultScreenDevice.defaultConfiguration.bounds
-
     private fun installExitShortcut(frame: JFrame) {
         frame.rootPane
             .getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
@@ -702,17 +759,12 @@ object FullscreenBrowserWindow {
 
         // The owner may have completed its exit between the state read that
         // selected overlay mode and listener registration.
-        val state = WindowFocusManager.getWindowFullscreenState(ownerWindowId)
-        val stillFullscreen =
-            state != null &&
-                hasFullscreenSignal(
-                    nativeStateAvailable = state.nativeStateAvailable,
-                    nativeFullscreen = state.nativeFullscreen,
-                    composeFullscreen = state.composeFullscreen,
-                )
+        val stillFullscreen = isRegisteredWindowFullscreen(ownerWindowId)
         if (!stillFullscreen) {
             SwingUtilities.invokeLater {
-                requestPageExit()
+                if (isCurrentOwnerOverlay(ownerWindowId, expectedEpoch)) {
+                    requestPageExit()
+                }
             }
         }
     }
