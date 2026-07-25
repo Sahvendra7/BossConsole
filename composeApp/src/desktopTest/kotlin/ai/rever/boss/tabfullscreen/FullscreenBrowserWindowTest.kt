@@ -214,4 +214,38 @@ class FullscreenBrowserWindowTest {
         assertFalse(gate.notifyOnce("browser-b", 42L) { notifications++ })
         assertEquals(1, notifications)
     }
+
+    @Test
+    fun `video fullscreen confirmation distinguishes early exit from ignored toggle`() {
+        assertEquals(
+            VideoFullscreenConfirmationDecision.CONFIRMED,
+            VideoFullscreenConfirmationDecision.decide(
+                trackingAvailable = true,
+                stateAvailable = true,
+                isFullscreen = true,
+                entryObserved = true,
+                geometryFullscreen = false,
+            ),
+        )
+        assertEquals(
+            VideoFullscreenConfirmationDecision.EXITED_EARLY,
+            VideoFullscreenConfirmationDecision.decide(
+                trackingAvailable = true,
+                stateAvailable = true,
+                isFullscreen = false,
+                entryObserved = true,
+                geometryFullscreen = false,
+            ),
+        )
+        assertEquals(
+            VideoFullscreenConfirmationDecision.USE_OVERLAY,
+            VideoFullscreenConfirmationDecision.decide(
+                trackingAvailable = true,
+                stateAvailable = false,
+                isFullscreen = false,
+                entryObserved = false,
+                geometryFullscreen = false,
+            ),
+        )
+    }
 }

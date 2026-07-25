@@ -200,6 +200,35 @@ private fun runOnEventDispatchThreadAndWait(
     }
 }
 
+internal enum class VideoFullscreenConfirmationDecision {
+    CONFIRMED,
+    EXITED_EARLY,
+    USE_OVERLAY,
+    ;
+
+    companion object {
+        fun decide(
+            trackingAvailable: Boolean,
+            stateAvailable: Boolean,
+            isFullscreen: Boolean,
+            entryObserved: Boolean,
+            geometryFullscreen: Boolean,
+        ): VideoFullscreenConfirmationDecision {
+            val fullscreenConfirmed =
+                if (trackingAvailable) {
+                    stateAvailable && isFullscreen
+                } else {
+                    geometryFullscreen
+                }
+            return when {
+                fullscreenConfirmed -> CONFIRMED
+                entryObserved -> EXITED_EARLY
+                else -> USE_OVERLAY
+            }
+        }
+    }
+}
+
 private class VideoFullscreenTracker(
     private val onEntryObserved: () -> Unit,
     private val onExitObserved: () -> Unit,
@@ -210,8 +239,9 @@ private class VideoFullscreenTracker(
             onFullscreenExitStarted = ::handleFullscreenExitStarted,
         )
     private var trackingId: String? = null
-    private var entryObserved = false
 
+    var entryObserved = false
+        private set
     var trackingAvailable = false
         private set
     var stateAvailable = false
@@ -257,6 +287,49 @@ private class VideoFullscreenTracker(
     private fun handleFullscreenExitStarted(eventTrackingId: String) {
         if (eventTrackingId != trackingId || !entryObserved) return
         onExitObserved()
+    }
+}
+
+private class VideoFullscreenConfirmationHandler(
+    private val onConfirmed: () -> Unit,
+    private val onExitedEarly: () -> Unit,
+) {
+    private val logger = BossLogger.forComponent("VideoFullscreenConfirmationHandler")
+
+    fun handle(
+        tracker: VideoFullscreenTracker,
+        geometryFullscreen: () -> Boolean,
+        useOverlay: () -> Unit,
+    ) {
+        val trackingAvailable = tracker.trackingAvailable
+        val decision =
+            VideoFullscreenConfirmationDecision.decide(
+                trackingAvailable = trackingAvailable,
+                stateAvailable = tracker.stateAvailable,
+                isFullscreen = tracker.isFullscreen,
+                entryObserved = tracker.entryObserved,
+                geometryFullscreen = !trackingAvailable && geometryFullscreen(),
+            )
+        when (decision) {
+            VideoFullscreenConfirmationDecision.CONFIRMED -> {
+                onConfirmed()
+                logger.info(
+                    LogCategory.BROWSER,
+                    "Fullscreen animation completed, exit detection enabled",
+                    mapOf("nativeSignal" to trackingAvailable),
+                )
+            }
+
+            VideoFullscreenConfirmationDecision.EXITED_EARLY -> {
+                logger.info(LogCategory.BROWSER, "Native fullscreen exited before confirmation completed")
+                onExitedEarly()
+            }
+
+            VideoFullscreenConfirmationDecision.USE_OVERLAY -> {
+                logger.warn(LogCategory.BROWSER, "macOS ignored native fullscreen toggle; using borderless overlay")
+                useOverlay()
+            }
+        }
     }
 }
 
@@ -435,11 +508,17 @@ object FullscreenBrowserWindow {
                 logger.info(LogCategory.BROWSER, "Native video fullscreen entry observed")
             },
             onExitObserved = {
-                if (usesNativeMacOSFullscreen && hasReachedFullscreen && !isExiting) {
+                // VideoFullscreenTracker only publishes this callback after entryObserved.
+                if (usesNativeMacOSFullscreen && !isExiting) {
                     logger.info(LogCategory.BROWSER, "Native video fullscreen exit observed")
                     requestPageExit()
                 }
             },
+        )
+    private val videoFullscreenConfirmationHandler =
+        VideoFullscreenConfirmationHandler(
+            onConfirmed = { hasReachedFullscreen = true },
+            onExitedEarly = ::requestPageExit,
         )
     private val overlayCoordinator =
         FullscreenOverlayCoordinator(
@@ -800,32 +879,19 @@ object FullscreenBrowserWindow {
                 // only when reflective listener registration is unavailable.
                 Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
                     runFullscreenTransition(frame, browser, expectedEpoch) {
-                        val fullscreenConfirmed =
-                            if (videoFullscreenTracker.trackingAvailable) {
-                                videoFullscreenTracker.stateAvailable && videoFullscreenTracker.isFullscreen
-                            } else {
-                                isWindowInFullscreen(frame)
-                            }
-                        if (fullscreenConfirmed) {
-                            hasReachedFullscreen = true
-                            logger.info(
-                                LogCategory.BROWSER,
-                                "Fullscreen animation completed, exit detection enabled",
-                                mapOf("nativeSignal" to videoFullscreenTracker.trackingAvailable),
-                            )
-                        } else {
-                            logger.warn(
-                                LogCategory.BROWSER,
-                                "macOS ignored native fullscreen toggle; using borderless overlay",
-                            )
-                            showBorderlessOverlay(
-                                frame = frame,
-                                browser = browser,
-                                bounds = displayBounds(frame),
-                                watchOwnerExit = currentOwnerWindowId?.let(::isRegisteredWindowFullscreen) == true,
-                                expectedEpoch = expectedEpoch,
-                            )
-                        }
+                        videoFullscreenConfirmationHandler.handle(
+                            tracker = videoFullscreenTracker,
+                            geometryFullscreen = { isWindowInFullscreen(frame) },
+                            useOverlay = {
+                                showBorderlessOverlay(
+                                    frame = frame,
+                                    browser = browser,
+                                    bounds = displayBounds(frame),
+                                    watchOwnerExit = currentOwnerWindowId?.let(::isRegisteredWindowFullscreen) == true,
+                                    expectedEpoch = expectedEpoch,
+                                )
+                            },
+                        )
                     }
                 }.apply {
                     isRepeats = false
