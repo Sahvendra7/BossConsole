@@ -92,8 +92,13 @@ env:
   # promoted build sorts above every direct release rather than in sequence with it.
   # Uniqueness is what issue #38 needed; nothing reads CFBundleVersion today (the updater
   # compares semver app.version), so do not build ordering logic on it without revisiting.
-  # Do NOT reference `inputs` here: a workflow-level env is evaluated for every trigger,
-  # including the tag push, where that context does not exist — the run fails at startup.
+  # Do NOT reference `inputs` from this workflow-level env. Observed on PR #49: with
+  # `${{ inputs.build_id || github.run_number }}` here, EVERY workflow run on the branch
+  # reported startup_failure with no jobs; reverting just this line (and putting the
+  # override on the macOS job below) turned all checks green. `inputs` is documented as
+  # available to workflow-level env, so the likely trigger is this workflow's non-input
+  # `push: tags` path, where the context does not exist — but the mechanism is inference,
+  # the failure is not. Job-level `inputs` references are fine and already used here.
   BOSS_BUILD_ID: ${{ github.run_number }}
   # Production credentials for release builds
   JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}

@@ -87,9 +87,15 @@ val baseVersion = appVersion.substringBefore("-")
 // from the first 9.2.60 and anything keyed on it cannot tell the two apart.
 // Compose validates it as at most three non-negative integers, so "9.2.60.<n>" is
 // not expressible; we use Apple's usual convention of a plain monotonic counter:
-//   * CI release builds — BOSS_BUILD_ID, which release.yml sets to github.run_number
-//     (monotonic per workflow, and shared by every platform job of one release run).
+//   * CI release builds — BOSS_BUILD_ID. release.yml defaults it to github.run_number
+//     (shared by every platform job of one release run); a caller that invokes release.yml
+//     as a reusable workflow must pass its own build_id, because github.run_number would
+//     otherwise be the CALLER's counter (promote-release passes a date +%s stamp).
 //   * any other CI build — GITHUB_RUN_NUMBER, so at least it is not a constant.
+// What that guarantees is UNIQUENESS, not global ordering: promotion ids come from a
+// disjoint, much larger range than run numbers, so a promoted build sorts above every
+// direct release rather than in sequence with it. Distinguishability is what issue #38
+// needed; do not build ordering logic on CFBundleVersion without revisiting this.
 //   * local builds — app.build.number from version.properties. Deliberately a
 //     *stable* value so packaging tasks stay up-to-date between local runs; a
 //     timestamp here would re-sign the whole app image on every build.

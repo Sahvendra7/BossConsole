@@ -174,14 +174,15 @@ object WindowsProtocolHandler {
      * Windows' generic "no app associated" error. Invoke via
      * `BOSS.exe --unregister-protocol` from an uninstall action or by hand.
      *
-     * Safety policy lives in [classifyProtocolCleanup] (pure, and unit-tested): the key is
-     * deleted only when it points at *this* installation, at an executable that no longer
-     * exists, or carries no command value at all — a partial registration this code
-     * produced, identified by `reg query`'s exit code rather than by "the value did not
-     * parse". Anything else is left alone: a registration owned by a different live
+     * Safety policy lives in [classifyProtocolCleanup] and [parseCommandState] (both pure
+     * and unit-tested): the key is deleted only when it points at *this* installation, at an
+     * executable that no longer exists, or carries no command value at all — a partial
+     * registration this code produced, identified by reg's own "unable to find" output
+     * rather than by an exit code (`reg.exe` exits 1 for access-denied too) or by "the value
+     * did not parse". Anything else is left alone: a registration owned by a different live
      * install, a command in a form this code does not read (`REG_EXPAND_SZ`, unquoted —
-     * what a WiX/MSI-authored registration looks like), and any registry read that failed.
-     * Failing to *read* must never escalate to *deleting*.
+     * what a WiX/MSI-authored registration looks like), and any registry read that failed
+     * for any reason. Failing to *read* must never escalate to *deleting*.
      *
      * Note this protection is delete-only. [registerProtocol] still overwrites an
      * unparseable command (`commandPointsToValidExecutable` fails closed), so an
@@ -190,19 +191,19 @@ object WindowsProtocolHandler {
     fun unregisterProtocol(): UnregisterOutcome {
         if (!isWindows) return UnregisterOutcome.NOT_APPLICABLE
 
-        val blocker =
+        val command = queryProtocolCommand()
+        val decision =
             classifyProtocolCleanup(
                 rootPresent = isProtocolRegistered(),
-                command = queryProtocolCommand(),
+                command = command,
                 appPath = getApplicationPath(),
                 exeExists = { File(it).exists() },
             )
-        logger.info(
-            LogCategory.SYSTEM,
-            "boss:// protocol cleanup decision",
-            mapOf("key" to PROTOCOL_KEY, "decision" to (blocker?.name ?: "DELETE")),
-        )
-        return blocker ?: deleteProtocolKey()
+        logCleanupDecision(decision, command)
+        return when (decision) {
+            is CleanupDecision.Report -> decision.outcome
+            CleanupDecision.Delete -> deleteProtocolKey()
+        }
     }
 
     /**
@@ -365,7 +366,7 @@ private fun deleteProtocolKey(): WindowsProtocolHandler.UnregisterOutcome =
  * *read* the registry must never escalate to *deleting* it.
  */
 internal sealed interface CommandState {
-    /** `reg query` reports the key/value as absent. */
+    /** `reg query` positively reports the key/value as absent (not merely a failed query). */
     object Missing : CommandState
 
     /** Present, but not readable here: unexpected value type, no value text, or the query failed. */
@@ -379,12 +380,7 @@ internal sealed interface CommandState {
 
 /**
  * Read the registered `shell\open\command`, keeping the absent/unreadable distinction.
- *
- * `reg query <key> /ve` exits non-zero when the key or its default value does not exist,
- * which is the only signal that separates "nothing registered here" from "registered in a
- * form this code does not parse". `REG_EXPAND_SZ` is matched as well as `REG_SZ`: an
- * installer-authored command such as `"%LOCALAPPDATA%\BOSS\BOSS.exe" "%1"` is ordinary
- * and must not be mistaken for a missing value.
+ * Process I/O only — the decision lives in [parseCommandState] so it can be tested.
  */
 private fun queryProtocolCommand(): CommandState =
     try {
@@ -397,21 +393,7 @@ private fun queryProtocolCommand(): CommandState =
             ).redirectErrorStream(true).start()
 
         val output = process.inputStream.bufferedReader().readText()
-        val exitCode = process.waitFor()
-
-        // Parse: "    (Default)    REG_SZ    C:\Path\To\BOSS.exe "%1""
-        val match = Regex("""REG_(?:EXPAND_)?SZ\s+(.+)$""", RegexOption.MULTILINE).find(output)
-        val command =
-            match
-                ?.groupValues
-                ?.get(1)
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-        when {
-            exitCode != 0 -> CommandState.Missing
-            command != null -> CommandState.Present(command)
-            else -> CommandState.Unreadable
-        }
+        parseCommandState(process.waitFor(), output)
     } catch (e: IOException) {
         logger.debug(
             LogCategory.SYSTEM,
@@ -430,6 +412,43 @@ private fun queryProtocolCommand(): CommandState =
     }
 
 /**
+ * Classify the result of `reg query <key> /ve`.
+ *
+ * Ordered so that failing closed is the default, because the stakes are asymmetric:
+ * leaving an orphan key behind is cosmetic, deleting a live third-party registration is
+ * not.
+ *  * A value that parses is [CommandState.Present], whatever the exit code says.
+ *  * [CommandState.Missing] — the only state that licenses a delete — additionally
+ *    requires reg's own "unable to find" text. `reg.exe` exits 1 for absence *and* for
+ *    access-denied, policy/EDR blocks and truncated output, so the exit code alone cannot
+ *    distinguish "not there" from "could not read".
+ *  * Everything else, including a localized not-found message on a non-English Windows, is
+ *    [CommandState.Unreadable]: cleanup then reports rather than deletes.
+ *
+ * `REG_EXPAND_SZ` is matched as well as `REG_SZ` — an installer-authored command such as
+ * `"%LOCALAPPDATA%\BOSS\BOSS.exe" "%1"` is ordinary and must not read as missing.
+ */
+internal fun parseCommandState(
+    exitCode: Int,
+    output: String,
+): CommandState {
+    // Parse: "    (Default)    REG_SZ    C:\Path\To\BOSS.exe "%1""
+    val command =
+        Regex("""^\s*\(Default\)\s+REG_(?:EXPAND_)?SZ\s+(.+)$""", RegexOption.MULTILINE)
+            .find(output)
+            ?.groupValues
+            ?.get(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+    return when {
+        command != null -> CommandState.Present(command)
+        exitCode != 0 && output.contains("unable to find", ignoreCase = true) -> CommandState.Missing
+        else -> CommandState.Unreadable
+    }
+}
+
+/**
  * Extract executable path from registry command string.
  * Example: `"C:\Path\To\BOSS.exe" "%1"` -> `C:\Path\To\BOSS.exe`
  *
@@ -439,6 +458,22 @@ private fun queryProtocolCommand(): CommandState =
 internal fun extractExecutablePath(command: String): String? {
     val match = Regex("""^"([^"]+)"""").find(command)
     return match?.groupValues?.get(1)
+}
+
+/**
+ * What to do about the current `boss:` registration.
+ *
+ * A dedicated type rather than a nullable outcome: [Delete] destroys a registry key tree,
+ * and that branch should name itself at every call site and in every test.
+ */
+internal sealed interface CleanupDecision {
+    /** The registration is ours, dead, or an orphan this code produced: remove it. */
+    object Delete : CleanupDecision
+
+    /** Leave the registry alone and report this outcome. */
+    data class Report(
+        val outcome: WindowsProtocolHandler.UnregisterOutcome,
+    ) : CleanupDecision
 }
 
 /**
@@ -452,30 +487,74 @@ internal fun extractExecutablePath(command: String): String? {
  * @param appPath this installation's executable, or null when it cannot be determined
  *   (development runs)
  * @param exeExists existence check for the registered executable
- * @return the outcome to report, or null when deleting the key is the right move
  */
 internal fun classifyProtocolCleanup(
     rootPresent: Boolean,
     command: CommandState,
     appPath: String?,
     exeExists: (String) -> Boolean,
-): WindowsProtocolHandler.UnregisterOutcome? {
+): CleanupDecision {
     val registeredExe = (command as? CommandState.Present)?.command?.let { extractExecutablePath(it) }
     return when {
-        !rootPresent -> WindowsProtocolHandler.UnregisterOutcome.ABSENT
+        !rootPresent -> CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.ABSENT)
 
-        // Root key exists with no command value: a partial registration this code
-        // produced (performRegistration issues four independent `reg add`s and only logs
-        // when some fail). registerProtocol already self-heals it by re-registering, so
-        // cleanup owns it too rather than leaving orphan keys behind forever.
-        command is CommandState.Missing -> null
+        // Root key exists and reg positively reports no command value: a partial
+        // registration this code produced (performRegistration issues four independent
+        // `reg add`s and only logs when some fail). registerProtocol already self-heals it
+        // by re-registering, so cleanup owns it too rather than orphaning keys forever.
+        command is CommandState.Missing -> CleanupDecision.Delete
 
         // Present but not readable here. Never delete what we cannot parse.
-        registeredExe == null -> WindowsProtocolHandler.UnregisterOutcome.UNREADABLE
+        registeredExe == null -> CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.UNREADABLE)
 
         // Ours, or pointing at an executable that is gone: safe to remove.
-        registeredExe.equals(appPath, ignoreCase = true) || !exeExists(registeredExe) -> null
+        registeredExe.equals(appPath, ignoreCase = true) || !exeExists(registeredExe) -> CleanupDecision.Delete
 
-        else -> WindowsProtocolHandler.UnregisterOutcome.OTHER_INSTALL
+        else -> CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.OTHER_INSTALL)
     }
+}
+
+/**
+ * Log the cleanup decision with the context a support case needs — "why did
+ * `--unregister-protocol` refuse?" has to be answerable from the log, since the CLI hook
+ * has no console output (BOSS.exe is GUI-subsystem).
+ *
+ * Registered paths embed a Windows username, so they are masked (AGENTS.md).
+ */
+private fun logCleanupDecision(
+    decision: CleanupDecision,
+    command: CommandState,
+) {
+    val registered = (command as? CommandState.Present)?.command
+    when {
+        decision is CleanupDecision.Report && decision.outcome == WindowsProtocolHandler.UnregisterOutcome.ABSENT -> {
+            logger.debug(LogCategory.SYSTEM, "boss:// protocol is not registered - nothing to clean up")
+        }
+
+        decision is CleanupDecision.Report -> {
+            logger.info(
+                LogCategory.SYSTEM,
+                "boss:// protocol left registered",
+                mapOf(
+                    "key" to PROTOCOL_KEY,
+                    "outcome" to decision.outcome.name,
+                    "command" to maskUserPath(registered),
+                ),
+            )
+        }
+
+        else -> {
+            logger.info(
+                LogCategory.SYSTEM,
+                "boss:// protocol will be removed",
+                mapOf("key" to PROTOCOL_KEY, "command" to maskUserPath(registered)),
+            )
+        }
+    }
+}
+
+/** Replace the account name in `C:\Users\<name>\…` so logs do not carry it. */
+private fun maskUserPath(path: String?): String {
+    if (path == null) return "(none)"
+    return Regex("""(?i)(\\Users\\)([^\\"]+)""").replace(path) { "${it.groupValues[1]}***" }
 }

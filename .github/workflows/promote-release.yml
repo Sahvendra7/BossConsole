@@ -46,7 +46,6 @@ jobs:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
           fetch-depth: 0
 
-
       - name: 🔍 Validate and Prepare Promotion
         id: validate
         env:

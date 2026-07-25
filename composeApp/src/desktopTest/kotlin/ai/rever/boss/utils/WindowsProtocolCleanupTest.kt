@@ -6,13 +6,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * Tests for [classifyProtocolCleanup] — the safety policy behind
- * `BOSS.exe --unregister-protocol`.
+ * Tests for the safety policy behind `BOSS.exe --unregister-protocol`:
+ * [parseCommandState] (what the registry currently holds) and [classifyProtocolCleanup]
+ * (whether that licenses a delete).
  *
- * Only the `reg delete` itself needs a real registry; the decision of *whether* deleting is
- * safe is pure, and it is the part with a bad failure mode: deleting a registration that
- * belongs to a live install (or that we merely failed to read) breaks `boss://` links for
- * someone else's working BOSS. These cases run on any host.
+ * Only the `reg delete` itself needs a real registry. Both halves of the decision are pure,
+ * and both are where the dangerous mistakes live: deleting a registration that belongs to a
+ * live install — or that we merely failed to read — breaks `boss://` links for someone
+ * else's working BOSS. Leaving an orphan key behind is cosmetic by comparison, so every
+ * ambiguous case must land on "report", not "delete".
  */
 class WindowsProtocolCleanupTest {
     private val thisApp = """C:\Users\me\AppData\Local\BOSS\BOSS.exe"""
@@ -25,10 +27,88 @@ class WindowsProtocolCleanupTest {
         existing: Set<String> = setOf(thisApp, otherApp),
     ) = classifyProtocolCleanup(rootPresent, command, appPath) { it in existing }
 
+    private fun regOutput(
+        type: String = "REG_SZ",
+        value: String,
+    ) = "\n$PROTOCOL_KEY_TEST\\shell\\open\\command\n    (Default)    $type    $value\n\n"
+
+    // region parseCommandState
+
+    @Test
+    fun `parses a quoted REG_SZ command`() {
+        assertEquals(
+            CommandState.Present(""""$thisApp" "%1""""),
+            parseCommandState(0, regOutput(value = """"$thisApp" "%1"""")),
+        )
+    }
+
+    /** An installer-authored value is commonly REG_EXPAND_SZ; it must not read as missing. */
+    @Test
+    fun `parses a REG_EXPAND_SZ command`() {
+        assertEquals(
+            CommandState.Present(""""%LOCALAPPDATA%\BOSS\BOSS.exe" "%1""""),
+            parseCommandState(0, regOutput(type = "REG_EXPAND_SZ", value = """"%LOCALAPPDATA%\BOSS\BOSS.exe" "%1"""")),
+        )
+    }
+
+    @Test
+    fun `treats reg's not-found output as missing`() {
+        assertEquals(
+            CommandState.Missing,
+            parseCommandState(1, "ERROR: The system was unable to find the specified registry key or value."),
+        )
+    }
+
+    /**
+     * Regression: `reg.exe` exits 1 for access-denied, policy/EDR blocks and truncated
+     * output too. Only its own not-found text may license a delete.
+     */
+    @Test
+    fun `treats access denied as unreadable, not missing`() {
+        assertEquals(CommandState.Unreadable, parseCommandState(1, "ERROR: Access is denied."))
+    }
+
+    @Test
+    fun `treats a localized not-found message as unreadable`() {
+        assertEquals(CommandState.Unreadable, parseCommandState(1, "FEHLER: Der angegebene Registrierungsschlüssel"))
+    }
+
+    @Test
+    fun `treats an empty value as unreadable`() {
+        assertEquals(CommandState.Unreadable, parseCommandState(0, regOutput(value = "")))
+    }
+
+    @Test
+    fun `treats an unexpected value type as unreadable`() {
+        assertEquals(CommandState.Unreadable, parseCommandState(0, regOutput(type = "REG_DWORD", value = "0x1")))
+    }
+
+    /** A command whose text merely contains "REG_SZ" must not confuse the parser. */
+    @Test
+    fun `parses a command containing the literal REG_SZ`() {
+        assertEquals(
+            CommandState.Present(""""C:\Tools\REG_SZ\BOSS.exe" "%1""""),
+            parseCommandState(0, regOutput(value = """"C:\Tools\REG_SZ\BOSS.exe" "%1"""")),
+        )
+    }
+
+    /** A parsed value wins over a non-zero exit code — failing closed the other way round. */
+    @Test
+    fun `prefers a parsed command over a nonzero exit code`() {
+        assertEquals(
+            CommandState.Present(""""$otherApp" "%1""""),
+            parseCommandState(1, regOutput(value = """"$otherApp" "%1"""")),
+        )
+    }
+
+    // endregion
+
+    // region classifyProtocolCleanup
+
     @Test
     fun `absent when nothing is registered`() {
         assertEquals(
-            UnregisterOutcome.ABSENT,
+            CleanupDecision.Report(UnregisterOutcome.ABSENT),
             classify(rootPresent = false, command = CommandState.Missing),
         )
     }
@@ -36,18 +116,18 @@ class WindowsProtocolCleanupTest {
     /** Root key without a command value: a partial registration this code produced. */
     @Test
     fun `deletes a partial registration that has no command value`() {
-        assertNull(classify(command = CommandState.Missing))
+        assertEquals(CleanupDecision.Delete, classify(command = CommandState.Missing))
     }
 
     /**
-     * Regression: an unreadable command must NOT be treated as a missing one. A
-     * `REG_EXPAND_SZ` or unquoted value is what an installer-authored registration looks
-     * like, and a failed registry *read* must never escalate to a *delete*.
+     * An unreadable command must NOT be treated as a missing one. A `REG_EXPAND_SZ` or
+     * unquoted value is what an installer-authored registration looks like, and a failed
+     * registry *read* must never escalate to a *delete*.
      */
     @Test
     fun `leaves an unreadable command alone`() {
         assertEquals(
-            UnregisterOutcome.UNREADABLE,
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
             classify(command = CommandState.Unreadable),
         )
     }
@@ -55,25 +135,28 @@ class WindowsProtocolCleanupTest {
     @Test
     fun `leaves an unquoted command alone`() {
         assertEquals(
-            UnregisterOutcome.UNREADABLE,
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
             classify(command = CommandState.Present("""C:\Program Files\BOSS\BOSS.exe "%1"""")),
         )
     }
 
     @Test
     fun `deletes a registration pointing at this installation`() {
-        assertNull(classify(command = CommandState.Present(""""$thisApp" "%1"""")))
+        assertEquals(CleanupDecision.Delete, classify(command = CommandState.Present(""""$thisApp" "%1"""")))
     }
 
     @Test
     fun `matches this installation case-insensitively`() {
-        assertNull(classify(command = CommandState.Present(""""${thisApp.uppercase()}" "%1"""")))
+        assertEquals(
+            CleanupDecision.Delete,
+            classify(command = CommandState.Present(""""${thisApp.uppercase()}" "%1"""")),
+        )
     }
 
     @Test
     fun `deletes a registration pointing at a deleted executable`() {
         assertEquals(
-            null,
+            CleanupDecision.Delete,
             classify(
                 command = CommandState.Present(""""C:\Old\BOSS\BOSS.exe" "%1""""),
                 existing = setOf(thisApp),
@@ -84,7 +167,7 @@ class WindowsProtocolCleanupTest {
     @Test
     fun `leaves another live installation registered`() {
         assertEquals(
-            UnregisterOutcome.OTHER_INSTALL,
+            CleanupDecision.Report(UnregisterOutcome.OTHER_INSTALL),
             classify(command = CommandState.Present(""""$otherApp" "%1"""")),
         )
     }
@@ -93,14 +176,15 @@ class WindowsProtocolCleanupTest {
     @Test
     fun `leaves another live installation registered when this app path is unknown`() {
         assertEquals(
-            UnregisterOutcome.OTHER_INSTALL,
+            CleanupDecision.Report(UnregisterOutcome.OTHER_INSTALL),
             classify(command = CommandState.Present(""""$otherApp" "%1""""), appPath = null),
         )
     }
 
     @Test
     fun `still deletes a dead registration when this app path is unknown`() {
-        assertNull(
+        assertEquals(
+            CleanupDecision.Delete,
             classify(
                 command = CommandState.Present(""""C:\Old\BOSS\BOSS.exe" "%1""""),
                 appPath = null,
@@ -113,15 +197,22 @@ class WindowsProtocolCleanupTest {
     @Test
     fun `absent takes precedence over a readable command`() {
         assertEquals(
-            UnregisterOutcome.ABSENT,
+            CleanupDecision.Report(UnregisterOutcome.ABSENT),
             classify(rootPresent = false, command = CommandState.Present(""""$otherApp" "%1"""")),
         )
     }
+
+    // endregion
 
     @Test
     fun `extracts the executable from a quoted command only`() {
         assertEquals(thisApp, extractExecutablePath(""""$thisApp" "%1""""))
         assertNull(extractExecutablePath("""$thisApp "%1""""))
         assertNull(extractExecutablePath(""))
+    }
+
+    private companion object {
+        /** Mirrors the production key; only used to shape realistic `reg query` output. */
+        const val PROTOCOL_KEY_TEST = """HKEY_CURRENT_USER\Software\Classes\boss"""
     }
 }

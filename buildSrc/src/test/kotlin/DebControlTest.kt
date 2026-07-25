@@ -164,10 +164,11 @@ class DebControlTest {
     }
 
     /**
-     * The realistic jpackage shape: a folded `Description` is the final field, so the
-     * appended `Recommends` has to land after continuation lines. Works because a
-     * column-0 field terminates the folded field — this is the case that would break if
-     * the emit order ever changed.
+     * The realistic jpackage shape: a folded `Description` is the final field. The appended
+     * `Recommends` lands immediately after `Depends` — i.e. *before* the whole folded
+     * field — because a column-0 line terminates the fold, so the continuation lines stay
+     * attached to `Description`. This is the case that would break if field grouping ever
+     * mis-attributed continuation lines.
      */
     @Test
     fun `appends Recommends after a folded final Description`() {
