@@ -33,7 +33,15 @@
          task_for_pid, or a serial device, and the branded Chromium engine bundle
          (chromium-branding/entitlements/*.entitlements) ships without either key,
          so JxBrowser does not require them either. Do not add them back without
-         naming the consumer here. -->
+         naming the consumer here.
+
+         For the avoidance of doubt about the sandbox argument: the remaining
+         sandbox-scoped keys below (inherit, files.user-selected.read-write,
+         network.*, device.camera, device.audio-input) are likewise inert while
+         app-sandbox is false — camera/mic prompts come from the NS*UsageDescription
+         strings in Info.plist. They are kept in case sandboxing is ever enabled;
+         cs.debugger was removed because, unlike those, it is a hardened-runtime
+         entitlement that is NOT inert. -->
 
     <!-- App Sandbox disabled for full system access -->
     <key>com.apple.security.app-sandbox</key>

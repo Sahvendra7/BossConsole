@@ -93,10 +93,10 @@ val baseVersion = appVersion.substringBefore("-")
 //   * local builds — app.build.number from version.properties. Deliberately a
 //     *stable* value so packaging tasks stay up-to-date between local runs; a
 //     timestamp here would re-sign the whole app image on every build.
-// The value is intentionally NOT derived from app.version: it is a build counter,
-// and Finder shows it as "Version 9.2.60 (641)". `app.bundle.version` (which used to
-// feed CFBundleVersion and always equalled app.version) is no longer read here; it
-// survives in version.properties as display-only metadata for ./gradlew showVersion.
+// The value is intentionally NOT derived from app.version: it is a build counter, and
+// Finder shows it as "Version 9.2.60 (641)". `app.bundle.version` used to feed
+// CFBundleVersion while always equalling app.version, so it has been deleted outright
+// along with its writers (version tasks, release/release-lite/promote-release).
 val macBundleBuildVersion: String =
     (System.getenv("BOSS_BUILD_ID") ?: System.getenv("GITHUB_RUN_NUMBER"))
         ?.trim()
@@ -1003,7 +1003,13 @@ compose.desktop {
                 packageName = "BOSS"
                 // Use base version (without prerelease suffix) for DMG - doesn't support semver prereleases
                 dmgPackageVersion = baseVersion
-                dmgPackageBuildVersion = "1"
+                // Same build id as the app bundle. It was hardcoded "1", which is inert
+                // today (packageDmg runs against --app-image, so CFBundleVersion comes
+                // from createDistributable's generic packageBuildVersion) — but that is
+                // exactly the "correct by accident of plugin internals" the rest of this
+                // block removes: if the DMG task ever rewrote the plist, the shipped
+                // CFBundleVersion would silently revert to 1.
+                dmgPackageBuildVersion = macBundleBuildVersion
 
                 // Real platform floor, not the app's own floor: the browser-engine
                 // bundle BOSS downloads (~/.boss/boss-chromium/BOSS.app) declares
@@ -1590,11 +1596,19 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
             // above only closed half of the headless problem. Desktop integration is
             // best-effort here, so xdg-utils belongs under `Recommends:`: apt still
             // pulls it in by default on desktop systems, while a headless install no
-            // longer hard-fails.
+            // longer hard-fails. Note `dpkg -i` does NOT honor Recommends, so a
+            // desktop install done that way silently skips menu/icon registration
+            // instead of failing — install with apt to get the recommends.
+            //
+            // The transform itself lives in buildSrc (DebControl) so it can be
+            // unit-tested without a Linux runner; see DebControlTest.
             val controlFile = File(workDir, "DEBIAN/control")
-            if (controlFile.isFile && softenXdgUtilsDependency(controlFile)) {
-                println("✅ Moved xdg-utils from Depends to Recommends in DEBIAN/control (headless installs)")
-                modified = true
+            if (controlFile.isFile) {
+                DebControl.softenXdgUtilsDependency(controlFile.readText())?.let { rewritten ->
+                    controlFile.writeText(rewritten)
+                    println("✅ Moved xdg-utils from Depends to Recommends in DEBIAN/control (headless installs)")
+                    modified = true
+                }
             }
 
             if (modified) {
@@ -1610,79 +1624,6 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
         } finally {
             workDir.deleteRecursively()
         }
-    }
-
-    /**
-     * Moves `xdg-utils` out of the .deb's `Depends:` field and into `Recommends:`.
-     * Returns true when the control file was rewritten (false when there is nothing
-     * to do, which keeps the whole task idempotent across repacks).
-     *
-     * Debian field folding (continuation lines start with a space or tab) is honored
-     * for the two fields this touches; every other field is copied through verbatim.
-     * An entry is only dropped when *all* of its alternatives are xdg-utils, so a
-     * hypothetical `xdg-utils | something-else` is left alone. Assumes the file opens
-     * with a field rather than a comment/blank line, which is true of jpackage output.
-     */
-    private fun softenXdgUtilsDependency(controlFile: File): Boolean {
-        val fieldStart = Regex("^([A-Za-z0-9][A-Za-z0-9-]*):(.*)$")
-        val packageName = Regex("^[A-Za-z0-9][A-Za-z0-9+.-]*")
-
-        // Group the file into fields, keeping each field's original lines so
-        // untouched fields survive byte-for-byte.
-        val fields = mutableListOf<Pair<String, MutableList<String>>>()
-        controlFile.readLines().forEach { line ->
-            val match = fieldStart.find(line)
-            if (match != null) {
-                fields += match.groupValues[1] to mutableListOf(line)
-            } else if (fields.isNotEmpty()) {
-                // Continuation of the previous field (or a trailing blank line).
-                fields.last().second += line
-            }
-        }
-
-        val dependsIndex = fields.indexOfFirst { it.first.equals("Depends", ignoreCase = true) }
-        if (dependsIndex < 0) return false
-
-        val dependsField = fields[dependsIndex]
-        val dependsValue =
-            dependsField.second
-                .joinToString(" ") { it.substringAfter(':', it).trim() }
-                .trim()
-        val entries = dependsValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        val isXdgUtils = { entry: String ->
-            entry.split("|").all { packageName.find(it.trim())?.value == "xdg-utils" }
-        }
-        if (entries.none(isXdgUtils)) return false
-
-        val kept = entries.filterNot(isXdgUtils)
-        if (kept.isEmpty()) {
-            fields.removeAt(dependsIndex)
-        } else {
-            fields[dependsIndex] = dependsField.first to mutableListOf("${dependsField.first}: ${kept.joinToString(", ")}")
-        }
-
-        val recommendsIndex = fields.indexOfFirst { it.first.equals("Recommends", ignoreCase = true) }
-        if (recommendsIndex < 0) {
-            // Put it where Depends was, so the field order still reads naturally.
-            val insertAt = if (kept.isEmpty()) dependsIndex else dependsIndex + 1
-            fields.add(insertAt, "Recommends" to mutableListOf("Recommends: xdg-utils"))
-        } else {
-            val recommendsField = fields[recommendsIndex]
-            val existing =
-                recommendsField.second
-                    .joinToString(" ") { it.substringAfter(':', it).trim() }
-                    .trim()
-                    .split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-            if (existing.none(isXdgUtils)) {
-                fields[recommendsIndex] =
-                    recommendsField.first to mutableListOf("${recommendsField.first}: ${(existing + "xdg-utils").joinToString(", ")}")
-            }
-        }
-
-        controlFile.writeText(fields.flatMap { it.second }.joinToString("\n").trimEnd('\n') + "\n")
-        return true
     }
 }
 

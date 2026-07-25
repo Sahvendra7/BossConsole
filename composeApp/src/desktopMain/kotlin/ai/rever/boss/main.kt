@@ -76,15 +76,12 @@ fun main(args: Array<String>) {
     BossLogger.initialize() // Register shutdown hook for log flushing
 
     // Uninstall hook (Windows): `BOSS.exe --unregister-protocol` removes the boss://
-    // handler that WindowsProtocolHandler registers at runtime, so uninstalling does
-    // not leave a registry handler pointing at a deleted executable. Handled before
-    // any app/single-instance initialization so it stays callable from an installer
-    // action or by hand. Exits non-zero when the handler was left in place (it
-    // belongs to another live install) so a caller can tell the cases apart.
+    // handler that WindowsProtocolHandler registers at runtime, so uninstalling does not
+    // leave a registry handler pointing at a deleted executable. Handled before any
+    // app/single-instance initialization so it stays callable from an installer action.
+    // Exit codes are documented on unregisterProtocolExitCode().
     if (args.contains("--unregister-protocol")) {
-        val removed = WindowsProtocolHandler.unregisterProtocol()
-        logger.info(LogCategory.SYSTEM, "boss:// protocol cleanup requested", mapOf("removed" to removed))
-        exitProcess(if (removed) 0 else 1)
+        exitProcess(WindowsProtocolHandler.unregisterProtocolExitCode())
     }
 
     // Install crash handler after logger is ready

@@ -32,18 +32,28 @@ Consequences and the mitigations in place:
 | Fresh install, first launch | App registers `HKCU\Software\Classes\boss` (`WindowsProtocolHandler.registerProtocol`) |
 | Moved/reinstalled to a new path | Startup re-registers when the stored command points at a missing exe (self-heal) |
 | Another BOSS install still present and valid | Left alone — the app never steals a working registration |
+| Command present but unparseable (e.g. an unquoted, installer-authored command) | Left alone — never deleted just because this code cannot read it |
 | **Uninstalled** | The key survives and points at a deleted exe unless cleaned up (below) |
 
 ### Cleaning up the registration
 
 ```powershell
-# Preferred: let the app remove its own registration (exit code 0 = removed,
-# 1 = left in place because it belongs to another live installation)
-& "$env:LOCALAPPDATA\BOSS\BOSS.exe" --unregister-protocol
+# Preferred: let the app remove its own registration.
+# BOSS.exe is a GUI-subsystem binary (windows { console = false }), so a plain
+# invocation returns immediately and $LASTEXITCODE is NOT the app's exit code —
+# use the waiting form to observe the result:
+(Start-Process -FilePath "$env:LOCALAPPDATA\BOSS\BOSS.exe" `
+    -ArgumentList '--unregister-protocol' -Wait -PassThru).ExitCode
 
 # Manual equivalent
 reg delete "HKEY_CURRENT_USER\Software\Classes\boss" /f
 ```
+
+Exit codes: `0` nothing left to clean (removed, or nothing was registered, or not a
+Windows host), `1` the registration was deliberately left in place (another live install,
+or a command that could not be parsed), `2` the `reg delete` itself failed. An MSI custom
+action waits for the process, so the contract is observable where it matters. There is no
+console output — the BossLogger log file is the only human-readable signal.
 
 Run this **before** uninstalling, or wire it as an uninstall action when installer-owned
 registration lands (tracked as follow-up work to issue #38 — the Rust host is expected
