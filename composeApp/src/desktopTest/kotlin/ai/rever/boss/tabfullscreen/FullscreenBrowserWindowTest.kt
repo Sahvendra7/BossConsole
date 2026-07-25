@@ -204,4 +204,14 @@ class FullscreenBrowserWindowTest {
         assertTrue(gate.notifyOnce("browser-b", currentAttempt) { notifications++ })
         assertEquals(1, notifications)
     }
+
+    @Test
+    fun `expected attempt notifies when its weak entry is missing`() {
+        val gate = FullscreenExitCallbackGate<String>()
+        var notifications = 0
+
+        assertTrue(gate.notifyOnce("browser-b", 42L) { notifications++ })
+        assertFalse(gate.notifyOnce("browser-b", 42L) { notifications++ })
+        assertEquals(1, notifications)
+    }
 }

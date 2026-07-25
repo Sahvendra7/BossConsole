@@ -124,16 +124,20 @@ internal class MacOSFullscreenTracker(
                         }
 
                         else -> {
-                            if (isNativeMacOSFullscreenExitStarting(method.name)) {
-                                onFullscreenExitStarted(windowId)
-                            }
-                            nativeMacOSFullscreenStateForEvent(method.name)?.let { isFullscreen ->
-                                onFullscreenChanged(windowId, isFullscreen)
-                                logger.info(
-                                    LogCategory.UI,
-                                    "Native macOS fullscreen state changed",
-                                    mapOf("windowId" to windowId, "isFullscreen" to isFullscreen),
-                                )
+                            runCatching {
+                                if (isNativeMacOSFullscreenExitStarting(method.name)) {
+                                    onFullscreenExitStarted(windowId)
+                                }
+                                nativeMacOSFullscreenStateForEvent(method.name)?.let { isFullscreen ->
+                                    onFullscreenChanged(windowId, isFullscreen)
+                                    logger.info(
+                                        LogCategory.UI,
+                                        "Native macOS fullscreen state changed",
+                                        mapOf("windowId" to windowId, "isFullscreen" to isFullscreen),
+                                    )
+                                }
+                            }.onFailure { error ->
+                                logFailure("handle ${method.name}", windowId, error)
                             }
                             null
                         }

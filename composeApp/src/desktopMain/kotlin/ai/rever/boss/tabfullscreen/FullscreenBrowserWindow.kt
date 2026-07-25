@@ -145,8 +145,12 @@ internal class FullscreenExitCallbackGate<T : Any> {
     ): Boolean {
         val entry =
             findEntry(owner)
-                ?: Entry(WeakReference(owner), ++nextAttempt, notified = false)
-                    .also(entries::add)
+                ?: run {
+                    val attempt = expectedAttempt ?: ++nextAttempt
+                    nextAttempt = maxOf(nextAttempt, attempt)
+                    Entry(WeakReference(owner), attempt, notified = false)
+                        .also(entries::add)
+                }
         val shouldNotify =
             (expectedAttempt == null || entry.attempt == expectedAttempt) &&
                 !entry.notified
@@ -184,10 +188,11 @@ private fun runOnEventDispatchThreadAndWait(
         Thread.currentThread().interrupt()
         logger.warn(LogCategory.BROWSER, "Interrupted while closing fullscreen browser window", error = e)
     } catch (e: TimeoutException) {
-        task.cancel(false)
+        // Keep the task queued: the caller may stop waiting, but the fullscreen
+        // frame still must be disposed once the EDT becomes responsive.
         logger.warn(
             LogCategory.BROWSER,
-            "Timed out waiting for fullscreen browser cleanup on the EDT",
+            "Timed out waiting for fullscreen browser cleanup on the EDT; cleanup remains queued",
             error = e,
         )
     } catch (e: ExecutionException) {
@@ -269,10 +274,13 @@ private fun prepareBorderlessOverlayFrame(
 ): FullscreenFrameView {
     if (!sourceFrame.isDisplayable) {
         sourceFrame.isUndecorated = true
+        // createFullscreenWindow assigns the view before selecting this path.
         return FullscreenFrameView(sourceFrame, checkNotNull(sourceView))
     }
 
     val graphicsConfiguration = sourceFrame.graphicsConfiguration
+    // BrowserView has no close/dispose API. Hide and detach it before disposing
+    // the peer; the Browser remains alive and is mounted into a fresh view below.
     sourceView?.let { view ->
         view.isVisible = false
         sourceFrame.contentPane.remove(view)
@@ -400,6 +408,8 @@ private class FullscreenOverlayCoordinator(
  * Creates and manages a fullscreen Swing JFrame for browser content.
  * Uses the existing browser instance with a new BrowserView.
  * Uses native macOS fullscreen mode (creates new Space) for proper fullscreen experience.
+ * Exactly one browser fullscreen session is supported process-wide; window and browser IDs
+ * scope ownership and rejection decisions for that single session.
  */
 object FullscreenBrowserWindow {
     private val logger = BossLogger.forComponent("FullscreenBrowserWindow")
@@ -448,8 +458,10 @@ object FullscreenBrowserWindow {
 
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
 
-    // macOS fullscreen animation takes ~500ms, wait before enabling exit detection
+    // macOS fullscreen animation takes ~500ms, wait before enabling exit detection.
     private const val FULLSCREEN_ANIMATION_DELAY_MS = 600
+    private const val COMPETING_REQUEST_EXIT_TIMEOUT_MS = 600
+    private const val PAGE_EXIT_EVENT_TIMEOUT_MS = 1_000
 
     // Delay to allow Compose BrowserView to detach before creating Swing BrowserView
     // This prevents both views from competing for rendering (which causes video freeze)
@@ -536,7 +548,7 @@ object FullscreenBrowserWindow {
         if (!exitRequested) {
             exitCallbackGate.notifyOnce(browser, exitAttempt, onExit)
         } else {
-            Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
+            Timer(COMPETING_REQUEST_EXIT_TIMEOUT_MS) {
                 exitCallbackGate.notifyOnce(browser, exitAttempt, onExit)
             }.apply {
                 isRepeats = false
@@ -845,6 +857,8 @@ object FullscreenBrowserWindow {
             )
         fullscreenFrame = overlay.frame
         currentBrowserView = overlay.browserView
+        usesNativeMacOSFullscreen = false
+        hasReachedFullscreen = true
         overlay.frame.isAlwaysOnTop = true
         overlay.frame.extendedState = JFrame.NORMAL
         overlay.frame.setBounds(bounds)
@@ -852,8 +866,6 @@ object FullscreenBrowserWindow {
         overlay.frame.toFront()
         overlay.browserView.requestFocusInWindow()
         overlayCoordinator.installFocusBehavior(overlay.frame, currentOwnerWindowId)
-        usesNativeMacOSFullscreen = false
-        hasReachedFullscreen = true
         if (watchOwnerExit) {
             overlayCoordinator.watchOwnerExit(currentOwnerWindowId, expectedEpoch)
         }
@@ -864,7 +876,6 @@ object FullscreenBrowserWindow {
      * A new undecorated video window can cover that same fullscreen Space without
      * asking macOS to create a second native fullscreen Space.
      */
-
     private fun existingFullscreenWindowBounds(ownerWindowId: String): Rectangle? {
         val state = WindowFocusManager.getWindowFullscreenState(ownerWindowId)
         if (state == null ||
@@ -1062,7 +1073,7 @@ object FullscreenBrowserWindow {
             return
         }
 
-        Timer(FULLSCREEN_ANIMATION_DELAY_MS) {
+        Timer(PAGE_EXIT_EVENT_TIMEOUT_MS) {
             if (lifecycleEpoch == exitEpoch &&
                 currentBrowser === browser &&
                 isInFullscreenMode
