@@ -123,7 +123,7 @@ class RemoteWidgetRendererComposeTest {
     }
 
     @Test
-    fun `a click on a rendered button reaches the surface's outgoing queue with its event id`() {
+    fun `a click on a rendered button reaches the panel's surface with its event id`() {
         val registry = RemoteUiSurfaceRegistry()
         val surface = (registry.register(PANEL, "plugin-a") as SurfaceRegistration.Accepted).surface
         val panel = RemotePanelComponent(PANEL, "Test Panel", "plugin-a", registry)
@@ -136,10 +136,32 @@ class RemoteWidgetRendererComposeTest {
         compose.waitForIdle()
 
         val queued = runBlocking { surface.events().take(1).toList() }.single()
+        // The panel's id is used twice — to attach and emit, and to stamp the event — and the two uses
+        // must agree or the plugin receives events for a surface it does not own.
         assertEquals(PANEL, queued.surfaceId)
         assertEquals(BUTTON, queued.targetNodeId)
         assertEquals("save_settings", queued.click.eventId)
         panel.dispose()
+    }
+
+    @Test
+    fun `a click on a rendered button reaches the tab's surface with its event id`() {
+        // Same wiring, separately implemented in RemoteTabComponent — so separately asserted.
+        val registry = RemoteUiSurfaceRegistry()
+        val surface = (registry.register(TAB, "plugin-a") as SurfaceRegistration.Accepted).surface
+        val tab = RemoteTabComponent(TAB, "Test Tab", "plugin-a", registry)
+        tab.attach()
+        surface.pushTree(buttonTree())
+
+        compose.setContent { tab.Content() }
+        compose.onNodeWithText("Save").performClick()
+        compose.waitForIdle()
+
+        val queued = runBlocking { surface.events().take(1).toList() }.single()
+        assertEquals(TAB, queued.surfaceId)
+        assertEquals(BUTTON, queued.targetNodeId)
+        assertEquals("save_settings", queued.click.eventId)
+        tab.dispose()
     }
 
     private fun textFieldTree(value: String): WidgetTree =
@@ -174,5 +196,6 @@ class RemoteWidgetRendererComposeTest {
         const val FIELD = "field-1"
         const val BUTTON = "button-1"
         const val PANEL = "panel-1"
+        const val TAB = "tab-1"
     }
 }

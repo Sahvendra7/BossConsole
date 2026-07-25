@@ -8,6 +8,7 @@ import ai.rever.boss.ipc.proto.UIRegistrationResponse
 import ai.rever.boss.ipc.proto.UIUnregistration
 import ai.rever.boss.ipc.proto.WidgetUpdate
 import ai.rever.boss.kernel.ui.RemoteUiSurface
+import ai.rever.boss.kernel.ui.RemoteUiSurfaceDescriptor
 import ai.rever.boss.kernel.ui.RemoteUiSurfaceRegistry
 import ai.rever.boss.kernel.ui.SurfaceRegistration
 import ai.rever.boss.kernel.ui.SurfaceStream
@@ -48,7 +49,7 @@ class PluginUIServiceBridge(
     private val registry: RemoteUiSurfaceRegistry = RemoteUiSurfaceRegistry.shared,
 ) : PluginUIServiceGrpcKt.PluginUIServiceCoroutineImplBase() {
     override suspend fun registerUI(request: UIRegistration): UIRegistrationResponse =
-        when (val outcome = registry.register(request.surfaceId, request.processId)) {
+        when (val outcome = registry.register(request.surfaceId, request.processId, request.descriptor())) {
             is SurfaceRegistration.Rejected -> {
                 logger.warn(
                     LogCategory.UI,
@@ -178,6 +179,20 @@ class PluginUIServiceBridge(
                 }
             }.collect()
     }
+
+    /**
+     * Everything a registration declares beyond identity.
+     *
+     * Kept on the surface for the follow-up that places it in the window, which is what needs
+     * `surface_type` to choose panel vs tab and `default_slot` to position a panel.
+     */
+    private fun UIRegistration.descriptor(): RemoteUiSurfaceDescriptor =
+        RemoteUiSurfaceDescriptor(
+            surfaceType = surfaceType,
+            displayName = displayName,
+            iconName = iconName,
+            defaultSlot = defaultSlot,
+        )
 
     private fun registrationResponse(
         success: Boolean,

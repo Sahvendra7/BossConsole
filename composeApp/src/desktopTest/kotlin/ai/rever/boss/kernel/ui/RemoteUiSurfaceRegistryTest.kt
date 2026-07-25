@@ -17,7 +17,9 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -75,6 +77,68 @@ class RemoteUiSurfaceRegistryTest {
         val second = registry.register(SURFACE, "plugin-a-respawned")
 
         assertIs<SurfaceRegistration.Accepted>(second)
+    }
+
+    @Test
+    fun `a surface claimed but never streamed is reclaimable by its own process`() {
+        // The gap closeStream cannot see: a plugin can die between RegisterUI returning and StreamUI
+        // binding, or claim more surfaces than it streams. Refusing the respawn's claim would leave that
+        // panel permanently disconnected with no way back.
+        val abandoned = registry.register(SURFACE, PROCESS).accepted()
+
+        val respawn = registry.register(SURFACE, PROCESS)
+
+        val surface = assertIs<SurfaceRegistration.Accepted>(respawn).surface
+        assertNotSame(abandoned, surface)
+        assertSame(surface, registry.surfaceOf(SURFACE))
+        assertFalse(abandoned.emit(textChange("to-the-dead-one")), "the reclaimed surface is closed")
+    }
+
+    @Test
+    fun `a different process cannot take over a claim, streamed or not`() {
+        registry.register(SURFACE, "plugin-a").accepted()
+
+        val intruder = registry.register(SURFACE, "plugin-b")
+
+        assertIs<SurfaceRegistration.Rejected>(intruder)
+    }
+
+    @Test
+    fun `a streaming surface is not reclaimable even by its own process`() {
+        // Otherwise a buggy plugin that re-registers mid-session would silently cut its own live stream.
+        registry.register(SURFACE, PROCESS).accepted()
+        assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
+
+        assertIs<SurfaceRegistration.Rejected>(registry.register(SURFACE, PROCESS))
+    }
+
+    @Test
+    fun `clear closes every surface and reports the disconnection`() {
+        val host = RecordingHost()
+        registry.attach(SURFACE, host)
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
+
+        registry.clear()
+
+        assertNull(registry.surfaceOf(SURFACE))
+        assertFalse(surface.emit(textChange("after-clear")))
+        assertEquals(listOf(false, true, false), host.connections)
+    }
+
+    @Test
+    fun `a registration's descriptor is retained on the surface`() {
+        val descriptor =
+            RemoteUiSurfaceDescriptor(
+                surfaceType = "panel",
+                displayName = "Inbox",
+                iconName = "mail",
+                defaultSlot = "left.top.top",
+            )
+
+        val surface = registry.register(SURFACE, PROCESS, descriptor).accepted()
+
+        assertEquals(descriptor, surface.descriptor)
     }
 
     @Test

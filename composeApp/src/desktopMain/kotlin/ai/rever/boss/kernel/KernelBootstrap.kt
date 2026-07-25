@@ -453,6 +453,10 @@ class KernelBootstrap(
         // 6. Stop IPC server
         ipcServer?.stop()
 
+        // 6b. Close remote UI surfaces. The registry is process-wide and outlives this bootstrap, so a
+        // restart would otherwise come up still holding claims from processes that are now dead.
+        RemoteUiSurfaceRegistry.shared.clear()
+
         // 7. Cancel scope
         scope.cancel()
 

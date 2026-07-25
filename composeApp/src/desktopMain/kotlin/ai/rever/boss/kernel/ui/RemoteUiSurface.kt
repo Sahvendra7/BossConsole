@@ -38,9 +38,31 @@ import ai.rever.boss.ipc.proto.WidgetDiff as ProtoWidgetDiff
 class RemoteUiSurface internal constructor(
     val surfaceId: String,
     val processId: String,
+    /**
+     * What the plugin declared about this surface at registration.
+     *
+     * Retained but unused today: placing a remote surface in the window is the follow-up this transport
+     * unblocks, and that is what will need `surface_type` to pick panel vs tab, `default_slot` to place a
+     * panel, and the name and icon to label it. Dropping them here would mean re-plumbing the protocol
+     * later for data it already carries.
+     */
+    val descriptor: RemoteUiSurfaceDescriptor = RemoteUiSurfaceDescriptor(),
     private val publishTree: (WidgetTree) -> Unit,
     private val publishConnected: (Boolean) -> Unit,
 ) {
+    /**
+     * Serializes publication against a host component attaching.
+     *
+     * Without it, [RemoteUiSurfaceRegistry.attach] could install a host, have a gRPC thread deliver tree
+     * *N+1* through it, and then replay the *N* it had already read — leaving the component rendering an
+     * older tree than the surface holds, with nothing but the plugin's next update to correct it. Taking
+     * this lock while reading the state to replay makes the sequence a host sees monotonic.
+     *
+     * Held across a callback into the host component, which is safe because those callbacks only write
+     * Compose snapshot state and never re-enter the surface.
+     */
+    private val publishLock = Any()
+
     /**
      * User events queued for the plugin process.
      *
@@ -60,7 +82,7 @@ class RemoteUiSurface internal constructor(
      * newest inverts last-write-wins: the plugin would end up holding a stale text value with no later
      * event to correct it, and host and plugin would disagree about the field forever. Dropping from
      * the head keeps the queue converging on the current truth, and preserves the order of what
-     * survives. Sheds are counted in [shedEventCount] rather than being silent.
+     * survives. Sheds are approximated in [shedEventCount] rather than being silent.
      */
     private val outgoing = Channel<UIEvent>(OUTGOING_BUFFER, BufferOverflow.DROP_OLDEST)
 
@@ -77,7 +99,15 @@ class RemoteUiSurface internal constructor(
     /** Whether a plugin process currently holds this surface's `StreamUI` call. */
     val streaming: Boolean get() = streamClaimed.get()
 
-    /** How many outgoing events have been shed because the plugin stopped reading. */
+    /**
+     * Roughly how many outgoing events have been shed because the plugin stopped reading.
+     *
+     * **Approximate by construction.** `DROP_OLDEST` evicts inside the channel, so occupancy has to be
+     * inferred from outside it, and the collector's decrement lands just after its receive — so a
+     * concurrent drain can make an ordinary send look like an eviction (or hide a real one). Exact while
+     * nothing is collecting, which is the case that matters: a plugin that has stopped reading. Treat it
+     * as a health signal, not a count.
+     */
     val shedEventCount: Long get() = shed.get()
 
     /**
@@ -89,8 +119,21 @@ class RemoteUiSurface internal constructor(
      */
     internal fun claimStream(): Boolean {
         val claimed = streamClaimed.compareAndSet(false, true)
-        if (claimed) publishConnected(true)
+        if (claimed) synchronized(publishLock) { publishConnected(true) }
         return claimed
+    }
+
+    /**
+     * Hand a freshly attached host component the state this surface already holds.
+     *
+     * Under [publishLock], so the state read here is the state as of the last delivery — a live update
+     * cannot slip in between the read and the callback and be overwritten by an older tree.
+     */
+    internal fun replayTo(host: RemoteUiSurfaceHost) {
+        synchronized(publishLock) {
+            host.onConnectionChanged(streaming)
+            tree?.let(host::onTreeUpdated)
+        }
     }
 
     /** The outgoing event stream. Consumable exactly once — see [claimStream]. */
@@ -107,16 +150,18 @@ class RemoteUiSurface internal constructor(
      */
     internal fun emit(event: UIEvent): Boolean {
         if (outgoing.trySend(event).isFailure) return false
-        // DROP_OLDEST makes trySend always succeed, so overflow has to be inferred: the buffer cannot
-        // hold more than its capacity, so a count above it means an eviction happened on this send.
+        // DROP_OLDEST evicts inside the channel, so overflow has to be inferred from outside it: the
+        // buffer cannot hold more than its capacity, so a count above it means this send probably
+        // evicted. "Probably" because the collector decrements just after its receive — see
+        // shedEventCount for why that is acceptable for a health signal.
         if (buffered.incrementAndGet() > OUTGOING_BUFFER) {
             buffered.decrementAndGet()
             val total = shed.incrementAndGet()
             if (total == 1L || total % SHED_LOG_INTERVAL == 0L) {
                 logger.warn(
                     LogCategory.UI,
-                    "Plugin is not reading its UI events — shedding the oldest",
-                    mapOf("surfaceId" to surfaceId, "processId" to processId, "shed" to total),
+                    "Plugin appears not to be reading its UI events — shedding the oldest",
+                    mapOf("surfaceId" to surfaceId, "processId" to processId, "shedApprox" to total),
                 )
             }
         }
@@ -125,8 +170,10 @@ class RemoteUiSurface internal constructor(
 
     /** Publish a tree the host already holds in SDK form (a registration's `initial_tree`, or a test). */
     internal fun pushTree(next: WidgetTree) {
-        tree = next
-        publishTree(next)
+        synchronized(publishLock) {
+            tree = next
+            publishTree(next)
+        }
     }
 
     /** Route one inbound `WidgetUpdate` into this surface's tree. */
@@ -168,7 +215,7 @@ class RemoteUiSurface internal constructor(
         if (!closed.compareAndSet(false, true)) return
         outgoing.close()
         streamClaimed.set(false)
-        publishConnected(false)
+        synchronized(publishLock) { publishConnected(false) }
     }
 
     private fun applyDiff(diff: ProtoWidgetDiff) {
