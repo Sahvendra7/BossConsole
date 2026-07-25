@@ -1,10 +1,9 @@
 package ai.rever.boss.components.plugin.remote
 
-import ai.rever.boss.ipc.proto.ClickEvent
 import ai.rever.boss.ipc.proto.PluginUIServiceGrpcKt
-import ai.rever.boss.ipc.proto.TextChangeEvent
-import ai.rever.boss.ipc.proto.ToggleEvent
 import ai.rever.boss.ipc.proto.UIEvent
+import ai.rever.boss.ui.sdk.UIEventMapper
+import ai.rever.boss.ui.sdk.WidgetEvent
 import ai.rever.boss.ui.sdk.WidgetTree
 import androidx.compose.runtime.*
 import io.grpc.ManagedChannel
@@ -53,16 +52,16 @@ class RemoteTabComponent(
         tree?.let { widgetTree ->
             RemoteWidgetRenderer(
                 tree = widgetTree,
-                onEvent = { nodeId, eventType, eventData ->
+                onEvent = { nodeId, event ->
+                    // Payloads can contain what the user typed — log the shape, not the content.
                     logger.debug(
-                        "Tab UI event: tab={}, node={}, type={}, data={}",
+                        "Tab UI event: tab={}, node={}, type={}",
                         tabId,
                         nodeId,
-                        eventType,
-                        eventData,
+                        event::class.simpleName,
                     )
                     scope.launch {
-                        sendUIEvent(nodeId, eventType, eventData)
+                        sendUIEvent(nodeId, event)
                     }
                 },
             )
@@ -153,38 +152,14 @@ class RemoteTabComponent(
         }
     }
 
+    /**
+     * Forward one interaction to the plugin process, mapped by [UIEventMapper] — a total mapping over
+     * the sealed [WidgetEvent] type, so no proto oneof case can be silently skipped.
+     */
     private suspend fun sendUIEvent(
         nodeId: String,
-        eventType: String,
-        eventData: String,
+        event: WidgetEvent,
     ) {
-        val eventBuilder =
-            UIEvent
-                .newBuilder()
-                .setSurfaceId(tabId)
-                .setTargetNodeId(nodeId)
-                .setTimestamp(System.currentTimeMillis())
-
-        when (eventType) {
-            "click" -> {
-                eventBuilder.setClick(
-                    ClickEvent.newBuilder().setEventId(eventData).build(),
-                )
-            }
-
-            "textChange" -> {
-                eventBuilder.setTextChange(
-                    TextChangeEvent.newBuilder().setNewValue(eventData).build(),
-                )
-            }
-
-            "toggle" -> {
-                eventBuilder.setToggle(
-                    ToggleEvent.newBuilder().setChecked(eventData.toBoolean()).build(),
-                )
-            }
-        }
-
-        outgoingEvents.emit(eventBuilder.build())
+        outgoingEvents.emit(UIEventMapper.toProto(tabId, nodeId, event, System.currentTimeMillis()))
     }
 }

@@ -173,6 +173,79 @@ class WidgetDiffEngineTest {
         assertEquals("Updated", result.nodes[textId]!!.properties["value"])
     }
 
+    // ---- Subtree adds must not double-link children (issue #34 item 7) ----
+
+    /**
+     * A `NodeAdded` payload carries the added node's own `childIds`, so a subtree add links the
+     * child from the parent's payload *and* from the child's own op. Applying them parent-first used
+     * to link the child twice (and the renderer drew the subtree twice); insertion is now idempotent,
+     * so both orders converge.
+     */
+    private fun subtreeAddOps(): List<DiffOperation> {
+        val rowId = "row1"
+        val innerId = "inner1"
+        val row = WidgetNode(rowId, WidgetType.ROW, childIds = listOf(innerId))
+        val inner = WidgetNode(innerId, WidgetType.TEXT, properties = mapOf("value" to "Nested"))
+        return listOf(
+            DiffOperation.NodeAdded(row, "col1", 1),
+            DiffOperation.NodeAdded(inner, rowId, 0),
+        )
+    }
+
+    @Test
+    fun `apply subtree add parent-first does not duplicate child links`() {
+        val result = WidgetDiffEngine.apply(simpleTree(), subtreeAddOps())
+
+        assertEquals(listOf("inner1"), result.nodes["row1"]!!.childIds)
+        assertEquals(listOf("text1", "row1"), result.nodes["col1"]!!.childIds)
+    }
+
+    @Test
+    fun `apply subtree add child-first matches parent-first`() {
+        val parentFirst = WidgetDiffEngine.apply(simpleTree(), subtreeAddOps())
+        val childFirst = WidgetDiffEngine.apply(simpleTree(), subtreeAddOps().reversed())
+
+        assertEquals(parentFirst.nodes, childFirst.nodes)
+    }
+
+    @Test
+    fun `diff then apply of a subtree add matches the new tree exactly`() {
+        val base = simpleTree()
+        val expected =
+            WidgetTree(
+                rootId = "col1",
+                nodes =
+                    mapOf(
+                        "col1" to WidgetNode("col1", WidgetType.COLUMN, childIds = listOf("text1", "row1")),
+                        "text1" to WidgetNode("text1", WidgetType.TEXT, properties = mapOf("value" to "Hello")),
+                        "row1" to WidgetNode("row1", WidgetType.ROW, childIds = listOf("inner1")),
+                        "inner1" to WidgetNode("inner1", WidgetType.TEXT, properties = mapOf("value" to "Nested")),
+                    ),
+            )
+
+        val result = WidgetDiffEngine.apply(base, WidgetDiffEngine.diff(base, expected))
+
+        assertEquals(expected.nodes, result.nodes)
+    }
+
+    @Test
+    fun `apply NodeMoved within the same parent re-indexes without duplicating`() {
+        val base =
+            WidgetTree(
+                rootId = "col1",
+                nodes =
+                    mapOf(
+                        "col1" to WidgetNode("col1", WidgetType.COLUMN, childIds = listOf("a", "b")),
+                        "a" to WidgetNode("a", WidgetType.TEXT),
+                        "b" to WidgetNode("b", WidgetType.TEXT),
+                    ),
+            )
+
+        val result = WidgetDiffEngine.apply(base, listOf(DiffOperation.NodeMoved("a", "col1", 1)))
+
+        assertEquals(listOf("b", "a"), result.nodes["col1"]!!.childIds)
+    }
+
     @Test
     fun `apply diff round-trip matches new tree`() {
         val base = simpleTree()

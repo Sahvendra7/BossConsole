@@ -1,10 +1,9 @@
 package ai.rever.boss.components.plugin.remote
 
-import ai.rever.boss.ipc.proto.ClickEvent
 import ai.rever.boss.ipc.proto.PluginUIServiceGrpcKt
-import ai.rever.boss.ipc.proto.TextChangeEvent
-import ai.rever.boss.ipc.proto.ToggleEvent
 import ai.rever.boss.ipc.proto.UIEvent
+import ai.rever.boss.ui.sdk.UIEventMapper
+import ai.rever.boss.ui.sdk.WidgetEvent
 import ai.rever.boss.ui.sdk.WidgetTree
 import androidx.compose.runtime.*
 import io.grpc.ManagedChannel
@@ -53,17 +52,17 @@ class RemotePanelComponent(
         tree?.let { widgetTree ->
             RemoteWidgetRenderer(
                 tree = widgetTree,
-                onEvent = { nodeId, eventType, eventData ->
+                onEvent = { nodeId, event ->
+                    // Payloads can contain what the user typed — log the shape, not the content.
                     logger.debug(
-                        "Panel UI event: panel={}, node={}, type={}, data={}",
+                        "Panel UI event: panel={}, node={}, type={}",
                         panelId,
                         nodeId,
-                        eventType,
-                        eventData,
+                        event::class.simpleName,
                     )
                     // Forward event to plugin process via gRPC
                     scope.launch {
-                        sendUIEvent(nodeId, eventType, eventData)
+                        sendUIEvent(nodeId, event)
                     }
                 },
             )
@@ -152,38 +151,17 @@ class RemotePanelComponent(
         }
     }
 
+    /**
+     * Forward one interaction to the plugin process.
+     *
+     * The `WidgetEvent` → proto `UIEvent` mapping lives in [UIEventMapper] (boss-ui-sdk): it is total
+     * over the sealed event type, so no oneof case can be silently skipped — which is exactly how
+     * dropdown selections used to cross the wire as events with no payload at all.
+     */
     private suspend fun sendUIEvent(
         nodeId: String,
-        eventType: String,
-        eventData: String,
+        event: WidgetEvent,
     ) {
-        val eventBuilder =
-            UIEvent
-                .newBuilder()
-                .setSurfaceId(panelId)
-                .setTargetNodeId(nodeId)
-                .setTimestamp(System.currentTimeMillis())
-
-        when (eventType) {
-            "click" -> {
-                eventBuilder.setClick(
-                    ClickEvent.newBuilder().setEventId(eventData).build(),
-                )
-            }
-
-            "textChange" -> {
-                eventBuilder.setTextChange(
-                    TextChangeEvent.newBuilder().setNewValue(eventData).build(),
-                )
-            }
-
-            "toggle" -> {
-                eventBuilder.setToggle(
-                    ToggleEvent.newBuilder().setChecked(eventData.toBoolean()).build(),
-                )
-            }
-        }
-
-        outgoingEvents.emit(eventBuilder.build())
+        outgoingEvents.emit(UIEventMapper.toProto(panelId, nodeId, event, System.currentTimeMillis()))
     }
 }

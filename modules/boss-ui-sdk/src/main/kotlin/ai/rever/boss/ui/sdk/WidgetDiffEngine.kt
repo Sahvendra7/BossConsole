@@ -106,9 +106,7 @@ object WidgetDiffEngine {
                     if (op.parentId.isNotEmpty()) {
                         val parent = nodes[op.parentId]
                         if (parent != null) {
-                            val children = parent.childIds.toMutableList()
-                            children.add(op.index.coerceIn(0, children.size), op.node.id)
-                            nodes[op.parentId] = parent.copy(childIds = children)
+                            nodes[op.parentId] = parent.copy(childIds = parent.childIds.withChild(op.node.id, op.index))
                         }
                     }
                 }
@@ -145,9 +143,8 @@ object WidgetDiffEngine {
                     // Add to new parent
                     val newParent = nodes[op.newParentId]
                     if (newParent != null) {
-                        val children = newParent.childIds.toMutableList()
-                        children.add(op.newIndex.coerceIn(0, children.size), op.nodeId)
-                        nodes[op.newParentId] = newParent.copy(childIds = children)
+                        nodes[op.newParentId] =
+                            newParent.copy(childIds = newParent.childIds.withChild(op.nodeId, op.newIndex))
                     }
                 }
             }
@@ -155,6 +152,24 @@ object WidgetDiffEngine {
 
         return base.copy(nodes = nodes, version = base.version + 1)
     }
+
+    /**
+     * Insert [childId] at [index], or leave the list untouched if it already links that child.
+     *
+     * A `NodeAdded` payload carries the added node's own `childIds`, so when a whole subtree is added
+     * the parent arrives already linked to children that then get their own `NodeAdded` ops. Applying
+     * those parent-first (map iteration order decides, so it happens in practice) linked each child
+     * twice, and the renderer drew the subtree twice. Idempotent insertion makes op order irrelevant.
+     */
+    private fun List<String>.withChild(
+        childId: String,
+        index: Int,
+    ): List<String> =
+        if (contains(childId)) {
+            this
+        } else {
+            toMutableList().apply { add(index.coerceIn(0, size), childId) }
+        }
 
     private fun buildParentMap(tree: WidgetTree): Map<String, String> {
         val parentOf = mutableMapOf<String, String>()
