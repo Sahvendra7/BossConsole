@@ -27,12 +27,15 @@ interface QueuedResponse {
 export interface MockQueryBuilder extends Promise<MockSupabaseResponse> {
   select: (columns: string) => MockQueryBuilder
   insert: (data: unknown) => MockQueryBuilder
+  upsert: (data: unknown, options?: Record<string, unknown>) => MockQueryBuilder
   update: (data: unknown) => MockQueryBuilder
   delete: () => MockQueryBuilder
   eq: (column: string, value: unknown) => MockQueryBuilder
   gt: (column: string, value: unknown) => MockQueryBuilder
   lt: (column: string, value: unknown) => MockQueryBuilder
+  not: (column: string, operator: string, value: unknown) => MockQueryBuilder
   or: (filters: string) => MockQueryBuilder
+  order: (column: string, options?: Record<string, unknown>) => MockQueryBuilder
   limit: (count: number) => MockQueryBuilder
   single: () => Promise<MockSupabaseResponse>
   maybeSingle: () => Promise<MockSupabaseResponse>
@@ -245,6 +248,14 @@ export class MockSupabaseClient {
         currentParams.data = data
         return builder
       },
+      upsert: (data: unknown, options?: Record<string, unknown>) => {
+        // Upserts resolve against the same queue as inserts: tests care about the
+        // row that was written, not which statement wrote it.
+        currentOperation = 'insert'
+        currentParams.data = data
+        currentParams.upsert = options ?? {}
+        return builder
+      },
       update: (data: unknown) => {
         currentOperation = 'update'
         currentParams.data = data
@@ -269,8 +280,17 @@ export class MockSupabaseClient {
         currentParams.lt = { column, value }
         return builder
       },
+      not: (column: string, operator: string, value: unknown) => {
+        if (!currentParams.not) currentParams.not = []
+        currentParams.not.push({ column, operator, value })
+        return builder
+      },
       or: (filters: string) => {
         currentParams.or = filters
+        return builder
+      },
+      order: (column: string, options?: Record<string, unknown>) => {
+        currentParams.order = { column, ...(options ?? {}) }
         return builder
       },
       limit: (count: number) => {

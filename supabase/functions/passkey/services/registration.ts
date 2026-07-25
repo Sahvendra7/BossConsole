@@ -4,7 +4,7 @@ import { verifyAndConsumeChallenge, storePasskeyInDB } from "../utils/database.t
 import { extractCredentialFromAttestation } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler } from "../utils/error-handler.ts"
-import { ALLOWED_ORIGINS, getAllowedRpIds } from "../utils/config.ts"
+import { ALLOWED_ORIGINS, getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
 import { encodedValuesMatch, normalizeBase64Url } from "../utils/base64.ts"
 import {
   challengeMatches,
@@ -109,8 +109,13 @@ export const completeRegistration = withErrorHandler(
     }
 
     // Verify the challenge inside the signed client data is the one this
-    // ceremony was issued. Registration uses "none" attestation, so this
-    // binding is the only thing tying the credential to our challenge.
+    // ceremony was issued. Registration uses "none" attestation, so this is the
+    // only thing tying the credential to our challenge.
+    //
+    // Note what this does *not* do: /register/challenge is unauthenticated and
+    // takes userId from the request body, so a caller can legitimately hold a
+    // challenge issued for an account that is not theirs. This check makes the
+    // ceremony internally consistent; it does not establish who is asking.
     if (!challengeMatches(clientData.challenge, challenge)) {
       console.error('❌ Registration challenge mismatch between clientDataJSON and request body')
       return {
@@ -167,6 +172,16 @@ export const completeRegistration = withErrorHandler(
       return {
         success: false,
         error: 'Relying party mismatch - credential was created for a different rpId'
+      }
+    }
+
+    // ...and the RP ID has to correspond to where the ceremony was performed,
+    // otherwise the two allow-lists can be satisfied by an unrelated pairing.
+    if (!rpIdMatchesOrigin(matchedRpId, clientData.origin)) {
+      console.error('❌ Registration rpId is not a registrable suffix of its origin')
+      return {
+        success: false,
+        error: 'Relying party mismatch - rpId does not correspond to the ceremony origin'
       }
     }
 

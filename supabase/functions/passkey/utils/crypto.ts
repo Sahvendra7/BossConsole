@@ -344,6 +344,12 @@ const CBOR_MAX_DEPTH = 16
 
 /**
  * Simple CBOR decoder for WebAuthn attestation objects
+ *
+ * Trailing bytes after the top-level item are accepted **deliberately** — this is
+ * required, not an oversight. The COSE key is read from
+ * `authData.slice(offset)`, which carries whatever follows the credential public
+ * key: with the ED flag set that is the CBOR extension-output map. Rejecting
+ * trailing data would break every ceremony that requests an extension.
  */
 function decodeCBOR(buffer: Uint8Array): unknown {
   let offset = 0

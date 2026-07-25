@@ -35,6 +35,20 @@ export function getRpId(): string {
       const original = rpId
       rpId = 'localhost'
       console.log(`🔧 Converted ${original} -> localhost for WebAuthn compatibility`)
+
+      // `kong` is the gateway host in a hosted deployment *and* in a local
+      // Supabase stack, so this mapping cannot tell them apart on its own. In a
+      // hosted deployment the result is that /auth/challenge advertises
+      // rpId: "localhost" and every ceremony fails confusingly. Make the
+      // misconfiguration loud rather than silent; the value is left alone because
+      // "localhost" is the correct answer locally.
+      if (!isLocalDevEnvironment()) {
+        console.error(
+          '❌ Derived rpId "localhost" from SUPABASE_URL, and this does not look like a local ' +
+          'deployment. Set PASSKEY_RP_ID to the browser-facing domain (hosted) or ' +
+          'PASSKEY_ALLOW_LOCALHOST=true (local). Ceremonies will fail until one is set.'
+        )
+      }
     }
 
     console.log(`🔧 Extracted rpId: ${rpId} from SUPABASE_URL: ${supabaseUrl}`)
@@ -71,6 +85,36 @@ export const ALLOWED_ORIGINS: readonly string[] = [
  * happens to be running on rather than a host BOSS controls.
  */
 const LOOPBACK_RP_IDS: readonly string[] = ['localhost', '127.0.0.1', '[::1]', '::1']
+
+/**
+ * True when `rpId` is a legitimate relying party ID for a ceremony performed at
+ * `origin` — equal to the origin's effective domain, or a registrable-domain
+ * suffix of it (WebAuthn Level 2, §5.1.3 step 8 / §5.1.4 step 12).
+ *
+ * Origin and RP ID are otherwise checked against unrelated allow-lists, so
+ * `http://localhost:3000` paired with `rpId: api.risaboss.com` satisfies both
+ * lists while satisfying no browser. This ties them together.
+ *
+ * Non-web origins (`boss://authenticate`) have no effective domain to compare
+ * against, so they are exempt rather than rejected.
+ */
+export function rpIdMatchesOrigin(rpId: string, origin: unknown): boolean {
+  if (!rpId || typeof origin !== 'string' || origin.length === 0) return false
+
+  let host: string
+  try {
+    const url = new URL(origin)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return true // no effective domain (custom scheme) — nothing to correspond to
+    }
+    host = url.hostname.toLowerCase()
+  } catch {
+    return false
+  }
+
+  const candidate = rpId.toLowerCase()
+  return host === candidate || host.endsWith(`.${candidate}`)
+}
 
 /**
  * True when this deployment is a local development one.

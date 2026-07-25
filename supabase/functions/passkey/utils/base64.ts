@@ -20,7 +20,12 @@
 /**
  * Decodes a base64 or base64url string (padded or unpadded) into bytes.
  *
- * @throws Error when the input is not valid base64 in either alphabet
+ * Lenient by design about *which* alphabet: `-`/`_` are mapped onto `+`/`/`
+ * before decoding, so a payload mixing both (`a-b+c`) is accepted rather than
+ * rejected. Clients do not mix alphabets in practice, and being strict about it
+ * would buy nothing — the bytes are identical either way.
+ *
+ * @throws Error when the input carries no data or is not valid base64
  */
 export function decodeBase64Any(input: string): Uint8Array {
   if (typeof input !== 'string' || input.length === 0) {
@@ -33,6 +38,12 @@ export function decodeBase64Any(input: string): Uint8Array {
     .replace(/-/g, '+')
     .replace(/_/g, '/')
     .replace(/=+$/, '')
+
+  // A string of nothing but padding/whitespace decodes to zero bytes, which would
+  // otherwise slip past the non-empty check on `input` above
+  if (normalized.length === 0) {
+    throw new Error('Invalid base64 input: no data')
+  }
 
   if (!/^[A-Za-z0-9+/]*$/.test(normalized)) {
     throw new Error('Invalid base64 input: unexpected characters')

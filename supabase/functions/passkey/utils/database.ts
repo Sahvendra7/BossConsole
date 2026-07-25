@@ -98,6 +98,39 @@ export async function consumeChallengeRow(
   return { consumed: true }
 }
 
+/**
+ * Claims the session parked on a `completed_authentications` row, clearing the
+ * token columns so they can only be handed over once.
+ *
+ * Compare-and-set on `access_token IS NOT NULL`: of two concurrent polls only
+ * the one that actually cleared the columns may serve the pair, so a stored
+ * refresh token is never returned twice from data at rest. The row itself stays
+ * (the ceremony still completed) — only the credentials are removed.
+ */
+export async function claimStoredSession(
+  supabase: SupabaseClient,
+  completedAuthId: string
+): Promise<{ claimed: boolean; error?: string }> {
+  const { data, error } = await supabase
+    .from('completed_authentications')
+    .update({ access_token: null, refresh_token: null, expires_at: null })
+    .eq('id', completedAuthId)
+    .not('access_token', 'is', null)
+    .select('id')
+
+  if (error) {
+    console.error('❌ Failed to claim the stored session:', error)
+    return { claimed: false, error: error.message }
+  }
+
+  if (rowsOf(data).length === 0) {
+    console.log('ℹ️ Stored session was already claimed by another poll')
+    return { claimed: false, error: 'Session already claimed' }
+  }
+
+  return { claimed: true }
+}
+
 export async function verifyAndConsumeChallenge(
   supabase: SupabaseClient,
   challenge: string,
@@ -257,7 +290,9 @@ export async function recordPasskeyUse(
     .from('user_passkeys')
     .update({ last_used_at: Date.now(), sign_count: signCount })
     .eq('id', passkeyId)
-    // Legacy rows have a NULL counter, which no comparison operator matches
+    // The column has DEFAULT 0, so a migrated table holds 0 rather than NULL
+    // here; the is.null arm covers a row written while the column did not exist
+    // (the degraded path above), since no comparison operator matches NULL.
     .or(`sign_count.is.null,sign_count.lt.${signCount}`)
     .select('id')
 

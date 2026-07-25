@@ -3,6 +3,7 @@ import { generateChallenge, storeChallenge } from "../utils/challenge.ts"
 import {
   verifyChallenge,
   consumeChallengeRow,
+  claimStoredSession,
   findPasskeyByCredentialId,
   getUserPasskeys,
   findUserByEmail,
@@ -13,7 +14,7 @@ import { verifySignature } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler, withStatusErrorHandler } from "../utils/error-handler.ts"
 import { generateSupabaseAccessToken } from "../utils/jwt.ts"
-import { ALLOWED_ORIGINS, getAllowedRpIds, getRpId } from "../utils/config.ts"
+import { ALLOWED_ORIGINS, getAllowedRpIds, getRpId, rpIdMatchesOrigin } from "../utils/config.ts"
 import { normalizeBase64Url } from "../utils/base64.ts"
 import {
   challengeMatches,
@@ -235,6 +236,16 @@ export const completeAuthentication = withErrorHandler(
       }
     }
 
+    // ...and the RP ID has to correspond to where the ceremony was performed,
+    // otherwise the two allow-lists can be satisfied by an unrelated pairing.
+    if (!rpIdMatchesOrigin(matchedRpId, clientData.origin)) {
+      console.error('❌ Assertion rpId is not a registrable suffix of its origin')
+      return {
+        success: false,
+        error: 'Relying party mismatch - rpId does not correspond to the ceremony origin'
+      }
+    }
+
     // Verify signature using the algorithm this credential was registered with
     const signatureValid = await verifySignature(
       passkey.public_key,
@@ -306,14 +317,23 @@ export const completeAuthentication = withErrorHandler(
 
     if (challengeData.session_id) {
       console.log('💾 Storing completed authentication for session:', challengeData.session_id)
+      // Upsert, not insert: session_id is client-supplied, and two rows for one
+      // sessionId would break the .single() poll *and* fan a token write out
+      // across both rows. Paired with the unique index from migration
+      // 20260726000000; onConflict keeps this correct before/after it lands.
       const { error: insertError } = await supabase
         .from('completed_authentications')
-        .insert({
+        .upsert({
           challenge: signedChallenge,  // Required NOT NULL field
           session_id: challengeData.session_id,
           user_id: passkey.user_id,
+          email: null,
+          access_token: null,
+          refresh_token: null,
+          expires_at: null,
+          expires_at_timestamp: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
           created_at: new Date().toISOString()
-        })
+        }, { onConflict: 'session_id' })
         .select()
 
       if (insertError) {
@@ -416,29 +436,42 @@ export const checkAuthStatus = withStatusErrorHandler(
   async (supabase: SupabaseClient, sessionId: string) => {
     console.log('🔍 Checking auth status for session:', sessionId)
 
+    // maybeSingle + newest-first: a client-supplied sessionId can legitimately be
+    // reused, and .single() on two rows returns PGRST116, which would wedge the
+    // session at "expired" forever.
     const { data, error } = await supabase
       .from('passkey_challenges')
       .select('*')
       .eq('session_id', sessionId)
       .eq('type', ChallengeType.Authentication)
-      .single()
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
     if (error || !data) {
       console.log('🔍 Challenge not found or consumed, checking completed_authentications')
       console.log('🔍 Challenge query error:', error)
 
       // Session might be consumed (authentication complete)
-      // Check if there's a completed authentication record
+      // Check if there's a completed authentication record.
+      //
+      // Scoped to expires_at_timestamp: that column *is* the security window for
+      // this row (now() + 5 minutes, per the schema), and it holds session tokens
+      // now. Cleanup of expired rows is a probabilistic trigger, so rows do
+      // outlive the window — without this filter a surviving row would keep
+      // handing out its refresh token to anyone holding the sessionId.
       const { data: completedAuth, error: completedError } = await supabase
         .from('completed_authentications')
         .select('*')
         .eq('session_id', sessionId)
-        .single()
+        .gt('expires_at_timestamp', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
       console.log('🔍 Completed auth query result:', {
         found: !!completedAuth,
-        error: completedError?.message || completedError?.code,
-        data: completedAuth
+        error: completedError?.message || completedError?.code
       })
 
       if (completedError || !completedAuth) {
@@ -451,14 +484,18 @@ export const checkAuthStatus = withStatusErrorHandler(
 
       console.log('✅ Found completed authentication:', completedAuth.user_id)
 
-      // Replay the session recorded when the ceremony completed. Minting a new
-      // session on every poll churns auth.sessions rows (and invalidates the
+      // Replay the session recorded when the ceremony completed, once. Minting a
+      // new session on every poll churns auth.sessions rows (and invalidates the
       // refresh token a client may already be using) for clients that keep
       // polling after the first success.
       //
-      // Fails closed: a missing or unparseable expiry means the token's remaining
-      // life is unknown, so mint a fresh session instead of replaying a possibly
-      // dead one. Minting is the fallback path anyway, so this costs nothing.
+      // Fails closed twice over: a missing or unparseable expiry means the
+      // token's remaining life is unknown, so mint instead of replaying a
+      // possibly dead one; and the stored pair is cleared as soon as it has been
+      // handed over, so a row that outlives its window cannot serve it again
+      // ("Tokens should be deleted after desktop retrieves them (one-time use)",
+      // per the schema). A client that polls again simply gets a fresh session
+      // from the mint path below, so nothing is stranded by clearing them.
       const storedExpiryMillis = parseStoredExpiryMillis(completedAuth.expires_at)
       if (
         completedAuth.access_token &&
@@ -466,15 +503,23 @@ export const checkAuthStatus = withStatusErrorHandler(
         storedExpiryMillis !== null &&
         storedExpiryMillis > Date.now() + 30_000
       ) {
-        console.log('♻️ Returning the session minted when the ceremony completed')
-        return {
-          status: 'completed' as const,
-          userId: completedAuth.user_id,
-          email: completedAuth.email || undefined,
-          completedAt: completedAuth.created_at,
-          accessToken: completedAuth.access_token,
-          refreshToken: completedAuth.refresh_token,
-          expiresAt: Math.floor(storedExpiryMillis / 1000)
+        const claim = await claimStoredSession(supabase, completedAuth.id)
+
+        if (!claim.claimed) {
+          // Another poll already took this pair, or the clear failed. Either way
+          // mint a fresh session rather than serve credentials we cannot retire.
+          console.log('ℹ️ Stored session not claimable, minting a fresh one:', claim.error)
+        } else {
+          console.log('♻️ Returning the session minted when the ceremony completed (now cleared)')
+          return {
+            status: 'completed' as const,
+            userId: completedAuth.user_id,
+            email: completedAuth.email || undefined,
+            completedAt: completedAuth.created_at,
+            accessToken: completedAuth.access_token,
+            refreshToken: completedAuth.refresh_token,
+            expiresAt: Math.floor(storedExpiryMillis / 1000)
+          }
         }
       }
 

@@ -18,13 +18,16 @@
 -- The function writes these columns on registration and on every successful
 -- assertion; if they do not exist the writes fail.
 --
--- Backfill: none required. All three columns are nullable and the function
--- treats NULL as "unknown, use the compatible default":
---   - public_key_alg NULL -> ES256 (-7), which is what every credential
---     registered before this change used
---   - sign_count NULL     -> 0, i.e. "no counter recorded yet"
---   - rp_id NULL          -> fall back to the configured RP ID allow-list
---                            instead of an exact per-credential match
+-- Backfill: none required.
+--   - public_key_alg is nullable; the function reads NULL as ES256 (-7), which
+--     is what every credential registered before this change used
+--   - sign_count has DEFAULT 0, so ADD COLUMN backfills existing rows to 0 --
+--     "no counter recorded yet", which is exactly how the function reads it. The
+--     function also tolerates NULL (a row inserted while the column did not
+--     exist, via the degraded path in storePasskeyInDB), but a migrated table
+--     will not contain NULL here.
+--   - rp_id is nullable; NULL means fall back to the configured RP ID allow-list
+--     instead of an exact per-credential match
 --
 -- ============================================================================
 

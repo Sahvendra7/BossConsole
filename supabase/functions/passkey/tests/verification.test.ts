@@ -19,7 +19,7 @@ import { completeAuthentication, checkAuthStatus } from "../services/auth.ts"
 import { completeRegistration, type RegistrationCredential } from "../services/registration.ts"
 import { generateChallenge } from "../utils/challenge.ts"
 import { COSE_ALG_ES256, COSE_ALG_RS256, evaluateSignCounter, parseAuthenticatorData } from "../utils/webauthn.ts"
-import { getAllowedRpIds } from "../utils/config.ts"
+import { getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
 import { decodeBase64Any, encodedValuesMatch, normalizeBase64Url } from "../utils/base64.ts"
 import {
   buildAlphabetSensitiveClientDataJSON,
@@ -909,7 +909,7 @@ Deno.test("decodeBase64Any - accepts both alphabets and rejects garbage", () => 
   assertEquals(Array.from(decodeBase64Any(urlSafe)), Array.from(bytes))
   assertEquals(Array.from(decodeBase64Any(standard.replace(/=+$/, ''))), Array.from(bytes))
 
-  for (const invalid of ['not!!!valid!!!base64!!', '', 'AAAAA!']) {
+  for (const invalid of ['not!!!valid!!!base64!!', '', 'AAAAA!', '=', '===', '  ']) {
     let threw = false
     try {
       decodeBase64Any(invalid)
@@ -1410,8 +1410,133 @@ Deno.test("completeAuthentication - rejects a localhost assertion for a legacy c
 })
 
 // ============================================================================
+// Origin ↔ rpId correspondence
+// ============================================================================
+
+Deno.test("rpIdMatchesOrigin - requires a registrable-domain suffix", () => {
+  assertEquals(rpIdMatchesOrigin('api.risaboss.com', 'https://api.risaboss.com'), true)
+  assertEquals(rpIdMatchesOrigin('risaboss.com', 'https://api.risaboss.com'), true, 'suffix is legal')
+  assertEquals(rpIdMatchesOrigin('localhost', 'http://localhost:54321'), true, 'port is irrelevant')
+
+  // The pairing that satisfies both allow-lists but no browser
+  assertEquals(rpIdMatchesOrigin('api.risaboss.com', 'http://localhost:3000'), false)
+  assertEquals(rpIdMatchesOrigin('risaboss.com', 'https://evilrisaboss.com'), false, 'not a dot boundary')
+  assertEquals(rpIdMatchesOrigin('api.risaboss.com', 'https://risaboss.com'), false, 'RP ID cannot be longer')
+
+  // Custom schemes have no effective domain, so they are exempt rather than rejected
+  assertEquals(rpIdMatchesOrigin('api.risaboss.com', 'boss://authenticate'), true)
+  assertEquals(rpIdMatchesOrigin('api.risaboss.com', ''), false)
+  assertEquals(rpIdMatchesOrigin('api.risaboss.com', undefined), false)
+})
+
+Deno.test("completeAuthentication - rejects an rpId that does not correspond to the origin", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+  // Ceremony performed at localhost:3000 but signed for api.risaboss.com: both
+  // allow-lists are satisfied, the correspondence rule is not.
+  const assertion = await createAssertion({
+    challenge,
+    credentialId: registration.credentialId,
+    privateKey: registration.keyPair.privateKey,
+    rpId: TEST_RP_ID,
+    origin: 'http://localhost:3000',
+    signCount: 2
+  })
+
+  mockAuthFlow(mockClient, {
+    challenge,
+    storedPublicKey: registration.expectedPublicKey,
+    credentialId: registration.credentialIdBase64Url,
+    signCount: 1
+  })
+
+  const result = await completeAuthentication(
+    mockClient as unknown as SupabaseClient,
+    assertion,
+    challenge
+  )
+
+  assertEquals(result.success, false)
+  assertEquals(
+    (result as { error?: string }).error,
+    'Relying party mismatch - rpId does not correspond to the ceremony origin'
+  )
+})
+
+// ============================================================================
+// Cross-device row hygiene
+// ============================================================================
+
+Deno.test("completeAuthentication - upserts the completed authentication on session_id", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+  const assertion = await createAssertion({
+    challenge,
+    credentialId: registration.credentialId,
+    privateKey: registration.keyPair.privateKey,
+    signCount: 6
+  })
+
+  mockAuthFlow(mockClient, {
+    challenge,
+    storedPublicKey: registration.expectedPublicKey,
+    credentialId: registration.credentialIdBase64Url,
+    signCount: 5
+  })
+
+  const result = await completeAuthentication(
+    mockClient as unknown as SupabaseClient,
+    assertion,
+    challenge
+  )
+
+  assertEquals(result.success, true)
+
+  // A second row for one client-supplied sessionId would wedge polling at
+  // "expired" and fan the token write across both rows.
+  const write = mockClient.getQueryHistory().find(
+    entry => entry.table === 'completed_authentications' && entry.operation === 'insert'
+  )
+  assertExists(write)
+  assertEquals(
+    (write!.params.upsert as { onConflict?: string } | undefined)?.onConflict,
+    'session_id'
+  )
+  // The row carries its own security window rather than relying on the default
+  const written = write!.params.data as { expires_at_timestamp?: string }
+  assertExists(written.expires_at_timestamp)
+})
+
+// ============================================================================
 // authenticatorData parsing
 // ============================================================================
+
+Deno.test("parseAuthenticatorData - rejects a zero-length credential id", async () => {
+  // An empty Uint8Array is truthy, so a zero-length attested id would encode to
+  // "" and slip past the credential-id binding in the registration service.
+  const rpIdHash = await rpIdHashFor(TEST_RP_ID)
+  const authData = new Uint8Array([
+    ...rpIdHash,
+    0x45,                    // UP + UV + AT
+    0x00, 0x00, 0x00, 0x00,  // signCount
+    ...new Array(16).fill(0x00), // aaguid
+    0x00, 0x00,              // credentialIdLength = 0
+    0xA0                     // empty COSE map
+  ])
+
+  let threw = false
+  try {
+    parseAuthenticatorData(authData)
+  } catch (error) {
+    threw = true
+    assertEquals((error as Error).message.includes('zero-length credential id'), true)
+  }
+  assertEquals(threw, true)
+})
 
 Deno.test("parseAuthenticatorData - reads rpIdHash, flags and counter", async () => {
   const authData = await buildAuthenticatorData({ rpId: TEST_RP_ID, signCount: 0xdeadbeef })
@@ -1438,6 +1563,22 @@ Deno.test("parseAuthenticatorData - rejects truncated authenticator data", () =>
 // Item 6 — /auth/status must not mint a session per poll
 // ============================================================================
 
+/** A completed_authentications row carrying a live parked session */
+function storedSessionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'completed-row-1',
+    session_id: 'session-poll',
+    user_id: TEST_USER_ID,
+    email: TEST_EMAIL,
+    access_token: 'stored-access-token',
+    refresh_token: 'stored-refresh-token',
+    expires_at: Date.now() + 3_600_000, // epoch milliseconds, per the column comment
+    expires_at_timestamp: new Date(Date.now() + 240_000).toISOString(),
+    created_at: new Date().toISOString(),
+    ...overrides
+  }
+}
+
 Deno.test("checkAuthStatus - replays the stored session instead of minting a new one", async () => {
   const mockClient = createMockSupabaseClient()
 
@@ -1446,18 +1587,9 @@ Deno.test("checkAuthStatus - replays the stored session instead of minting a new
     error: { code: 'PGRST116', message: 'Challenge consumed' }
   }, 'select')
 
-  mockClient.mockResponse('completed_authentications', {
-    data: {
-      session_id: 'session-poll',
-      user_id: TEST_USER_ID,
-      email: TEST_EMAIL,
-      access_token: 'stored-access-token',
-      refresh_token: 'stored-refresh-token',
-      expires_at: Date.now() + 3_600_000, // epoch milliseconds, per the column comment
-      created_at: new Date().toISOString()
-    },
-    error: null
-  }, 'select')
+  mockClient.mockResponse('completed_authentications', { data: storedSessionRow(), error: null }, 'select')
+  // The one-time-use claim succeeds for this caller
+  mockClient.mockResponse('completed_authentications', { data: [{ id: 'completed-row-1' }], error: null }, 'update')
 
   const result = await checkAuthStatus(mockClient as unknown as SupabaseClient, 'session-poll')
 
@@ -1470,6 +1602,74 @@ Deno.test("checkAuthStatus - replays the stored session instead of minting a new
   // No new session was minted: nothing looked the user up to generate one
   const mintedSession = mockClient.getQueryHistory().some(entry => entry.table === 'users')
   assertEquals(mintedSession, false, "A completed poll should not mint another session")
+
+  // The tokens are retired as they are handed over (one-time use)
+  const claim = mockClient.getQueryHistory().find(
+    entry => entry.table === 'completed_authentications' && entry.operation === 'update'
+  )
+  assertExists(claim, "The stored session should be cleared once served")
+  const cleared = claim!.params.data as Record<string, unknown>
+  assertEquals(cleared.access_token, null)
+  assertEquals(cleared.refresh_token, null)
+  assertEquals(cleared.expires_at, null)
+  // ...conditionally, so two concurrent polls cannot both serve the same pair
+  assertEquals(
+    (claim!.params.not as Array<{ column: string; operator: string }>)
+      .some(f => f.column === 'access_token' && f.operator === 'is'),
+    true,
+    "The clear must be a compare-and-set on access_token"
+  )
+})
+
+Deno.test("checkAuthStatus - scopes the lookup to the row's security window", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  mockClient.mockResponse('passkey_challenges', {
+    data: null,
+    error: { code: 'PGRST116', message: 'Challenge consumed' }
+  }, 'select')
+  mockClient.mockResponse('completed_authentications', { data: storedSessionRow(), error: null }, 'select')
+  mockClient.mockResponse('completed_authentications', { data: [{ id: 'completed-row-1' }], error: null }, 'update')
+
+  await checkAuthStatus(mockClient as unknown as SupabaseClient, 'session-poll')
+
+  // expires_at_timestamp is the documented 5-minute window for this row, and the
+  // row now holds session tokens. Cleanup of expired rows is a probabilistic
+  // trigger, so the query has to enforce the window itself.
+  const lookup = mockClient.getQueryHistory().find(
+    entry => entry.table === 'completed_authentications' && entry.operation === 'select'
+  )
+  assertExists(lookup)
+  assertEquals(
+    (lookup!.params.gt as { column: string } | undefined)?.column,
+    'expires_at_timestamp',
+    "A row past its security window must not be readable"
+  )
+})
+
+Deno.test("checkAuthStatus - does not serve a stored session twice", async () => {
+  const mockClient = createMockSupabaseClient()
+  mockClient.mockAuthUser(TEST_EMAIL, TEST_USER_ID)
+
+  mockClient.mockResponse('passkey_challenges', {
+    data: null,
+    error: { code: 'PGRST116', message: 'Challenge consumed' }
+  }, 'select')
+  mockClient.mockResponse('completed_authentications', { data: storedSessionRow(), error: null }, 'select')
+  // The claim finds nothing to clear: another poll already took this pair
+  mockClient.mockResponse('completed_authentications', { data: [], error: null }, 'update')
+  mockClient.mockResponse('users', { data: { id: TEST_USER_ID, email: TEST_EMAIL }, error: null }, 'select')
+
+  const result = await checkAuthStatus(mockClient as unknown as SupabaseClient, 'session-poll')
+
+  assertEquals(result.status, 'completed')
+  const completed = result as { accessToken?: string; refreshToken?: string }
+  assertNotEquals(
+    completed.accessToken,
+    'stored-access-token',
+    "A pair that was already claimed must not be served again"
+  )
+  assertExists(completed.accessToken, "The poll should still get a usable session")
 })
 
 Deno.test("checkAuthStatus - mints a fresh session when the stored expiry is unknown", async () => {

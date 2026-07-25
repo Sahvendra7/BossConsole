@@ -125,6 +125,14 @@ export function parseAuthenticatorData(authData: Uint8Array): ParsedAuthenticato
     const credIdLength = (authData[offset] << 8) | authData[offset + 1]
     offset += 2
 
+    // The spec requires 16-1023 bytes. Rejecting 0 matters beyond tidiness: an
+    // empty Uint8Array is truthy, so a zero-length id would encode to "" and slip
+    // past the `attested.credentialId && …` binding in the registration service,
+    // letting the caller store an arbitrary credential id of its own choosing.
+    if (credIdLength === 0) {
+      throw new Error('Invalid authenticatorData: zero-length credential id')
+    }
+
     if (authData.length < offset + credIdLength) {
       throw new Error('Invalid authenticatorData: truncated credential id')
     }
