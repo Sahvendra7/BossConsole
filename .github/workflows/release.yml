@@ -114,10 +114,11 @@ jobs:
         # which is stable so packaging tasks stay up-to-date between runs.
         #
         # Granularity caveats, neither of which can collide with a *shipped* build: two runs
-        # approved in the same second would share an id (there is no concurrency group on
-        # this workflow), and "Re-run failed jobs" reuses this job's cached output, so a
-        # re-run macOS job stamps the original attempt's id — which is what you want, since
-        # it is the same release.
+        # starting in the same second would share an id — including one release.yml run and
+        # one release-lite.yml run, since Lite ships the same bundle id and now draws from
+        # this same clock (no concurrency group spans them) — and "Re-run failed jobs" reuses
+        # this job's cached output, so a re-run macOS job stamps the original attempt's id,
+        # which is what you want since it is the same release.
         run: echo "build-id=$(date +%s)" >> "$GITHUB_OUTPUT"
       - name: 📥 Checkout Repository
         uses: actions/checkout@v7

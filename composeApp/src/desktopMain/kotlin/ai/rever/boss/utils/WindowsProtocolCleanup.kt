@@ -31,6 +31,9 @@ internal object WindowsProtocolCleanup {
     /** Leading quoted executable of a `shell\open\command` value. */
     private val QUOTED_EXECUTABLE = Regex("""^"([^"]+)"""")
 
+    /** Leading separator of a UNC path, which may point at an offline share. */
+    private const val UNC_PREFIX = """\\"""
+
     /** Highest code point that decodes identically under ANSI, OEM and UTF-8. */
     private const val MAX_ASCII = 0x7F
 
@@ -89,6 +92,9 @@ internal object WindowsProtocolCleanup {
      *    distinguish "not there" from "could not read".
      *  * Everything else, including a localized not-found message on a non-English Windows, is
      *    [CommandState.Unreadable]: cleanup then reports rather than deletes.
+     *  * Preferring a parsed value over the exit code cannot license a delete on truncated
+     *    output either: [extractExecutablePath] requires the closing quote, so a value cut
+     *    mid-path yields null and the classifier reports UNREADABLE.
      *
      * `REG_EXPAND_SZ` is matched as well as `REG_SZ` — an installer-authored command such as
      * `"%LOCALAPPDATA%\BOSS\BOSS.exe" "%1"` is ordinary and must not read as missing.
@@ -208,6 +214,13 @@ internal object WindowsProtocolCleanup {
             // non-ASCII install path instead of removing it — an orphan key, versus
             // deleting someone's working registration.
             registeredExe.any { it.code > MAX_ASCII } -> {
+                CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.UNREADABLE)
+            }
+
+            // A UNC path (\\server\share\...) or a removable drive can be offline while the
+            // registration is perfectly live, and exeExists() cannot tell that apart from
+            // "uninstalled". Same conservative rule.
+            registeredExe.startsWith(UNC_PREFIX) -> {
                 CleanupDecision.Report(WindowsProtocolHandler.UnregisterOutcome.UNREADABLE)
             }
 

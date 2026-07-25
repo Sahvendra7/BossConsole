@@ -129,7 +129,14 @@ object WindowsProtocolHandler {
     }
 
     /**
-     * Perform the actual registry writes
+     * Perform the actual registry writes.
+     *
+     * FOLLOW-UP: these still go through `Runtime.getRuntime().exec(String)`, which tokenizes on
+     * whitespace — so a `/d` value containing spaces does not survive, and the *write* path can
+     * produce exactly the malformed registrations the *read* path now goes out of its way not to
+     * touch. Converting to an argv vector changes how that value is quoted, i.e. the
+     * registration itself, so it needs a Windows box to verify. It is the last `exec(String)`
+     * left in this file now that the queries share [queryRootKeyPresent].
      */
     private fun performRegistration(appPath: String) {
         logger.info(

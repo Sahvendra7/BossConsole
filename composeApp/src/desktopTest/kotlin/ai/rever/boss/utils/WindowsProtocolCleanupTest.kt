@@ -333,6 +333,15 @@ class WindowsProtocolCleanupTest {
         )
     }
 
+    /** An offline UNC share is not the same as an uninstalled app. */
+    @Test
+    fun `leaves a UNC path alone`() {
+        assertEquals(
+            CleanupDecision.Report(UnregisterOutcome.UNREADABLE),
+            classify(command = CommandState.Present(""""\\\\fileserver\\apps\\BOSS\\BOSS.exe" "%1"""")),
+        )
+    }
+
     /** A failed root-key read outranks an otherwise classifiable command. */
     @Test
     fun `unknown root key outranks a readable command`() {
