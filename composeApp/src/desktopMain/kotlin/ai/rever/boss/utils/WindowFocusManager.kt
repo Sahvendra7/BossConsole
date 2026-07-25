@@ -337,7 +337,14 @@ actual object WindowFocusManager {
     // EDT-confined; registerWindow/unregisterWindow enforce this before mutation.
     private val windowListeners = mutableMapOf<String, WindowAdapter>()
     private val awtFocusTracker = AwtWindowFocusTracker()
+
+    // Mutated only on the EDT (registerWindow, the focus-gained listener,
+    // unregisterWindow) but read from CLI, socket, JxBrowser and coroutine
+    // threads via resolveActionableWindowId, so the snapshot must be volatile
+    // for the same reason AwtWindowFocusTracker's is.
+    @Volatile
     private var focusedWindowId: String? = null
+
     private var mainWindow: Window? = null // Kept for backward compatibility
 
     // StateFlow to observe focus changes (for elegant focus restoration)
@@ -502,6 +509,14 @@ actual object WindowFocusManager {
      * listener, so it can lag or stay null even once a window is plainly
      * available), falling back to any registered window. Returns null only if no
      * window is registered at all.
+     *
+     * **Threading**: safe to call from any thread. Every source it reads is
+     * either volatile ([focusedWindowId]), a [StateFlow] ([focusedWindowFlow])
+     * or a [ConcurrentHashMap] ([windows]), so callers on CLI, socket, JxBrowser
+     * callback and coroutine threads do not need to hop to the EDT first. The
+     * result is a snapshot: the window may be unregistered a moment later, so
+     * consumers must tolerate a stale id (every current consumer emits an event
+     * keyed by it, which is dropped if no such window listens).
      */
     fun resolveActionableWindowId(): String? =
         resolveActionableWindowIdFrom(

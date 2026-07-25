@@ -2,14 +2,12 @@ package ai.rever.boss.utils
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * Guards deep-link dispatch: hosts match exactly (so a longer host is never
- * swallowed by a shorter one) and every host that acts on a window is routed
- * through the single window-resolution point.
+ * swallowed by a shorter one), the hosts that act on a window at dispatch take
+ * the single resolved id, and anything unrouted still reaches the default flow.
  */
 class DeepLinkRoutingTest {
     @Test
@@ -60,19 +58,59 @@ class DeepLinkRoutingTest {
     }
 
     @Test
-    fun `window targeting hosts are exactly the ones a caller can trigger without OS focus`() {
+    fun `hosts that act on a window at dispatch get the resolved id, including null`() {
         // boss://plugin and boss://folder used to read focusedWindowFlow directly
         // and drop the link for MCP/CLI callers, while boss://split resolved a
-        // usable window. All three now share one resolution point, which this
-        // classification selects.
-        assertTrue(DeepLinkHost.FOLDER.requiresTargetWindow)
-        assertTrue(DeepLinkHost.PLUGIN.requiresTargetWindow)
-        assertTrue(DeepLinkHost.SPLIT.requiresTargetWindow)
+        // usable window. All three now take the id this single resolution
+        // produces — and must keep taking it when it resolves to null, which is
+        // the branch that logs instead of acting.
+        listOf(DeepLinkHost.FOLDER, DeepLinkHost.PLUGIN, DeepLinkHost.SPLIT).forEach { host ->
+            var calls = 0
+            assertEquals(
+                "window-a",
+                targetWindowIdFor(host) {
+                    calls++
+                    "window-a"
+                },
+            )
+            assertEquals(1, calls, "${host.host} must resolve a window at dispatch")
+            assertNull(targetWindowIdFor(host) { null })
+        }
+    }
 
-        assertFalse(DeepLinkHost.URL.requiresTargetWindow)
-        assertFalse(DeepLinkHost.WORKSPACE.requiresTargetWindow)
-        assertFalse(DeepLinkHost.FILE.requiresTargetWindow)
-        assertFalse(DeepLinkHost.TERMINAL.requiresTargetWindow)
+    @Test
+    fun `hosts that queue a CLI command do not resolve a window at dispatch`() {
+        // These resolve downstream instead (URLHandlerService / CLICommandHandler),
+        // through the same lookup, because a dispatch-time id would be stale by
+        // the time a queued command drains after a cold start.
+        listOf(DeepLinkHost.URL, DeepLinkHost.WORKSPACE, DeepLinkHost.FILE, DeepLinkHost.TERMINAL).forEach { host ->
+            var calls = 0
+            assertNull(
+                targetWindowIdFor(host) {
+                    calls++
+                    "window-a"
+                },
+            )
+            assertEquals(0, calls, "${host.host} must not resolve a window at dispatch")
+        }
+    }
+
+    @Test
+    fun `unrouted links reach the flow that auth and other handlers collect`() {
+        // The fall-through is the branch most likely to regress, and it is the
+        // one path with no coroutine, window or event bus behind it.
+        DeepLinkHandler.clearDeepLink()
+        DeepLinkHandler.processDeepLink("boss://auth/verify#access_token=abc")
+        assertEquals("boss://auth/verify#access_token=abc", DeepLinkHandler.deepLinkFlow.value)
+
+        // A host that prefix dispatch would have mis-parsed as boss://plugin now
+        // lands here instead of opening a panel named "plugins".
+        DeepLinkHandler.clearDeepLink()
+        DeepLinkHandler.processDeepLink("boss://plugins?id=bookmarks")
+        assertEquals("boss://plugins?id=bookmarks", DeepLinkHandler.deepLinkFlow.value)
+
+        DeepLinkHandler.clearDeepLink()
+        assertNull(DeepLinkHandler.deepLinkFlow.value)
     }
 
     @Test

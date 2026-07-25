@@ -1,5 +1,6 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.cli.CLISecurityValidator
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
@@ -17,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.io.File
 import java.net.URI
@@ -27,26 +29,34 @@ private const val BOSS_SCHEME = "boss://"
 /**
  * The `boss://` hosts routed by [DeepLinkHandler.processDeepLink].
  *
+ * **Every** host here ultimately acts on a window, and all of them resolve it
+ * with [WindowFocusManager.resolveActionableWindowId]; the flag records only
+ * *where* that happens.
+ *
  * @property host the exact host that selects this route. Matching is never
  *   prefix-based: a future `boss://plugins` or `boss://filesystem` must fall
  *   through to the auth/other flow instead of being mis-parsed by the shorter
  *   `plugin`/`file` route.
- * @property requiresTargetWindow whether the handler acts on a specific
- *   application window. Those hosts get the window resolved once, at dispatch,
- *   through the same lookup — which is what stops `plugin`, `folder` and `split`
- *   from drifting apart again (see [DeepLinkHandler.processDeepLink]).
+ * @property resolvesWindowAtDispatch true when the handler is handed a window
+ *   resolved once by [DeepLinkHandler.processDeepLink], which is what stops
+ *   `plugin`, `folder` and `split` from drifting apart again. False for hosts
+ *   that queue a CLI command instead: those resolve the window further
+ *   downstream — `url` in `URLHandlerService.handleURLInternal`, the rest in
+ *   `CLICommandHandler` — through the same lookup, because a resolution that
+ *   happened at dispatch would be stale by the time the queue drains (a queued
+ *   command can wait for a cold start to finish).
  */
 internal enum class DeepLinkHost(
     val host: String,
-    val requiresTargetWindow: Boolean,
+    val resolvesWindowAtDispatch: Boolean,
 ) {
-    URL("url", requiresTargetWindow = false),
-    WORKSPACE("workspace", requiresTargetWindow = false),
-    FILE("file", requiresTargetWindow = false),
-    TERMINAL("terminal", requiresTargetWindow = false),
-    FOLDER("folder", requiresTargetWindow = true),
-    PLUGIN("plugin", requiresTargetWindow = true),
-    SPLIT("split", requiresTargetWindow = true),
+    URL("url", resolvesWindowAtDispatch = false),
+    WORKSPACE("workspace", resolvesWindowAtDispatch = false),
+    FILE("file", resolvesWindowAtDispatch = false),
+    TERMINAL("terminal", resolvesWindowAtDispatch = false),
+    FOLDER("folder", resolvesWindowAtDispatch = true),
+    PLUGIN("plugin", resolvesWindowAtDispatch = true),
+    SPLIT("split", resolvesWindowAtDispatch = true),
 }
 
 /**
@@ -62,14 +72,23 @@ internal fun deepLinkHostOf(uri: String): String? {
     return host.lowercase().ifEmpty { null }
 }
 
+private val deepLinkHostsByName: Map<String, DeepLinkHost> = DeepLinkHost.entries.associateBy { it.host }
+
 /**
  * Resolves the route for [uri] by exact host, or null when no route claims it
  * (auth callbacks and any host BOSS does not handle yet).
  */
-internal fun routedDeepLinkHost(uri: String): DeepLinkHost? {
-    val host = deepLinkHostOf(uri) ?: return null
-    return DeepLinkHost.entries.firstOrNull { it.host == host }
-}
+internal fun routedDeepLinkHost(uri: String): DeepLinkHost? = deepLinkHostOf(uri)?.let { deepLinkHostsByName[it] }
+
+/**
+ * The window a [host]'s handler should act on: resolved through
+ * [resolveWindowId] for hosts that resolve at dispatch, null for hosts that
+ * resolve downstream when their queued command runs.
+ */
+internal fun targetWindowIdFor(
+    host: DeepLinkHost,
+    resolveWindowId: () -> String?,
+): String? = if (host.resolvesWindowAtDispatch) resolveWindowId() else null
 
 actual object DeepLinkHandler {
     private val _deepLinkFlow = MutableStateFlow<String?>(null)
@@ -202,26 +221,27 @@ actual object DeepLinkHandler {
         // being silently mis-parsed by a shorter route.
         val host = routedDeepLinkHost(uri)
         if (host == null) {
-            // Default: emit to flow for auth/other handlers
+            // Default: emit to flow for auth/other handlers. Warn as well: the
+            // flow conflates an identical value and BossAppWithAuth clears it
+            // immediately after routing, so a link no route claims would
+            // otherwise disappear without a trace.
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Deep link host is not routed, passing to the auth/other flow",
+                mapOf("uri" to LogSanitizer.maskUriParams(uri)),
+            )
             _deepLinkFlow.value = uri
             return
         }
 
-        if (!host.requiresTargetWindow) {
-            dispatch(host, uri, targetWindowId = null)
-            return
-        }
-
-        scope.launch(Dispatchers.Main) {
-            // Single resolution point for every host that needs a target window.
-            // Uses the registration/focus-gain-backed lookup, not
-            // focusedWindowFlow alone — an MCP-driven or CLI caller typically has
-            // OS focus itself (not BOSS), so focusedWindowFlow can still be null
-            // even though a usable window is plainly registered. Resolving here
-            // instead of inside each handler is what keeps the window-targeting
-            // links from diverging again.
-            dispatch(host, uri, WindowFocusManager.resolveActionableWindowId())
-        }
+        // Single resolution point for every host that acts on a window here.
+        // Uses the registration/focus-gain-backed lookup, not focusedWindowFlow
+        // alone — an MCP-driven or CLI caller typically has OS focus itself (not
+        // BOSS), so focusedWindowFlow can still be null even though a usable
+        // window is plainly registered. Resolving here instead of inside each
+        // handler is what keeps the window-targeting links from diverging again.
+        // Safe on this thread: resolveActionableWindowId reads volatile state.
+        dispatch(host, uri, targetWindowIdFor(host) { WindowFocusManager.resolveActionableWindowId() })
     }
 
     /**
@@ -278,8 +298,8 @@ actual object DeepLinkHandler {
      *   boss://folder?path=/Users/name/project
      *   boss://folder?path=/path&name=MyProject
      *
-     * Runs on the UI thread with [targetWindowId] already resolved by
-     * [processDeepLink].
+     * [targetWindowId] is already resolved by [processDeepLink]. The path is
+     * validated on [Dispatchers.IO] and the state update runs on the UI thread.
      */
     private fun handleFolderLink(
         uri: String,
@@ -295,51 +315,74 @@ actual object DeepLinkHandler {
             return
         }
 
+        scope.launch {
+            // Never stat on the UI thread (docs/THREADING.md): the path is
+            // untrusted external input and a stale network mount makes
+            // exists()/isDirectory block for seconds.
+            val folder = withContext(Dispatchers.IO) { resolveFolder(path) } ?: return@launch
+
+            val name = (params["name"] ?: folder.name).extractFileName()
+            val project =
+                Project(
+                    name = name,
+                    path = folder.absolutePath,
+                    lastOpened = System.currentTimeMillis(),
+                )
+
+            withContext(Dispatchers.Main) {
+                // Update project state (use per-window state if available)
+                val windowProjectState =
+                    targetWindowId?.let {
+                        ai.rever.boss.window.WindowProjectStateRegistry
+                            .get(it)
+                    }
+
+                if (windowProjectState != null) {
+                    windowProjectState.selectProject(project)
+                } else {
+                    // Fall back to just updating recent projects if no window state available
+                    ProjectState.updateRecentProjects(project)
+                }
+                logger.info(LogCategory.FILE, "Folder opened in codebase", mapOf("path" to folder.absolutePath))
+
+                // Emit panel open event to show the codebase panel
+                if (targetWindowId == null) {
+                    logger.warn(LogCategory.UI, "No usable window registered, cannot open codebase panel")
+                } else {
+                    PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = targetWindowId)
+                    logger.debug(
+                        LogCategory.UI,
+                        "Emitted codebase panel open event",
+                        mapOf("windowId" to targetWindowId),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Validates a folder deep link's path off the UI thread, returning null (and
+     * logging why) when it must not be opened. Applies the same
+     * [CLISecurityValidator.isValidPath] check as the CLI's folder command —
+     * `boss://` is registered system-wide, so any web page can reach this.
+     */
+    private fun resolveFolder(path: String): File? {
         val folder = File(path).absoluteFile
 
-        if (!folder.exists()) {
-            logger.warn(LogCategory.FILE, "Folder does not exist", mapOf("path" to folder.absolutePath))
-            return
-        }
-
-        if (!folder.isDirectory) {
-            logger.warn(LogCategory.FILE, "Path is not a directory", mapOf("path" to folder.absolutePath))
-            return
-        }
-
-        val name = (params["name"] ?: folder.name).extractFileName()
-
-        // Update project state (use per-window state if available)
-        val windowProjectState =
-            targetWindowId?.let {
-                ai.rever.boss.window.WindowProjectStateRegistry
-                    .get(it)
+        val rejection =
+            when {
+                !CLISecurityValidator.isValidPath(folder.absolutePath) -> "Invalid folder path (security check failed)"
+                !folder.exists() -> "Folder does not exist"
+                !folder.isDirectory -> "Path is not a directory"
+                else -> null
             }
 
-        val project =
-            Project(
-                name = name,
-                path = folder.absolutePath,
-                lastOpened = System.currentTimeMillis(),
-            )
+        if (rejection != null) {
+            logger.warn(LogCategory.FILE, rejection, mapOf("path" to folder.absolutePath))
+            return null
+        }
 
-        if (windowProjectState != null) {
-            windowProjectState.selectProject(project)
-        } else {
-            // Fall back to just updating recent projects if no window state available
-            ProjectState.updateRecentProjects(project)
-        }
-        logger.info(LogCategory.FILE, "Folder opened in codebase", mapOf("path" to folder.absolutePath))
-
-        // Emit panel open event to show the codebase panel
-        if (targetWindowId == null) {
-            logger.warn(LogCategory.UI, "No usable window registered, cannot open codebase panel")
-            return
-        }
-        scope.launch(Dispatchers.Main) {
-            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = targetWindowId)
-            logger.debug(LogCategory.UI, "Emitted codebase panel open event", mapOf("windowId" to targetWindowId))
-        }
+        return folder
     }
 
     /**
@@ -352,8 +395,8 @@ actual object DeepLinkHandler {
      *   boss://plugin?id=secret-manager
      *   boss://plugin?id=my.plugin&action=sync&scope=all
      *
-     * Runs on the UI thread with [targetWindowId] already resolved by
-     * [processDeepLink].
+     * [targetWindowId] is already resolved by [processDeepLink]; the panel event
+     * and the action dispatch are emitted on the UI thread.
      */
     private fun handlePluginLink(
         uri: String,
@@ -364,54 +407,53 @@ actual object DeepLinkHandler {
         val params = parseQueryParams(uri)
         val panelIdStr = params["id"]?.urlDecode()
 
+        if (panelIdStr == null) {
+            logger.warn(LogCategory.UI, "Missing 'id' parameter in plugin deep link")
+            return
+        }
+
         // Action links dispatch to the plugin's DeepLinkActionHandler and do
         // NOT fall through to opening a panel — the two are distinct verbs
         // sharing the `plugin` scheme. Unhandled actions just log (registry
         // warns); external input, so handlers own validation.
         val action = params["action"]?.urlDecode()
-
-        when {
-            panelIdStr == null -> {
-                logger.warn(LogCategory.UI, "Missing 'id' parameter in plugin deep link")
-            }
-
-            action != null -> {
-                val actionParams =
-                    params
-                        .filterKeys { it != "id" && it != "action" }
-                        .mapValues { (_, value) -> value.urlDecode() }
+        if (action != null) {
+            val actionParams =
+                params
+                    .filterKeys { it != "id" && it != "action" }
+                    .mapValues { (_, value) -> value.urlDecode() }
+            scope.launch(Dispatchers.Main) {
                 ai.rever.boss.components.plugin.registries.DeepLinkActionRegistryImpl
                     .dispatch(panelIdStr, action, actionParams)
             }
+            return
+        }
 
-            targetWindowId == null -> {
-                logger.warn(
-                    LogCategory.UI,
-                    "No usable window registered, cannot open panel",
-                    mapOf("panelId" to panelIdStr),
+        if (targetWindowId == null) {
+            logger.warn(
+                LogCategory.UI,
+                "No usable window registered, cannot open panel",
+                mapOf("panelId" to panelIdStr),
+            )
+            return
+        }
+
+        // Emit panel open event
+        scope.launch(Dispatchers.Main) {
+            // Create PanelId with panelId string
+            // The event handler in BossApp will look it up in the registry
+            val panelId =
+                PanelId(
+                    panelId = panelIdStr,
+                    defaultOrder = 0, // Will be ignored, registry has real value
+                    pluginId = "ai.rever.boss", // Default plugin
                 )
-            }
-
-            else -> {
-                // Create PanelId with panelId string
-                // The event handler in BossApp will look it up in the registry
-                val panelId =
-                    PanelId(
-                        panelId = panelIdStr,
-                        defaultOrder = 0, // Will be ignored, registry has real value
-                        pluginId = "ai.rever.boss", // Default plugin
-                    )
-
-                // Emit panel open event
-                scope.launch(Dispatchers.Main) {
-                    PanelEventBus.openPanel(panelId, sourceWindowId = targetWindowId)
-                    logger.info(
-                        LogCategory.UI,
-                        "Emitted panel open event",
-                        mapOf("panelId" to panelIdStr, "windowId" to targetWindowId),
-                    )
-                }
-            }
+            PanelEventBus.openPanel(panelId, sourceWindowId = targetWindowId)
+            logger.info(
+                LogCategory.UI,
+                "Emitted panel open event",
+                mapOf("panelId" to panelIdStr, "windowId" to targetWindowId),
+            )
         }
     }
 
@@ -422,8 +464,8 @@ actual object DeepLinkHandler {
      *   boss://split?orientation=vertical
      *   boss://split?orientation=horizontal
      *
-     * Runs on the UI thread with [targetWindowId] already resolved by
-     * [processDeepLink].
+     * [targetWindowId] is already resolved by [processDeepLink]; the split event
+     * is triggered on the UI thread.
      */
     private fun handleSplitLink(
         uri: String,
@@ -458,16 +500,18 @@ actual object DeepLinkHandler {
             return
         }
 
-        if (horizontal) {
-            MenuActionsHandler.triggerSplitHorizontally(targetWindowId)
-        } else {
-            MenuActionsHandler.triggerSplitVertically(targetWindowId)
+        scope.launch(Dispatchers.Main) {
+            if (horizontal) {
+                MenuActionsHandler.triggerSplitHorizontally(targetWindowId)
+            } else {
+                MenuActionsHandler.triggerSplitVertically(targetWindowId)
+            }
+            logger.info(
+                LogCategory.UI,
+                "Emitted split event",
+                mapOf("windowId" to targetWindowId, "horizontal" to horizontal.toString()),
+            )
         }
-        logger.info(
-            LogCategory.UI,
-            "Emitted split event",
-            mapOf("windowId" to targetWindowId, "horizontal" to horizontal.toString()),
-        )
     }
 
     /**

@@ -29,7 +29,7 @@ private val logger = BossLogger.forComponent("DownloadDataProviderImpl")
  * cancelled, and a command for an id the engine no longer knows must surface as
  * a failure rather than as a success the engine never performed.
  */
-interface DownloadEngineController {
+internal interface DownloadEngineController {
     fun pause(id: String): Boolean
 
     fun resume(id: String): Boolean
@@ -50,14 +50,20 @@ internal object FluckDownloadEngineController : DownloadEngineController {
  * Implementation of DownloadDataProvider that wraps FluckEngine's download management.
  *
  * The [downloadManager], [engine] and [collectorContext] seams exist so the
- * command routing can be tested without starting a JxBrowser engine; production
- * always uses the defaults.
+ * command routing can be tested without starting a JxBrowser engine. They are
+ * internal; production constructs this with the public no-arg constructor.
  */
-class DownloadDataProviderImpl(
-    private val downloadManager: DownloadManager = FluckEngine.downloadManager,
-    private val engine: DownloadEngineController = FluckDownloadEngineController,
-    collectorContext: CoroutineContext = Dispatchers.Main,
+class DownloadDataProviderImpl internal constructor(
+    private val downloadManager: DownloadManager,
+    private val engine: DownloadEngineController,
+    collectorContext: CoroutineContext,
 ) : DownloadDataProvider {
+    constructor() : this(
+        downloadManager = FluckEngine.downloadManager,
+        engine = FluckDownloadEngineController,
+        collectorContext = Dispatchers.Main,
+    )
+
     private val scope = CoroutineScope(collectorContext + SupervisorJob())
 
     private val _downloads = MutableStateFlow<List<DownloadItemData>>(emptyList())
@@ -97,11 +103,23 @@ class DownloadDataProviderImpl(
                 // removing only the tracking entry leaves that write untracked,
                 // unstoppable and never cleaned up.
                 if (!engine.cancel(id)) {
-                    logger.warn(
-                        LogCategory.BROWSER,
-                        "Engine did not accept cancel while removing an unfinished download",
-                        mapOf("id" to id, "status" to download.status.name),
-                    )
+                    // Usually just a race: the download reached a terminal state
+                    // between the lookup and the cancel, so the engine had
+                    // already released it. Re-read before deciding it is odd.
+                    val settled = downloadManager.getDownload(id)?.isTerminal ?: true
+                    if (settled) {
+                        logger.debug(
+                            LogCategory.BROWSER,
+                            "Download settled before the cancel reached the engine",
+                            mapOf("id" to id),
+                        )
+                    } else {
+                        logger.warn(
+                            LogCategory.BROWSER,
+                            "Engine did not accept cancel while removing an unfinished download",
+                            mapOf("id" to id, "status" to download.status.name),
+                        )
+                    }
                 }
                 // Also clean up here rather than relying only on the engine's
                 // cancel event: on a rejected cancel no event arrives at all,
