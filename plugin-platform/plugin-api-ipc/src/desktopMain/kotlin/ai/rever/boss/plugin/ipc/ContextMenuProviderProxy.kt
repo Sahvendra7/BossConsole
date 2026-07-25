@@ -12,15 +12,22 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * IPC proxy implementation of ContextMenuProvider.
+ * IPC proxy implementation of ContextMenuProvider — **context menus do not work
+ * out-of-process** (BossConsole issue #30).
  *
- * Context menus require Compose modifier access which can't be serialized over gRPC.
- * This proxy registers context menu intents with the kernel, which then applies them
- * using the host's native context menu implementation.
+ * Context menus require Compose modifier access, which cannot be serialized over gRPC.
+ * The intent was for this proxy to register menu descriptors and for the kernel to attach
+ * them to the matching UI node while rendering. The kernel never did: its
+ * `ContextMenuServiceBridge` acknowledges and discards every registration, a rendered
+ * widget node has no context-menu attachment point, and there is no kernel -> plugin
+ * event that could deliver a picked action back to [ContextMenuItemData.onClick].
  *
- * The @Composable applyContextMenu method returns the unmodified modifier since
- * actual context menu application happens kernel-side. The kernel intercepts
- * registered context menu items and applies them during rendering.
+ * So [applyContextMenu] returns the modifier untouched and the right-click does nothing.
+ * The registration RPC is still sent — harmlessly — so that a real consumer shows up in
+ * the kernel's debug log; the KDoc, not the wire, was the bug.
+ *
+ * Plugins that need a context menu must run in-process, where the host
+ * `ContextMenuProvider` decorates a real modifier.
  */
 class ContextMenuProviderProxy(
     channel: ManagedChannel,
@@ -33,8 +40,8 @@ class ContextMenuProviderProxy(
         modifier: Modifier,
         items: List<ContextMenuItemData>,
     ): Modifier {
-        // Context menu application happens kernel-side.
-        // Register the items so the kernel knows what to show.
+        // Announce the items to the kernel, which currently discards them (see KDoc).
+        // Nothing is applied to the returned modifier — there is no menu.
         val contextMenuId = "ctx_${items.hashCode()}"
         scope.launch {
             try {
