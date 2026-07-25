@@ -5,6 +5,7 @@ import {
   completeRegistration,
   ALLOWED_ORIGINS
 } from "../services/registration.ts"
+import { parseClientDataJSON } from "../utils/webauthn.ts"
 import {
   RegisterChallengeRequestSchema,
   RegisterChallengeResponseSchema,
@@ -139,8 +140,8 @@ register.openapi(registerCompleteRoute, async (ctx) => {
     const supabase = ctx.get("supabase")
     const { userId, credential, challenge, displayName } = ctx.req.valid('json')
 
-    // Parse and validate origin
-    const clientData = JSON.parse(atob(credential.response.clientDataJSON))
+    // Parse and validate origin (base64url-tolerant; see utils/base64.ts)
+    const { data: clientData } = parseClientDataJSON(credential.response.clientDataJSON)
     if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
       return ctx.json({ error: 'Invalid origin' }, 403)
     }

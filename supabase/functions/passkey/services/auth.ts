@@ -1,11 +1,27 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { generateChallenge, storeChallenge } from "../utils/challenge.ts"
-import { verifyChallenge, findPasskeyByCredentialId, getUserPasskeys, findUserByEmail, getUserWithEmail } from "../utils/database.ts"
+import {
+  verifyChallenge,
+  findPasskeyByCredentialId,
+  getUserPasskeys,
+  findUserByEmail,
+  getUserWithEmail,
+  recordPasskeyUse
+} from "../utils/database.ts"
 import { verifySignature } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler, withStatusErrorHandler } from "../utils/error-handler.ts"
 import { generateSupabaseAccessToken } from "../utils/jwt.ts"
-import { getRpId } from "../utils/config.ts"
+import { getAllowedRpIds, getRpId } from "../utils/config.ts"
+import { normalizeBase64Url } from "../utils/base64.ts"
+import {
+  challengeMatches,
+  COSE_ALG_ES256,
+  evaluateSignCounter,
+  matchRpIdHash,
+  parseAuthenticatorDataBase64,
+  parseClientDataJSON
+} from "../utils/webauthn.ts"
 
 export const ALLOWED_ORIGINS = [
   'boss://authenticate',
@@ -118,14 +134,12 @@ export const completeAuthentication = withErrorHandler(
 
     const { clientDataJSON, authenticatorData, signature } = credential.response
 
-    // Decode the base64-encoded clientDataJSON to get the raw JSON string
-    const clientDataJSONString = atob(clientDataJSON)
+    // Decode client data. Decoding is base64url-tolerant (the reference web
+    // client sends base64url), and the raw bytes are kept so the hash that goes
+    // into signature verification is exactly what the authenticator signed.
+    const { bytes: clientDataBytes, data: clientData } = parseClientDataJSON(clientDataJSON)
 
-    // Parse and validate client data
-    const clientData = JSON.parse(clientDataJSONString)
-    console.log('Client data:', clientData)
-
-    // Verify challenge type
+    // Verify ceremony type
     if (clientData.type !== 'webauthn.get') {
       return {
         success: false,
@@ -133,10 +147,33 @@ export const completeAuthentication = withErrorHandler(
       }
     }
 
-    // Verify challenge (but don't consume yet)
+    // Verify origin here too, not only in the route: the service is the layer
+    // that decides whether an assertion is acceptable.
+    if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
+      console.error('❌ Assertion origin is not allowed')
+      return {
+        success: false,
+        error: 'Invalid origin'
+      }
+    }
+
+    // Verify the challenge inside the *signed* client data is the challenge this
+    // ceremony was issued. Without this the signature proves nothing about
+    // freshness: it stays valid for the challenge it was originally produced
+    // for, while only the caller-supplied copy is checked against storage.
+    if (!challengeMatches(clientData.challenge, challenge)) {
+      console.error('❌ Assertion challenge mismatch between clientDataJSON and request body')
+      return {
+        success: false,
+        error: 'Challenge mismatch - clientDataJSON challenge does not match the issued challenge'
+      }
+    }
+
+    // Verify challenge (but don't consume yet), keyed on the signed value
+    const signedChallenge = normalizeBase64Url(clientData.challenge)
     const challengeResult = await verifyChallenge(
       supabase,
-      challenge,
+      signedChallenge,
       ChallengeType.Authentication
     )
 
@@ -162,12 +199,39 @@ export const completeAuthentication = withErrorHandler(
 
     const passkey = passkeyResult.passkey
 
-    // Verify signature - pass the decoded JSON string, not the base64-encoded version
+    // The credential must belong to the user this challenge was issued for
+    const challengeUserId = challengeResult.challengeData?.user_id
+    if (challengeUserId && passkey.user_id && challengeUserId !== passkey.user_id) {
+      console.error('❌ Credential does not belong to the user this challenge was issued for')
+      return {
+        success: false,
+        error: 'Credential does not belong to this challenge'
+      }
+    }
+
+    // Parse authenticator data for the relying party hash and signature counter
+    const authData = parseAuthenticatorDataBase64(authenticatorData)
+
+    // Verify the authenticator signed for our relying party. Credentials
+    // registered after this change are pinned to the exact rpId recorded at
+    // registration; legacy rows fall back to the configured allow-list.
+    const candidateRpIds = passkey.rp_id ? [passkey.rp_id] : getAllowedRpIds()
+    const matchedRpId = await matchRpIdHash(authData.rpIdHash, candidateRpIds)
+    if (!matchedRpId) {
+      console.error('❌ Assertion rpIdHash does not match the expected relying party')
+      return {
+        success: false,
+        error: 'Relying party mismatch - assertion was produced for a different rpId'
+      }
+    }
+
+    // Verify signature using the algorithm this credential was registered with
     const signatureValid = await verifySignature(
       passkey.public_key,
       signature,
       authenticatorData,
-      clientDataJSONString
+      clientDataBytes,
+      passkey.public_key_alg ?? COSE_ALG_ES256
     )
 
     if (!signatureValid) {
@@ -177,11 +241,21 @@ export const completeAuthentication = withErrorHandler(
       }
     }
 
-    // Update last used timestamp
-    await supabase
-      .from('user_passkeys')
-      .update({ last_used_at: Date.now() })
-      .eq('id', passkey.id)
+    // Signature counter: reject a counter that failed to advance (cloned
+    // authenticator), while tolerating authenticators that never keep one.
+    // Checked after the signature, so the counter is only trusted once the
+    // authenticator data is known to be authentic (WebAuthn L2 §7.2 step 21).
+    const counter = evaluateSignCounter(passkey.sign_count, authData.signCount)
+    if (!counter.ok) {
+      console.error('❌ Signature counter regression for passkey:', passkey.id, counter.reason)
+      return {
+        success: false,
+        error: 'Signature counter did not increase - possible cloned authenticator'
+      }
+    }
+
+    // Record the successful assertion (last used + signature counter)
+    await recordPasskeyUse(supabase, passkey.id, counter.nextValue)
 
     // Store completed authentication if there's a session_id
     const challengeData = challengeResult.challengeData
@@ -196,7 +270,7 @@ export const completeAuthentication = withErrorHandler(
       const { data: insertData, error: insertError } = await supabase
         .from('completed_authentications')
         .insert({
-          challenge: challenge,  // Required NOT NULL field
+          challenge: signedChallenge,  // Required NOT NULL field
           session_id: challengeData.session_id,
           user_id: passkey.user_id,
           created_at: new Date().toISOString()
@@ -249,8 +323,25 @@ export const completeAuthentication = withErrorHandler(
     const tokens = await generateSupabaseAccessToken(supabase, userEmail)
 
     console.log('✅ Generated Supabase session successfully')
-    console.log('   Access token length:', tokens.accessToken.length)
-    console.log('   Refresh token length:', tokens.refreshToken.length)
+
+    // Park the session on the completed_authentications row so a cross-device
+    // poller replays these tokens instead of minting a new session per poll.
+    if (challengeData.session_id) {
+      const { error: tokenStoreError } = await supabase
+        .from('completed_authentications')
+        .update({
+          email: userEmail,
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_at: tokens.expiresAt
+        })
+        .eq('session_id', challengeData.session_id)
+
+      if (tokenStoreError) {
+        // Non-fatal: /auth/status will mint a session instead of replaying one
+        console.error('⚠️ Failed to persist session on completed authentication:', tokenStoreError)
+      }
+    }
 
     return {
       success: true,
@@ -308,6 +399,28 @@ export const checkAuthStatus = withStatusErrorHandler(
 
       console.log('✅ Found completed authentication:', completedAuth.user_id)
 
+      // Replay the session recorded when the ceremony completed. Minting a new
+      // session on every poll churns auth.sessions rows (and invalidates the
+      // refresh token a client may already be using) for clients that keep
+      // polling after the first success.
+      const nowInSeconds = Math.floor(Date.now() / 1000)
+      if (
+        completedAuth.access_token &&
+        completedAuth.refresh_token &&
+        (!completedAuth.expires_at || Number(completedAuth.expires_at) > nowInSeconds + 30)
+      ) {
+        console.log('♻️ Returning the session minted when the ceremony completed')
+        return {
+          status: 'completed' as const,
+          userId: completedAuth.user_id,
+          email: completedAuth.email || undefined,
+          completedAt: completedAuth.created_at,
+          accessToken: completedAuth.access_token,
+          refreshToken: completedAuth.refresh_token,
+          expiresAt: completedAuth.expires_at ? Number(completedAuth.expires_at) : undefined
+        }
+      }
+
       // Fetch user email using helper function (DRY)
       const userResult = await getUserWithEmail(supabase, completedAuth.user_id)
 
@@ -327,6 +440,21 @@ export const checkAuthStatus = withStatusErrorHandler(
       const tokens = await generateSupabaseAccessToken(supabase, userResult.user.email)
 
       console.log('✅ Generated Supabase session successfully')
+
+      // Persist it so subsequent polls replay this session instead of minting more
+      const { error: tokenStoreError } = await supabase
+        .from('completed_authentications')
+        .update({
+          email: userResult.user.email,
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_at: tokens.expiresAt
+        })
+        .eq('session_id', sessionId)
+
+      if (tokenStoreError) {
+        console.error('⚠️ Failed to persist session for session id:', sessionId, tokenStoreError)
+      }
 
       return {
         status: 'completed' as const,

@@ -5,6 +5,8 @@
  * to test service functions without actual database calls
  */
 
+import { SignJWT } from "jose"
+
 // deno-lint-ignore no-explicit-any
 type DatabaseError = any
 
@@ -37,6 +39,78 @@ export class MockSupabaseClient {
   // Store responses by table.operation key for more granular control
   private mockResponses: Map<string, MockSupabaseResponse[]> = new Map()
   private queryHistory: Array<{ table: string; operation: string; params: QueryParams }> = []
+  // email -> user id, used by the auth stub when minting a session
+  private authUsers: Map<string, string> = new Map()
+  private pendingLinks: Map<string, string> = new Map()
+
+  /**
+   * Register a user for the Admin API stub, so a session minted for `email`
+   * carries `userId` as its subject.
+   */
+  mockAuthUser(email: string, userId: string): void {
+    this.authUsers.set(email, userId)
+  }
+
+  /**
+   * Stub of the pieces of `supabase.auth` that utils/jwt.ts uses:
+   * `auth.admin.generateLink()` followed by `auth.verifyOtp()`.
+   *
+   * The access token is a real HS256 JWT carrying the claims the production
+   * auth hook injects, so callers can decode it like the real thing.
+   */
+  get auth() {
+    // deno-lint-ignore no-this-alias
+    const client = this
+
+    return {
+      admin: {
+        generateLink: (params: { type: string; email: string }) => {
+          const hashedToken = `mock-hashed-token-${client.pendingLinks.size + 1}`
+          client.pendingLinks.set(hashedToken, params.email)
+          return Promise.resolve({
+            data: { properties: { hashed_token: hashedToken } },
+            error: null
+          })
+        }
+      },
+      verifyOtp: async (params: { token_hash: string; type: string }) => {
+        const email = client.pendingLinks.get(params.token_hash)
+        if (!email) {
+          return { data: null, error: { message: 'Invalid token hash' } }
+        }
+
+        const userId = client.authUsers.get(email) ?? 'mock-user-id'
+        const secret = new TextEncoder().encode(
+          Deno.env.get('JWT_SECRET') || 'mock-jwt-secret-at-least-32-characters-long-for-tests'
+        )
+
+        const accessToken = await new SignJWT({
+          sub: userId,
+          email,
+          role: 'authenticated',
+          aal: 'aal1',
+          amr: [{ method: 'passkey', timestamp: Math.floor(Date.now() / 1000) }]
+        })
+          .setProtectedHeader({ alg: 'HS256' })
+          .setIssuer('supabase')
+          .setAudience('authenticated')
+          .setIssuedAt()
+          .setExpirationTime('1h')
+          .sign(secret)
+
+        return {
+          data: {
+            session: {
+              access_token: accessToken,
+              refresh_token: `mock-refresh-token-${userId}`,
+              expires_in: 3600
+            }
+          },
+          error: null
+        }
+      }
+    }
+  }
 
   /**
    * Configure mock response for a specific table and operation

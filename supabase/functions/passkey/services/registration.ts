@@ -1,10 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { generateChallenge, storeChallenge } from "../utils/challenge.ts"
 import { verifyAndConsumeChallenge, storePasskeyInDB } from "../utils/database.ts"
-import { extractPublicKeyFromAttestation } from "../utils/crypto.ts"
+import { extractCredentialFromAttestation } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler } from "../utils/error-handler.ts"
-import { getRpId, getRpName } from "../utils/config.ts"
+import { getAllowedRpIds } from "../utils/config.ts"
+import { encodedValuesMatch, normalizeBase64Url } from "../utils/base64.ts"
+import {
+  challengeMatches,
+  matchRpIdHash,
+  parseClientDataJSON,
+  SUPPORTED_COSE_ALGS
+} from "../utils/webauthn.ts"
 
 export const ALLOWED_ORIGINS = [
   'boss://authenticate',
@@ -58,6 +65,8 @@ export const generateRegistrationChallenge = withErrorHandler(
       success: true,
       challenge,
       // rpId will be provided by client when calling /register/mobile
+      // Algorithms the server can actually verify at /register/complete
+      pubKeyCredParams: SUPPORTED_COSE_ALGS.map(alg => ({ type: 'public-key', alg })),
       sessionId // Return sessionId for cross-device polling
     }
   },
@@ -80,11 +89,12 @@ export const completeRegistration = withErrorHandler(
 
     const { clientDataJSON, attestationObject } = credential.response
 
-    // Parse and validate client data
-    const clientData = JSON.parse(atob(clientDataJSON))
-    console.log('Client data:', clientData)
+    // Parse client data. Decoding is base64url-tolerant: the reference web
+    // client sends base64url, so atob() failed for any payload that happened to
+    // encode a '+' or '/'.
+    const { data: clientData } = parseClientDataJSON(clientDataJSON)
 
-    // Verify challenge type
+    // Verify ceremony type
     if (clientData.type !== 'webauthn.create') {
       return {
         success: false,
@@ -92,10 +102,31 @@ export const completeRegistration = withErrorHandler(
       }
     }
 
-    // Verify and consume challenge
+    // Verify origin here too, not only in the route: the service is the layer
+    // that decides whether an attestation is acceptable.
+    if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
+      console.error('❌ Registration origin is not allowed')
+      return {
+        success: false,
+        error: 'Invalid origin'
+      }
+    }
+
+    // Verify the challenge inside the signed client data is the one this
+    // ceremony was issued. Registration uses "none" attestation, so this
+    // binding is the only thing tying the credential to our challenge.
+    if (!challengeMatches(clientData.challenge, challenge)) {
+      console.error('❌ Registration challenge mismatch between clientDataJSON and request body')
+      return {
+        success: false,
+        error: 'Challenge mismatch - clientDataJSON challenge does not match the issued challenge'
+      }
+    }
+
+    // Verify and consume challenge (keyed on the value the authenticator signed)
     const challengeResult = await verifyAndConsumeChallenge(
       supabase,
-      challenge,
+      normalizeBase64Url(clientData.challenge),
       ChallengeType.Registration
     )
 
@@ -106,14 +137,50 @@ export const completeRegistration = withErrorHandler(
       }
     }
 
-    // Extract public key from attestation
-    const publicKey = extractPublicKeyFromAttestation(attestationObject)
+    // The challenge must have been issued for the user being registered,
+    // otherwise a challenge minted for one account could enrol a credential on
+    // another.
+    const challengeUserId = challengeResult.challenge?.user_id
+    if (challengeUserId && challengeUserId !== userId) {
+      console.error('❌ Registration challenge was issued for a different user')
+      return {
+        success: false,
+        error: 'Challenge does not belong to this user'
+      }
+    }
+
+    // Extract public key, algorithm, initial counter and rpIdHash
+    const attested = await extractCredentialFromAttestation(attestationObject)
+
+    // Verify the authenticator signed for one of our relying party IDs
+    const matchedRpId = await matchRpIdHash(attested.rpIdHash, getAllowedRpIds())
+    if (!matchedRpId) {
+      console.error('❌ Registration rpIdHash does not match any allowed relying party')
+      return {
+        success: false,
+        error: 'Relying party mismatch - credential was created for a different rpId'
+      }
+    }
+
+    // The credential id we store is the lookup key at assertion time, so it has
+    // to be the id the authenticator actually attested — not an arbitrary one
+    // supplied next to the attestation.
+    if (attested.credentialId && !encodedValuesMatch(credential.id, attested.credentialId)) {
+      console.error('❌ Registration credential id does not match the attested credential')
+      return {
+        success: false,
+        error: 'Credential id does not match the attestation'
+      }
+    }
 
     // Store passkey
     const passkeyData = {
       user_id: userId,
       credential_id: credential.id,
-      public_key: publicKey,
+      public_key: attested.publicKey,
+      public_key_alg: attested.alg,
+      sign_count: attested.signCount,
+      rp_id: matchedRpId,
       display_name: displayName || 'My Passkey',
       transports: ['internal']
     }

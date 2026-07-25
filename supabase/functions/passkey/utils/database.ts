@@ -11,6 +11,12 @@ export interface PasskeyRecord {
   created_at: number
   last_used_at?: number
   active: boolean
+  /** COSE algorithm of public_key (-7 ES256, -257 RS256) */
+  public_key_alg?: number
+  /** Last signature counter seen from this authenticator (0 = counter unsupported) */
+  sign_count?: number
+  /** RP ID this credential was registered for */
+  rp_id?: string | null
 }
 
 export async function verifyChallenge(
@@ -93,7 +99,6 @@ export async function storePasskeyInDB(
   passkey: Omit<PasskeyRecord, 'id' | 'created_at' | 'active'>
 ) {
   console.log('storePasskeyInDB called with credential:', passkey.credential_id)
-  console.log('Full passkey data:', JSON.stringify(passkey, null, 2))
 
   try {
     const insertData = {
@@ -102,27 +107,89 @@ export async function storePasskeyInDB(
       active: true
     }
 
-    console.log('About to insert:', JSON.stringify(insertData, null, 2))
-
     const { data, error } = await supabase
       .from('user_passkeys')
       .insert(insertData)
       .select()
 
-    console.log('Insert result - data:', data)
-    console.log('Insert result - error:', error)
-
     if (error) {
+      // The verification columns (public_key_alg, sign_count, rp_id) arrive with
+      // migration 20260725000000. If the function is deployed ahead of it,
+      // registration would otherwise break outright — degrade instead, loudly.
+      if (isUnknownColumnError(error)) {
+        console.error(
+          '⚠️ user_passkeys is missing the passkey verification columns — apply migration ' +
+          '20260725000000_passkey_verification_columns.sql. Storing the credential without them; ' +
+          'signature-counter and rpId checks will be unavailable for it.',
+          error
+        )
+
+        const { public_key_alg: _alg, sign_count: _count, rp_id: _rpId, ...legacyData } = insertData
+        const retry = await supabase
+          .from('user_passkeys')
+          .insert(legacyData)
+          .select()
+
+        if (retry.error) {
+          console.error('Database error storing passkey:', retry.error)
+          return { success: false, error: retry.error.message }
+        }
+
+        return { success: true, data: retry.data }
+      }
+
       console.error('Database error storing passkey:', error)
       return { success: false, error: error.message }
     }
 
-    console.log('Passkey stored successfully - returned data:', JSON.stringify(data, null, 2))
+    console.log('Passkey stored successfully')
     return { success: true, data }
   } catch (error) {
     console.error('Exception storing passkey:', error)
     return { success: false, error: (error as Error).message }
   }
+}
+
+/**
+ * True when PostgREST/Postgres rejected the statement because a column does not
+ * exist (schema cache miss PGRST204, or undefined_column 42703).
+ */
+function isUnknownColumnError(error: { code?: string; message?: string }): boolean {
+  if (error.code === 'PGRST204' || error.code === '42703') return true
+  const message = error.message?.toLowerCase() ?? ''
+  return message.includes('column') && (message.includes('does not exist') || message.includes('not find'))
+}
+
+/**
+ * Records a successful assertion against a passkey.
+ *
+ * `signCount` is only written when the authenticator maintains a counter — see
+ * `evaluateSignCounter` in utils/webauthn.ts, which returns null for
+ * authenticators that always report 0.
+ */
+export async function recordPasskeyUse(
+  supabase: SupabaseClient,
+  passkeyId: string,
+  signCount: number | null
+) {
+  const update: Record<string, unknown> = { last_used_at: Date.now() }
+  if (signCount !== null) {
+    update.sign_count = signCount
+  }
+
+  const { error } = await supabase
+    .from('user_passkeys')
+    .update(update)
+    .eq('id', passkeyId)
+
+  if (error) {
+    // Non-fatal: the assertion itself was verified. Losing the counter update
+    // only costs clone detection on the *next* assertion, so log and continue.
+    console.error('Failed to record passkey use:', error)
+    return { success: false, error: error.message }
+  }
+
+  return { success: true }
 }
 
 export async function getUserPasskeys(supabase: SupabaseClient, userId: string) {

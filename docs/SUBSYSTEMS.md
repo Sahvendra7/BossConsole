@@ -20,6 +20,28 @@ This document covers the core subsystems of BOSS Console.
 - macOS: Swift scripts for Touch ID, Keychain Services
 - Windows: PowerShell scripts for Windows Hello, Credential Manager
 
+**Server-side ceremony verification** (`supabase/functions/passkey/`):
+
+The relying party — not the browser — is responsible for these checks, and the
+edge function performs all of them on every ceremony:
+
+| Check | Where |
+|-------|-------|
+| `clientDataJSON.challenge` equals the challenge issued for the ceremony | `utils/webauthn.ts` → `challengeMatches` |
+| `authData.rpIdHash` is `SHA-256` of an allowed RP ID (pinned to `user_passkeys.rp_id` once recorded) | `utils/webauthn.ts` → `matchRpIdHash` |
+| Signature counter advances (authenticators that always report 0 are tolerated) | `utils/webauthn.ts` → `evaluateSignCounter` |
+| Signature verifies for the credential's algorithm — ES256 and RS256 | `utils/crypto.ts` → `verifySignature` |
+| Origin is in `ALLOWED_ORIGINS` | route **and** service layer |
+
+All transport payloads are decoded with `utils/base64.ts` → `decodeBase64Any`,
+which accepts base64 and base64url with or without padding. Locking a decoder to
+one alphabet produces failures that depend on the bytes of the individual
+ceremony.
+
+**Environment**:
+- `PASSKEY_RP_ID` — RP ID for ceremonies (defaults to the host derived from `SUPABASE_URL`)
+- `PASSKEY_RP_ID_ALIASES` — comma-separated additional RP IDs accepted during verification
+
 ## UI Architecture
 
 **Compose Multiplatform Structure**:

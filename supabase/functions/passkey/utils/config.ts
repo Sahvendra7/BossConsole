@@ -51,3 +51,47 @@ export function getRpId(): string {
 export function getRpName(): string {
   return 'BOSS'
 }
+
+/**
+ * RP IDs that BOSS ceremonies may legitimately be bound to.
+ *
+ * Why a set and not just `getRpId()`: inside the edge runtime `SUPABASE_URL`
+ * points at the internal gateway, not at the domain the browser actually loads
+ * (see the note on `generateRegistrationChallenge`). The mobile pages take
+ * `rpId` as a query parameter and default it to `api.risaboss.com`, so the
+ * effective RP ID of a ceremony is not always derivable from the environment.
+ *
+ * Every entry here is a BOSS-owned host — the point of the check is to reject
+ * assertions minted for a *foreign* relying party, which no entry below is.
+ * Deployments can add hosts with `PASSKEY_RP_ID` / `PASSKEY_RP_ID_ALIASES`
+ * (comma-separated) without a code change.
+ */
+const BOSS_RP_IDS: readonly string[] = ['api.risaboss.com', 'risaboss.com', 'localhost']
+
+export function getAllowedRpIds(): string[] {
+  const allowed = new Set<string>()
+
+  const customRpId = Deno.env.get("PASSKEY_RP_ID")
+  if (customRpId) {
+    allowed.add(customRpId.trim())
+  }
+
+  const aliases = Deno.env.get("PASSKEY_RP_ID_ALIASES")
+  if (aliases) {
+    for (const alias of aliases.split(',')) {
+      const trimmed = alias.trim()
+      if (trimmed) allowed.add(trimmed)
+    }
+  }
+
+  const derived = getRpId()
+  if (derived) {
+    allowed.add(derived)
+  }
+
+  for (const rpId of BOSS_RP_IDS) {
+    allowed.add(rpId)
+  }
+
+  return Array.from(allowed)
+}
