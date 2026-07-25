@@ -38,12 +38,25 @@ jobs:
       target-is-prerelease: ${{ steps.validate.outputs.target-is-prerelease }}
       target-suffix: ${{ steps.validate.outputs.target-suffix }}
       target-channel: ${{ steps.validate.outputs.target-channel }}
+      build-id: ${{ steps.build-id.outputs.build-id }}
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v7
         with:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
           fetch-depth: 0
+
+      - name: 🔢 Compute macOS Build Identifier
+        id: build-id
+        # release.yml stamps CFBundleVersion from BOSS_BUILD_ID, defaulting to
+        # github.run_number. A called workflow's jobs belong to the CALLER's run, so a
+        # promotion rebuild would stamp promote-release's own counter — which can sort
+        # below, or collide with, a release.yml run number and defeats the whole point of
+        # a monotonic build identifier. A seconds-since-epoch stamp is globally monotonic
+        # and lands where no run_number reaches. (Single non-negative integer, so it
+        # satisfies Compose's CFBundleVersion validation; fits a signed 32-bit int
+        # until 2038.)
+        run: echo "build-id=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: 🔍 Validate and Prepare Promotion
         id: validate
@@ -203,6 +216,7 @@ jobs:
       prerelease_number: '1'
       create_release: true
       skip_version_increment: true
+      build_id: ${{ needs.validate-and-prepare.outputs.build-id }}
     secrets: inherit
 
   promote-without-rebuild:

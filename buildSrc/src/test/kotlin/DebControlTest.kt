@@ -145,6 +145,24 @@ class DebControlTest {
         )
     }
 
+    /** Boundary: `Depends` is the last field, so `Recommends` is appended at the end. */
+    @Test
+    fun `appends Recommends when Depends is the final field`() {
+        assertEquals(
+            "Package: boss\nDescription: BOSS\nDepends: libc6\nRecommends: xdg-utils\n",
+            soften("Package: boss\nDescription: BOSS\nDepends: xdg-utils, libc6\n"),
+        )
+    }
+
+    /** Same boundary with the field dropped entirely rather than rewritten. */
+    @Test
+    fun `appends Recommends when a dropped Depends was the final field`() {
+        assertEquals(
+            "Package: boss\nDescription: BOSS\nRecommends: xdg-utils\n",
+            soften("Package: boss\nDescription: BOSS\nDepends: xdg-utils\n"),
+        )
+    }
+
     @Test
     fun `leaves every other field byte-for-byte alone`() {
         val rewritten =

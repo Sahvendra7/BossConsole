@@ -1022,9 +1022,11 @@ compose.desktop {
                 // LC_BUILD_VERSION minos 12.0. On 10.15/11 the app installed and
                 // launched fine and then died in dyld the first time an engine
                 // loaded — a broken browser tab instead of "unsupported OS".
-                // Declaring 12.0 here makes the installer refuse the install
-                // instead. Keep in lockstep with chromium-branding / the engine
-                // bundle's own LSMinimumSystemVersion.
+                // Declaring 12.0 makes Launch Services refuse to *launch* on an older
+                // OS with a clear message ("requires macOS 12.0 or later"); a DMG has
+                // no installer, so nothing gates dragging it to /Applications. The
+                // failure moves to first launch instead of into dyld. Keep in lockstep
+                // with chromium-branding / the engine bundle's LSMinimumSystemVersion.
                 minimumSystemVersion = "12.0"
 
                 // Was jpackage's placeholder "Unknown" (Compose's default when this
