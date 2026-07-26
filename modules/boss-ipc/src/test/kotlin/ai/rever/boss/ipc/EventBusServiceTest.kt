@@ -25,6 +25,7 @@ class EventBusServiceTest {
     private companion object {
         const val POLL_MS = 25L
         const val SETTLE_MS = 100L
+        const val BATCH_SIZE = 3
     }
 
     private var server: io.grpc.Server? = null
@@ -195,7 +196,7 @@ class EventBusServiceTest {
                     launch {
                         stub.subscribe(subscribeRequest).collect { envelope ->
                             received.add(envelope)
-                            if (received.size == 3) return@collect
+                            if (received.size == BATCH_SIZE) return@collect
                         }
                     }
 
@@ -217,10 +218,15 @@ class EventBusServiceTest {
 
                 stub.publishBatch(batchRequest)
 
-                kotlinx.coroutines.delay(500)
+                // Wait for the three, rather than sleeping long enough that they have probably arrived. The
+                // enclosing withTimeout is the bound if they never do, so a real failure reports as a
+                // timeout instead of an off-by-a-few count that reads like a delivery bug.
+                while (received.size < BATCH_SIZE) {
+                    delay(POLL_MS)
+                }
                 subscriberJob.cancel()
 
-                assertEquals(3, received.size, "Should receive all 3 batch events")
+                assertEquals(BATCH_SIZE, received.size, "Should receive all 3 batch events")
             }
         }
 
