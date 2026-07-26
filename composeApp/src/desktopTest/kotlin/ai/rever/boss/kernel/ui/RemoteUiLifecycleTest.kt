@@ -22,7 +22,9 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -176,6 +178,59 @@ class RemoteUiLifecycleTest {
     }
 
     @Test
+    fun `unregister announces destroyed directly, not only over the transport`() {
+        // The gRPC test proves it reaches a plugin; this localises a regression to the registry instead
+        // of leaving the transport test as the only witness.
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
+        registry.attach(SURFACE, RecordingHost())
+
+        assertTrue(registry.unregister(SURFACE))
+
+        assertEquals(listOf(LifecycleStates.CREATED, LifecycleStates.DESTROYED), surface.lifecycleStates())
+    }
+
+    @Test
+    fun `attach and openStream racing still announce created exactly once`() {
+        // The claim the whole rendezvous rests on, and the one every other test here drives on a single
+        // thread: `attach` writes into `hosts` then reads `streaming`, `openStream` sets `streaming` then
+        // reads `hosts`, so whichever runs second sees the other's write. That is a Dekker-shaped
+        // argument about visibility, correct only because ConcurrentHashMap mutations and AtomicBoolean
+        // accesses are synchronization actions — i.e. exactly the kind of reasoning that deserves to be
+        // executed rather than believed. Released together, repeatedly, asserting exactly one `created`.
+        //
+        // Honest about its reach: this catches a DOUBLE announce reliably, and it exercises the real
+        // concurrent path. It does not reliably catch the reverse — inverting attach() to read
+        // `streaming` before publishing its host leaves it green, because the losing interleaving needs
+        // both reads to precede both writes and a barrier cannot make that window wide enough. The
+        // ordering still has to be read to be trusted; this only stops it regressing loudly.
+        repeat(RACE_ROUNDS) { round ->
+            val id = "$SURFACE-$round"
+            val isolated = RemoteUiSurfaceRegistry()
+            val surface = isolated.register(id, PROCESS).accepted()
+            val barrier = CyclicBarrier(2)
+            val threads =
+                listOf(
+                    thread {
+                        barrier.await()
+                        isolated.attach(id, RecordingHost())
+                    },
+                    thread {
+                        barrier.await()
+                        isolated.openStream(id)
+                    },
+                )
+            threads.forEach { it.join() }
+
+            assertEquals(
+                listOf(LifecycleStates.CREATED),
+                surface.lifecycleStates(),
+                "round $round announced the wrong number of created events",
+            )
+        }
+    }
+
+    @Test
     fun `a created that could not be queued does not leave the surface owing a destroyed`() {
         // The latch is what makes the pair symmetric, so a failed emit must roll it back rather than
         // leave the surface owing a `destroyed` for a `created` no plugin ever saw. Unreachable through
@@ -318,5 +373,8 @@ class RemoteUiLifecycleTest {
         const val AWAIT_TIMEOUT_MS = 10_000L
         const val POLL_INTERVAL_MS = 5L
         const val SHUTDOWN_TIMEOUT_MS = 5_000L
+
+        /** Enough rounds to make a visibility gap show up, cheap enough to keep in the suite. */
+        const val RACE_ROUNDS = 2_000
     }
 }

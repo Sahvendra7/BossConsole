@@ -8,7 +8,6 @@ import ai.rever.boss.ui.sdk.ScrollCoalescer
 import ai.rever.boss.ui.sdk.ScrollOffset
 import ai.rever.boss.ui.sdk.WidgetEvent
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,12 +61,13 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  *    entirely — an unregistered focused window returns before it consults the keymap — and this
  *    modifier would happily forward a `Cmd+T` that arrived down one of those paths. Consulting
  *    [KeymapMatcher] makes "the host keymap wins" a property of the forwarding rule itself rather than
- *    an emergent property of dispatch order, and it is what makes the rule testable without driving AWT.
+ *    an emergent property of dispatch order, and it is what makes the rule testable without driving
+ *    AWT.
  *
- **It is not the same code path, and the two have already drifted — see #52.**
+ *    **It is not the same code path, and the two have already drifted — see #52.**
  *    `AWTKeyboardInterceptor.findMatchingBinding` takes a [KeymapMatcher] and then ignores it,
  *    reimplementing the match over AWT key codes *without* normalizing the binding's key name, while
- *    [KeymapMatcher.keyMatches] normalizes both sides. So they disagree today, on shipped bindings:
+ *    `KeymapMatcher.keyMatches` normalizes both sides. So they disagree today, on shipped bindings:
  *    `Cmd+DirectionLeft` and friends (`PANEL_NAVIGATE_*`), `Ctrl+Space` (`QUICK_SWITCHER_OPEN`), and
  *    anything a user binds as `Return`, `Escape`, `-`, `=` or `/`.
  *
@@ -89,27 +89,36 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  *    *observe* what is left over; it can never claim it. Even a plugin process that hangs cannot
  *    delay a host shortcut, because the shortcut never entered this path.
  *
- * ## What gets forwarded
+ * ## What gets forwarded, and what makes the surface eligible at all
  *
  * Keys the *focused widget* did not take, because `onKeyEvent` fires on the way up from the focus
  * target: typing into a remote text field produces `TextChange`, not a `Key` per character, and only
  * what the field ignores bubbles this far. That is the same "host first, then the specific thing, then
  * the surface" ordering one level down.
  *
- * @param onEvent the surface's event sink. Key events are tagged with an **empty node id** — they
- *   reach the surface precisely *because* no node claimed them, so attributing one would be a guess.
- *   Same convention as lifecycle, per `EmittedEvent`.
- * @param onEvent the surface's event sink. Key events are tagged with an **empty node id** — they
- *   reach the surface precisely *because* no node claimed them, so attributing one would be a guess.
- *   Same convention as lifecycle, per `EmittedEvent`.
+ * **The surface is deliberately not a focus target of its own.** An earlier revision ended this chain
+ * in `.focusable()`, which made a surface with no interactive content a Tab stop that began streaming
+ * every unclaimed key-down to a separate OS process — with no plugin identity, no capability model and
+ * nothing visible in the UI. Reviewers were unanimous that that is the wrong default to ship, and the
+ * directions are not symmetric: granting it later behind a declared `wants_keys` on `UIRegistration` is
+ * additive, whereas revoking it after a plugin has shipped against it is a negotiation. So a surface
+ * receives keys only once something inside it holds focus — which is every surface built for
+ * interaction, and none of the ones with no business seeing keystrokes.
+ *
  * ## Cost
  *
- * The matcher is built once per keymap, not once per keystroke. A held key auto-repeats at ~25-30/s and
- * `KeymapMatcher.match` is not free — it allocates a filtered candidate list twice (context, then
- * `WORKSPACE`) and does string normalization per candidate — so constructing one inside the handler put
- * a few hundred short-lived allocations per keystroke on the Compose UI thread. Reading the settings
- * during composition also means a rebind takes effect without the surface having to be re-created.
+ * A held key auto-repeats at ~25-30/s and every one of those runs a [KeymapMatcher.match]. The matcher
+ * is at least built once per keymap rather than once per keystroke, and reading the settings during
+ * composition also means a rebind takes effect without the surface being re-created — but to be honest
+ * about what that bought: `KeymapMatcher` has no `init`, so hoisting it saves one wrapper allocation.
+ * The real cost is inside `match()` — a filtered candidate list built once or twice per call, plus
+ * `Key.toString()` and two name normalizations per candidate — and it is still paid per key-down.
+ * Fixing it means precomputing the per-context binding lists in the matcher, which also speeds up the
+ * interceptor's far hotter path; that is part of #52 rather than a change to make from here.
  *
+ * @param onEvent the surface's event sink. Key events are tagged with an **empty node id** — they
+ *   reach the surface precisely *because* no node claimed them, so attributing one would be a guess.
+ *   Same convention as lifecycle, per `EmittedEvent`.
  * @param hostKeymap the keymap to check against; the live user settings in production, injected in
  *   tests so an assertion about a shortcut does not depend on whoever's `~/.boss/keymap-settings.json`
  *   the suite happens to run beside.
@@ -118,8 +127,6 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  *   *per window* — so once remote surfaces are placed, a panel inside a browser or terminal window will
  *   have the interceptor matching in `BROWSER`/`TERMINAL` while this still says `GLOBAL`. A parameter
  *   now so that change has a seam rather than a silent mismatch to find later.
- *
-
  */
 @Composable
 internal fun Modifier.forwardUnclaimedKeys(
@@ -133,7 +140,7 @@ internal fun Modifier.forwardUnclaimedKeys(
             keyEvent.toForwardedKey(matcher, context)?.let { forwarded -> onEvent("", forwarded) }
             // Never true. See point 3 above — this is the anti-trap guarantee, and it is one word.
             false
-        }.focusable()
+        }
 }
 
 /**

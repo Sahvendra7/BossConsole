@@ -13,7 +13,9 @@ java {
 
 dependencies {
     implementation(project(":boss-ipc"))
-    implementation(libs.kotlinx.coroutines.core)
+    // api, not implementation: ScrollCoalescer.coalesce is typed on Flow in both directions, so a
+    // consumer of the published jar needs coroutines on its own compile classpath to call it.
+    api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.kotlin.test.junit)
