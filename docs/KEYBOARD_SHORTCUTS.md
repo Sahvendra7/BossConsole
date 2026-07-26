@@ -234,8 +234,10 @@ plugin as `UIEvent.key`. Three things bound that, and one thing does not:
   tap re-checks the keymap itself as a backstop, using `KeymapMatcher.hasSystemModifier` so it declines
   only keys the interceptor would actually have acted on. (Declining *everything* bound would lose keys
   the host never dispatches, such as `Shift+/`.)
-- **The focused widget gets first refusal.** `onKeyEvent` fires on the way up from the focus target, so
-  typing into a remote text field produces a text-change event, not a key per character.
+- **The focused widget gets first refusal.** `onKeyEvent` fires on the way *up* from the focus target,
+  so a widget that handles a key keeps it: typing into a remote text field produces a text-change event,
+  not a key per character. The boundary is consumption, though — keys a widget ignores still reach the
+  plugin while that surface has focus.
 - **The tap never consumes.** It always returns `false`, so a plugin cannot swallow a shortcut or trap
   the user in a panel.
 

@@ -60,10 +60,17 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  *
  * 2. **The tap re-checks the live keymap anyway.** The interceptor has early exits that skip matching
  *    entirely — an unregistered focused window returns before it consults the keymap — and this
- *    modifier would happily forward a `Cmd+T` that arrived down one of those paths. Asking
- *    [KeymapMatcher] the same question the interceptor asks makes "the host keymap wins" a property of
- *    the forwarding rule itself rather than an emergent property of dispatch order, and it is what
- *    makes the rule testable without driving AWT.
+ *    modifier would happily forward a `Cmd+T` that arrived down one of those paths. Consulting
+ *    [KeymapMatcher] makes "the host keymap wins" a property of the forwarding rule itself rather than
+ *    an emergent property of dispatch order, and it is what makes the rule testable without driving AWT.
+ *
+ *    **It is not literally the same code path, and that is a known risk.**
+ *    `AWTKeyboardInterceptor.findMatchingBinding` takes a [KeymapMatcher] and then ignores it,
+ *    reimplementing the match over AWT key codes. So there are two answers to "is this bound" and they
+ *    can drift — a chord the interceptor claims but the matcher does not is merely forwarded
+ *    redundantly (guarantee 1 already consumed it), but the reverse would lose a key to both sides,
+ *    which is the `Shift+/` failure below in another guise. Making the interceptor delegate to its own
+ *    parameter is the fix; it is a change to the host keymap path rather than to this one.
  *
  * 3. **This handler always returns `false`.** It is a tap, not a handler: the key continues to
  *    whatever the host has above the surface exactly as if the plugin were not there. A plugin can
@@ -91,6 +98,11 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  * @param hostKeymap the keymap to check against; the live user settings in production, injected in
  *   tests so an assertion about a shortcut does not depend on whoever's `~/.boss/keymap-settings.json`
  *   the suite happens to run beside.
+ * @param context which bindings count as the host's. [ShortcutContext.GLOBAL] is right for every
+ *   surface today and is what the interceptor derives for one, but the interceptor resolves context
+ *   *per window* — so once remote surfaces are placed, a panel inside a browser or terminal window will
+ *   have the interceptor matching in `BROWSER`/`TERMINAL` while this still says `GLOBAL`. A parameter
+ *   now so that change has a seam rather than a silent mismatch to find later.
  */
 @Composable
 internal fun Modifier.forwardUnclaimedKeys(
@@ -118,9 +130,9 @@ internal fun Modifier.forwardUnclaimedKeys(
  *   bare `VK_SHIFT` ahead of the letter, and a plugin listening for keys would see two events for one
  *   keystroke. The modifier is not lost — it arrives as a flag on the key it modifies, which is the
  *   only form the wire type can express. Same set the AWT interceptor skips, for the same reason.
- * - **Anything the host would actually act on.** Matched in [ShortcutContext.GLOBAL] — what
- *   [KeymapMatcher] resolves for a surface that is neither a browser, a terminal nor an editor, the
- *   same context the AWT interceptor derives for one, and which also covers `WORKSPACE` bindings.
+ * - **Anything the host would actually act on**, matched in [context] — [ShortcutContext.GLOBAL] for
+ *   every surface today, which is what the AWT interceptor derives for one and which also covers
+ *   `WORKSPACE` bindings.
  *
  *   "Would act on", not "has a binding for", and the difference is a bug that review caught: the
  *   interceptor returns *before* it consults the keymap unless Meta, Ctrl or Alt is down, so a binding
@@ -138,12 +150,15 @@ internal fun Modifier.forwardUnclaimedKeys(
  * documented meaning is a platform key code, which on this host is the AWT `VK_` constant. The packed
  * Compose value would neither fit nor mean anything to a plugin.
  */
-internal fun ComposeKeyEvent.toForwardedKey(hostKeymap: KeymapMatcher): WidgetEvent.Key? {
+internal fun ComposeKeyEvent.toForwardedKey(
+    hostKeymap: KeymapMatcher,
+    context: ShortcutContext = ShortcutContext.GLOBAL,
+): WidgetEvent.Key? {
     // Cheap tests first so the keymap lookup — the only costly one — is skipped for key-ups and for the
     // modifier presses that bracket every chord.
     if (type != KeyEventType.KeyDown || key.nativeKeyCode in MODIFIER_ONLY_KEYS) return null
     val claimedByHost =
-        hostKeymap.match(this, ShortcutContext.GLOBAL)?.let(hostKeymap::hasSystemModifier) == true
+        hostKeymap.match(this, context)?.let(hostKeymap::hasSystemModifier) == true
     return if (claimedByHost) {
         null
     } else {

@@ -23,6 +23,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -90,6 +91,42 @@ class RemoteSurfaceInputComposeTest {
         assertTrue(queued.key.alt, "the alt modifier must survive the crossing")
         assertTrue(queued.key.shift, "the shift modifier must survive the crossing")
         panel.dispose()
+    }
+
+    @Test
+    fun `a key the focused widget consumes never reaches the plugin`() {
+        // "The focused widget gets first refusal" is the property that keeps ordinary typing off the
+        // wire — a text field consumes its character keys, so a plugin sees one TextChange per edit
+        // rather than a Key per keystroke — and it is the whole reason the tap is `onKeyEvent` (which
+        // fires on the way *up* from the focus target) rather than `onPreviewKeyEvent`. Asserted with a
+        // child that consumes explicitly, because Compose's key injection cannot synthesise the codepoint
+        // a real `BasicTextField` needs in order to treat a press as text: driving a field here would
+        // assert nothing, which the mutation check caught before this comment existed.
+        val forwarded = mutableListOf<WidgetEvent>()
+        val focus = FocusRequester()
+        compose.setContent {
+            Box(Modifier.forwardUnclaimedKeys({ _, event -> forwarded += event })) {
+                Box(
+                    Modifier
+                        .onKeyEvent { it.key == Key.H }
+                        .focusRequester(focus)
+                        .focusable(),
+                )
+            }
+        }
+        compose.runOnIdle { focus.requestFocus() }
+
+        compose.onRoot().performKeyInput {
+            pressKey(Key.H)
+            pressKey(Key.J)
+        }
+        compose.waitForIdle()
+
+        assertEquals(
+            listOf(AwtKeyEvent.VK_J),
+            forwarded.filterIsInstance<WidgetEvent.Key>().map { it.keyCode },
+            "the consumed key must not reach the plugin; the unconsumed one must",
+        )
     }
 
     @Test
@@ -209,6 +246,7 @@ class RemoteSurfaceInputComposeTest {
      * Filtered rather than positional because focusing a widget legitimately queues a `Focus` event
      * first, and a test about keys should not break when an unrelated family starts being emitted.
      */
+
     private fun RemoteUiSurface.firstEventWhere(predicate: (UIEvent) -> Boolean): UIEvent =
         runBlocking {
             withTimeout(WAIT_TIMEOUT_MS) { events().filter(predicate).take(1).toList() }.single()

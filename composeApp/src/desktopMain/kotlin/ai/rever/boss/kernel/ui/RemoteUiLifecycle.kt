@@ -61,16 +61,17 @@ internal object RemoteUiLifecycle {
      *   closed. Returned rather than logged so the registry's call sites stay one line and tests can
      *   assert the latch directly.
      */
-    fun announceCreated(surface: RemoteUiSurface): Boolean {
-        if (!surface.createdAnnounced.compareAndSet(false, true)) return false
-        val queued = surface.emitLifecycle(LifecycleStates.CREATED)
-        // Roll the latch back rather than leave the surface owing a `destroyed` for a `created` no plugin
-        // saw. Unreachable today only by coincidence — `emit` fails solely on a closed surface, and a
-        // closed surface would fail the matching `destroyed` too — but that makes the pairing depend on
-        // the overflow policy of a channel declared in another file, which is not a thing to rely on.
-        if (!queued) surface.createdAnnounced.set(false)
-        return queued
-    }
+    fun announceCreated(surface: RemoteUiSurface): Boolean =
+        synchronized(surface.createdAnnounced) {
+            if (!surface.createdAnnounced.compareAndSet(false, true)) return@synchronized false
+            val queued = surface.emitLifecycle(LifecycleStates.CREATED)
+            // Roll the latch back rather than leave the surface owing a `destroyed` for a `created` no
+            // plugin saw. Under the monitor, not just a CAS: an unsynchronized rollback leaves a window
+            // between the failed emit and the reset in which a concurrent announceDestroyed can take the
+            // latch and emit an unmatched teardown — the very asymmetry the latch exists to prevent.
+            if (!queued) surface.createdAnnounced.set(false)
+            queued
+        }
 
     /**
      * Announce that [surface] is no longer rendered. No-op unless [announceCreated] fired first.
@@ -81,8 +82,12 @@ internal object RemoteUiLifecycle {
      * component announces afresh.
      */
     fun announceDestroyed(surface: RemoteUiSurface): Boolean =
-        surface.createdAnnounced.compareAndSet(true, false) &&
-            surface.emitLifecycle(LifecycleStates.DESTROYED)
+        // Same monitor as announceCreated, so the two transitions are ordered against each other rather
+        // than merely each being atomic on their own.
+        synchronized(surface.createdAnnounced) {
+            surface.createdAnnounced.compareAndSet(true, false) &&
+                surface.emitLifecycle(LifecycleStates.DESTROYED)
+        }
 
     /**
      * Queue one lifecycle event on the surface's outgoing stream.

@@ -272,8 +272,10 @@ message SelectionEvent {
 //
 // The kernel keymap always wins: a key bound to a host shortcut is consumed before the surface sees
 // it and is never forwarded, so a plugin cannot swallow a window/tab/split binding. What arrives here
-// is what the host declined AND the focused widget declined — typing into a text field produces
-// TextChangeEvent, not one KeyEvent per character.
+// is what the host declined AND the focused widget declined: events travel UP from the focus target,
+// so a widget that handles a key keeps it. Typing into a text field therefore produces TextChangeEvent
+// rather than one KeyEvent per character — but note the boundary is "the focused widget consumed it",
+// so keys a widget ignores (function keys, unhandled chords) do reach the plugin while it has focus.
 //
 // Key DOWN only; there is no up/down discriminator here, so both edges would read as two presses. A
 // modifier pressed on its own is not sent — it arrives as a flag on the key it qualifies.
