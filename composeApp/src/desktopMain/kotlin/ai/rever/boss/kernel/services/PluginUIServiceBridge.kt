@@ -18,6 +18,8 @@ import ai.rever.boss.ui.sdk.WidgetProtoConverter.toKotlin
 import io.grpc.Status
 import io.grpc.StatusException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.channelFlow
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -108,7 +111,19 @@ class PluginUIServiceBridge(
                 // surface completed the event queue but left the RPC hanging: the plugin's response flow
                 // never ended, so `UnregisterUI` looked like it had silently frozen the stream. The
                 // surface is gone by now, so there is nothing left for the pump to route.
-                pump.cancel()
+                //
+                // cancelAndJoin, not cancel: cancel() only *requests* it and returns, so the read below
+                // could race the pump sitting between `openStream()` (which has already set
+                // streaming = true) and its write to `claimed` — two adjacent statements with no
+                // suspension point between them, executing on a different thread, since grpc-kotlin
+                // builds its RPC scope from EmptyCoroutineContext and an RPC cancellation cancels both
+                // coroutines at once. Losing that read would strand the claim exactly as above.
+                // NonCancellable because arriving here *via* cancellation is the common case.
+                //
+                // Joining is also why this cannot be pump.invokeOnCompletion: the pump completes when a
+                // plugin merely half-closes its request stream, which is legal and must not tear the
+                // surface down.
+                withContext(NonCancellable) { pump.cancelAndJoin() }
                 // Safe to reach twice — closeStream removes by identity and close() is idempotent.
                 claimed.get()?.let(registry::closeStream)
             }

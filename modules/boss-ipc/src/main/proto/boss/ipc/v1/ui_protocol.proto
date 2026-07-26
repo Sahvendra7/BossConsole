@@ -21,6 +21,11 @@ service PluginUIService {
   // Required before StreamUI. A surface_id already held by a *different* process is refused, with the
   // holder named in error_message. A surface_id held by the SAME process with no stream open is taken
   // over, which is what a respawn after a crash looks like.
+  //
+  // That reclaim rule compares process_id as a string, so process_id must be STABLE FOR A PLUGIN ACROSS
+  // RESTARTS — an identity for the plugin, not for the OS process. A pid or a per-launch UUID silently
+  // costs a plugin its own surfaces: crash in the window between RegisterUI and StreamUI and the id is
+  // refused for the rest of the session, with no error to point at.
   rpc RegisterUI(UIRegistration) returns (UIRegistrationResponse);
 
   // Bidirectional stream: plugin sends widget updates, kernel sends user events.

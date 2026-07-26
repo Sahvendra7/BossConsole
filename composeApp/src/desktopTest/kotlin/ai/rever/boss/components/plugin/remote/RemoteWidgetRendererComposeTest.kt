@@ -1,9 +1,14 @@
 package ai.rever.boss.components.plugin.remote
 
+import ai.rever.boss.ipc.proto.PluginUIServiceGrpcKt
+import ai.rever.boss.ipc.proto.UIRegistration
+import ai.rever.boss.ipc.proto.WidgetUpdate
+import ai.rever.boss.kernel.services.PluginUIServiceBridge
 import ai.rever.boss.kernel.ui.RemoteUiSurfaceRegistry
 import ai.rever.boss.kernel.ui.SurfaceRegistration
 import ai.rever.boss.ui.sdk.WidgetEvent
 import ai.rever.boss.ui.sdk.WidgetNode
+import ai.rever.boss.ui.sdk.WidgetProtoConverter.toProto
 import ai.rever.boss.ui.sdk.WidgetTree
 import ai.rever.boss.ui.sdk.WidgetType
 import androidx.compose.runtime.getValue
@@ -14,6 +19,14 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import io.grpc.ManagedChannelBuilder
+import io.grpc.ServerBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -164,6 +177,71 @@ class RemoteWidgetRendererComposeTest {
         tab.dispose()
     }
 
+    @Test
+    fun `a plugin over real gRPC renders into a real composition and gets the click back`() {
+        // The one combination nothing else covers: the round-trip tests use a recording host, and the other
+        // Compose tests drive the registry directly, so gRPC threads writing Compose snapshot state through
+        // RemoteUiSurfaceHost — the actual production threading — was never exercised. Everything here is
+        // real: a gRPC server, the generated plugin-side stub, a composition, and a click.
+        //
+        // The plugin side runs on its own scope rather than inside runBlocking around the Compose calls:
+        // runBlocking owns this thread's event loop, and the Compose test rule needs it to advance frames,
+        // so nesting the two deadlocks (`waitUntil` times out with the tree sitting undelivered).
+        val registry = RemoteUiSurfaceRegistry()
+        val server =
+            ServerBuilder
+                .forPort(0)
+                .addService(PluginUIServiceBridge(registry))
+                .build()
+                .start()
+        val channel = ManagedChannelBuilder.forAddress("localhost", server.port).usePlaintext().build()
+        val plugin = PluginUIServiceGrpcKt.PluginUIServiceCoroutineStub(channel)
+        val pluginScope = CoroutineScope(Dispatchers.Default)
+        val panel = RemotePanelComponent(PANEL, "Test Panel", "plugin-a", registry)
+        panel.attach()
+        compose.setContent { panel.Content() }
+
+        try {
+            val registration =
+                UIRegistration
+                    .newBuilder()
+                    .setSurfaceId(PANEL)
+                    .setSurfaceType("panel")
+                    .setProcessId("plugin-a")
+                    .build()
+            assertTrue(runBlocking { plugin.registerUI(registration).success })
+
+            val updates = Channel<WidgetUpdate>(Channel.UNLIMITED)
+            val events = pluginScope.async { plugin.streamUI(updates.consumeAsFlow()).take(1).toList() }
+            val fullTree =
+                WidgetUpdate
+                    .newBuilder()
+                    .setSurfaceId(PANEL)
+                    .setFullTree(buttonTree().toProto())
+                    .build()
+            assertTrue(updates.trySend(fullTree).isSuccess)
+
+            // The tree crosses the wire on a gRPC thread and has to land in the composition.
+            compose.waitUntil(WAIT_TIMEOUT_MS) {
+                runCatching { compose.onNodeWithText("Save").assertExists() }.isSuccess
+            }
+            assertTrue(panel.connected.value, "a streaming plugin must read as connected")
+
+            compose.onNodeWithText("Save").performClick()
+            compose.waitForIdle()
+
+            val received = runBlocking { events.await() }.single()
+            assertEquals(PANEL, received.surfaceId)
+            assertEquals(BUTTON, received.targetNodeId)
+            assertEquals("save_settings", received.click.eventId)
+        } finally {
+            panel.dispose()
+            pluginScope.cancel()
+            channel.shutdownNow()
+            server.shutdownNow()
+        }
+    }
+
     private fun textFieldTree(value: String): WidgetTree =
         WidgetTree(
             rootId = FIELD,
@@ -197,5 +275,6 @@ class RemoteWidgetRendererComposeTest {
         const val BUTTON = "button-1"
         const val PANEL = "panel-1"
         const val TAB = "tab-1"
+        const val WAIT_TIMEOUT_MS = 10_000L
     }
 }

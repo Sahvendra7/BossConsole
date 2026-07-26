@@ -9,8 +9,13 @@ import ai.rever.boss.ui.sdk.WidgetProtoConverter.toProto
 import ai.rever.boss.ui.sdk.WidgetProtoConverter.toProtoDiff
 import ai.rever.boss.ui.sdk.WidgetTree
 import ai.rever.boss.ui.sdk.WidgetType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -18,6 +23,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -221,6 +227,62 @@ class RemoteUiSurfaceRegistryTest {
             assertEquals(overflow.toLong(), surface.shedEventCount)
             val drained = surface.events().take(RemoteUiSurface.OUTGOING_BUFFER).toList()
             assertEquals(sent.drop(overflow), drained.map { it.textChange.newValue })
+        }
+
+    @Test
+    fun `concurrent registrations for one id produce exactly one winner`() =
+        runBlocking {
+            // The reclaim path is a compare-and-set precisely because this can happen; the retry loop it
+            // needs was otherwise untested. Every caller must either win or be told who holds the id, and
+            // the registry must end up agreeing with exactly one of them.
+            val attempts = 32
+            val outcomes =
+                (1..attempts)
+                    .map { async(Dispatchers.Default) { registry.register(SURFACE, PROCESS) } }
+                    .awaitAll()
+
+            val accepted = outcomes.filterIsInstance<SurfaceRegistration.Accepted>()
+            assertTrue(accepted.isNotEmpty(), "someone must win")
+            assertEquals(attempts, outcomes.size, "no caller may be left without an outcome")
+            val live = registry.surfaceOf(SURFACE)
+            assertNotNull(live)
+            assertEquals(1, accepted.count { it.surface === live }, "the registry must agree with one winner")
+            // Everyone who lost lost to this plugin, and every surface that is not the live one is closed.
+            outcomes.filterIsInstance<SurfaceRegistration.Rejected>().forEach {
+                assertContains(it.reason, PROCESS)
+            }
+            accepted.filter { it.surface !== live }.forEach {
+                assertFalse(it.surface.emit(textChange("loser")), "a superseded surface must be closed")
+            }
+        }
+
+    @Test
+    fun `draining concurrently with a burst of events leaves the queue accounting sane`() =
+        runBlocking {
+            // shedEventCount is documented as approximate under a concurrent drain; "approximate" must
+            // still mean non-negative and never more than what was sent.
+            val surface = registry.register(SURFACE, PROCESS).accepted()
+            val sent = RemoteUiSurface.OUTGOING_BUFFER * 4
+
+            val drained =
+                coroutineScope {
+                    val collector =
+                        async(Dispatchers.Default) {
+                            surface
+                                .events()
+                                .take(RemoteUiSurface.OUTGOING_BUFFER)
+                                .toList()
+                                .size
+                        }
+                    launch(Dispatchers.Default) {
+                        repeat(sent) { surface.emit(textChange("value-$it")) }
+                    }
+                    collector.await()
+                }
+
+            assertEquals(RemoteUiSurface.OUTGOING_BUFFER, drained)
+            assertTrue(surface.shedEventCount >= 0, "the counter must never go negative")
+            assertTrue(surface.shedEventCount <= sent, "nor exceed what was sent, got ${surface.shedEventCount}")
         }
 
     @Test

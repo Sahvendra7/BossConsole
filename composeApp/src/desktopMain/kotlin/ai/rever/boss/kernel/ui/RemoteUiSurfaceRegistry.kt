@@ -9,9 +9,15 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The host-side renderer of one remote surface, as the transport sees it.
  *
- * Implemented by `RemotePanelComponent` / `RemoteTabComponent`. Both callbacks arrive on whichever
- * thread gRPC delivered the message on, never the UI thread — implementations must only touch
- * thread-safe state (Compose snapshot state is).
+ * Implemented by `RemotePanelComponent` / `RemoteTabComponent`. Both callbacks arrive on whichever thread
+ * gRPC delivered the message on, never the UI thread, and both are invoked **while the surface's publish
+ * lock is held** — which is what makes the sequence a host observes monotonic. So an implementation must:
+ *
+ * - touch only thread-safe state (Compose snapshot state is — writing it from any thread is fine);
+ * - not block, and not dispatch and wait; and
+ * - never call back into [RemoteUiSurfaceRegistry] or its surface from inside the callback.
+ *
+ * Anything heavier belongs on the far side of a state write the UI observes.
  */
 interface RemoteUiSurfaceHost {
     /** A new widget tree to render. */
