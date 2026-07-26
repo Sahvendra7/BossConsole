@@ -37,6 +37,11 @@ service PluginUIService {
   // already streaming is refused with FAILED_PRECONDITION, because two readers would split one ordered
   // event sequence.
   //
+  // The first update is the only attempt: if it names a surface that is not registered, the call fails and
+  // later updates on it are ignored, so recover by opening a NEW StreamUI after RegisterUI rather than by
+  // retrying on the same call. A call that sends nothing at all and does not half-close fails with
+  // DEADLINE_EXCEEDED rather than staying open.
+  //
   // The two directions are independent. Half-closing the request stream is fine and keeps receiving
   // events. But the call ENDING — cancelled, dropped, or the process dying — also unregisters the
   // surface, since a dead stream is the only notice the kernel gets that a plugin is gone; reopening

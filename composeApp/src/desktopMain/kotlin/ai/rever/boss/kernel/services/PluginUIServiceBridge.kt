@@ -19,6 +19,7 @@ import io.grpc.Status
 import io.grpc.StatusException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -28,7 +29,9 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Kernel-side implementation of `PluginUIService` — the transport that makes out-of-process plugin UI
@@ -48,9 +51,13 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * @param registry the surface directory to route through. Defaults to the host-wide one; tests pass
  *   their own so two suites cannot see each other's surfaces.
+ * @param bindTimeoutMs how long a `StreamUI` call may stay open without naming a surface — see
+ *   [DEFAULT_BIND_TIMEOUT_MS]. A parameter only so a test can assert the reaping in milliseconds instead of
+ *   spending the production deadline doing it.
  */
 class PluginUIServiceBridge(
     private val registry: RemoteUiSurfaceRegistry = RemoteUiSurfaceRegistry.shared,
+    private val bindTimeoutMs: Long = DEFAULT_BIND_TIMEOUT_MS,
 ) : PluginUIServiceGrpcKt.PluginUIServiceCoroutineImplBase() {
     override suspend fun registerUI(request: UIRegistration): UIRegistrationResponse =
         when (val outcome = registry.register(request.surfaceId, request.processId, request.descriptor())) {
@@ -101,10 +108,21 @@ class PluginUIServiceBridge(
             val pump = launch { pumpUpdates(requests, bound, claimed) }
             try {
                 // Throws the StatusException the pump resolved this with when the id is unusable.
-                val surface = bound.await()
+                //
+                // Bounded, because the INVALID_ARGUMENT below is raised from onCompletion and so needs the
+                // request stream to actually end. A plugin that opens the call and then neither sends nor
+                // half-closes would otherwise park here forever with the pump on a stream that never
+                // completes, and there is no server deadline to reap it.
+                val surface = withTimeout(bindTimeoutMs) { bound.await() }
                 // One collector for one queue: this is the hop that turns interaction order into wire
                 // order, so it must stay single — see RemoteUiSurface.claimStream.
                 surface.events().collect { event -> send(event) }
+            } catch (timeout: TimeoutCancellationException) {
+                // Our own timeout, not the caller's cancellation, so converting it to a status is right:
+                // otherwise the plugin sees CANCELLED with a Kotlin message and no idea what it did wrong.
+                throw StatusException(
+                    Status.DEADLINE_EXCEEDED.withCause(timeout).withDescription(SILENT_STREAM),
+                )
             } finally {
                 // channelFlow does not complete until its children do, and the pump is collecting a
                 // request stream the plugin may keep open indefinitely. Without this cancel, closing a
@@ -248,10 +266,22 @@ class PluginUIServiceBridge(
             .setErrorMessage(error)
             .build()
 
-    private companion object {
-        val logger = BossLogger.forComponent("PluginUIServiceBridge")
+    companion object {
+        /**
+         * How long a `StreamUI` call may stay open without naming a surface.
+         *
+         * Generous on purpose: it bounds a stuck call, it is not a latency budget. A plugin sends its first
+         * update immediately after opening the stream, so reaching this means the plugin is not going to.
+         */
+        val DEFAULT_BIND_TIMEOUT_MS = 30.seconds.inWholeMilliseconds
 
-        const val UNIDENTIFIED_STREAM =
+        private val logger = BossLogger.forComponent("PluginUIServiceBridge")
+
+        private const val SILENT_STREAM =
+            "StreamUI takes its surface identity from the surface_id of its first WidgetUpdate; " +
+                "none arrived, and the request stream stayed open"
+
+        private const val UNIDENTIFIED_STREAM =
             "StreamUI takes its surface identity from the surface_id of its first WidgetUpdate; " +
                 "the request stream ended without sending one"
     }

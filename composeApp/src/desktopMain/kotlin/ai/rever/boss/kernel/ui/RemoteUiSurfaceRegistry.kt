@@ -207,7 +207,9 @@ class RemoteUiSurfaceRegistry {
     fun unregister(surfaceId: String): Boolean {
         val surface = surfaces.remove(surfaceId) ?: return false
         surface.close()
-        logger.info(LogCategory.UI, "Remote UI surface unregistered", mapOf("surfaceId" to surfaceId))
+        // debug, not info: register + unregister + closeStream at info is three lines per restart of a
+        // crash-looping plugin. The registration itself is the event worth seeing at info.
+        logger.debug(LogCategory.UI, "Remote UI surface unregistered", mapOf("surfaceId" to surfaceId))
         return true
     }
 
@@ -246,7 +248,7 @@ class RemoteUiSurfaceRegistry {
     fun closeStream(surface: RemoteUiSurface) {
         surfaces.remove(surface.surfaceId, surface)
         surface.close()
-        logger.info(
+        logger.debug(
             LogCategory.UI,
             "Remote UI stream closed",
             mapOf("surfaceId" to surface.surfaceId, "processId" to surface.processId, "shed" to surface.shedEventCount),
@@ -286,7 +288,15 @@ class RemoteUiSurfaceRegistry {
         }
     }
 
-    /** Unbind a host component. Scoped to [host] so a component disposed late cannot evict its successor. */
+    /**
+     * Unbind a host component. Scoped to [host] so a component disposed late cannot evict its successor.
+     *
+     * The only path that removes from [hosts] — `clear()` deliberately leaves them, since components belong
+     * to the window rather than the kernel. So a component collected without `dispose()` leaves an entry
+     * behind for its surface id. Bounded by the number of surfaces a user opens, and the entry is a dead
+     * reference rather than a live subscription, but binding `attach`/`dispose` to the component's
+     * composition is what makes it structural — for the change that gives these components a caller.
+     */
     fun detach(
         surfaceId: String,
         host: RemoteUiSurfaceHost,

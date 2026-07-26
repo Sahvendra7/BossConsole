@@ -73,7 +73,8 @@ class BossIpcServer(
         }
         IpcAddressResolver.cleanupAddress(address)
         // Cleared with the server, so a stopped-and-restarted instance does not silently resurrect every
-        // service registered during its previous lifetime.
+        // service registered during its previous lifetime. `services` is deliberately NOT cleared: it is
+        // the build-time set, and a restart is expected to bring the same server back up.
         lateServices.services.forEach { lateServices.removeService(it) }
         server = null
     }

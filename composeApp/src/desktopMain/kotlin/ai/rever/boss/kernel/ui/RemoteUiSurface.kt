@@ -249,7 +249,14 @@ class RemoteUiSurface internal constructor(
         synchronized(publishLock) { publishConnected(this, false) }
     }
 
-    private fun applyDiff(diff: ProtoWidgetDiff) {
+    private fun applyDiff(diff: ProtoWidgetDiff) =
+        // The whole read-modify-write, not just the write. One stream per surface rules out concurrent
+        // diffs, but a registration's `initial_tree` is pushed from a different coroutine and nothing makes
+        // a plugin await the RegisterUI response before opening StreamUI — so an initial tree and a first
+        // diff can interleave and lose one. The monitor is reentrant, so pushTree taking it again is free.
+        synchronized(publishLock) { applyDiffLocked(diff) }
+
+    private fun applyDiffLocked(diff: ProtoWidgetDiff) {
         val base = tree
         if (base == null) {
             // A diff is meaningless without the tree it was computed against, and the protocol has no

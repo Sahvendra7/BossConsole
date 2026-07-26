@@ -374,6 +374,35 @@ class PluginUIServiceBridgeTest {
         }
 
     @Test
+    fun `a stream that sends nothing and never closes is reaped rather than held open`() =
+        runBlocking {
+            // The INVALID_ARGUMENT case above needs the request stream to END. A plugin that opens the call
+            // and then neither sends nor half-closes gives no such completion, and gRPC applies no server
+            // deadline of its own — so without the bind timeout the RPC and its pump would sit there for the
+            // life of the process. Runs against its own server so the deadline can be milliseconds.
+            val brief =
+                ServerBuilder
+                    .forPort(0)
+                    .addService(quickBridge())
+                    .build()
+                    .start()
+            val briefChannel = ManagedChannelBuilder.forAddress("localhost", brief.port).usePlaintext().build()
+            try {
+                val silent = Channel<WidgetUpdate>(Channel.UNLIMITED)
+                val stub = PluginUIServiceGrpcKt.PluginUIServiceCoroutineStub(briefChannel)
+                assertTrue(stub.registerUI(registration(PANEL)).success)
+
+                val failure = assertFailsWith<StatusException> { stub.streamUI(silent.consumeAsFlow()).toList() }
+
+                assertEquals(Status.Code.DEADLINE_EXCEEDED, failure.status.code)
+                assertContains(failure.status.description.orEmpty(), "first WidgetUpdate")
+            } finally {
+                briefChannel.shutdownNow()
+                brief.shutdownNow()
+            }
+        }
+
+    @Test
     fun `a second stream for the same surface is refused so ordering stays intact`() =
         runBlocking {
             assertTrue(plugin.registerUI(registration(PANEL)).success)
@@ -467,6 +496,9 @@ class PluginUIServiceBridgeTest {
         }
     }
 
+    /** A bridge over the same registry whose bind deadline fires in milliseconds. */
+    private fun quickBridge() = PluginUIServiceBridge(registry, bindTimeoutMs = BRIEF_BIND_TIMEOUT_MS)
+
     private fun registration(
         surfaceId: String,
         process: String = "plugin-a",
@@ -536,5 +568,8 @@ class PluginUIServiceBridgeTest {
         const val AWAIT_TIMEOUT_MS = 10_000L
         const val POLL_INTERVAL_MS = 5L
         const val SHUTDOWN_TIMEOUT_MS = 5_000L
+
+        /** Long enough not to be flaky, short enough that the reaping test costs nothing. */
+        const val BRIEF_BIND_TIMEOUT_MS = 250L
     }
 }
