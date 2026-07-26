@@ -135,10 +135,9 @@ Deno.test("completeRegistration - should reject invalid ceremony type", async ()
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    'user-456',
     invalidCredential as RegistrationCredential,
     'mock-challenge-base64',
-    'My Passkey'
+    { claimedUserId: 'user-456', displayName: 'My Passkey' }
   )
 
   assertEquals(result.success, false)
@@ -166,10 +165,9 @@ Deno.test("completeRegistration - should verify and consume challenge", async ()
   // In real tests, you'd need to mock extractPublicKeyFromAttestation
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    'user-456',
     mockRegistrationCredential as RegistrationCredential,
     'mock-challenge-base64',
-    'My New Passkey'
+    { claimedUserId: 'user-456', displayName: 'My New Passkey' }
   )
 
   console.log('completeRegistration result:', result)
@@ -195,9 +193,9 @@ Deno.test("completeRegistration - should use default display name if not provide
   // Note: Will fail due to crypto, but tests the display_name logic
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    'user-456',
     mockRegistrationCredential as RegistrationCredential,
-    'mock-challenge-base64'
+    'mock-challenge-base64',
+    { claimedUserId: 'user-456' }
     // No displayName provided
   )
 
@@ -216,10 +214,9 @@ Deno.test("completeRegistration - should handle invalid challenge", async () => 
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    'user-456',
     mockRegistrationCredential as RegistrationCredential,
     'invalid-challenge',
-    'My Passkey'
+    { claimedUserId: 'user-456', displayName: 'My Passkey' }
   )
 
   assertEquals(result.success, false)
@@ -245,10 +242,9 @@ Deno.test("completeRegistration - should store credential with correct fields", 
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    'user-456',
     mockRegistrationCredential as RegistrationCredential,
     'mock-challenge-base64',
-    'Test Device'
+    { claimedUserId: 'user-456', displayName: 'Test Device' }
   )
 
   // In a complete test, you'd verify the insert call included:

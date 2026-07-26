@@ -211,11 +211,10 @@ Deno.test("Error Resilience - completeRegistration with corrupted attestationObj
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    'user-123',
     // @ts-ignore - Testing with intentionally malformed credential
     corruptedCredential,
     'test-challenge',
-    'Test'
+    { claimedUserId: 'user-123', displayName: 'Test' }
   )
 
   assertEquals(result.success, false, "Should handle corrupted attestation gracefully")

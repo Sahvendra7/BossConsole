@@ -35,6 +35,30 @@ edge function performs all of them on every ceremony:
 | Signature verifies for the credential's algorithm — ES256 and RS256 | `utils/crypto.ts` → `verifySignature` |
 | Origin is in `ALLOWED_ORIGINS` | route **and** service layer |
 | Ceremony principal binding: challenge ↔ user, credential ↔ challenge, attested ↔ stored credential id | both services |
+| Enrolment is bound to a verified caller, never to a body `userId` | `utils/authorization.ts` + `routes/register.ts` |
+
+**Who a passkey gets enrolled for**
+
+A credential enrolled on an account is a permanent way in, so registration is the
+one flow here that requires an existing session:
+
+- `POST /register/challenge` **requires** `Authorization: Bearer <user access token>`.
+  The challenge row is bound to that verified identity. A `userId` in the body is
+  optional and may only agree with the token — a mismatch is a 403.
+- `POST /register/complete` derives the enrolling user from that challenge row.
+  A bearer token is verified and cross-checked when present, but is not required:
+  the cross-device page runs in a phone browser that holds no session of ours, and
+  possession of the single-use, 256-bit challenge is what authorises that ceremony.
+- `create_mobile_registration_session` (SQL) can mint the same kind of challenge
+  without proving account ownership, so it is `service_role`-only as of migration
+  `20260727000000`. It has no callers.
+
+**Bootstrap — the first passkey.** There is no chicken-and-egg problem: passkey
+enrolment is reached from Settings → Security in an already-authenticated app.
+A new user signs in by email magic link / OTP (`EmailAuthService`), which
+establishes a normal Supabase session, and enrols their first passkey from it.
+Passkey *authentication* (`/auth/*`) stays unauthenticated by design — it is how a
+session is obtained in the first place.
 
 All transport payloads are decoded with `utils/base64.ts` → `decodeBase64Any`,
 which accepts base64 and base64url with or without padding. Locking a decoder to

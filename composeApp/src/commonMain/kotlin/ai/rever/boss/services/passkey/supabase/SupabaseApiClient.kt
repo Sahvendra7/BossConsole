@@ -1,7 +1,9 @@
 package ai.rever.boss.services.passkey.supabase
 
+import ai.rever.boss.services.supabase.SupabaseConfig
 import ai.rever.boss.services.supabase.getSupabaseAnonKey
 import ai.rever.boss.services.supabase.getSupabaseFunctionUrl
+import io.github.jan.supabase.auth.auth
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.*
@@ -45,6 +47,29 @@ internal object SupabaseApiClient {
             ignoreUnknownKeys = true
             encodeDefaults = true
         }
+
+    /**
+     * Access token of the signed-in user, or null when there is no session.
+     *
+     * Registration endpoints require this: the server binds a new passkey to the
+     * authenticated caller rather than to a userId in the request body, so a
+     * request without a session is rejected with 401. Authentication endpoints
+     * deliberately do not send it — they run before a session exists.
+     */
+    fun currentAccessTokenOrNull(): String? =
+        runCatching {
+            val session = SupabaseConfig.client.auth.currentSessionOrNull()
+            session?.accessToken
+        }.getOrNull()
+
+    /**
+     * Attaches the caller's session to a request that acts on their account.
+     */
+    fun HttpRequestBuilder.authorizeAsCurrentUser() {
+        currentAccessTokenOrNull()?.let { token ->
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+    }
 
     // ============================================================================
     // Authentication Endpoints
@@ -97,6 +122,9 @@ internal object SupabaseApiClient {
         return httpClient.post("$passkeyFunctionUrl/register/challenge") {
             contentType(ContentType.Application.Json)
             header("apikey", supabaseAnonKey)
+            // Enrolling a passkey acts on the caller's own account, so the
+            // server requires the session rather than trusting a body userId
+            authorizeAsCurrentUser()
             setBody(jsonBody)
         }
     }
@@ -110,6 +138,7 @@ internal object SupabaseApiClient {
         return httpClient.post("$passkeyFunctionUrl/register/complete") {
             contentType(ContentType.Application.Json)
             header("apikey", supabaseAnonKey)
+            authorizeAsCurrentUser()
             setBody(jsonBody)
         }
     }

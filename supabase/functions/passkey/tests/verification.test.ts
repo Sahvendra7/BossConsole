@@ -419,10 +419,9 @@ Deno.test("completeRegistration - rejects an attestation whose signed challenge 
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     issuedChallenge,
-    'Mismatched Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'Mismatched Passkey' }
   )
 
   assertEquals(result.success, false)
@@ -452,10 +451,9 @@ Deno.test("completeRegistration - rejects a challenge issued for a different use
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'Wrong User Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'Wrong User Passkey' }
   )
 
   assertEquals(result.success, false)
@@ -585,10 +583,9 @@ Deno.test("completeRegistration - rejects an attestation created for another rel
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'Foreign RP Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'Foreign RP Passkey' }
   )
 
   assertEquals(result.success, false)
@@ -841,10 +838,9 @@ Deno.test("completeRegistration - stores the credential id canonicalised", async
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'Canonical Id Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'Canonical Id Passkey' }
   )
 
   assertEquals(result.success, true)
@@ -953,10 +949,9 @@ Deno.test("completeRegistration - stores an RS256 credential as SPKI with its al
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'RS256 Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'RS256 Passkey' }
   )
 
   assertEquals(result.success, true, "RS256 registration should succeed")
@@ -1116,10 +1111,9 @@ Deno.test("completeRegistration - stores an ES256 credential with rp_id and coun
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'ES256 Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'ES256 Passkey' }
   )
 
   assertEquals(result.success, true)
@@ -1164,10 +1158,9 @@ Deno.test("completeRegistration - rejects a credential id that was not attested"
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     spoofed as RegistrationCredential,
     challenge,
-    'Spoofed Credential Id'
+    { claimedUserId: TEST_USER_ID, displayName: 'Spoofed Credential Id' }
   )
 
   assertEquals(result.success, false)
@@ -1200,10 +1193,9 @@ Deno.test("completeRegistration - refuses an RS256 credential when the verificat
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'RS256 Legacy Schema Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'RS256 Legacy Schema Passkey' }
   )
 
   // Storing it would produce a credential that can never authenticate: SPKI DER
@@ -1243,10 +1235,9 @@ Deno.test("completeRegistration - still registers when the verification columns 
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'Legacy Schema Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'Legacy Schema Passkey' }
   )
 
   assertEquals(result.success, true, "Registration should degrade rather than fail")
@@ -1317,10 +1308,9 @@ Deno.test("completeRegistration - rejects an attestation without the User Presen
 
   const result = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    TEST_USER_ID,
     registration.credential as RegistrationCredential,
     challenge,
-    'No UP Passkey'
+    { claimedUserId: TEST_USER_ID, displayName: 'No UP Passkey' }
   )
 
   assertEquals(result.success, false)
@@ -1766,4 +1756,155 @@ Deno.test("checkAuthStatus - mints a session when none was recorded yet", async 
     entry => entry.table === 'completed_authentications' && entry.operation === 'update'
   )
   assertExists(tokenUpdate, "A freshly minted session should be persisted")
+})
+
+// ============================================================================
+// Who a credential gets enrolled for
+//
+// The enrolling account is taken from the challenge row, which only a caller
+// holding that user's session can create. Nothing in the completion request
+// selects it.
+// ============================================================================
+
+/** Queues a registration challenge row scoped to the exact challenge value */
+function mockRegistrationChallenge(
+  mockClient: MockSupabaseClient,
+  challenge: string,
+  userId: string | null,
+  rowId = 'challenge-reg-row'
+) {
+  mockClient.mockResponse('passkey_challenges', {
+    data: {
+      id: rowId,
+      challenge,
+      type: 'registration',
+      user_id: userId,
+      expires_at: new Date(Date.now() + 300_000).toISOString()
+    },
+    error: null
+  }, 'select', { match: { challenge, type: 'registration' } })
+
+  mockClient.mockResponse('passkey_challenges', { data: [{ id: rowId }], error: null }, 'delete')
+}
+
+Deno.test("completeRegistration - enrols against the challenge's user when the body names nobody", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+
+  mockRegistrationChallenge(mockClient, challenge, 'user-owner')
+  mockClient.mockResponse('user_passkeys', { data: [{ id: 'passkey-1' }], error: null }, 'insert')
+
+  const result = await completeRegistration(
+    mockClient as unknown as SupabaseClient,
+    registration.credential as RegistrationCredential,
+    challenge,
+    { displayName: 'First Passkey' }
+  )
+
+  assertEquals(result.success, true)
+
+  const insert = mockClient.getQueryHistory().find(
+    entry => entry.table === 'user_passkeys' && entry.operation === 'insert'
+  )
+  assertExists(insert)
+  assertEquals(
+    (insert!.params.data as { user_id: string }).user_id,
+    'user-owner',
+    'The credential belongs to whoever the challenge was issued to'
+  )
+})
+
+Deno.test("completeRegistration - a body userId cannot redirect the enrolment", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+
+  // The challenge belongs to one account; the request names another
+  mockRegistrationChallenge(mockClient, challenge, 'user-owner')
+  mockClient.mockResponse('user_passkeys', { data: [{ id: 'passkey-1' }], error: null }, 'insert')
+
+  const result = await completeRegistration(
+    mockClient as unknown as SupabaseClient,
+    registration.credential as RegistrationCredential,
+    challenge,
+    { claimedUserId: 'user-someone-else', displayName: 'Redirected Passkey' }
+  )
+
+  assertEquals(result.success, false)
+  assertEquals((result as { error?: string }).error, 'Challenge does not belong to this user')
+  assertEquals(
+    mockClient.getQueryHistory().some(
+      entry => entry.table === 'user_passkeys' && entry.operation === 'insert'
+    ),
+    false,
+    'Nothing may be enrolled when the request disagrees with the challenge'
+  )
+})
+
+Deno.test("completeRegistration - a verified session for another user cannot enrol", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+
+  mockRegistrationChallenge(mockClient, challenge, 'user-owner')
+
+  const result = await completeRegistration(
+    mockClient as unknown as SupabaseClient,
+    registration.credential as RegistrationCredential,
+    challenge,
+    { authenticatedUserId: 'user-someone-else' }
+  )
+
+  assertEquals(result.success, false)
+  assertEquals((result as { error?: string }).error, 'Challenge does not belong to this user')
+})
+
+Deno.test("completeRegistration - refuses a challenge that is not bound to a user", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+
+  // No current code path produces this; fail closed rather than enrol nowhere
+  mockRegistrationChallenge(mockClient, challenge, null)
+
+  const result = await completeRegistration(
+    mockClient as unknown as SupabaseClient,
+    registration.credential as RegistrationCredential,
+    challenge,
+    { claimedUserId: 'user-owner' }
+  )
+
+  assertEquals(result.success, false)
+  assertEquals((result as { error?: string }).error, 'Challenge is not bound to a user')
+})
+
+Deno.test("completeRegistration - first passkey for an account with none enrols normally", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  // Bootstrap: the session comes from email/OTP sign-in, not from a passkey, so
+  // an account with no credentials yet can still enrol its first one.
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+
+  mockRegistrationChallenge(mockClient, challenge, 'user-brand-new')
+  mockClient.mockResponse('user_passkeys', { data: [{ id: 'passkey-first' }], error: null }, 'insert')
+
+  const result = await completeRegistration(
+    mockClient as unknown as SupabaseClient,
+    registration.credential as RegistrationCredential,
+    challenge,
+    { claimedUserId: 'user-brand-new', authenticatedUserId: 'user-brand-new', displayName: 'My First Passkey' }
+  )
+
+  assertEquals(result.success, true)
+  const insert = mockClient.getQueryHistory().find(
+    entry => entry.table === 'user_passkeys' && entry.operation === 'insert'
+  )
+  assertExists(insert)
+  assertEquals((insert!.params.data as { user_id: string }).user_id, 'user-brand-new')
 })

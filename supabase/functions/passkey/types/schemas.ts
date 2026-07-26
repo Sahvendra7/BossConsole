@@ -88,7 +88,10 @@ export const AuthStatusResponseSchema = z.object({
 // ============================================================================
 
 export const RegisterChallengeRequestSchema = z.object({
-  userId: z.string(),
+  // Optional, and never authoritative: the challenge is bound to the
+  // authenticated caller. Sending it asks the server to confirm the caller is
+  // who the client thinks they are — a mismatch is rejected with 403.
+  userId: z.string().optional(),
   sessionId: z.string().optional() // For cross-device registration polling
 })
 
@@ -120,7 +123,10 @@ export const RegisterChallengeResponseSchema = z.object({
 })
 
 export const RegisterCompleteRequestSchema = z.object({
-  userId: z.string(),
+  // Optional, and never authoritative: the enrolling user comes from the
+  // challenge issued at /register/challenge. A value that disagrees with it is
+  // rejected rather than used.
+  userId: z.string().optional(),
   credential: RegistrationCredentialSchema,
   challenge: z.string(),
   displayName: z.string().optional()

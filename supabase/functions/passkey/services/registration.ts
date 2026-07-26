@@ -17,6 +17,21 @@ import {
 // it moved to utils/config.ts (single source of truth).
 export { ALLOWED_ORIGINS }
 
+/**
+ * Everything about a completion request that is *not* the ceremony itself.
+ *
+ * Neither field selects the account: the enrolling user comes from the challenge
+ * row. They are cross-checks, so a request that disagrees with the challenge is
+ * rejected rather than quietly enrolling somewhere else.
+ */
+export interface CompleteRegistrationOptions {
+  /** userId from the request body, if the client sent one */
+  claimedUserId?: string
+  /** Verified caller identity, when the transport could carry a session */
+  authenticatedUserId?: string
+  displayName?: string
+}
+
 export interface RegistrationCredential {
   id: string
   rawId: string
@@ -76,12 +91,12 @@ export const generateRegistrationChallenge = withErrorHandler(
 export const completeRegistration = withErrorHandler(
   async (
     supabase: SupabaseClient,
-    userId: string,
     credential: RegistrationCredential,
     challenge: string,
-    displayName?: string
+    options: CompleteRegistrationOptions = {}
   ) => {
-    console.log('🔐 Starting registration completion for user:', userId)
+    const { claimedUserId, authenticatedUserId, displayName } = options
+    console.log('🔐 Starting registration completion')
 
     const { clientDataJSON, attestationObject } = credential.response
 
@@ -112,10 +127,10 @@ export const completeRegistration = withErrorHandler(
     // ceremony was issued. Registration uses "none" attestation, so this is the
     // only thing tying the credential to our challenge.
     //
-    // Note what this does *not* do: /register/challenge is unauthenticated and
-    // takes userId from the request body, so a caller can legitimately hold a
-    // challenge issued for an account that is not theirs. This check makes the
-    // ceremony internally consistent; it does not establish who is asking.
+    // Who the credential is enrolled *for* is a separate question, answered
+    // below by the challenge row rather than by anything in this request: a
+    // registration challenge can only be minted by a caller holding that user's
+    // session (see routes/register.ts).
     if (!challengeMatches(clientData.challenge, challenge)) {
       console.error('❌ Registration challenge mismatch between clientDataJSON and request body')
       return {
@@ -138,14 +153,38 @@ export const completeRegistration = withErrorHandler(
       }
     }
 
-    // The challenge must have been issued for the user being registered,
-    // otherwise a challenge minted for one account could enrol a credential on
-    // another. `storeChallenge` always records user_id on the registration path,
-    // so the null guard is defensive rather than an opt-out: a row without a
-    // user_id cannot be produced by any current code path.
-    const challengeUserId = challengeResult.challenge?.user_id
-    if (challengeUserId && challengeUserId !== userId) {
+    // The enrolling user is whoever the challenge was issued to. That row can
+    // only be created by a caller holding that user's session, so this is the
+    // one value in the ceremony that a caller cannot choose for themselves —
+    // which is exactly why the credential is bound to it rather than to
+    // anything in this request.
+    const enrollingUserId = challengeResult.challenge?.user_id
+    if (!enrollingUserId) {
+      // Fails closed. A registration challenge with no user_id cannot be
+      // produced by /register/challenge; a row like that is either corrupt or
+      // came from somewhere it should not have.
+      console.error('❌ Registration challenge has no user_id - refusing to enrol')
+      return {
+        success: false,
+        error: 'Challenge is not bound to a user'
+      }
+    }
+
+    // A body userId is accepted for compatibility but may only agree with the
+    // challenge; it never selects the account.
+    if (claimedUserId && claimedUserId !== enrollingUserId) {
       console.error('❌ Registration challenge was issued for a different user')
+      return {
+        success: false,
+        error: 'Challenge does not belong to this user'
+      }
+    }
+
+    // If the transport could present a session, it has to be the same user.
+    // (The cross-device page runs in a phone browser and has no session of
+    // ours, so this is checked when available rather than required.)
+    if (authenticatedUserId && authenticatedUserId !== enrollingUserId) {
+      console.error('❌ Authenticated caller does not own this registration challenge')
       return {
         success: false,
         error: 'Challenge does not belong to this user'
@@ -201,7 +240,7 @@ export const completeRegistration = withErrorHandler(
     // and cannot register the same physical credential twice under two
     // encodings — `findPasskeyByCredentialId` normalises the lookup to match.
     const passkeyData = {
-      user_id: userId,
+      user_id: enrollingUserId,
       credential_id: normalizeBase64Url(credential.id),
       public_key: attested.publicKey,
       public_key_alg: attested.alg,
@@ -220,7 +259,7 @@ export const completeRegistration = withErrorHandler(
       }
     }
 
-    console.log('✅ Registration successful for user:', userId)
+    console.log('✅ Registration successful for user:', enrollingUserId)
 
     return {
       success: true,

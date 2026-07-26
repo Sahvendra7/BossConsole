@@ -53,12 +53,24 @@ export class MockSupabaseClient {
   private authUsers: Map<string, string> = new Map()
   private pendingLinks: Map<string, string> = new Map()
 
+  // access token -> the user it resolves to, for auth.getUser()
+  private accessTokens: Map<string, { id: string; email?: string; role?: string }> = new Map()
+
   /**
    * Register a user for the Admin API stub, so a session minted for `email`
    * carries `userId` as its subject.
    */
   mockAuthUser(email: string, userId: string): void {
     this.authUsers.set(email, userId)
+  }
+
+  /**
+   * Make `token` resolve to a signed-in user, the way `auth.getUser(token)`
+   * would for a real access token. Tokens not registered here are rejected,
+   * which is what an expired, forged or anon-key token looks like.
+   */
+  mockAccessToken(token: string, user: { id: string; email?: string; role?: string }): void {
+    this.accessTokens.set(token, { role: 'authenticated', ...user })
   }
 
   /**
@@ -73,6 +85,17 @@ export class MockSupabaseClient {
     const client = this
 
     return {
+      /** Stub of auth.getUser(jwt) — resolves only tokens registered with mockAccessToken */
+      getUser: (token?: string) => {
+        const user = token ? client.accessTokens.get(token) : undefined
+        if (!user) {
+          return Promise.resolve({
+            data: { user: null },
+            error: { message: 'invalid JWT: unable to parse or verify signature', status: 401 }
+          })
+        }
+        return Promise.resolve({ data: { user }, error: null })
+      },
       admin: {
         generateLink: (params: { type: string; email: string }) => {
           const hashedToken = `mock-hashed-token-${client.pendingLinks.size + 1}`

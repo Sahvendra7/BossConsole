@@ -114,10 +114,9 @@ Deno.test("E2E - Complete registration and authentication flow with real crypto"
 
   const regCompleteResult = await completeRegistration(
     mockClient as unknown as SupabaseClient,
-    testUserId,
     regCredential,
     registrationChallenge,
-    'E2E Test Passkey'
+    { claimedUserId: testUserId, displayName: 'E2E Test Passkey' }
   )
 
   assertEquals(regCompleteResult.success, true)
