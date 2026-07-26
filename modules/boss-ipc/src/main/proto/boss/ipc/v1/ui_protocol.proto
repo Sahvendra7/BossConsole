@@ -33,14 +33,14 @@ service PluginUIService {
   // The call carries no surface id of its own, so it is bound to the surface_id of its FIRST
   // WidgetUpdate and pinned to it for its lifetime — send one (normally the full tree) to open the
   // stream, or the call fails with INVALID_ARGUMENT when the request stream ends. Later updates for a
-  // different surface_id are ignored; use one call per surface. A second concurrent call for a surface
-  // already streaming is refused with FAILED_PRECONDITION, because two readers would split one ordered
-  // event sequence.
+  // different surface_id are ignored; use one call per surface.
   //
-  // The first update is the only attempt: if it names a surface that is not registered, the call fails and
-  // later updates on it are ignored, so recover by opening a NEW StreamUI after RegisterUI rather than by
-  // retrying on the same call. A call that sends nothing at all and does not half-close fails with
-  // DEADLINE_EXCEEDED rather than staying open.
+  // The first update is the only attempt at binding, and the status says what to do about it:
+  //   NOT_FOUND            the surface_id is not registered — call RegisterUI, then open a NEW StreamUI
+  //                        (later updates on this call are ignored, so retrying on it will not work)
+  //   FAILED_PRECONDITION  another call already streams that surface, and always will
+  //   INVALID_ARGUMENT     the request stream ended without ever sending a WidgetUpdate
+  //   DEADLINE_EXCEEDED    the call sent nothing and did not half-close, so it was reaped
   //
   // The two directions are independent. Half-closing the request stream is fine and keeps receiving
   // events. But the call ENDING — cancelled, dropped, or the process dying — also unregisters the

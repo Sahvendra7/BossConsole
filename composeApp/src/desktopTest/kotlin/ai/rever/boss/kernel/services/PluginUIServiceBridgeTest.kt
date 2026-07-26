@@ -356,7 +356,9 @@ class PluginUIServiceBridgeTest {
 
             val failure = assertFailsWith<StatusException> { stream.toList() }
 
-            assertEquals(Status.Code.FAILED_PRECONDITION, failure.status.code)
+            // NOT_FOUND, not FAILED_PRECONDITION: this one is recoverable by registering the surface and
+            // opening a new stream, and a plugin should not have to parse the description to know that.
+            assertEquals(Status.Code.NOT_FOUND, failure.status.code)
             assertContains(failure.status.description.orEmpty(), "RegisterUI")
         }
 
@@ -418,6 +420,7 @@ class PluginUIServiceBridgeTest {
                 second.send(fullTree(PANEL))
                 val failure = assertFailsWith<StatusException> { rival.toList() }
 
+                // FAILED_PRECONDITION: unlike an unregistered surface, this one never becomes available.
                 assertEquals(Status.Code.FAILED_PRECONDITION, failure.status.code)
                 assertContains(failure.status.description.orEmpty(), "StreamUI")
 

@@ -58,9 +58,22 @@ sealed interface SurfaceStream {
         val surface: RemoteUiSurface,
     ) : SurfaceStream
 
-    data class Refused(
-        val reason: String,
-    ) : SurfaceStream
+    /**
+     * Split by recovery, not just by message: an unregistered surface is fixable by calling `RegisterUI`,
+     * an already-streaming one never is. Collapsing them left a plugin string-matching a description to
+     * tell "retry after registering" from "give up", which the proto now documents as contract.
+     */
+    sealed interface Refused : SurfaceStream {
+        val reason: String
+    }
+
+    data class Unregistered(
+        override val reason: String,
+    ) : Refused
+
+    data class AlreadyStreaming(
+        override val reason: String,
+    ) : Refused
 }
 
 /**
@@ -224,11 +237,11 @@ class RemoteUiSurfaceRegistry {
         val surface = surfaces[surfaceId]
         return when {
             surface == null -> {
-                SurfaceStream.Refused("surface_id '$surfaceId' is not registered — call RegisterUI first")
+                SurfaceStream.Unregistered("surface_id '$surfaceId' is not registered — call RegisterUI first")
             }
 
             !surface.claimStream() -> {
-                SurfaceStream.Refused("surface_id '$surfaceId' already has an open StreamUI call")
+                SurfaceStream.AlreadyStreaming("surface_id '$surfaceId' already has an open StreamUI call")
             }
 
             else -> {

@@ -787,8 +787,14 @@ kotlin {
             // behaviour can be asserted against a real composition instead of
             // reasoned about. The API is JUnit 4 only; this module runs on the
             // JUnit Platform, so the vintage engine is what actually executes
-            // those rules. Both engines are discovered side by side — the Jupiter
-            // suite is untouched.
+            // those rules.
+            //
+            // Adding vintage WIDENS what runs: any pre-existing org.junit.Test in
+            // desktopTest that the platform previously ignored now executes. When
+            // it was introduced the source set held 67 test classes and 67 were
+            // executed, on all three CI platforms — nothing was silently skipped
+            // before and nothing appeared. Re-check that count if these deps
+            // change; a suite that quietly stops running is worse than no suite.
             implementation(compose.desktop.uiTestJUnit4)
             runtimeOnly(libs.junit.vintage.engine)
             // Test-only: lets the suite assert the IPC proxy's skip-list stays

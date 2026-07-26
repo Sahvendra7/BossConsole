@@ -201,9 +201,7 @@ class PluginUIServiceBridge(
 
                             is SurfaceStream.Refused -> {
                                 refused = true
-                                bound.completeExceptionally(
-                                    StatusException(Status.FAILED_PRECONDITION.withDescription(opened.reason)),
-                                )
+                                bound.completeExceptionally(StatusException(opened.status()))
                             }
                         }
                     }
@@ -238,6 +236,19 @@ class PluginUIServiceBridge(
                 }
             }.collect()
     }
+
+    /**
+     * The status a refusal goes out as.
+     *
+     * Distinct codes because the recoveries differ: `NOT_FOUND` means "register the surface and open a new
+     * stream", `FAILED_PRECONDITION` means "someone else already owns this one, and always will". A plugin
+     * should not have to parse a description to tell those apart.
+     */
+    private fun SurfaceStream.Refused.status(): Status =
+        when (this) {
+            is SurfaceStream.Unregistered -> Status.NOT_FOUND.withDescription(reason)
+            is SurfaceStream.AlreadyStreaming -> Status.FAILED_PRECONDITION.withDescription(reason)
+        }
 
     /**
      * Report an update for a surface this stream is not bound to, first and then every Nth.

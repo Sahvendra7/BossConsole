@@ -489,8 +489,10 @@ class RemoteUiSurfaceRegistryTest {
     }
 
     @Test
-    fun `a stream for an unregistered surface is refused with an actionable reason`() {
-        val refused = assertIs<SurfaceStream.Refused>(registry.openStream("never-registered"))
+    fun `a stream for an unregistered surface is refused as recoverable`() {
+        // Typed apart from AlreadyStreaming because the recoveries differ: this one is fixable by calling
+        // RegisterUI, and the bridge turns the distinction into NOT_FOUND vs FAILED_PRECONDITION.
+        val refused = assertIs<SurfaceStream.Unregistered>(registry.openStream("never-registered"))
 
         assertContains(refused.reason, "RegisterUI")
     }
@@ -500,7 +502,7 @@ class RemoteUiSurfaceRegistryTest {
         registry.register(SURFACE, PROCESS).accepted()
         assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
 
-        val refused = assertIs<SurfaceStream.Refused>(registry.openStream(SURFACE))
+        val refused = assertIs<SurfaceStream.AlreadyStreaming>(registry.openStream(SURFACE))
 
         assertContains(refused.reason, "StreamUI")
     }
