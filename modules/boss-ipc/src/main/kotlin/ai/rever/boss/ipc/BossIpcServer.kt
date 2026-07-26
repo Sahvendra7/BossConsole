@@ -53,7 +53,9 @@ class BossIpcServer(
         val builder = IpcAddressResolver.configureServerBuilder(address)
         services.forEach { builder.addService(it) }
         // Consulted only for methods no directly-registered service claims, so build-time registration
-        // keeps taking precedence.
+        // takes precedence. That is a CHANGE: a rebuild put everything in the primary registry, where the
+        // last one added won, so re-adding a service after start used to replace the build-time one and
+        // now silently does nothing. Nothing in the tree relies on either behaviour.
         builder.fallbackHandlerRegistry(lateServices)
         server = builder.build().start()
         logger.info("IPC server started on: {}", address)
@@ -70,6 +72,9 @@ class BossIpcServer(
             }
         }
         IpcAddressResolver.cleanupAddress(address)
+        // Cleared with the server, so a stopped-and-restarted instance does not silently resurrect every
+        // service registered during its previous lifetime.
+        lateServices.services.forEach { lateServices.removeService(it) }
         server = null
     }
 

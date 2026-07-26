@@ -104,6 +104,37 @@ class RemoteUiSurfaceRegistryTest {
     }
 
     @Test
+    fun `a blank process id is refused, because the reclaim rule treats it as an identity`() {
+        // proto3 makes the empty string the default, so a runtime that forgets the field would hand every
+        // plugin the same identity — and with it the right to reclaim any other plugin's un-streamed
+        // surface, and then receive that surface's keystrokes.
+        val rejected = assertIs<SurfaceRegistration.Rejected>(registry.register(SURFACE, ""))
+
+        assertContains(rejected.reason, "process_id")
+    }
+
+    @Test
+    fun `a second component attaching to one surface detaches the first instead of freezing it`() {
+        // The registry routes to one host per id and is process-wide while the app is multi-window, so this
+        // is reachable. Silence would leave the displaced component rendering its last tree and still
+        // reporting connected — frozen from the host side rather than the plugin side.
+        val first = RecordingHost()
+        val second = RecordingHost()
+        registry.attach(SURFACE, first)
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
+        assertEquals(listOf(false, true), first.connections)
+
+        registry.attach(SURFACE, second)
+        surface.pushTree(tree("for-the-second"))
+
+        assertEquals(false, first.connections.last(), "the displaced component must be told it is detached")
+        assertTrue(first.trees.isEmpty(), "and must stop receiving trees")
+        assertEquals(listOf("for-the-second"), second.trees.map { it.label() })
+        assertEquals(true, second.connections.first(), "the new one is replayed the live connection")
+    }
+
+    @Test
     fun `a different process cannot take over a claim, streamed or not`() {
         registry.register(SURFACE, "plugin-a").accepted()
 
@@ -382,16 +413,19 @@ class RemoteUiSurfaceRegistryTest {
 
         // A structural op that cannot be decoded cannot be reconstructed from its neighbours, so the tree
         // below is knowingly not the plugin's — and must not claim to be at the plugin's version.
+        //
+        // newVersion is deliberately far from base + 1: with newVersion = 5 on a base-4 tree both branches
+        // produce 5 (the sender's number and the local increment coincide), so the assertion would pass
+        // with the skipped-operations guard removed and prove nothing.
         val undecodable =
-            diffUpdate("after", baseVersion = 4, newVersion = 5)
+            diffUpdate("after", baseVersion = 4, newVersion = 9)
                 .toBuilder()
                 .apply { diffBuilder.addOperations(ProtoDiffOp.getDefaultInstance()) }
                 .build()
         surface.applyUpdate(undecodable)
 
         assertEquals("after", surface.tree?.label())
-        assertEquals(5L, surface.tree?.version)
-        assertEquals(4L + 1, surface.tree?.version, "local increment, not the sender's newVersion")
+        assertEquals(4L + 1, surface.tree?.version, "local increment, not the sender's newVersion of 9")
     }
 
     @Test

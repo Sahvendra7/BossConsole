@@ -132,14 +132,18 @@ class KernelBootstrap(
 
         // Start gRPC server.
         //
-        // PluginUIServiceBridge goes in here rather than in registerPluginServices() below, for two
+        // PluginUIServiceBridge goes in here rather than in registerPluginServices() below for two
         // reasons. It has to exist before any plugin connects — processes are spawned immediately after
-        // this, and a plugin whose RegisterUI lands on a server that has no PluginUIService gets
-        // UNIMPLEMENTED and no UI at all. And BossIpcServer.addService() on a *running* server rebuilds
-        // it, which means tearing down the socket: harmless for the unary services registered that way,
-        // fatal for StreamUI, whose whole job is to stay open. registerPluginServices() also exists to
-        // gate each bridge on a host provider being present, and this one has no provider to gate on —
-        // its dependency is the surface registry, which the host owns for its whole lifetime.
+        // this, and a plugin whose RegisterUI lands on a server with no PluginUIService gets UNIMPLEMENTED
+        // and no UI at all. And registerPluginServices() exists to gate each bridge on a host provider
+        // being present, which this one has nothing to gate on: its dependency is the surface registry,
+        // which the host owns for its whole lifetime.
+        //
+        // Note it is NOT because late registration is destructive. It used to be — addService() on a
+        // running server rebuilt it, tearing down the socket, which was survivable for unary bridges and
+        // fatal for StreamUI — but BossIpcServer now routes late services through a MutableHandlerRegistry
+        // and never touches the socket. Adding a service to a running server is safe; the ordering above
+        // is about existence, not about protecting streams.
         ipcServer =
             BossIpcServer(kernelAddress!!)
                 .addService(kernelService!!)

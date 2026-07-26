@@ -122,8 +122,18 @@ class RemoteUiSurfaceRegistry {
         processId: String,
         descriptor: RemoteUiSurfaceDescriptor = RemoteUiSurfaceDescriptor(),
     ): SurfaceRegistration {
-        if (surfaceId.isBlank()) {
-            return SurfaceRegistration.Rejected("surface_id is required")
+        // process_id is not cosmetic: `claim()` compares it to decide whether a claim may be taken over, so
+        // a blank one is an authorization key every plugin shares. proto3 makes the empty string the
+        // default, so a runtime that simply forgets the field would let any plugin reclaim any other
+        // plugin's registered-but-not-yet-streaming surface — and then receive its TextChangeEvents.
+        val missing =
+            when {
+                surfaceId.isBlank() -> "surface_id"
+                processId.isBlank() -> "process_id"
+                else -> null
+            }
+        if (missing != null) {
+            return SurfaceRegistration.Rejected("$missing is required")
         }
         val created =
             RemoteUiSurface(
@@ -186,9 +196,13 @@ class RemoteUiSurfaceRegistry {
      * Tear a surface down at the plugin's request. @return `false` if it was not registered.
      *
      * Unattributed, unlike [closeStream]'s two-argument removal: `UIUnregistration` carries only a
-     * `surface_id`, so a late call from a dying incarnation can evict a respawn's fresh surface. That
-     * plugin's next `RegisterUI` recovers, and the window needs an `UnregisterUI` to arrive after a
-     * respawn has already registered — narrow enough to accept rather than to widen the proto for.
+     * `surface_id`. Accidentally, that means a late call from a dying incarnation can evict a respawn's
+     * fresh surface — narrow (it must arrive after the respawn registered) and self-healing (the plugin's
+     * next `RegisterUI` recovers), so not worth widening the proto for.
+     *
+     * Deliberately, it means **any** connected plugin can tear down any other plugin's live surface, since
+     * there is nothing in the request to attribute it to. That is not fixable here: it needs per-connection
+     * identity rather than a body field, which is the same root cause as `StreamUI` having no owner check.
      */
     fun unregister(surfaceId: String): Boolean {
         val surface = surfaces.remove(surfaceId) ?: return false
@@ -250,7 +264,20 @@ class RemoteUiSurfaceRegistry {
         surfaceId: String,
         host: RemoteUiSurfaceHost,
     ) {
-        hosts[surfaceId] = host
+        val displaced = hosts.put(surfaceId, host)
+        if (displaced != null && displaced !== host) {
+            // The registry routes to one host per id, and it is process-wide while the app is
+            // multi-window — so this is reachable, and silence would leave the displaced component
+            // rendering its last tree and still reporting `connected`, frozen from the host side rather
+            // than the plugin side. One surface renders in one place; saying so is better than the
+            // follow-up discovering it.
+            logger.warn(
+                LogCategory.UI,
+                "A second component attached to a surface already being rendered — the first is detached",
+                mapOf("surfaceId" to surfaceId),
+            )
+            displaced.onConnectionChanged(false)
+        }
         val surface = surfaces[surfaceId]
         if (surface == null) {
             host.onConnectionChanged(false)
