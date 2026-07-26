@@ -300,6 +300,12 @@ message KeyEvent {
 // about the middle of a fling in fewer, larger steps. One event per frame would be ~60 IPC messages
 // per second per scrolling node.
 //
+// The sum holds across one surface's continuous scroll reporting. Treat a surface teardown or a tree
+// update that replaces the scrolling node as a RESET of the accumulator: the host re-seeds its baseline
+// from wherever the new node starts, and a delta bridging the two would be meaningless.
+//
+// Units are layout pixels, not density-independent units.
+//
 // The JVM host currently reports these for WIDGET_TYPE_SCROLL nodes only, and vertically only, so
 // delta_x is always 0 there. WIDGET_TYPE_LIST does not yet report its own scrolling.
 message ScrollEvent {

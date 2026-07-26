@@ -6,7 +6,9 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flow
 
 /**
- * A scroll container's absolute offset, in logical pixels.
+ * A scroll container's absolute offset, in **layout pixels** — Compose's `ScrollState.value`, not
+ * density-independent units. Stated because the Rust renderer mirrors this spec and the two differ on
+ * a HiDPI display.
  *
  * Absolute rather than a delta on purpose: `ScrollEvent` is a delta on the wire, but *deriving* those
  * deltas from positions is what makes coalescing lossless. Two positions always yield the one delta
@@ -48,9 +50,16 @@ data class ScrollOffset(
  *   buffered value is delivered before the flow ends.
  *
  * The result is an invariant a test can hold onto, and a stronger one than "the last event arrives":
- * **the emitted deltas sum to the total displacement**, always, whatever the burst shape. A plugin that
+ * **the emitted deltas sum to the total displacement**, whatever the burst shape. A plugin that
  * accumulates them is never out of step with what the user sees — it just learns about the middle of a
  * fling in fewer, larger steps.
+ *
+ * The invariant is scoped to **one continuous collection**, which is worth being exact about because in
+ * production the upstream never completes and the flow only ever ends by cancellation. A collector
+ * cancelled mid-window discards the pending offset, and a restart (a tree update replacing the node, so
+ * a fresh `ScrollState` at zero) silently re-seeds its baseline. Both are teardowns from the plugin's
+ * point of view, and the proto tells plugins to treat them as a reset rather than to keep accumulating
+ * across one.
  *
  * No timers, no shared mutable state across coroutines, and nothing to leak when the surface goes away:
  * the flow is cold and dies with its collector.

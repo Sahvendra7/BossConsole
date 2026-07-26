@@ -67,11 +67,14 @@ class RemoteSurfaceKeyRoutingTest {
         // One binding proves the rule is wired; the whole preset proves there is no shortcut-shaped hole
         // in it. Cheap, and it is the assertion that catches a matcher regression rather than a wiring
         // one. Restricted to single-character keys because that is the set [asKeyDown] can synthesise
-        // faithfully — "Tab" and "Left" have no char to derive a VK_ code from.
+        // faithfully — "Tab" and "Left" have no char to derive a VK_ code from — and to bindings with a
+        // system modifier, which are the ones the host actually dispatches; the rest are covered by the
+        // Shift+/ test above, which asserts the opposite.
         val preset = KeymapPresets.getBOSSDefault()
         val forwarded =
             preset.shortcuts.values
                 .filter { it.enabled && it.context == ShortcutContext.GLOBAL && it.key.length == 1 }
+                .filter { KeymapMatcher(preset).hasSystemModifier(it) }
                 .filter { it.asKeyDown().toForwardedKey(KeymapMatcher(preset)) != null }
                 .map { it.actionId }
 
@@ -112,6 +115,26 @@ class RemoteSurfaceKeyRoutingTest {
         val release = keyEvent(AwtKeyEvent.VK_ESCAPE, KeyEventType.KeyUp)
 
         assertNull(release.toForwardedKey(onlyBinding(key = "T")))
+    }
+
+    @Test
+    fun `a bound key the host would never dispatch is still forwarded`() {
+        // The bug review caught. AWTKeyboardInterceptor returns before it consults the keymap unless
+        // Meta, Ctrl or Alt is down, so a binding with no system modifier is never dispatched — and
+        // refusing it here too made the key vanish, claimed by neither side. The shipped preset really
+        // has one: Shift+/ opens the shortcut sheet, so `?` on a focused remote surface did nothing.
+        val preset = KeymapPresets.getBOSSDefault()
+        val help = preset.shortcuts[KeymapActions.HELP_SHORTCUTS]
+        val binding = assertNotNull(help, "the preset must bind ${KeymapActions.HELP_SHORTCUTS}")
+        assertEquals(listOf("Shift"), binding.modifiers, "this test is about the modifier-less case")
+        val matcher = KeymapMatcher(preset)
+        val event = keyDown(AwtKeyEvent.VK_SLASH, shift = true)
+
+        assertNotNull(matcher.match(event, ShortcutContext.GLOBAL), "the keymap does match it")
+        assertNotNull(
+            event.toForwardedKey(matcher),
+            "…but the host never dispatches it, so declining to forward it would lose the key entirely",
+        )
     }
 
     @Test
@@ -162,9 +185,10 @@ class RemoteSurfaceKeyRoutingTest {
     /**
      * The key-down event a user produces by typing this binding.
      *
-     * Only the primary keystroke and only the modifiers `KeymapMatcher` distinguishes; a binding whose
-     * key name the AWT table below does not know is skipped by returning an event that matches nothing,
-     * which the preset-wide test tolerates because it asserts a *refusal*.
+     * Only the primary keystroke and only the modifiers `KeymapMatcher` distinguishes. A binding whose
+     * key name has no single char to derive a `VK_` code from would synthesise an event matching nothing
+     * — which would *fail* the preset sweep rather than pass it, hence the `key.length == 1` filter
+     * there rather than a tolerance here.
      */
     private fun KeyBinding.asKeyDown(): ComposeKeyEvent {
         val mods = modifiers.map { it.lowercase() }

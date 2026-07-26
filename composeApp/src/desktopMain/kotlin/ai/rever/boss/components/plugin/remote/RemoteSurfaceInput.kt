@@ -12,7 +12,9 @@ import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.KeyEventType
@@ -96,11 +98,12 @@ internal fun Modifier.forwardUnclaimedKeys(
     hostKeymap: KeymapSettings = KeymapSettingsManager.currentSettings.collectAsState().value,
 ): Modifier {
     val matcher = remember(hostKeymap) { KeymapMatcher(hostKeymap) }
-    return onKeyEvent { keyEvent ->
-        keyEvent.toForwardedKey(matcher)?.let { forwarded -> onEvent("", forwarded) }
-        // Never true. See point 3 above — this is the anti-trap guarantee, and it is one word.
-        false
-    }.focusable()
+    return this
+        .onKeyEvent { keyEvent ->
+            keyEvent.toForwardedKey(matcher)?.let { forwarded -> onEvent("", forwarded) }
+            // Never true. See point 3 above — this is the anti-trap guarantee, and it is one word.
+            false
+        }.focusable()
 }
 
 /**
@@ -115,22 +118,33 @@ internal fun Modifier.forwardUnclaimedKeys(
  *   bare `VK_SHIFT` ahead of the letter, and a plugin listening for keys would see two events for one
  *   keystroke. The modifier is not lost — it arrives as a flag on the key it modifies, which is the
  *   only form the wire type can express. Same set the AWT interceptor skips, for the same reason.
- * - **Anything [hostKeymap] binds.** Checked in [ShortcutContext.GLOBAL], which is what [KeymapMatcher]
- *   resolves for a surface that is neither a browser, a terminal nor an editor — the same context the
- *   AWT interceptor derives for one — and which also covers `WORKSPACE` bindings.
+ * - **Anything the host would actually act on.** Matched in [ShortcutContext.GLOBAL] — what
+ *   [KeymapMatcher] resolves for a surface that is neither a browser, a terminal nor an editor, the
+ *   same context the AWT interceptor derives for one, and which also covers `WORKSPACE` bindings.
+ *
+ *   "Would act on", not "has a binding for", and the difference is a bug that review caught: the
+ *   interceptor returns *before* it consults the keymap unless Meta, Ctrl or Alt is down, so a binding
+ *   with no system modifier is never dispatched. The shipped preset has one — `Shift+/` opens the
+ *   shortcut sheet — and refusing it here made `?` on a focused remote surface do nothing at all,
+ *   claimed by neither side. [KeymapMatcher.hasSystemModifier] is the interceptor's own test for that
+ *   and is now shared rather than reimplemented, so the two cannot drift.
+ *
+ *   Not consulted: `PluginShortcutRegistryImpl`'s defaults, which the interceptor checks after the
+ *   keymap. They sit behind the same system-modifier early exit, so anything they could claim is
+ *   already refused above by having a modifier — with one narrow exception, a plugin default arriving
+ *   down the unregistered-window path, where the interceptor would not have dispatched it either.
  *
  * `Key.nativeKeyCode` rather than the packed `Key.keyCode`: the proto field is an `int32` and the
  * documented meaning is a platform key code, which on this host is the AWT `VK_` constant. The packed
  * Compose value would neither fit nor mean anything to a plugin.
  */
 internal fun ComposeKeyEvent.toForwardedKey(hostKeymap: KeymapMatcher): WidgetEvent.Key? {
-    // One conjunction rather than three guard clauses: `&&` short-circuits, so the keymap lookup — the
-    // only expensive test of the three — still runs at most once per real key press.
-    val forwardable =
-        type == KeyEventType.KeyDown &&
-            key.nativeKeyCode !in MODIFIER_ONLY_KEYS &&
-            hostKeymap.match(this, ShortcutContext.GLOBAL) == null
-    return if (!forwardable) {
+    // Cheap tests first so the keymap lookup — the only costly one — is skipped for key-ups and for the
+    // modifier presses that bracket every chord.
+    if (type != KeyEventType.KeyDown || key.nativeKeyCode in MODIFIER_ONLY_KEYS) return null
+    val claimedByHost =
+        hostKeymap.match(this, ShortcutContext.GLOBAL)?.let(hostKeymap::hasSystemModifier) == true
+    return if (claimedByHost) {
         null
     } else {
         WidgetEvent.Key(
@@ -181,9 +195,13 @@ internal fun ReportScrollPosition(
     scrollState: ScrollState,
     onEvent: (nodeId: String, event: WidgetEvent) -> Unit,
 ) {
+    // rememberUpdatedState so the long-lived effect always calls the current sink. Harmless today —
+    // every caller passes a lambda capturing only its component — but it is the classic stale-capture
+    // shape, and the effect outlives many recompositions.
+    val sink by rememberUpdatedState(onEvent)
     LaunchedEffect(nodeId, scrollState) {
         ScrollCoalescer
             .coalesce(snapshotFlow { ScrollOffset(x = 0f, y = scrollState.value.toFloat()) })
-            .collect { scroll -> onEvent(nodeId, scroll) }
+            .collect { scroll -> sink(nodeId, scroll) }
     }
 }

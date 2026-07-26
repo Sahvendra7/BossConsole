@@ -195,6 +195,9 @@ class RemoteUiSurfaceRegistry {
                     "Reclaimed an abandoned UI surface for its own process — treating it as a respawn",
                     mapOf("surfaceId" to surfaceId, "processId" to created.processId),
                 )
+                // No `announceDestroyed`: `abandoned` requires `!blocker.streaming`, and a surface is
+                // only ever announced *created* while streaming, so the latch cannot be set here. The
+                // one teardown path that opts out on purpose rather than because it cannot deliver.
                 blocker.close()
                 blocker = null
             } else {
