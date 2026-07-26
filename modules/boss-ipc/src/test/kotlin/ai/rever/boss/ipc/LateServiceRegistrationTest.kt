@@ -16,7 +16,6 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import java.net.ServerSocket
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -36,12 +35,14 @@ class LateServiceRegistrationTest {
 
     @Before
     fun setUp() {
-        port = ServerSocket(0).use { it.localPort }
+        // Port 0, then read back what was bound: "find a free port, then bind it" can lose the port to
+        // another process in between, which is the race the sibling suites avoid by construction.
         // Only the kernel service at build time; everything else arrives late, as in KERNEL bootstrap.
         ipcServer =
-            BossIpcServer("tcp://localhost:$port")
+            BossIpcServer("tcp://localhost:0")
                 .addService(KernelServiceImpl())
                 .start()
+        port = ipcServer!!.port
         channel = ManagedChannelBuilder.forAddress("localhost", port).usePlaintext().build()
     }
 

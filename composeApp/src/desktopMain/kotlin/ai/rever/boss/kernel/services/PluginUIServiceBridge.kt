@@ -174,6 +174,7 @@ class PluginUIServiceBridge(
         var surface: RemoteUiSurface? = null
         var refused = false
         var broken = false
+        var strays = 0L
         requests
             .onEach { update ->
                 val target = surface
@@ -183,12 +184,8 @@ class PluginUIServiceBridge(
                     }
 
                     target != null -> {
-                        logger.warn(
-                            LogCategory.UI,
-                            "Ignoring a WidgetUpdate for a surface this stream is not bound to — " +
-                                "use one StreamUI call per surface",
-                            mapOf("streamSurfaceId" to target.surfaceId, "updateSurfaceId" to update.surfaceId),
-                        )
+                        strays++
+                        noteStrayUpdate(target.surfaceId, update.surfaceId, strays)
                     }
 
                     !refused -> {
@@ -243,6 +240,30 @@ class PluginUIServiceBridge(
     }
 
     /**
+     * Report an update for a surface this stream is not bound to, first and then every Nth.
+     *
+     * Throttled because a plugin that multiplexes two surfaces onto one call sends these at its own update
+     * rate, and an unthrottled warning is a log-flooding primitive handed across the boundary.
+     */
+    private fun noteStrayUpdate(
+        streamSurfaceId: String,
+        updateSurfaceId: String,
+        occurrences: Long,
+    ) {
+        if (occurrences != 1L && occurrences % STRAY_LOG_INTERVAL != 0L) return
+        logger.warn(
+            LogCategory.UI,
+            "Ignoring a WidgetUpdate for a surface this stream is not bound to — " +
+                "use one StreamUI call per surface",
+            mapOf(
+                "streamSurfaceId" to streamSurfaceId,
+                "updateSurfaceId" to updateSurfaceId,
+                "occurrences" to occurrences,
+            ),
+        )
+    }
+
+    /**
      * Everything a registration declares beyond identity.
      *
      * Kept on the surface for the follow-up that places it in the window, which is what needs
@@ -276,6 +297,9 @@ class PluginUIServiceBridge(
         val DEFAULT_BIND_TIMEOUT_MS = 30.seconds.inWholeMilliseconds
 
         private val logger = BossLogger.forComponent("PluginUIServiceBridge")
+
+        /** Log the first stray update on a stream, then every Nth. See the throttle in pumpUpdates. */
+        private const val STRAY_LOG_INTERVAL = 256L
 
         private const val SILENT_STREAM =
             "StreamUI takes its surface identity from the surface_id of its first WidgetUpdate; " +

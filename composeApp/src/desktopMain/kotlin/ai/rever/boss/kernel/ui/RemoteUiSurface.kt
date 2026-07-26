@@ -96,6 +96,8 @@ class RemoteUiSurface internal constructor(
     private val streamClaimed = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val eventsTaken = AtomicBoolean(false)
+    private val diverged = AtomicBoolean(false)
+    private val malformed = AtomicLong(0)
     private val buffered = AtomicInteger(0)
     private val shed = AtomicLong(0)
 
@@ -126,16 +128,24 @@ class RemoteUiSurface internal constructor(
      * guarantee the queue exists to provide.
      */
     internal fun claimStream(): Boolean {
-        // The closed check is not redundant with the CAS. `close()` resets streamClaimed, so a claim that
-        // raced a concurrent `unregister`/`clear` — the registry reads the map, then the surface is removed
-        // and closed, then the claim lands — would succeed on a dead surface and publish connected = true.
-        // Nothing ever takes that back: `events()` completes immediately over the closed channel, and the
-        // compensating close() returns early because it has already run. The component would sit reading
-        // *connected* for a surface that no longer exists.
-        if (closed.get()) return false
-        val claimed = streamClaimed.compareAndSet(false, true)
-        if (claimed) synchronized(publishLock) { publishConnected(this, true) }
-        return claimed
+        // Order matters, and checking `closed` first is not enough. `close()` *resets* streamClaimed, so a
+        // check-then-CAS still admits: read closed (false) → close() runs fully, resetting the flag → CAS
+        // succeeds → publish connected = true on a dead surface. Nothing takes that back, because
+        // stillOwnedBy passes for a removed id, events() completes at once over the closed channel, and the
+        // compensating close() returns early. The component would sit reading *connected* for a surface
+        // that no longer exists — the frozen state this transport exists to avoid.
+        //
+        // Claiming first and re-checking closes it: either close()'s write is visible to the re-check, or
+        // the CAS landed before close() reset the flag and the re-check sees closed anyway. Not reachable
+        // from a test, which is why the ordering carries the weight here.
+        if (!streamClaimed.compareAndSet(false, true)) return false
+        val alive = !closed.get()
+        if (alive) {
+            synchronized(publishLock) { publishConnected(this, true) }
+        } else {
+            streamClaimed.set(false)
+        }
+        return alive
     }
 
     /**
@@ -206,6 +216,9 @@ class RemoteUiSurface internal constructor(
     internal fun applyUpdate(update: WidgetUpdate) {
         when (update.updateCase) {
             WidgetUpdate.UpdateCase.FULL_TREE -> {
+                // A full tree is the only thing that repairs a diverged surface, so it also clears the flag
+                // that suppresses repeat divergence warnings.
+                diverged.set(false)
                 pushTree(update.fullTree.toKotlin())
             }
 
@@ -216,11 +229,7 @@ class RemoteUiSurface internal constructor(
             WidgetUpdate.UpdateCase.UPDATE_NOT_SET, null -> {
                 // Neither oneof arm set: a sender bug, or a proto case newer than this build. Either
                 // way there is nothing to render, and guessing would corrupt the tree.
-                logger.warn(
-                    LogCategory.UI,
-                    "Ignoring a WidgetUpdate that carries neither a full tree nor a diff",
-                    mapOf("surfaceId" to surfaceId, "processId" to processId),
-                )
+                noteMalformed("Ignoring a WidgetUpdate that carries neither a full tree nor a diff")
             }
         }
     }
@@ -249,6 +258,23 @@ class RemoteUiSurface internal constructor(
         synchronized(publishLock) { publishConnected(this, false) }
     }
 
+    /**
+     * Report a malformed update, first and then every [MALFORMED_LOG_INTERVAL]th.
+     *
+     * These paths are all reachable by a misbehaving plugin on the once-per-update path, so an unthrottled
+     * warning is a log-flooding primitive handed to the other side of the boundary.
+     */
+    private fun noteMalformed(message: String) {
+        val total = malformed.incrementAndGet()
+        if (total == 1L || total % MALFORMED_LOG_INTERVAL == 0L) {
+            logger.warn(
+                LogCategory.UI,
+                message,
+                mapOf("surfaceId" to surfaceId, "processId" to processId, "occurrences" to total),
+            )
+        }
+    }
+
     private fun applyDiff(diff: ProtoWidgetDiff) =
         // The whole read-modify-write, not just the write. One stream per surface rules out concurrent
         // diffs, but a registration's `initial_tree` is pushed from a different coroutine and nothing makes
@@ -259,33 +285,29 @@ class RemoteUiSurface internal constructor(
     private fun applyDiffLocked(diff: ProtoWidgetDiff) {
         val base = tree
         if (base == null) {
-            // A diff is meaningless without the tree it was computed against, and the protocol has no
-            // way to ask for a resync — so say so loudly instead of inventing an empty base.
-            logger.warn(
-                LogCategory.UI,
-                "Dropping a widget diff for a surface with no tree yet — the plugin must send a full tree first",
-                mapOf("surfaceId" to surfaceId, "processId" to processId),
-            )
+            // A diff is meaningless without the tree it was computed against, and the protocol has no way to
+            // ask for a resync — so say so instead of inventing an empty base. Throttled, because a plugin
+            // that only ever sends diffs would otherwise log one per update forever.
+            noteMalformed("Dropping a widget diff for a surface with no tree — the plugin must send one first")
             return
         }
         val stale = diff.baseVersion != 0L && diff.baseVersion != base.version
-        if (stale) {
-            // Best-effort rather than fatal: refusing would freeze the surface permanently, whereas any
-            // later full tree from the plugin repairs whatever this misapplies.
-            logger.warn(
-                LogCategory.UI,
-                "Widget diff base version does not match the surface's tree — applying anyway",
-                mapOf("surfaceId" to surfaceId, "expected" to base.version, "actual" to diff.baseVersion),
-            )
-        }
         val decoded = diff.decodeOperations()
-        if (decoded.skipped > 0) {
-            // Structural ops that could not be decoded cannot be reconstructed from their neighbours, so
-            // the tree below is knowingly not the one the plugin has.
+        // Reported on the TRANSITION into divergence, not per update. Keeping the local version means every
+        // subsequent diff mismatches by design — that is what makes the next one trip — so warning each
+        // time would turn one bad diff into a warning per frame for the life of the surface. Cleared when a
+        // full tree arrives, because that is the thing that actually repairs it.
+        if ((stale || decoded.skipped > 0) && diverged.compareAndSet(false, true)) {
             logger.warn(
                 LogCategory.UI,
-                "Widget diff contained operations this build cannot decode — the tree may now diverge",
-                mapOf("surfaceId" to surfaceId, "skipped" to decoded.skipped, "applied" to decoded.operations.size),
+                "Widget diff cannot be applied faithfully — this surface's tree may now diverge from the " +
+                    "plugin's until it sends a full tree",
+                mapOf(
+                    "surfaceId" to surfaceId,
+                    "expectedBaseVersion" to base.version,
+                    "actualBaseVersion" to diff.baseVersion,
+                    "undecodableOperations" to decoded.skipped,
+                ),
             )
         }
         val applied = WidgetDiffEngine.apply(base, decoded.operations)
@@ -309,6 +331,9 @@ class RemoteUiSurface internal constructor(
 
         /** Log the first shed event, then every Nth, so a wedged plugin cannot flood the log. */
         private const val SHED_LOG_INTERVAL = 256L
+
+        /** Same restraint for malformed updates, which are equally plugin-controlled. */
+        private const val MALFORMED_LOG_INTERVAL = 256L
 
         private val logger = BossLogger.forComponent("RemoteUiSurface")
     }
