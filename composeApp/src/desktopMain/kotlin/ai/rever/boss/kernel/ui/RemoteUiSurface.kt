@@ -126,6 +126,13 @@ class RemoteUiSurface internal constructor(
      * guarantee the queue exists to provide.
      */
     internal fun claimStream(): Boolean {
+        // The closed check is not redundant with the CAS. `close()` resets streamClaimed, so a claim that
+        // raced a concurrent `unregister`/`clear` — the registry reads the map, then the surface is removed
+        // and closed, then the claim lands — would succeed on a dead surface and publish connected = true.
+        // Nothing ever takes that back: `events()` completes immediately over the closed channel, and the
+        // compensating close() returns early because it has already run. The component would sit reading
+        // *connected* for a surface that no longer exists.
+        if (closed.get()) return false
         val claimed = streamClaimed.compareAndSet(false, true)
         if (claimed) synchronized(publishLock) { publishConnected(this, true) }
         return claimed
@@ -225,6 +232,11 @@ class RemoteUiSurface internal constructor(
      * cleanly, so this is also the anti-leak path. The last tree is deliberately **kept**: a surface
      * whose plugin died shows its final state with `connected == false` rather than going blank, which
      * is the difference between "disconnected" and "frozen" from the user's side.
+     *
+     * That applies to a component that was *already* attached — the tree it last rendered stays in its own
+     * state. A component that attaches *after* the plugin is gone gets nothing, because the surface is out
+     * of the registry by then and there is nothing to replay. Deliberate: a tree from a process that died
+     * some time ago is stale, and showing it as if it were live would be the more misleading of the two.
      *
      * Idempotent, because it is legitimately reached twice on a graceful shutdown: `UnregisterUI` closes
      * the surface, which ends the event queue, which ends the `StreamUI` call, whose teardown closes the

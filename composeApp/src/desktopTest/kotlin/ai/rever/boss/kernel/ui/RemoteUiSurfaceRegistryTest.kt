@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -118,6 +119,40 @@ class RemoteUiSurfaceRegistryTest {
         assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
 
         assertIs<SurfaceRegistration.Rejected>(registry.register(SURFACE, PROCESS))
+    }
+
+    @Test
+    fun `a closed surface refuses a stream, so a racing claim cannot report a dead plugin as connected`() {
+        // openStream reads the map, then unregister/clear can remove and close the surface, and only then
+        // does the claim land. Without the closed check that claim succeeded and published connected = true
+        // — and nothing took it back, because events() completes at once over the closed channel and the
+        // compensating close() has already run. The component would sit reading *connected* forever.
+        val host = RecordingHost()
+        registry.attach(SURFACE, host)
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        assertTrue(registry.unregister(SURFACE))
+
+        assertFalse(surface.claimStream(), "a closed surface has no stream to give")
+        assertFalse(
+            host.connections.any { it },
+            "and must never announce a connection it cannot honour, got ${host.connections}",
+        )
+    }
+
+    @Test
+    fun `a component that opens after its plugin died gets no stale tree`() {
+        // The other side of close()'s "keep the last tree": a component already attached keeps what it
+        // rendered, but one opening later has nothing replayed to it. A tree from a process that died some
+        // time ago is stale, and showing it as though it were live would be the worse of the two.
+        val gone = registry.register(SURFACE, PROCESS).accepted()
+        gone.pushTree(tree("from-the-dead-plugin"))
+        registry.closeStream(gone)
+
+        val host = RecordingHost()
+        registry.attach(SURFACE, host)
+
+        assertTrue(host.trees.isEmpty())
+        assertEquals(listOf(false), host.connections)
     }
 
     @Test
@@ -443,9 +478,13 @@ class RemoteUiSurfaceRegistryTest {
 
     // ---- Helpers ----
 
+    /**
+     * Thread-safe on purpose: publication happens on whichever thread delivered the update, and the test
+     * thread reads these without taking the surface's publish lock.
+     */
     private class RecordingHost : RemoteUiSurfaceHost {
-        val trees = mutableListOf<WidgetTree>()
-        val connections = mutableListOf<Boolean>()
+        val trees = CopyOnWriteArrayList<WidgetTree>()
+        val connections = CopyOnWriteArrayList<Boolean>()
 
         override fun onTreeUpdated(tree: WidgetTree) {
             trees += tree

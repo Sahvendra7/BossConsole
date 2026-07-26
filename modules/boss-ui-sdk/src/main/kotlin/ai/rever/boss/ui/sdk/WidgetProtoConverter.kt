@@ -55,11 +55,14 @@ object WidgetProtoConverter {
      * happened has no way to stop trusting its own copy.
      */
     fun ProtoWidgetDiff.decodeOperations(): DecodedWidgetDiff {
-        // Inlined rather than a named helper: WidgetProtoConverter sits one function below detekt's
-        // TooManyFunctions threshold for objects, and splitting the whole converter to name this would
-        // trade a real seam for a cosmetic one.
-        val decoded: List<DiffOperation?> =
-            operationsList.map { op ->
+        // One pass, no intermediate nullable list: the proto documents diffs as the steady state after a
+        // surface's first full tree, so this runs on every update. Inlined rather than a named helper
+        // because WidgetProtoConverter sits one function below detekt's TooManyFunctions threshold for
+        // objects, and splitting the converter to name this would trade a real seam for a cosmetic one.
+        var skipped = 0
+        val operations = ArrayList<DiffOperation>(operationsCount)
+        operationsList.forEach { op ->
+            val decoded =
                 when (op.opCase) {
                     ProtoDiffOp.OpCase.ADDED -> {
                         DiffOperation.NodeAdded(op.added.node.toKotlin(), op.added.parentId, op.added.index)
@@ -89,11 +92,9 @@ object WidgetProtoConverter {
                         null
                     }
                 }
-            }
-        return DecodedWidgetDiff(
-            operations = decoded.filterNotNull(),
-            skipped = decoded.count { it == null },
-        )
+            if (decoded == null) skipped++ else operations += decoded
+        }
+        return DecodedWidgetDiff(operations = operations, skipped = skipped)
     }
 
     private fun ProtoWidgetNode.toKotlin(): WidgetNode =

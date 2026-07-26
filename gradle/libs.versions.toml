@@ -111,6 +111,9 @@ grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
 grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
 grpc-kotlin-stub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpc-kotlin" }
 grpc-services = { module = "io.grpc:grpc-services", version.ref = "grpc" }
+# MutableHandlerRegistry — lets BossIpcServer register a service on a running
+# server without rebuilding it (which would kill every in-flight streaming RPC).
+grpc-util = { module = "io.grpc:grpc-util", version.ref = "grpc" }
 protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
 # Netty transport for Unix domain sockets

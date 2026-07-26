@@ -1,9 +1,11 @@
 package ai.rever.boss.components.plugin.remote
 
 import ai.rever.boss.ipc.proto.PluginUIServiceGrpcKt
+import ai.rever.boss.ipc.proto.UIEvent
 import ai.rever.boss.ipc.proto.UIRegistration
 import ai.rever.boss.ipc.proto.WidgetUpdate
 import ai.rever.boss.kernel.services.PluginUIServiceBridge
+import ai.rever.boss.kernel.ui.RemoteUiSurface
 import ai.rever.boss.kernel.ui.RemoteUiSurfaceRegistry
 import ai.rever.boss.kernel.ui.SurfaceRegistration
 import ai.rever.boss.ui.sdk.WidgetEvent
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -148,7 +151,7 @@ class RemoteWidgetRendererComposeTest {
         compose.onNodeWithText("Save").performClick()
         compose.waitForIdle()
 
-        val queued = runBlocking { surface.events().take(1).toList() }.single()
+        val queued = surface.firstEvent()
         // The panel's id is used twice — to attach and emit, and to stamp the event — and the two uses
         // must agree or the plugin receives events for a surface it does not own.
         assertEquals(PANEL, queued.surfaceId)
@@ -170,7 +173,7 @@ class RemoteWidgetRendererComposeTest {
         compose.onNodeWithText("Save").performClick()
         compose.waitForIdle()
 
-        val queued = runBlocking { surface.events().take(1).toList() }.single()
+        val queued = surface.firstEvent()
         assertEquals(TAB, queued.surfaceId)
         assertEquals(BUTTON, queued.targetNodeId)
         assertEquals("save_settings", queued.click.eventId)
@@ -230,7 +233,7 @@ class RemoteWidgetRendererComposeTest {
             compose.onNodeWithText("Save").performClick()
             compose.waitForIdle()
 
-            val received = runBlocking { events.await() }.single()
+            val received = runBlocking { withTimeout(WAIT_TIMEOUT_MS) { events.await() } }.single()
             assertEquals(PANEL, received.surfaceId)
             assertEquals(BUTTON, received.targetNodeId)
             assertEquals("save_settings", received.click.eventId)
@@ -241,6 +244,17 @@ class RemoteWidgetRendererComposeTest {
             server.shutdownNow()
         }
     }
+
+    /**
+     * The first event queued for a surface.
+     *
+     * Bounded: an unbounded `runBlocking` here would make a regression *hang the build* instead of failing
+     * a test, which is a far worse failure mode on CI than a red assertion.
+     */
+    private fun RemoteUiSurface.firstEvent(): UIEvent =
+        runBlocking {
+            withTimeout(WAIT_TIMEOUT_MS) { events().take(1).toList() }.single()
+        }
 
     private fun textFieldTree(value: String): WidgetTree =
         WidgetTree(

@@ -155,6 +155,7 @@ class PluginUIServiceBridge(
     ) {
         var surface: RemoteUiSurface? = null
         var refused = false
+        var broken = false
         requests
             .onEach { update ->
                 val target = surface
@@ -166,7 +167,8 @@ class PluginUIServiceBridge(
                     target != null -> {
                         logger.warn(
                             LogCategory.UI,
-                            "Ignoring a WidgetUpdate for a surface this stream is not bound to",
+                            "Ignoring a WidgetUpdate for a surface this stream is not bound to — " +
+                                "use one StreamUI call per surface",
                             mapOf("streamSurfaceId" to target.surfaceId, "updateSurfaceId" to update.surfaceId),
                         )
                     }
@@ -196,15 +198,25 @@ class PluginUIServiceBridge(
                     }
                 }
             }.catch { cause ->
-                logger.debug(
+                broken = true
+                logger.warn(
                     LogCategory.UI,
-                    "Plugin widget-update stream ended abnormally",
+                    "Plugin widget-update stream ended abnormally — closing the surface",
                     mapOf("surfaceId" to surface?.surfaceId, "error" to cause.message),
                 )
+                // Whatever the reason — a dead wire, or a failure applying an update — this pump has
+                // stopped reading the request stream, and the call cannot usefully continue. Leaving the
+                // response side running would keep the surface claimed and reading *connected* while the
+                // plugin's next send blocked on flow control forever. Closing the surface completes the
+                // event queue, which completes the response flow, which ends the RPC.
+                surface?.let(registry::closeStream)
             }.onCompletion { cause ->
-                // Only when the stream ended of its own accord: a cancellation is not an unbindable
-                // stream, and reporting it as one puts a misleading status on a dead RPC.
-                if (cause == null && surface == null && !refused) {
+                // An unbindable stream is one that ended of its own accord without ever naming a surface.
+                // A cancellation is not that, and neither is a broken wire — `catch` above swallows the
+                // cause to keep one status on the call, so `broken` is what distinguishes them here.
+                val endedCleanly = cause == null && !broken
+                val neverBound = surface == null && !refused
+                if (endedCleanly && neverBound) {
                     bound.completeExceptionally(
                         StatusException(Status.INVALID_ARGUMENT.withDescription(UNIDENTIFIED_STREAM)),
                     )

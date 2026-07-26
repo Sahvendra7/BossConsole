@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -426,9 +427,14 @@ class PluginUIServiceBridgeTest {
 
     // ---- Helpers ----
 
+    /**
+     * Thread-safe on purpose: the transport publishes from a gRPC thread while the test thread polls and
+     * reads these, so a plain ArrayList would be a data race — the kind that survives a laptop and flakes
+     * on a loaded CI runner.
+     */
     private class RecordingHost : RemoteUiSurfaceHost {
-        val trees = mutableListOf<SdkWidgetTree>()
-        val connections = mutableListOf<Boolean>()
+        val trees = CopyOnWriteArrayList<SdkWidgetTree>()
+        val connections = CopyOnWriteArrayList<Boolean>()
 
         override fun onTreeUpdated(tree: SdkWidgetTree) {
             trees += tree
