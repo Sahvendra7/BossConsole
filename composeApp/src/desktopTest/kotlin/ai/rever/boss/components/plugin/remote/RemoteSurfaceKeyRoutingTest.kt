@@ -57,7 +57,7 @@ class RemoteSurfaceKeyRoutingTest {
             "the host keymap must still claim ${binding.displayString()} — otherwise this asserts nothing",
         )
         assertNull(
-            event.toForwardedKey(preset),
+            event.toForwardedKey(KeymapMatcher(preset)),
             "a key the host keymap claims must not also reach the plugin",
         )
     }
@@ -72,7 +72,7 @@ class RemoteSurfaceKeyRoutingTest {
         val forwarded =
             preset.shortcuts.values
                 .filter { it.enabled && it.context == ShortcutContext.GLOBAL && it.key.length == 1 }
-                .filter { it.asKeyDown().toForwardedKey(preset) != null }
+                .filter { it.asKeyDown().toForwardedKey(KeymapMatcher(preset)) != null }
                 .map { it.actionId }
 
         assertEquals(emptyList<String>(), forwarded, "no host shortcut may be forwarded to a plugin")
@@ -132,8 +132,10 @@ class RemoteSurfaceKeyRoutingTest {
         // Disabling a shortcut hands the key back to the app. The plugin is part of the app, so it should
         // get it — and this is the case that fails if the check asks "is this chord in the keymap" rather
         // than "would the keymap act on it".
-        val enabled = onlyBinding(key = "T")
-        val disabled = enabled.copy(shortcuts = enabled.shortcuts.mapValues { (_, b) -> b.copy(enabled = false) })
+        val binding = KeyBinding(actionId = "test.action", key = "T", modifiers = listOf("Cmd"))
+        val enabled = KeymapMatcher(KeymapSettings(shortcuts = mapOf(binding.actionId to binding)))
+        val off = binding.copy(enabled = false)
+        val disabled = KeymapMatcher(KeymapSettings(shortcuts = mapOf(off.actionId to off)))
         val event = keyDown(AwtKeyEvent.VK_T, primary = true)
 
         assertNull(event.toForwardedKey(enabled), "enabled, the host claims it")
@@ -141,12 +143,12 @@ class RemoteSurfaceKeyRoutingTest {
     }
 
     /**
-     * A keymap with exactly one GLOBAL binding on [key] plus the platform's primary modifier.
+     * A matcher over exactly one GLOBAL binding on [key] plus the platform's primary modifier.
      *
      * Built rather than loaded so the assertions do not depend on whatever `~/.boss/keymap-settings.json`
      * the suite happens to run beside — `KeymapSettingsManager` reads the real user file on class init.
      */
-    private fun onlyBinding(key: String): KeymapSettings {
+    private fun onlyBinding(key: String): KeymapMatcher {
         val binding =
             KeyBinding(
                 actionId = "test.action",
@@ -154,7 +156,7 @@ class RemoteSurfaceKeyRoutingTest {
                 modifiers = listOf("Cmd"),
                 context = ShortcutContext.GLOBAL,
             )
-        return KeymapSettings(shortcuts = mapOf(binding.actionId to binding))
+        return KeymapMatcher(KeymapSettings(shortcuts = mapOf(binding.actionId to binding)))
     }
 
     /**

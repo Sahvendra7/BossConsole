@@ -11,6 +11,8 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.KeyEventType
@@ -76,19 +78,30 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  * @param onEvent the surface's event sink. Key events are tagged with an **empty node id** — they
  *   reach the surface precisely *because* no node claimed them, so attributing one would be a guess.
  *   Same convention as lifecycle, per `EmittedEvent`.
+ * ## Cost
+ *
+ * The matcher is built once per keymap, not once per keystroke. A held key auto-repeats at ~25-30/s and
+ * `KeymapMatcher.match` is not free — it allocates a filtered candidate list twice (context, then
+ * `WORKSPACE`) and does string normalization per candidate — so constructing one inside the handler put
+ * a few hundred short-lived allocations per keystroke on the Compose UI thread. Reading the settings
+ * during composition also means a rebind takes effect without the surface having to be re-created.
+ *
  * @param hostKeymap the keymap to check against; the live user settings in production, injected in
  *   tests so an assertion about a shortcut does not depend on whoever's `~/.boss/keymap-settings.json`
  *   the suite happens to run beside.
  */
+@Composable
 internal fun Modifier.forwardUnclaimedKeys(
     onEvent: (nodeId: String, event: WidgetEvent) -> Unit,
-    hostKeymap: () -> KeymapSettings = { KeymapSettingsManager.currentSettings.value },
-): Modifier =
-    onKeyEvent { keyEvent ->
-        keyEvent.toForwardedKey(hostKeymap())?.let { forwarded -> onEvent("", forwarded) }
+    hostKeymap: KeymapSettings = KeymapSettingsManager.currentSettings.collectAsState().value,
+): Modifier {
+    val matcher = remember(hostKeymap) { KeymapMatcher(hostKeymap) }
+    return onKeyEvent { keyEvent ->
+        keyEvent.toForwardedKey(matcher)?.let { forwarded -> onEvent("", forwarded) }
         // Never true. See point 3 above — this is the anti-trap guarantee, and it is one word.
         false
     }.focusable()
+}
 
 /**
  * The `Key` event a plugin should see for this key press, or `null` if it must not be forwarded.
@@ -102,21 +115,21 @@ internal fun Modifier.forwardUnclaimedKeys(
  *   bare `VK_SHIFT` ahead of the letter, and a plugin listening for keys would see two events for one
  *   keystroke. The modifier is not lost — it arrives as a flag on the key it modifies, which is the
  *   only form the wire type can express. Same set the AWT interceptor skips, for the same reason.
- * - **Anything bound in the host keymap.** Checked in [ShortcutContext.GLOBAL], which is what
- *   [KeymapMatcher] resolves for a surface that is neither a browser, a terminal nor an editor — the
- *   same context the AWT interceptor derives for one — and which also covers `WORKSPACE` bindings.
+ * - **Anything [hostKeymap] binds.** Checked in [ShortcutContext.GLOBAL], which is what [KeymapMatcher]
+ *   resolves for a surface that is neither a browser, a terminal nor an editor — the same context the
+ *   AWT interceptor derives for one — and which also covers `WORKSPACE` bindings.
  *
  * `Key.nativeKeyCode` rather than the packed `Key.keyCode`: the proto field is an `int32` and the
  * documented meaning is a platform key code, which on this host is the AWT `VK_` constant. The packed
  * Compose value would neither fit nor mean anything to a plugin.
  */
-internal fun ComposeKeyEvent.toForwardedKey(hostKeymap: KeymapSettings): WidgetEvent.Key? {
+internal fun ComposeKeyEvent.toForwardedKey(hostKeymap: KeymapMatcher): WidgetEvent.Key? {
     // One conjunction rather than three guard clauses: `&&` short-circuits, so the keymap lookup — the
     // only expensive test of the three — still runs at most once per real key press.
     val forwardable =
         type == KeyEventType.KeyDown &&
             key.nativeKeyCode !in MODIFIER_ONLY_KEYS &&
-            KeymapMatcher(hostKeymap).match(this, ShortcutContext.GLOBAL) == null
+            hostKeymap.match(this, ShortcutContext.GLOBAL) == null
     return if (!forwardable) {
         null
     } else {
@@ -133,9 +146,10 @@ internal fun ComposeKeyEvent.toForwardedKey(hostKeymap: KeymapSettings): WidgetE
 /**
  * Keys that only ever qualify another key.
  *
- * Mirrors `AWTKeyboardInterceptor.isModifierOnlyKey`. Kept as its own list rather than shared with the
- * interceptor because the two answer different questions — the interceptor asks "can this be a
- * shortcut", this asks "is this an event a plugin wants" — and they happen to agree.
+ * A superset of `AWTKeyboardInterceptor.isModifierOnlyKey`, which lacks `VK_ALT_GRAPH`. Kept as its own
+ * list rather than shared with the interceptor because the two answer different questions — the
+ * interceptor asks "can this be a shortcut", this asks "is this an event a plugin wants" — and the
+ * answers only mostly coincide.
  */
 private val MODIFIER_ONLY_KEYS =
     setOf(

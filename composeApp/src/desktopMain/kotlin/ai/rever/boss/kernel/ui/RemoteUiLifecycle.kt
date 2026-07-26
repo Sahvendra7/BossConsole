@@ -41,8 +41,17 @@ import ai.rever.boss.ui.sdk.WidgetEvent
  * dropped. There is nothing to deliver over and nobody to receive it. Stream completion is the signal
  * there, exactly as #34 anticipated: the plugin's own event flow ending *is* the notice, and a process
  * that has died does not need one. So the guarantee this file offers is precise rather than absolute:
- * **a plugin that can be told, is told** — and it is never told `destroyed` without having been told
- * `created`, which is the asymmetry that made the family a footgun.
+ * **a plugin that can be told, is told**.
+ *
+ * ## The limit of the pairing
+ *
+ * The latch pairs the two events **at enqueue**. Delivery is the outgoing channel's business, and that
+ * channel sheds its **oldest** entry when a plugin stops reading (`RemoteUiSurface.OUTGOING_BUFFER`) —
+ * and `created` is by construction the oldest thing a rendered surface ever queues. A plugin that stops
+ * reading for long enough to shed its own first [RemoteUiSurface.OUTGOING_BUFFER] events can therefore
+ * lose its `created` and later receive a `destroyed` on its own. Narrow, and self-announcing:
+ * [RemoteUiSurface.shedEventCount] is non-zero exactly when it is possible. Documented rather than
+ * engineered around, because the alternative is a second delivery path for two events per surface.
  */
 internal object RemoteUiLifecycle {
     /**
@@ -52,9 +61,16 @@ internal object RemoteUiLifecycle {
      *   closed. Returned rather than logged so the registry's call sites stay one line and tests can
      *   assert the latch directly.
      */
-    fun announceCreated(surface: RemoteUiSurface): Boolean =
-        surface.createdAnnounced.compareAndSet(false, true) &&
-            surface.emitLifecycle(LifecycleStates.CREATED)
+    fun announceCreated(surface: RemoteUiSurface): Boolean {
+        if (!surface.createdAnnounced.compareAndSet(false, true)) return false
+        val queued = surface.emitLifecycle(LifecycleStates.CREATED)
+        // Roll the latch back rather than leave the surface owing a `destroyed` for a `created` no plugin
+        // saw. Unreachable today only by coincidence — `emit` fails solely on a closed surface, and a
+        // closed surface would fail the matching `destroyed` too — but that makes the pairing depend on
+        // the overflow policy of a channel declared in another file, which is not a thing to rely on.
+        if (!queued) surface.createdAnnounced.set(false)
+        return queued
+    }
 
     /**
      * Announce that [surface] is no longer rendered. No-op unless [announceCreated] fired first.

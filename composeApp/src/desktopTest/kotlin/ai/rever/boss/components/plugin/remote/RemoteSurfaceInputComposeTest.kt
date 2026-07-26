@@ -101,7 +101,7 @@ class RemoteSurfaceInputComposeTest {
         compose.setContent {
             Box(
                 Modifier
-                    .forwardUnclaimedKeys({ _, event -> forwarded += event }, hostKeymap = { keymapBinding("F7") })
+                    .forwardUnclaimedKeys({ _, event -> forwarded += event }, hostKeymap = keymapBinding("F7"))
                     .focusRequester(focus)
                     .focusable(),
             )

@@ -25,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -172,6 +173,35 @@ class RemoteUiLifecycleTest {
         registry.closeStream(surface)
 
         assertEquals(listOf(LifecycleStates.CREATED), surface.lifecycleStates())
+    }
+
+    @Test
+    fun `a created that could not be queued does not leave the surface owing a destroyed`() {
+        // The latch is what makes the pair symmetric, so a failed emit must roll it back rather than
+        // leave the surface owing a `destroyed` for a `created` no plugin ever saw. Unreachable through
+        // the registry today — `emit` fails only on a closed surface, which would fail the `destroyed`
+        // too — so the invariant currently rests on the overflow policy of a channel in another file.
+        // Asserted directly instead.
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        surface.close()
+
+        assertFalse(RemoteUiLifecycle.announceCreated(surface), "a closed surface cannot be announced")
+        assertFalse(surface.createdAnnounced.get(), "the latch must not stay set for an event nobody got")
+    }
+
+    @Test
+    fun `kernel shutdown announces destroyed to every rendered surface`() {
+        // clear() runs on kernel shutdown while plugin streams may still be up, and it closes surfaces
+        // by the same before-close ordering as unregister. Claimed in three separate comments and, until
+        // this test, asserted nowhere — which for a file whose value is that the pairing is *checked*
+        // rather than intended was the obvious hole.
+        val surface = registry.register(SURFACE, PROCESS).accepted()
+        assertIs<SurfaceStream.Bound>(registry.openStream(SURFACE))
+        registry.attach(SURFACE, RecordingHost())
+
+        registry.clear()
+
+        assertEquals(listOf(LifecycleStates.CREATED, LifecycleStates.DESTROYED), surface.lifecycleStates())
     }
 
     @Test
