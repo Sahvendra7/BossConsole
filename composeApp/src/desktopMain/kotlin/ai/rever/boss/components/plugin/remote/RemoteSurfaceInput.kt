@@ -64,13 +64,25 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  *    [KeymapMatcher] makes "the host keymap wins" a property of the forwarding rule itself rather than
  *    an emergent property of dispatch order, and it is what makes the rule testable without driving AWT.
  *
- *    **It is not literally the same code path, and that is a known risk.**
+ **It is not the same code path, and the two have already drifted — see #52.**
  *    `AWTKeyboardInterceptor.findMatchingBinding` takes a [KeymapMatcher] and then ignores it,
- *    reimplementing the match over AWT key codes. So there are two answers to "is this bound" and they
- *    can drift — a chord the interceptor claims but the matcher does not is merely forwarded
- *    redundantly (guarantee 1 already consumed it), but the reverse would lose a key to both sides,
- *    which is the `Shift+/` failure below in another guise. Making the interceptor delegate to its own
- *    parameter is the fix; it is a change to the host keymap path rather than to this one.
+ *    reimplementing the match over AWT key codes *without* normalizing the binding's key name, while
+ *    [KeymapMatcher.keyMatches] normalizes both sides. So they disagree today, on shipped bindings:
+ *    `Cmd+DirectionLeft` and friends (`PANEL_NAVIGATE_*`), `Ctrl+Space` (`QUICK_SWITCHER_OPEN`), and
+ *    anything a user binds as `Return`, `Escape`, `-`, `=` or `/`.
+ *
+ *    The asymmetry matters. Interceptor-claims-but-matcher-does-not is harmless: guarantee 1 already
+ *    consumed the key, so the forward never happens. The reverse — matcher claims, interceptor does
+ *    not — declines a key the host then fails to dispatch, and it is dead to both sides. That is the
+ *    `Shift+/` failure below reached by a different route, and those bindings are *already* dead
+ *    app-wide because of the interceptor's own bug; this tap only stops them falling through to a
+ *    plugin. The fix is one change — make `findMatchingBinding` use its `matcher` parameter — and it
+ *    repairs the host-side bug at the same time, which is why it is #52 and not a patch here.
+ *
+ *    A second, narrower case with the same shape: the interceptor consumes only when `dispatchAction`
+ *    returns `true`, so a binding for a `plugin.*` action whose plugin is disabled matches, declines,
+ *    and is not consumed — and is then refused here. "Would actually dispatch" is the best question
+ *    this side of the boundary can ask, not a complete one; only trying it answers it.
  *
  * 3. **This handler always returns `false`.** It is a tap, not a handler: the key continues to
  *    whatever the host has above the surface exactly as if the plugin were not there. A plugin can
@@ -84,6 +96,9 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  * what the field ignores bubbles this far. That is the same "host first, then the specific thing, then
  * the surface" ordering one level down.
  *
+ * @param onEvent the surface's event sink. Key events are tagged with an **empty node id** — they
+ *   reach the surface precisely *because* no node claimed them, so attributing one would be a guess.
+ *   Same convention as lifecycle, per `EmittedEvent`.
  * @param onEvent the surface's event sink. Key events are tagged with an **empty node id** — they
  *   reach the surface precisely *because* no node claimed them, so attributing one would be a guess.
  *   Same convention as lifecycle, per `EmittedEvent`.
@@ -103,16 +118,19 @@ import java.awt.event.KeyEvent as AwtKeyEvent
  *   *per window* — so once remote surfaces are placed, a panel inside a browser or terminal window will
  *   have the interceptor matching in `BROWSER`/`TERMINAL` while this still says `GLOBAL`. A parameter
  *   now so that change has a seam rather than a silent mismatch to find later.
+ *
+
  */
 @Composable
 internal fun Modifier.forwardUnclaimedKeys(
     onEvent: (nodeId: String, event: WidgetEvent) -> Unit,
     hostKeymap: KeymapSettings = KeymapSettingsManager.currentSettings.collectAsState().value,
+    context: ShortcutContext = ShortcutContext.GLOBAL,
 ): Modifier {
     val matcher = remember(hostKeymap) { KeymapMatcher(hostKeymap) }
     return this
         .onKeyEvent { keyEvent ->
-            keyEvent.toForwardedKey(matcher)?.let { forwarded -> onEvent("", forwarded) }
+            keyEvent.toForwardedKey(matcher, context)?.let { forwarded -> onEvent("", forwarded) }
             // Never true. See point 3 above — this is the anti-trap guarantee, and it is one word.
             false
         }.focusable()

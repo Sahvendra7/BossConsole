@@ -246,7 +246,6 @@ class RemoteSurfaceInputComposeTest {
      * Filtered rather than positional because focusing a widget legitimately queues a `Focus` event
      * first, and a test about keys should not break when an unrelated family starts being emitted.
      */
-
     private fun RemoteUiSurface.firstEventWhere(predicate: (UIEvent) -> Boolean): UIEvent =
         runBlocking {
             withTimeout(WAIT_TIMEOUT_MS) { events().filter(predicate).take(1).toList() }.single()
