@@ -50,8 +50,11 @@ class PluginClassLoaderUnloadFallbackTest {
     }
 
     /** Copy the given classes out of the test classpath into a fresh jar. */
-    private fun jarContaining(vararg classes: Class<*>): String {
+    private fun jarContaining(vararg classes: Class<*>): File {
         val jar = File.createTempFile("plugin-cl-unload-test", ".jar")
+        // Backstop for the cleanup(): a test that throws before its close()
+        // leaves the jar locked on Windows, where delete() then silently fails.
+        jar.deleteOnExit()
         tempJars.add(jar)
         JarOutputStream(jar.outputStream()).use { out ->
             for (cls in classes) {
@@ -65,13 +68,13 @@ class PluginClassLoaderUnloadFallbackTest {
                 out.closeEntry()
             }
         }
-        return jar.absolutePath
+        return jar
     }
 
     private fun loaderOver(vararg classes: Class<*>): PluginClassLoader =
         PluginClassLoader(
-            pluginId = "com.example.unload",
-            urls = arrayOf(File(jarContaining(*classes)).toURI().toURL()),
+            pluginId = PLUGIN_ID,
+            urls = arrayOf(jarContaining(*classes).toURI().toURL()),
             parent = hostLoader,
         )
 
@@ -122,7 +125,7 @@ class PluginClassLoaderUnloadFallbackTest {
             "refusal must name the class that was requested: ${failure.message}",
         )
         assertTrue(
-            failure.message.orEmpty().contains("com.example.unload"),
+            failure.message.orEmpty().contains(PLUGIN_ID),
             "refusal must name the plugin: ${failure.message}",
         )
         assertTrue(
@@ -130,6 +133,12 @@ class PluginClassLoaderUnloadFallbackTest {
             "refusal must name the loader state: ${failure.message}",
         )
         assertNotNull(failure.cause, "the underlying findClass miss is kept as the cause")
+
+        // Logging of a refusal is deduped per class name; the refusal is not.
+        // A retry loop must keep failing, not start succeeding on the 2nd call.
+        assertFailsWith<ClassNotFoundException> {
+            loader.loadClass(OwnedByPluginB::class.java.name)
+        }
     }
 
     @Test
@@ -163,11 +172,21 @@ class PluginClassLoaderUnloadFallbackTest {
     fun `an unloading loader keeps resolving shared host classes`() {
         val loader = loaderOver(OwnedByPluginA::class.java)
 
-        loader.close()
+        loader.markUnloading()
 
         // kotlin.* is parent-first by [PluginClassLoader.defaultSharedPackages]:
         // teardown code runs on these, so the refusal must not touch them.
         assertSame(Unit::class.java, loader.loadClass("kotlin.Unit"))
+        loader.close()
+    }
+
+    @Test
+    fun `a closed loader keeps resolving shared host classes`() {
+        val loader = loaderOver(OwnedByPluginA::class.java)
+
+        loader.close()
+
+        assertSame(Enum::class.java, loader.loadClass("java.lang.Enum"))
     }
 
     @Test
@@ -178,11 +197,19 @@ class PluginClassLoaderUnloadFallbackTest {
 
         loader.close()
 
-        // ...and NOT resolvable once closed, even though the parent still has
-        // it. Whether the plugin jar carried it is unknowable after close, so
-        // the state is the only safe discriminator.
+        // ...and refused once closed. Note this direct loadClass() call does not
+        // register this loader as an initiating loader for B, so the
+        // findLoadedClass early return does not cover it. In production a
+        // JVM-resolved host class WOULD be registered and would keep resolving
+        // after close — only first-time names reach the refusal. What this pins
+        // is the discriminator: after close, "not in the plugin jar" and "the
+        // jar is shut" are indistinguishable, so state is the only safe signal.
         assertFailsWith<ClassNotFoundException> {
             loader.loadClass(OwnedByPluginB::class.java.name)
         }
+    }
+
+    private companion object {
+        const val PLUGIN_ID = "com.example.unload"
     }
 }

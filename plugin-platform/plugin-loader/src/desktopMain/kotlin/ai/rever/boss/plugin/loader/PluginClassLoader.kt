@@ -4,6 +4,7 @@ import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import java.net.URL
 import java.net.URLClassLoader
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -40,7 +41,10 @@ enum class ClassLoaderState {
  *
  * Once the loader leaves [ClassLoaderState.ACTIVE] the child-first miss stops
  * delegating to the parent: a plugin class requested after teardown must fail
- * loudly rather than silently resolve to the host's copy. See
+ * loudly rather than silently resolve to the host's copy. Only FIRST-TIME loads
+ * are refused — the JVM records this loader as the initiating loader for every
+ * name it has already resolved, host classes included, so `findLoadedClass`
+ * keeps answering those after close and orderly teardown is unaffected. See
  * [loadClassChildFirst].
  *
  * @param pluginId The ID of the plugin this classloader serves
@@ -78,6 +82,33 @@ class PluginClassLoader(
         fun findPluginForClass(className: String): String? {
             val snapshot = synchronized(allInstances) { allInstances.toList() }
             return snapshot.firstOrNull { it.definedClassNamed(className) }?.pluginId
+        }
+
+        /**
+         * First sighting of a refused class name gets a WARN carrying the
+         * straggler's stack; repeats drop to DEBUG so a retry loop cannot bury
+         * the shutdown log. Lives on the companion so the instance stays under
+         * detekt's per-class function budget.
+         */
+        private fun logRefusal(
+            firstSighting: Boolean,
+            details: Map<String, Any?>,
+            refusal: ClassNotFoundException,
+        ) {
+            if (firstSighting) {
+                logger.warn(
+                    LogCategory.SYSTEM,
+                    "Refused to resolve a plugin class against the host after unload",
+                    details,
+                    refusal,
+                )
+            } else {
+                logger.debug(
+                    LogCategory.SYSTEM,
+                    "Refused a repeat request for an already-refused plugin class",
+                    details,
+                )
+            }
         }
 
         /**
@@ -147,6 +178,15 @@ class PluginClassLoader(
      * Timestamp when the classloader was created.
      */
     val createdAt: Long = System.currentTimeMillis()
+
+    /**
+     * Class names already refused by [loadClassChildFirst] after unload. The
+     * straggler this catches is by construction a thread that did not get the
+     * memo — a Ktor accept loop, a reconnecting coroutine — so it asks for the
+     * same name over and over. Logging is therefore deduped to one WARN with a
+     * stack per name; the refusal itself is never deduped.
+     */
+    private val refusedClassNames: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /**
      * Whether this classloader has been marked for unloading.
@@ -255,59 +295,63 @@ class PluginClassLoader(
             }
             return clazz
         } catch (notInPluginJar: ClassNotFoundException) {
-            if (isUnloading) {
-                // A closed URLClassLoader answers findClass() with
-                // ClassNotFoundException for EVERY name, including the ones its
-                // own jar carries. Delegating here would therefore hand the
-                // plugin the HOST's copy of a class the plugin owns, splicing
-                // two class graphs together. The JVM does not complain at that
-                // moment — it complains later and elsewhere, as a loader
-                // constraint LinkageError naming two unrelated classes (this is
-                // how a terminal-tab hot-reload produced an
-                // io/ktor/util/AttributeKey constraint violation between
-                // CIOApplicationEngine and HttpRequestLifecycleKt, both of which
-                // the plugin jar actually contained).
-                //
-                // Refuse at the request instead, where the caller is still on
-                // the stack. ClassNotFoundException specifically: loadClass
-                // already declares it, every caller — including the JVM's own
-                // resolution machinery, which turns it into a precise
-                // NoClassDefFoundError at the resolution site — already handles
-                // it. An unchecked exception or a raw Error thrown from a
-                // classloader runs on whatever straggler thread made the late
-                // request (a Ktor worker, a coroutine dispatcher, an AWT
-                // handler) and can tear that thread down mid-teardown.
-                val refusal =
-                    ClassNotFoundException(
-                        "Plugin classloader for '$pluginId' is $state; refusing to resolve '$name' " +
-                            "against the host classloader. Something still referenced the plugin " +
-                            "after it was unloaded — that reference is the bug.",
-                        notInPluginJar,
-                    )
-                // WARN, not ERROR: refusing is the correct outcome and teardown
-                // continues. The throwable is attached so the log carries the
-                // straggler's stack. Best effort — logging must never replace
-                // the refusal, which is the thing that has to propagate.
-                try {
-                    logger.warn(
-                        LogCategory.SYSTEM,
-                        "Refused to resolve a plugin class against the host after unload",
-                        mapOf(
-                            "pluginId" to pluginId,
-                            "className" to name,
-                            "state" to state.name,
-                        ),
-                        refusal,
-                    )
-                } catch (_: Throwable) {
-                    // Logging can itself fail during shutdown; the refusal stands.
-                }
-                throw refusal
+            // One read: _state can move UNLOAD_IN_PROGRESS -> UNLOADED under us,
+            // and the message must not disagree with the structured field.
+            val stateAtRefusal = state
+            if (stateAtRefusal == ClassLoaderState.ACTIVE) {
+                // Fall back to parent. Deliberately unlogged: this is the
+                // expected delegation path for every host-provided class a
+                // plugin touches, so logging here would flood at class-load
+                // time on a hot path.
+                return parent.loadClass(name)
             }
-            // Fall back to parent. Deliberately unlogged: this is the expected
-            // delegation path for every host-provided class a plugin touches, so
-            // logging here would flood at class-load time on a hot path.
-            return parent.loadClass(name)
+
+            // A closed URLClassLoader answers findClass() with
+            // ClassNotFoundException for EVERY name, including the ones its own
+            // jar carries. Delegating here would therefore hand the plugin the
+            // HOST's copy of a class the plugin owns, splicing two class graphs
+            // together. The JVM does not complain at that moment — it complains
+            // later and elsewhere, as a loader constraint LinkageError naming
+            // two unrelated classes (this is how a terminal-tab hot-reload
+            // produced an io/ktor/util/AttributeKey constraint violation between
+            // CIOApplicationEngine and HttpRequestLifecycleKt, both of which the
+            // plugin jar actually contained).
+            //
+            // Refuse at the request instead, where the caller is still on the
+            // stack. ClassNotFoundException specifically: loadClass already
+            // declares it, every caller — including the JVM's own resolution
+            // machinery, which turns it into a precise NoClassDefFoundError at
+            // the resolution site — already handles it. An unchecked exception
+            // or a raw Error thrown from a classloader runs on whatever
+            // straggler thread made the late request (a Ktor worker, a
+            // coroutine dispatcher, an AWT handler) and can tear that thread
+            // down mid-teardown.
+            val refusal =
+                ClassNotFoundException(
+                    "Plugin classloader for '$pluginId' is $stateAtRefusal; refusing to resolve " +
+                        "'$name' against the host classloader. Something still referenced the " +
+                        "plugin after it was unloaded — that reference is the bug.",
+                    notInPluginJar,
+                )
+            // WARN, not ERROR: refusing is the correct outcome and teardown
+            // continues. The throwable is attached so the first entry for a name
+            // carries the straggler's stack; repeats drop to DEBUG so a retry
+            // loop cannot bury the shutdown log. Best effort — logging must
+            // never replace the refusal, which is the thing that has to
+            // propagate.
+            val details =
+                mapOf(
+                    "pluginId" to pluginId,
+                    "className" to name,
+                    "state" to stateAtRefusal.name,
+                )
+            val firstSighting = refusedClassNames.add(name)
+            try {
+                logRefusal(firstSighting, details, refusal)
+            } catch (_: Throwable) {
+                // Logging can itself fail during shutdown; the refusal stands.
+            }
+            throw refusal
         }
     }
 

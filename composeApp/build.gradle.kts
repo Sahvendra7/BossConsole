@@ -848,6 +848,14 @@ kotlin {
 //
 // If BOSS ever adds OAuth-provider or SSO sign-in, delete this block — the
 // symptom would be a NoClassDefFoundError on io/ktor/server/cio/CIO.
+//
+// Blanket rather than a per-dependency exclude on purpose: auth-kt reaches this
+// graph twice, once as composeApp's own dependency and once transitively via
+// project(':plugin-platform:plugin-repository'), so an exclude attached to the
+// declaration here would only remove one of them. Consequence to know about:
+// libs.ktor.server.tests (ktor-server-test-host) needs ktor-server-core, so it
+// cannot be added to a composeApp source set while this block stands.
+// KtorServerAbsentFromHostTest pins both halves of the outcome.
 configurations.configureEach {
     exclude(group = "io.ktor", module = "ktor-server-cio")
     exclude(group = "io.ktor", module = "ktor-server-cio-jvm")
