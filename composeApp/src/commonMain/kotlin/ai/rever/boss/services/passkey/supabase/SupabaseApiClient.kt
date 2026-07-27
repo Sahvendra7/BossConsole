@@ -151,10 +151,14 @@ internal object SupabaseApiClient {
      */
     suspend inline fun <reified T> listPasskeys(requestData: T): HttpResponse {
         val jsonBody = json.encodeToString(requestData)
+        // Management acts on the caller's own credentials; the server requires
+        // the session rather than trusting a body userId
+        val accessToken = currentAccessTokenOrNull()
 
         return httpClient.post("$passkeyFunctionUrl/manage/list") {
             contentType(ContentType.Application.Json)
             header("apikey", supabaseAnonKey)
+            accessToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             setBody(jsonBody)
         }
     }
@@ -164,10 +168,14 @@ internal object SupabaseApiClient {
      */
     suspend inline fun <reified T> deletePasskey(requestData: T): HttpResponse {
         val jsonBody = json.encodeToString(requestData)
+        // Management acts on the caller's own credentials; the server requires
+        // the session rather than trusting a body userId
+        val accessToken = currentAccessTokenOrNull()
 
         return httpClient.post("$passkeyFunctionUrl/manage/delete") {
             contentType(ContentType.Application.Json)
             header("apikey", supabaseAnonKey)
+            accessToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             setBody(jsonBody)
         }
     }

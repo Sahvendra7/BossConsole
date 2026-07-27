@@ -4,7 +4,7 @@ import { verifyAndConsumeChallenge, storePasskeyInDB } from "../utils/database.t
 import { extractCredentialFromAttestation } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler } from "../utils/error-handler.ts"
-import { ALLOWED_ORIGINS, getAllowedOrigins, getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
+import { ALLOWED_ORIGINS, getAllowedOrigins, getAllowedRpIds, getRpId, rpIdMatchesOrigin } from "../utils/config.ts"
 import { encodedValuesMatch, normalizeBase64Url } from "../utils/base64.ts"
 import {
   challengeMatches,
@@ -68,14 +68,23 @@ export const generateRegistrationChallenge = withErrorHandler(
       }
     }
 
-    // NOTE: rpId is intentionally NOT included here.
-    // The client must provide the correct rpId when opening the mobile registration page,
-    // because only the client knows the actual domain where the browser will access the page.
+    // rpId comes from the server, so registration and authentication cannot pin
+    // different relying parties.
+    //
+    // This used to be omitted deliberately, on the reasoning that only the client
+    // knows the domain the browser will load. The cost was two sources of truth:
+    // the client fell back to its own SUPABASE_FUNCTION_URL host for
+    // /register/mobile?rpId=, while /auth/challenge returned the server's
+    // getRpId(). If those disagree and both are in the allow-list, the credential
+    // is pinned to one and every later assertion advertises the other — a
+    // permanently unusable passkey whose only fix is re-enrolment, and nothing
+    // reveals it until the next login.
 
     return {
       success: true,
       challenge,
-      // rpId will be provided by client when calling /register/mobile
+      // The client passes this straight to /register/mobile?rpId=
+      rpId: getRpId(),
       // Algorithms the server can actually verify at /register/complete
       pubKeyCredParams: SUPPORTED_COSE_ALGS.map(alg => ({ type: 'public-key', alg })),
       sessionId // Return sessionId for cross-device polling

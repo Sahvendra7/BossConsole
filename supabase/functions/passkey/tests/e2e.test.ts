@@ -239,25 +239,37 @@ Deno.test("E2E - Complete registration and authentication flow with real crypto"
   assertEquals(authCompleteResult.success, true, "Authentication should succeed")
   console.log("✅ Authentication completed successfully")
 
-  // STEP 5: Verify JWT tokens
+  // STEP 5: Verify the JWT parked for the polling desktop
   console.log("🎫 Step 5: Verifying JWT tokens")
 
-  if (authCompleteResult.success) {
-    const result = authCompleteResult as {
-      userId: string
-      email: string
-      accessToken?: string
-      refreshToken?: string
-      expiresAt?: number
+  {
+    // This is the cross-device path (the challenge carries a session_id), so the
+    // session is written to completed_authentications for the desktop to claim
+    // via /auth/status — it is deliberately not returned to the device that ran
+    // the ceremony.
+    const completion = mockClient.getQueryHistory().find(
+      entry => entry.table === 'completed_authentications' && entry.operation === 'insert'
+    )
+    assertExists(completion, "The completion row should be written")
+    const parked = completion!.params.data as {
+      access_token?: string
+      refresh_token?: string
+      expires_at?: number
     }
 
-    assertExists(result.accessToken, "Access token should be present")
-    assertExists(result.refreshToken, "Refresh token should be present")
-    assertExists(result.expiresAt, "expiresAt should be present")
+    assertExists(parked.access_token, "Access token should be parked for the poller")
+    assertExists(parked.refresh_token, "Refresh token should be parked for the poller")
+    assertExists(parked.expires_at, "expires_at should be parked for the poller")
+
+    assertEquals(
+      (authCompleteResult as { accessToken?: string }).accessToken,
+      undefined,
+      "The ceremony device must not receive the desktop's session"
+    )
 
     // Verify access token structure
     const secret = new TextEncoder().encode(TEST_JWT_SECRET)
-    const { payload } = await jwtVerify(result.accessToken!, secret, {
+    const { payload } = await jwtVerify(parked.access_token!, secret, {
       issuer: 'supabase',
       audience: 'authenticated'
     })

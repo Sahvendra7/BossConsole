@@ -52,6 +52,15 @@ one flow here that requires an existing session:
 - `create_mobile_registration_session` (SQL) can mint the same kind of challenge
   without proving account ownership, so it is `service_role`-only as of migration
   `20260727000000`. It has no callers.
+- `POST /manage/list|delete|update` require the same verified session and act on
+  the caller's own credentials. They run against the service-role client, so a
+  body `userId` would otherwise let anyone enumerate and disable another
+  account's passkeys — de-enrolment, and a forced downgrade to email sign-in.
+- The relying party for a registration comes from the server (`/register/challenge`
+  returns `rpId`), and the `rpId` query parameter on the mobile pages is validated
+  against the allow-list. Two sources of truth here produce a credential pinned to
+  one RP ID while later assertions advertise another: permanently unusable, and
+  invisible until the next login.
 
 **Bootstrap — the first passkey.** There is no chicken-and-egg problem: passkey
 enrolment is reached from Settings → Security in an already-authenticated app.

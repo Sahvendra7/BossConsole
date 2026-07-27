@@ -12,6 +12,7 @@ import { OpenAPIHono } from "@hono/zod-openapi"
 import type { PasskeyContext } from "../types/context.ts"
 import auth from "../routes/auth.ts"
 import register from "../routes/register.ts"
+import management from "../routes/management.ts"
 import { createMockSupabaseClient, type MockSupabaseClient } from "./helpers/mocks.ts"
 import { TEST_ORIGIN } from "./helpers/webauthn.ts"
 
@@ -24,6 +25,7 @@ function buildApp(mockClient: MockSupabaseClient) {
   })
   app.route("/auth", auth)
   app.route("/register", register)
+  app.route("/manage", management)
   return app
 }
 
@@ -323,5 +325,97 @@ Deno.test("POST /register/complete - a session for another user is rejected", as
       query => query.table === 'user_passkeys' && query.operation === 'insert'
     ),
     false
+  )
+})
+
+// ============================================================================
+// Managing credentials requires the account's own session
+//
+// These routes list, disable and rename credentials against the service-role
+// client on a function deployed with verify_jwt = false. Taking `userId` from
+// the body let any caller enumerate and de-enrol another account's passkeys.
+// ============================================================================
+
+Deno.test("POST /manage/list - rejects an unauthenticated caller", async () => {
+  const mockClient = createMockSupabaseClient()
+  const app = buildApp(mockClient)
+
+  const response = await postJson(app, '/manage/list', { userId: VICTIM_ID })
+
+  assertEquals(response.status, 401)
+  assertEquals(
+    mockClient.getQueryHistory().some(query => query.table === 'user_passkeys'),
+    false,
+    'No credential may be read for an unauthenticated request'
+  )
+})
+
+Deno.test("POST /manage/delete - rejects an unauthenticated caller", async () => {
+  const mockClient = createMockSupabaseClient()
+  const app = buildApp(mockClient)
+
+  const response = await postJson(app, '/manage/delete', {
+    userId: VICTIM_ID,
+    passkeyId: 'passkey-1'
+  })
+
+  assertEquals(response.status, 401)
+  assertEquals(
+    mockClient.getQueryHistory().some(query => query.table === 'user_passkeys'),
+    false,
+    'Nothing may be de-enrolled without a session'
+  )
+})
+
+Deno.test("POST /manage/update - rejects an unauthenticated caller", async () => {
+  const mockClient = createMockSupabaseClient()
+  const app = buildApp(mockClient)
+
+  const response = await postJson(app, '/manage/update', {
+    userId: VICTIM_ID,
+    passkeyId: 'passkey-1',
+    displayName: 'renamed'
+  })
+
+  assertEquals(response.status, 401)
+})
+
+Deno.test("POST /manage/delete - a token for one user cannot act on another", async () => {
+  const mockClient = createMockSupabaseClient()
+  mockClient.mockAccessToken(ATTACKER_TOKEN, { id: ATTACKER_ID })
+  const app = buildApp(mockClient)
+
+  const response = await postJson(app, '/manage/delete', {
+    userId: VICTIM_ID,
+    passkeyId: 'passkey-1'
+  }, ATTACKER_TOKEN)
+
+  assertEquals(response.status, 403)
+  assertEquals((await response.json()).error, 'userId does not match the authenticated user')
+  assertEquals(
+    mockClient.getQueryHistory().some(query => query.table === 'user_passkeys'),
+    false
+  )
+})
+
+Deno.test("POST /manage/list - scopes the query to the authenticated caller", async () => {
+  const mockClient = createMockSupabaseClient()
+  mockClient.mockAccessToken(ATTACKER_TOKEN, { id: ATTACKER_ID })
+  mockClient.mockResponse('user_passkeys', { data: [], error: null }, 'select')
+  const app = buildApp(mockClient)
+
+  // No userId in the body at all: the session decides whose credentials these are
+  const response = await postJson(app, '/manage/list', {}, ATTACKER_TOKEN)
+
+  assertEquals(response.status, 200)
+  const select = mockClient.getQueryHistory().find(
+    query => query.table === 'user_passkeys' && query.operation === 'select'
+  )
+  assertExists(select)
+  assertEquals(
+    (select!.params.eq as Array<{ column: string; value: unknown }>)
+      .some(filter => filter.column === 'user_id' && filter.value === ATTACKER_ID),
+    true,
+    'The listing is scoped to the token subject'
   )
 })

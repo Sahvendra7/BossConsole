@@ -16,7 +16,7 @@ import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createMockSupabaseClient, type MockSupabaseClient } from "./helpers/mocks.ts"
 import { completeAuthentication, checkAuthStatus } from "../services/auth.ts"
-import { completeRegistration, type RegistrationCredential } from "../services/registration.ts"
+import { completeRegistration, generateRegistrationChallenge, type RegistrationCredential } from "../services/registration.ts"
 import { generateChallenge } from "../utils/challenge.ts"
 import { COSE_ALG_ES256, COSE_ALG_RS256, evaluateSignCounter, parseAuthenticatorData } from "../utils/webauthn.ts"
 import { getAllowedOrigins, getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
@@ -1079,9 +1079,11 @@ Deno.test("completeAuthentication - completes a valid ES256 ceremony", async () 
   assertEquals(result.success, true)
   const success = result as { userId?: string; email?: string; accessToken?: string; refreshToken?: string }
   assertEquals(success.userId, TEST_USER_ID)
-  assertEquals(success.email, TEST_EMAIL)
-  assertExists(success.accessToken)
-  assertExists(success.refreshToken)
+
+  // Cross-device: the session goes to the desktop that polls /auth/status, not
+  // to the phone that ran the ceremony
+  assertEquals(success.accessToken, undefined, "The phone must not receive the desktop's session")
+  assertEquals(success.refreshToken, undefined)
 
   // The completion row is written once, already carrying the session, so there
   // is no window where a poll can see a completed ceremony with no tokens and
@@ -1140,9 +1142,85 @@ Deno.test("completeAuthentication - a poll during the ceremony cannot strand a s
   const completionWrites = history.filter(entry => entry.table === 'completed_authentications')
   assertEquals(completionWrites.length, 1)
 
-  // ...and the session it carries is the one the caller was handed
+  // ...and the row carries the session, while the response does not
   const written = completionWrites[0].params.data as { access_token?: string }
-  assertEquals(written.access_token, (result as { accessToken?: string }).accessToken)
+  assertExists(written.access_token)
+  assertEquals((result as { accessToken?: string }).accessToken, undefined)
+})
+
+Deno.test("completeAuthentication - the direct path still returns the session to its caller", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+  const assertion = await createAssertion({
+    challenge,
+    credentialId: registration.credentialId,
+    privateKey: registration.keyPair.privateKey,
+    signCount: 2
+  })
+
+  // No sessionId: nobody is polling, so the caller *is* the device signing in
+  mockAuthFlow(mockClient, {
+    challenge,
+    storedPublicKey: registration.expectedPublicKey,
+    credentialId: registration.credentialIdBase64Url,
+    signCount: 1,
+    sessionId: null
+  })
+
+  const result = await completeAuthentication(
+    mockClient as unknown as SupabaseClient,
+    assertion,
+    challenge
+  )
+
+  assertEquals(result.success, true)
+  const success = result as { accessToken?: string; refreshToken?: string; email?: string }
+  assertExists(success.accessToken)
+  assertExists(success.refreshToken)
+  assertEquals(success.email, TEST_EMAIL)
+})
+
+Deno.test("completeAuthentication - a failed session mint still records the completion", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+  const assertion = await createAssertion({
+    challenge,
+    credentialId: registration.credentialId,
+    privateKey: registration.keyPair.privateKey,
+    signCount: 5
+  })
+
+  mockAuthFlow(mockClient, {
+    challenge,
+    storedPublicKey: registration.expectedPublicKey,
+    credentialId: registration.credentialIdBase64Url,
+    signCount: 4
+  })
+  // A transient Admin API outage during the mint
+  mockClient.mockAuthFailure()
+
+  const result = await completeAuthentication(
+    mockClient as unknown as SupabaseClient,
+    assertion,
+    challenge
+  )
+
+  // The challenge is spent and the counter advanced by this point. Aborting here
+  // would leave the poller on "expired" with no way forward but a whole new QR
+  // ceremony, so the completion is recorded and /auth/status mints the session.
+  assertEquals(result.success, true, "A mint failure must not discard a verified ceremony")
+
+  const writes = mockClient.getQueryHistory().filter(
+    entry => entry.table === 'completed_authentications' && entry.operation === 'insert'
+  )
+  assertEquals(writes.length, 1, "The completion must still be recorded")
+  const written = writes[0].params.data as { user_id?: string; access_token?: string | null }
+  assertEquals(written.user_id, TEST_USER_ID)
+  assertEquals(written.access_token, null, "...with no session, for /auth/status to mint later")
 })
 
 Deno.test("completeAuthentication - falls back to insert when the unique index is missing", async () => {
@@ -2156,4 +2234,27 @@ Deno.test("completeAuthentication - does not echo parser internals to the client
   assertEquals(message, 'Failed to complete authentication')
   // The detail belongs in the log, not the response
   assertEquals(message.includes('37 bytes'), false)
+})
+
+// ============================================================================
+// One source of truth for rp_id
+// ============================================================================
+
+Deno.test("generateRegistrationChallenge - returns the server's rpId", async () => {
+  const mockClient = createMockSupabaseClient()
+  mockClient.mockResponse('passkey_challenges', { data: [{ id: 'challenge-1' }], error: null }, 'insert')
+
+  const result = await generateRegistrationChallenge(
+    mockClient as unknown as SupabaseClient,
+    TEST_USER_ID
+  )
+
+  assertEquals(result.success, true)
+  if (result.success) {
+    // The client passes this to /register/mobile?rpId=. Omitting it left the
+    // client falling back to its own configured host, so a credential could be
+    // pinned to one relying party while later assertions advertised another —
+    // permanently unusable, and invisible until the next login.
+    assertEquals(result.rpId, TEST_RP_ID)
+  }
 })

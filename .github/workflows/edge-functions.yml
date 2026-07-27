@@ -13,11 +13,15 @@ on:
     branches: [ main, develop ]
     paths:
       - 'supabase/functions/**'
+      # The function's behaviour is coupled to the passkey migrations (columns,
+      # the session_id index, the RPC grant), so schema edits run these too
+      - 'supabase/migrations/**'
       - '.github/workflows/edge-functions.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'supabase/functions/**'
+      - 'supabase/migrations/**'
       - '.github/workflows/edge-functions.yml'
   workflow_dispatch:
 

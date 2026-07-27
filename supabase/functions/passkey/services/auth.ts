@@ -327,8 +327,18 @@ export const completeAuthentication = withErrorHandler(
     }
 
     const userEmail = userResult.user?.email
+
+    // A mint failure must not abort the ceremony. generateSupabaseAccessToken
+    // throws on either Admin API step, and letting that escape would leave the
+    // challenge consumed and the counter advanced with no completion row — the
+    // poller sees "expired" and the user restarts the whole QR ceremony over a
+    // transient hiccup. Recording the completion without a session keeps the
+    // /auth/status mint path available as the recovery it was before.
     const tokens = userEmail
-      ? await generateSupabaseAccessToken(supabase, userEmail)
+      ? await generateSupabaseAccessToken(supabase, userEmail).catch((error) => {
+          console.error('❌ Failed to mint a session; recording the completion without one:', error)
+          return null
+        })
       : null
 
     if (tokens) {
@@ -369,6 +379,19 @@ export const completeAuthentication = withErrorHandler(
       console.log('✅ Stored completed authentication')
     } else {
       console.warn('⚠️ No session_id in challenge data - completed authentication not stored')
+    }
+
+    // Cross-device: the session belongs to the desktop that polls /auth/status,
+    // not to the phone that ran the ceremony. Returning it here would put the
+    // refresh token the desktop is about to claim into a response body on a
+    // device that never uses it — and with refresh-token rotation, whichever
+    // side redeems it first invalidates the other.
+    if (challengeData.session_id) {
+      return {
+        success: true,
+        userId: passkey.user_id,
+        passkeyId: passkey.id
+      }
     }
 
     if (!tokens) {
@@ -538,7 +561,11 @@ export const checkAuthStatus = withStatusErrorHandler(
           // Column is documented as epoch milliseconds; the API speaks seconds
           expires_at: toEpochMillis(tokens.expiresAt)
         })
-        .eq('session_id', sessionId)
+        // Scoped to the row that was read, not to session_id: the read is
+        // windowed (.gt expires_at_timestamp) and this write must not re-arm
+        // credentials on rows it deliberately excluded. Matches claimStoredSession,
+        // and does not depend on the unique index being in place.
+        .eq('id', completedAuth.id)
 
       if (tokenStoreError) {
         console.error('⚠️ Failed to persist session for session id:', sessionId, tokenStoreError)

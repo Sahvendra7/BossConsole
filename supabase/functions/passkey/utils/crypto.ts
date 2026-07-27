@@ -146,12 +146,18 @@ async function coseKeyToStoredKey(coseKey: unknown): Promise<{ publicKey: string
       throw new Error(`Unsupported RSA algorithm: ${alg}`)
     }
 
-    const n = cose[-1] as Uint8Array
+    const rawN = cose[-1] as Uint8Array
     const e = cose[-2] as Uint8Array
 
-    if (!n || !e || n.length === 0 || e.length === 0) {
+    if (!rawN || !e || rawN.length === 0 || e.length === 0) {
       throw new Error('Missing modulus or exponent in RSA public key')
     }
+
+    // Some authenticators emit the modulus with a leading 0x00 sign byte. JWK
+    // wants the unsigned big-endian integer, and the size check has to measure
+    // the same bytes the key is built from — otherwise a 2048-bit key with a
+    // sign byte measures 2056 and a 2040-bit one could pass as 2048.
+    const n = rawN[0] === 0x00 ? rawN.slice(1) : rawN
 
     // Floor the modulus at 2048 bits. Nothing stops an authenticator (or a
     // native client speaking for one) from offering a short RSA key, and a

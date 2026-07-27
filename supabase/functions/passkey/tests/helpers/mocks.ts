@@ -55,6 +55,8 @@ export class MockSupabaseClient {
 
   // access token -> the user it resolves to, for auth.getUser()
   private accessTokens: Map<string, { id: string; email?: string; role?: string }> = new Map()
+  // when set, the Admin API session mint fails the way a transient outage would
+  private authFailure: string | null = null
 
   /**
    * Register a user for the Admin API stub, so a session minted for `email`
@@ -71,6 +73,16 @@ export class MockSupabaseClient {
    */
   mockAccessToken(token: string, user: { id: string; email?: string; role?: string }): void {
     this.accessTokens.set(token, { role: 'authenticated', ...user })
+  }
+
+  /**
+   * Make the Admin API session mint fail, as a transient outage would.
+   *
+   * Without this the stub always succeeds, so "the ceremony survives a failed
+   * mint" is not expressible — which is why a regression there went unnoticed.
+   */
+  mockAuthFailure(message = 'Admin API unavailable'): void {
+    this.authFailure = message
   }
 
   /**
@@ -98,6 +110,9 @@ export class MockSupabaseClient {
       },
       admin: {
         generateLink: (params: { type: string; email: string }) => {
+          if (client.authFailure) {
+            return Promise.resolve({ data: null, error: { message: client.authFailure } })
+          }
           const hashedToken = `mock-hashed-token-${client.pendingLinks.size + 1}`
           client.pendingLinks.set(hashedToken, params.email)
           return Promise.resolve({
@@ -107,6 +122,9 @@ export class MockSupabaseClient {
         }
       },
       verifyOtp: async (params: { token_hash: string; type: string }) => {
+        if (client.authFailure) {
+          return { data: null, error: { message: client.authFailure } }
+        }
         const email = client.pendingLinks.get(params.token_hash)
         if (!email) {
           return { data: null, error: { message: 'Invalid token hash' } }

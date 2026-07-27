@@ -98,6 +98,10 @@ export const RegisterChallengeRequestSchema = z.object({
 export const RegisterChallengeResponseSchema = z.object({
   success: z.boolean(),
   challenge: z.string().optional(),
+  // Server-chosen relying party for this ceremony. The client passes it to
+  // /register/mobile so registration and authentication cannot pin different
+  // relying parties.
+  rpId: z.string().optional(),
   rp: z.object({
     name: z.string(),
     id: z.string()
@@ -142,8 +146,10 @@ export const RegisterCompleteResponseSchema = z.object({
 // Management Route Schemas
 // ============================================================================
 
+// userId is optional throughout /manage: the account is the authenticated
+// caller, and a value that disagrees with the session is rejected with 403.
 export const ManagementListRequestSchema = z.object({
-  userId: z.string()
+  userId: z.string().optional()
 })
 
 export const PasskeySchema = z.object({
@@ -162,7 +168,7 @@ export const ManagementListResponseSchema = z.object({
 })
 
 export const ManagementDeleteRequestSchema = z.object({
-  userId: z.string(),
+  userId: z.string().optional(),
   passkeyId: z.string()
 })
 
@@ -172,7 +178,7 @@ export const ManagementDeleteResponseSchema = z.object({
 })
 
 export const ManagementUpdateRequestSchema = z.object({
-  userId: z.string(),
+  userId: z.string().optional(),
   passkeyId: z.string(),
   displayName: z.string()
 })
