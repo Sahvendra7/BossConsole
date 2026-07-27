@@ -15,6 +15,7 @@ interface DirectoryPicker {
 expect fun rememberFilePicker(
     onFileSelected: (path: String?, content: String?) -> Unit,
     fileExtensions: List<String> = listOf("json"),
+    title: String = "Select File",
 ): FilePicker
 
 interface FilePicker {

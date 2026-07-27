@@ -15,19 +15,21 @@ private val filePickerLogger = BossLogger.forComponent("FilePicker")
 actual fun rememberFilePicker(
     onFileSelected: (path: String?, content: String?) -> Unit,
     fileExtensions: List<String>,
+    title: String,
 ): FilePicker =
     remember {
-        DesktopFilePicker(onFileSelected, fileExtensions)
+        DesktopFilePicker(onFileSelected, fileExtensions, title)
     }
 
 class DesktopFilePicker(
     private val onFileSelected: (path: String?, content: String?) -> Unit,
     private val fileExtensions: List<String>,
+    private val title: String = "Select File",
 ) : FilePicker {
     override fun pickFile() {
         try {
             val fileDialog =
-                FileDialog(null as Frame?, "Select Configuration File", FileDialog.LOAD).apply {
+                FileDialog(null as Frame?, title, FileDialog.LOAD).apply {
                     // Set file filter for JSON files
                     if (fileExtensions.isNotEmpty()) {
                         setFilenameFilter { _, name ->
