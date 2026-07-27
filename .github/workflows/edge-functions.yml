@@ -38,7 +38,9 @@ jobs:
           deno-version: v2.x
 
       - name: 🔎 Type check
-        run: deno check $(find . -name '*.ts' | sort)
+        # -print0/-0 so paths with spaces survive, and -r so an empty result is a
+        # no-op rather than a vacuous pass over the whole directory
+        run: find . -name '*.ts' -print0 | sort -z | xargs -0 -r deno check
 
       - name: 🧪 Tests
         # --allow-all: the suite reads/sets env vars (PASSKEY_RP_ID, JWT_SECRET)
@@ -48,4 +50,7 @@ jobs:
       - name: 🧹 Lint (advisory)
         # Not gating: the existing files carry pre-existing lint findings
         # (inline jsr: specifiers in tests, require-await in utils/html.ts).
-        run: deno lint || true
+        # continue-on-error rather than `|| true`, so a regression is visible in
+        # the checks UI instead of disappearing into a green step.
+        continue-on-error: true
+        run: deno lint

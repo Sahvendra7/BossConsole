@@ -134,5 +134,16 @@ export async function resolveOptionalCaller(
     return { success: true }
   }
 
-  return await verifyCallerToken(supabase, token)
+  const result = await verifyCallerToken(supabase, token)
+  if (result.success) {
+    return result
+  }
+
+  // A bearer we cannot resolve to a user is treated as no caller rather than as
+  // a rejection: on this path the identity comes from the challenge row, so an
+  // unusable token adds nothing to reject. Being strict here would break any
+  // client that sends some other project key (formats change) without buying a
+  // check — a *valid* session for the wrong user is still caught downstream.
+  console.log('ℹ️ Ignoring an unusable bearer token on an optional-auth endpoint')
+  return { success: true }
 }

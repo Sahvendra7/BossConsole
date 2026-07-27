@@ -3,9 +3,9 @@ import type { PasskeyContext } from "../types/context.ts"
 import {
   generateAuthChallenge,
   completeAuthentication,
-  checkAuthStatus,
-  ALLOWED_ORIGINS
+  checkAuthStatus
 } from "../services/auth.ts"
+import { getAllowedOrigins } from "../utils/config.ts"
 import { parseClientDataJSON } from "../utils/webauthn.ts"
 import {
   AuthChallengeRequestSchema,
@@ -152,7 +152,7 @@ auth.openapi(authCompleteRoute, async (ctx) => {
       return ctx.json({ error: 'Invalid clientDataJSON' }, 400)
     }
 
-    if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
+    if (!getAllowedOrigins().includes(clientData.origin)) {
       return ctx.json({ error: 'Invalid origin' }, 403)
     }
 

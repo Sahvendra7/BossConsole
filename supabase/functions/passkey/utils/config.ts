@@ -67,17 +67,47 @@ export function getRpName(): string {
 }
 
 /**
+ * Origins a BOSS ceremony may be performed from, in every deployment.
+ *
+ * `boss://authenticate` is the desktop deep-link origin. It has no effective
+ * domain, so `rpIdMatchesOrigin` exempts it from origin/RP-ID correspondence —
+ * it stays listed because a native client can still present it.
+ */
+const PRODUCTION_ORIGINS: readonly string[] = [
+  'boss://authenticate',
+  'https://risaboss.com',
+  'https://api.risaboss.com'
+]
+
+/**
+ * Origins that only exist on a developer's machine.
+ */
+const LOCAL_DEV_ORIGINS: readonly string[] = [
+  'http://localhost:3000',
+  'http://localhost:54321'  // Supabase local functions
+]
+
+/**
  * Origins a BOSS ceremony may be performed from.
  *
  * Single source of truth: the routes and the services both check it, and the
- * services re-export it for callers that predate this move.
+ * services re-export it for callers that predate this move. Loopback origins are
+ * gated on the same dev signal as loopback RP IDs — a production deployment has
+ * no reason to accept a ceremony claiming to come from someone's laptop.
+ */
+export function getAllowedOrigins(): readonly string[] {
+  return isLocalDevEnvironment()
+    ? [...PRODUCTION_ORIGINS, ...LOCAL_DEV_ORIGINS]
+    : PRODUCTION_ORIGINS
+}
+
+/**
+ * @deprecated Prefer `getAllowedOrigins()`, which honours the deployment.
+ * Kept as a snapshot for call sites that read it as a constant.
  */
 export const ALLOWED_ORIGINS: readonly string[] = [
-  'boss://authenticate',
-  'http://localhost:3000',
-  'http://localhost:54321',  // Supabase local functions
-  'https://risaboss.com',
-  'https://api.risaboss.com'
+  ...PRODUCTION_ORIGINS,
+  ...LOCAL_DEV_ORIGINS
 ]
 
 /**

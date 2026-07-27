@@ -55,21 +55,16 @@ internal object SupabaseApiClient {
      * authenticated caller rather than to a userId in the request body, so a
      * request without a session is rejected with 401. Authentication endpoints
      * deliberately do not send it — they run before a session exists.
+     *
+     * Uses the suspending accessor, which waits for auth to finish loading and
+     * refreshes an expired access token first. Reading `currentSessionOrNull()`
+     * directly would hand the server a stale token whenever the access token had
+     * expired but the refresh token was still good — a 401 in the middle of
+     * Settings → Security, for a user who is perfectly well signed in.
      */
-    fun currentAccessTokenOrNull(): String? =
-        runCatching {
-            val session = SupabaseConfig.client.auth.currentSessionOrNull()
-            session?.accessToken
-        }.getOrNull()
-
-    /**
-     * Attaches the caller's session to a request that acts on their account.
-     */
-    fun HttpRequestBuilder.authorizeAsCurrentUser() {
-        currentAccessTokenOrNull()?.let { token ->
-            header(HttpHeaders.Authorization, "Bearer $token")
-        }
-    }
+    suspend fun currentAccessTokenOrNull(): String? =
+        runCatching { SupabaseConfig.client.auth.currentAccessTokenOrNull() }
+            .getOrNull()
 
     // ============================================================================
     // Authentication Endpoints
@@ -119,12 +114,15 @@ internal object SupabaseApiClient {
     suspend inline fun <reified T> invokeRegistrationChallenge(requestData: T): HttpResponse {
         val jsonBody = json.encodeToString(requestData)
 
+        // Enrolling a passkey acts on the caller's own account, so the server
+        // requires the session rather than trusting a body userId. Resolved
+        // before the request builder, which is not a suspending context.
+        val accessToken = currentAccessTokenOrNull()
+
         return httpClient.post("$passkeyFunctionUrl/register/challenge") {
             contentType(ContentType.Application.Json)
             header("apikey", supabaseAnonKey)
-            // Enrolling a passkey acts on the caller's own account, so the
-            // server requires the session rather than trusting a body userId
-            authorizeAsCurrentUser()
+            accessToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             setBody(jsonBody)
         }
     }
@@ -134,11 +132,12 @@ internal object SupabaseApiClient {
      */
     suspend inline fun <reified T> completeRegistration(requestData: T): HttpResponse {
         val jsonBody = json.encodeToString(requestData)
+        val accessToken = currentAccessTokenOrNull()
 
         return httpClient.post("$passkeyFunctionUrl/register/complete") {
             contentType(ContentType.Application.Json)
             header("apikey", supabaseAnonKey)
-            authorizeAsCurrentUser()
+            accessToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             setBody(jsonBody)
         }
     }

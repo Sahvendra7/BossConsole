@@ -13,9 +13,12 @@
 -- Tables changed: public.completed_authentications (1 unique index)
 -- ============================================================================
 --
--- Deploy alongside the `passkey` Edge Function, in either order: the function
--- upserts on session_id, which is correct with or without this index, and the
--- index is what makes it correct under concurrency.
+-- Apply this BEFORE deploying the `passkey` Edge Function. The function upserts
+-- with ON CONFLICT (session_id), which Postgres rejects with 42P10 unless this
+-- index exists. The function does carry a fallback (it retries as a plain insert
+-- and logs loudly), so a mis-ordered deploy degrades rather than failing every
+-- cross-device authentication — but the fallback cannot prevent duplicate rows
+-- under concurrency, which is the thing this index exists to make impossible.
 --
 -- ============================================================================
 

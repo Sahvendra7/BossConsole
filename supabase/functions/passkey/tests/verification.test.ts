@@ -19,7 +19,7 @@ import { completeAuthentication, checkAuthStatus } from "../services/auth.ts"
 import { completeRegistration, type RegistrationCredential } from "../services/registration.ts"
 import { generateChallenge } from "../utils/challenge.ts"
 import { COSE_ALG_ES256, COSE_ALG_RS256, evaluateSignCounter, parseAuthenticatorData } from "../utils/webauthn.ts"
-import { getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
+import { getAllowedOrigins, getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
 import { decodeBase64Any, encodedValuesMatch, normalizeBase64Url } from "../utils/base64.ts"
 import {
   buildAlphabetSensitiveClientDataJSON,
@@ -1083,11 +1083,109 @@ Deno.test("completeAuthentication - completes a valid ES256 ceremony", async () 
   assertExists(success.accessToken)
   assertExists(success.refreshToken)
 
-  // The session is parked on the completed authentication row for pollers
-  const tokenUpdate = mockClient.getQueryHistory().find(
-    entry => entry.table === 'completed_authentications' && entry.operation === 'update'
+  // The completion row is written once, already carrying the session, so there
+  // is no window where a poll can see a completed ceremony with no tokens and
+  // mint a second session that nobody will ever claim.
+  const writes = mockClient.getQueryHistory().filter(
+    entry => entry.table === 'completed_authentications'
   )
-  assertExists(tokenUpdate, "Session should be persisted for /auth/status")
+  assertEquals(writes.length, 1, "The completion row should be written exactly once")
+  assertEquals(writes[0].operation, 'insert')
+
+  const written = writes[0].params.data as {
+    access_token?: string
+    refresh_token?: string
+    expires_at?: number
+    email?: string
+  }
+  assertExists(written.access_token, "The row must carry the session when it is published")
+  assertExists(written.refresh_token)
+  assertExists(written.expires_at)
+  assertEquals(written.email, TEST_EMAIL)
+  assertEquals(
+    (writes[0].params.upsert as { onConflict?: string } | undefined)?.onConflict,
+    'session_id'
+  )
+})
+
+Deno.test("completeAuthentication - a poll during the ceremony cannot strand a second session", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+  const assertion = await createAssertion({
+    challenge,
+    credentialId: registration.credentialId,
+    privateKey: registration.keyPair.privateKey,
+    signCount: 4
+  })
+
+  mockAuthFlow(mockClient, {
+    challenge,
+    storedPublicKey: registration.expectedPublicKey,
+    credentialId: registration.credentialIdBase64Url,
+    signCount: 3
+  })
+
+  const result = await completeAuthentication(
+    mockClient as unknown as SupabaseClient,
+    assertion,
+    challenge
+  )
+  assertEquals(result.success, true)
+
+  // The row never exists in a half-written state: no query touches
+  // completed_authentications before the single write that publishes it.
+  const history = mockClient.getQueryHistory()
+  const completionWrites = history.filter(entry => entry.table === 'completed_authentications')
+  assertEquals(completionWrites.length, 1)
+
+  // ...and the session it carries is the one the caller was handed
+  const written = completionWrites[0].params.data as { access_token?: string }
+  assertEquals(written.access_token, (result as { accessToken?: string }).accessToken)
+})
+
+Deno.test("completeAuthentication - falls back to insert when the unique index is missing", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+  const assertion = await createAssertion({
+    challenge,
+    credentialId: registration.credentialId,
+    privateKey: registration.keyPair.privateKey,
+    signCount: 8
+  })
+
+  mockAuthFlow(mockClient, {
+    challenge,
+    storedPublicKey: registration.expectedPublicKey,
+    credentialId: registration.credentialIdBase64Url,
+    signCount: 7
+  })
+
+  // Function deployed ahead of migration 20260726000000: ON CONFLICT has no
+  // matching unique index, which Postgres rejects with 42P10.
+  mockClient.clearTableQueue('completed_authentications', 'insert')
+  mockClient.mockResponse('completed_authentications', {
+    data: null,
+    error: { code: '42P10', message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' }
+  }, 'insert')
+  mockClient.mockResponse('completed_authentications', { data: [{ id: 'completed-1' }], error: null }, 'insert')
+
+  const result = await completeAuthentication(
+    mockClient as unknown as SupabaseClient,
+    assertion,
+    challenge
+  )
+
+  assertEquals(result.success, true, "A mis-ordered deploy must not fail every cross-device login")
+
+  const writes = mockClient.getQueryHistory().filter(
+    entry => entry.table === 'completed_authentications' && entry.operation === 'insert'
+  )
+  assertEquals(writes.length, 2, "Upsert is retried once as a plain insert")
+  assertEquals((writes[1].params.upsert as unknown) === undefined, true, "The retry is a plain insert")
 })
 
 Deno.test("completeRegistration - stores an ES256 credential with rp_id and counter", async () => {
@@ -1421,38 +1519,108 @@ Deno.test("rpIdMatchesOrigin - requires a registrable-domain suffix", () => {
 
 Deno.test("completeAuthentication - rejects an rpId that does not correspond to the origin", async () => {
   const mockClient = createMockSupabaseClient()
+  // A dev deployment, so the localhost origin is allowed and the *correspondence*
+  // rule is what has to do the rejecting
+  Deno.env.set('PASSKEY_ALLOW_LOCALHOST', 'true')
 
-  const challenge = generateChallenge()
-  const registration = await createRegistrationCredential({ challenge })
-  // Ceremony performed at localhost:3000 but signed for api.risaboss.com: both
-  // allow-lists are satisfied, the correspondence rule is not.
-  const assertion = await createAssertion({
-    challenge,
-    credentialId: registration.credentialId,
-    privateKey: registration.keyPair.privateKey,
-    rpId: TEST_RP_ID,
-    origin: 'http://localhost:3000',
-    signCount: 2
-  })
+  try {
+    const challenge = generateChallenge()
+    const registration = await createRegistrationCredential({ challenge })
+    // Ceremony performed at localhost:3000 but signed for api.risaboss.com: both
+    // allow-lists are satisfied, the correspondence rule is not.
+    const assertion = await createAssertion({
+      challenge,
+      credentialId: registration.credentialId,
+      privateKey: registration.keyPair.privateKey,
+      rpId: TEST_RP_ID,
+      origin: 'http://localhost:3000',
+      signCount: 2
+    })
 
-  mockAuthFlow(mockClient, {
-    challenge,
-    storedPublicKey: registration.expectedPublicKey,
-    credentialId: registration.credentialIdBase64Url,
-    signCount: 1
-  })
+    mockAuthFlow(mockClient, {
+      challenge,
+      storedPublicKey: registration.expectedPublicKey,
+      credentialId: registration.credentialIdBase64Url,
+      signCount: 1
+    })
 
-  const result = await completeAuthentication(
-    mockClient as unknown as SupabaseClient,
-    assertion,
-    challenge
-  )
+    const result = await completeAuthentication(
+      mockClient as unknown as SupabaseClient,
+      assertion,
+      challenge
+    )
 
-  assertEquals(result.success, false)
-  assertEquals(
-    (result as { error?: string }).error,
-    'Relying party mismatch - rpId does not correspond to the ceremony origin'
-  )
+    assertEquals(result.success, false)
+    assertEquals(
+      (result as { error?: string }).error,
+      'Relying party mismatch - rpId does not correspond to the ceremony origin'
+    )
+  } finally {
+    Deno.env.delete('PASSKEY_ALLOW_LOCALHOST')
+  }
+})
+
+Deno.test("getAllowedOrigins - loopback origins are local-development only", () => {
+  const previousAllow = Deno.env.get('PASSKEY_ALLOW_LOCALHOST')
+  const previousUrl = Deno.env.get('SUPABASE_URL')
+
+  try {
+    Deno.env.delete('PASSKEY_ALLOW_LOCALHOST')
+    Deno.env.set('SUPABASE_URL', 'http://kong:8000')
+
+    const hosted = getAllowedOrigins()
+    assertEquals(hosted.includes('http://localhost:3000'), false)
+    assertEquals(hosted.includes('http://localhost:54321'), false)
+    assertEquals(hosted.includes('https://api.risaboss.com'), true)
+    // The desktop deep-link origin has no effective domain and stays listed
+    assertEquals(hosted.includes('boss://authenticate'), true)
+
+    Deno.env.set('PASSKEY_ALLOW_LOCALHOST', 'true')
+    assertEquals(getAllowedOrigins().includes('http://localhost:54321'), true)
+  } finally {
+    if (previousAllow === undefined) Deno.env.delete('PASSKEY_ALLOW_LOCALHOST')
+    else Deno.env.set('PASSKEY_ALLOW_LOCALHOST', previousAllow)
+    if (previousUrl === undefined) Deno.env.delete('SUPABASE_URL')
+    else Deno.env.set('SUPABASE_URL', previousUrl)
+  }
+})
+
+Deno.test("completeAuthentication - rejects a loopback origin in a hosted deployment", async () => {
+  const mockClient = createMockSupabaseClient()
+  const previousUrl = Deno.env.get('SUPABASE_URL')
+  Deno.env.set('SUPABASE_URL', 'http://kong:8000')
+
+  try {
+    const challenge = generateChallenge()
+    const registration = await createRegistrationCredential({ challenge })
+    const assertion = await createAssertion({
+      challenge,
+      credentialId: registration.credentialId,
+      privateKey: registration.keyPair.privateKey,
+      rpId: 'localhost',
+      origin: 'http://localhost:3000',
+      signCount: 2
+    })
+
+    mockAuthFlow(mockClient, {
+      challenge,
+      storedPublicKey: registration.expectedPublicKey,
+      credentialId: registration.credentialIdBase64Url,
+      signCount: 1
+    })
+
+    const result = await completeAuthentication(
+      mockClient as unknown as SupabaseClient,
+      assertion,
+      challenge
+    )
+
+    assertEquals(result.success, false)
+    assertEquals((result as { error?: string }).error, 'Invalid origin')
+  } finally {
+    if (previousUrl === undefined) Deno.env.delete('SUPABASE_URL')
+    else Deno.env.set('SUPABASE_URL', previousUrl)
+  }
 })
 
 // ============================================================================
@@ -1907,4 +2075,85 @@ Deno.test("completeRegistration - first passkey for an account with none enrols 
   )
   assertExists(insert)
   assertEquals((insert!.params.data as { user_id: string }).user_id, 'user-brand-new')
+})
+
+// ============================================================================
+// Hardening: key strength and error surface
+// ============================================================================
+
+Deno.test("completeRegistration - refuses an RSA credential with a short modulus", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  // 1024-bit RSA: a credential is long-lived once enrolled, so the floor is 2048
+  const weakKeyPair = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 1024,
+      publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+      hash: 'SHA-256'
+    },
+    true,
+    ['sign', 'verify']
+  ) as CryptoKeyPair
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({
+    challenge,
+    alg: COSE_ALG_RS256,
+    keyPair: weakKeyPair
+  })
+
+  mockRegistrationChallenge(mockClient, challenge, TEST_USER_ID, 'challenge-weak-rsa')
+
+  const result = await completeRegistration(
+    mockClient as unknown as SupabaseClient,
+    registration.credential as RegistrationCredential,
+    challenge,
+    { claimedUserId: TEST_USER_ID }
+  )
+
+  assertEquals(result.success, false)
+  assertEquals(
+    mockClient.getQueryHistory().some(
+      entry => entry.table === 'user_passkeys' && entry.operation === 'insert'
+    ),
+    false,
+    'A short-modulus credential must not be stored'
+  )
+})
+
+Deno.test("completeAuthentication - does not echo parser internals to the client", async () => {
+  const mockClient = createMockSupabaseClient()
+
+  const challenge = generateChallenge()
+  const registration = await createRegistrationCredential({ challenge })
+  const assertion = await createAssertion({
+    challenge,
+    credentialId: registration.credentialId,
+    privateKey: registration.keyPair.privateKey
+  })
+
+  // Truncated authenticator data makes the parser throw
+  const malformed = {
+    ...assertion,
+    response: { ...assertion.response, authenticatorData: 'dGVzdA' }
+  }
+
+  mockAuthFlow(mockClient, {
+    challenge,
+    storedPublicKey: registration.expectedPublicKey,
+    credentialId: registration.credentialIdBase64Url
+  })
+
+  const result = await completeAuthentication(
+    mockClient as unknown as SupabaseClient,
+    malformed,
+    challenge
+  )
+
+  assertEquals(result.success, false)
+  const message = (result as { error?: string }).error ?? ''
+  assertEquals(message, 'Failed to complete authentication')
+  // The detail belongs in the log, not the response
+  assertEquals(message.includes('37 bytes'), false)
 })

@@ -2,9 +2,9 @@ import { createRoute, OpenAPIHono } from "@hono/zod-openapi"
 import type { PasskeyContext } from "../types/context.ts"
 import {
   generateRegistrationChallenge,
-  completeRegistration,
-  ALLOWED_ORIGINS
+  completeRegistration
 } from "../services/registration.ts"
+import { getAllowedOrigins } from "../utils/config.ts"
 import { parseClientDataJSON } from "../utils/webauthn.ts"
 import { requireAuthenticatedCaller, resolveOptionalCaller } from "../utils/authorization.ts"
 import {
@@ -191,7 +191,7 @@ register.openapi(registerCompleteRoute, async (ctx) => {
       return ctx.json({ error: 'Invalid clientDataJSON' }, 400)
     }
 
-    if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
+    if (!getAllowedOrigins().includes(clientData.origin)) {
       return ctx.json({ error: 'Invalid origin' }, 403)
     }
 

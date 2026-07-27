@@ -4,6 +4,7 @@ import {
   verifyChallenge,
   consumeChallengeRow,
   claimStoredSession,
+  storeCompletedAuthentication,
   findPasskeyByCredentialId,
   getUserPasskeys,
   findUserByEmail,
@@ -14,7 +15,7 @@ import { verifySignature } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler, withStatusErrorHandler } from "../utils/error-handler.ts"
 import { generateSupabaseAccessToken } from "../utils/jwt.ts"
-import { ALLOWED_ORIGINS, getAllowedRpIds, getRpId, rpIdMatchesOrigin } from "../utils/config.ts"
+import { ALLOWED_ORIGINS, getAllowedOrigins, getAllowedRpIds, getRpId, rpIdMatchesOrigin } from "../utils/config.ts"
 import { normalizeBase64Url } from "../utils/base64.ts"
 import {
   challengeMatches,
@@ -147,7 +148,7 @@ export const completeAuthentication = withErrorHandler(
 
     // Verify origin here too, not only in the route: the service is the layer
     // that decides whether an assertion is acceptable.
-    if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
+    if (!getAllowedOrigins().includes(clientData.origin)) {
       console.error('❌ Assertion origin is not allowed')
       return {
         success: false,
@@ -308,6 +309,32 @@ export const completeAuthentication = withErrorHandler(
       }
     }
 
+    console.log('✅ Authentication successful for user:', passkey.user_id)
+
+    // Mint the session *before* writing the completion row, so the row is only
+    // ever published complete.
+    //
+    // The two used to be separate writes with three round trips between them
+    // (email lookup, generateLink, verifyOtp). A cross-device poll landing in
+    // that gap found the challenge already consumed and the row present with no
+    // tokens, so it minted a session of its own — which the second write then
+    // overwrote, leaving an unclaimed access/refresh pair sitting in the row for
+    // the rest of its window. With one write there is no such window.
+    const userResult = await getUserWithEmail(supabase, passkey.user_id)
+
+    if (!userResult.success || !userResult.user) {
+      console.error('❌ Failed to fetch user email for session:', userResult.error)
+    }
+
+    const userEmail = userResult.user?.email
+    const tokens = userEmail
+      ? await generateSupabaseAccessToken(supabase, userEmail)
+      : null
+
+    if (tokens) {
+      console.log('✅ Generated Supabase session successfully')
+    }
+
     // Store completed authentication if there's a session_id
     console.log('🔍 Challenge data:', {
       has_session_id: !!challengeData.session_id,
@@ -317,33 +344,25 @@ export const completeAuthentication = withErrorHandler(
 
     if (challengeData.session_id) {
       console.log('💾 Storing completed authentication for session:', challengeData.session_id)
-      // Upsert, not insert: session_id is client-supplied, and two rows for one
-      // sessionId would break the .single() poll *and* fan a token write out
-      // across both rows. Paired with the unique index from migration
-      // 20260726000000; onConflict keeps this correct before/after it lands.
-      const { error: insertError } = await supabase
-        .from('completed_authentications')
-        .upsert({
-          challenge: signedChallenge,  // Required NOT NULL field
-          session_id: challengeData.session_id,
-          user_id: passkey.user_id,
-          email: null,
-          access_token: null,
-          refresh_token: null,
-          expires_at: null,
-          expires_at_timestamp: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-          created_at: new Date().toISOString()
-        }, { onConflict: 'session_id' })
-        .select()
+      const storeResult = await storeCompletedAuthentication(supabase, {
+        challenge: signedChallenge,
+        sessionId: challengeData.session_id,
+        userId: passkey.user_id,
+        email: userEmail ?? null,
+        accessToken: tokens?.accessToken ?? null,
+        refreshToken: tokens?.refreshToken ?? null,
+        // Column is documented as epoch milliseconds; the API speaks seconds
+        expiresAt: tokens ? toEpochMillis(tokens.expiresAt) : null
+      })
 
-      if (insertError) {
+      if (!storeResult.success) {
         // The challenge is already consumed at this point, so the client has to
         // start a new ceremony rather than retry this one. That is the safe
         // direction: never leave a used challenge live to keep a retry cheap.
-        console.error('❌ Failed to store completed authentication:', insertError)
+        console.error('❌ Failed to store completed authentication:', storeResult.error)
         return {
           success: false,
-          error: `Failed to store authentication result: ${insertError.message || insertError.code || 'Unknown error'}`
+          error: `Failed to store authentication result: ${storeResult.error || 'Unknown error'}`
         }
       }
 
@@ -352,46 +371,12 @@ export const completeAuthentication = withErrorHandler(
       console.warn('⚠️ No session_id in challenge data - completed authentication not stored')
     }
 
-    console.log('✅ Authentication successful for user:', passkey.user_id)
-
-    // Fetch user email using helper function (DRY)
-    const userResult = await getUserWithEmail(supabase, passkey.user_id)
-
-    if (!userResult.success || !userResult.user) {
-      console.error('❌ Failed to fetch user email for session:', userResult.error)
+    if (!tokens) {
+      // Authentication itself succeeded; only the session could not be minted
       return {
         success: true,
         userId: passkey.user_id,
         passkeyId: passkey.id
-      }
-    }
-
-    const userEmail = userResult.user.email
-
-    // Generate Supabase session for authenticated user
-    console.log('🎫 Generating Supabase session for user:', userEmail)
-
-    const tokens = await generateSupabaseAccessToken(supabase, userEmail)
-
-    console.log('✅ Generated Supabase session successfully')
-
-    // Park the session on the completed_authentications row so a cross-device
-    // poller replays these tokens instead of minting a new session per poll.
-    if (challengeData.session_id) {
-      const { error: tokenStoreError } = await supabase
-        .from('completed_authentications')
-        .update({
-          email: userEmail,
-          access_token: tokens.accessToken,
-          refresh_token: tokens.refreshToken,
-          // Column is documented as epoch milliseconds; the API speaks seconds
-          expires_at: toEpochMillis(tokens.expiresAt)
-        })
-        .eq('session_id', challengeData.session_id)
-
-      if (tokenStoreError) {
-        // Non-fatal: /auth/status will mint a session instead of replaying one
-        console.error('⚠️ Failed to persist session on completed authentication:', tokenStoreError)
       }
     }
 

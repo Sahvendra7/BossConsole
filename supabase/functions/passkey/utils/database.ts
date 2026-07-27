@@ -98,6 +98,87 @@ export async function consumeChallengeRow(
   return { consumed: true }
 }
 
+export interface CompletedAuthenticationRecord {
+  challenge: string
+  sessionId: string
+  userId: string
+  email: string | null
+  accessToken: string | null
+  refreshToken: string | null
+  /** Epoch milliseconds, per the column comment */
+  expiresAt: number | null
+}
+
+/**
+ * Records a completed cross-device ceremony as a single write.
+ *
+ * Upsert rather than insert: `session_id` is client-supplied, and two rows for
+ * one session both wedge the `/auth/status` lookup and split a token write
+ * across them. `ON CONFLICT (session_id)` needs the unique index from migration
+ * 20260726000000 — Postgres raises 42P10 without it — so if the function is
+ * deployed ahead of that migration this falls back to a plain insert rather than
+ * failing every cross-device authentication. The fallback is a deployment-order
+ * safety net, not a supported state: without the index, concurrent completions
+ * for one session can still produce duplicates.
+ */
+export async function storeCompletedAuthentication(
+  supabase: SupabaseClient,
+  record: CompletedAuthenticationRecord
+): Promise<{ success: boolean; error?: string }> {
+  const row = {
+    challenge: record.challenge,  // Required NOT NULL field
+    session_id: record.sessionId,
+    user_id: record.userId,
+    email: record.email,
+    access_token: record.accessToken,
+    refresh_token: record.refreshToken,
+    expires_at: record.expiresAt,
+    expires_at_timestamp: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    created_at: new Date().toISOString()
+  }
+
+  const { error } = await supabase
+    .from('completed_authentications')
+    .upsert(row, { onConflict: 'session_id' })
+    .select()
+
+  if (!error) {
+    return { success: true }
+  }
+
+  if (isMissingConflictTargetError(error)) {
+    console.error(
+      '⚠️ completed_authentications has no unique index on session_id — apply migration ' +
+      '20260726000000_completed_auth_session_unique.sql. Falling back to a plain insert; ' +
+      'duplicate rows for one session are possible until it is applied.',
+      error
+    )
+
+    const retry = await supabase
+      .from('completed_authentications')
+      .insert(row)
+      .select()
+
+    if (retry.error) {
+      return { success: false, error: retry.error.message || retry.error.code }
+    }
+
+    return { success: true }
+  }
+
+  return { success: false, error: error.message || error.code }
+}
+
+/**
+ * True when Postgres rejected an ON CONFLICT clause because no matching unique
+ * index exists (42P10).
+ */
+function isMissingConflictTargetError(error: { code?: string; message?: string }): boolean {
+  if (error.code === '42P10') return true
+  const message = error.message?.toLowerCase() ?? ''
+  return message.includes('on conflict') && message.includes('constraint')
+}
+
 /**
  * Claims the session parked on a `completed_authentications` row, clearing the
  * token columns so they can only be handed over once.
@@ -243,6 +324,31 @@ export async function storePasskeyInDB(
 }
 
 /**
+ * Logs a failed passkey-use write, distinguishing the one expected cause.
+ *
+ * A missing column is a deployment-ordering symptom that resolves once migration
+ * 20260725000000 is applied. Anything else means clone detection is silently
+ * off on a correctly migrated database, which deserves a louder line.
+ */
+function logPasskeyUseFailure(error: { code?: string; message?: string }): void {
+  if (isUnknownColumnError(error)) {
+    console.error(
+      '⚠️ Cannot record the signature counter: user_passkeys is missing the verification ' +
+      'columns. Apply migration 20260725000000_passkey_verification_columns.sql — until then ' +
+      'cloned-authenticator detection is unavailable.',
+      error
+    )
+    return
+  }
+
+  console.error(
+    '❌ Failed to record passkey use on a migrated schema — cloned-authenticator detection ' +
+    'is not engaging for this credential:',
+    error
+  )
+}
+
+/**
  * True when PostgREST/Postgres rejected the statement because a column does not
  * exist (schema cache miss PGRST204, or undefined_column 42703).
  */
@@ -279,7 +385,7 @@ export async function recordPasskeyUse(
 
     if (error) {
       // Non-fatal: the assertion itself was verified.
-      console.error('Failed to record passkey use:', error)
+      logPasskeyUseFailure(error)
       return { success: false, advanced: true, error: error.message }
     }
 
@@ -299,7 +405,7 @@ export async function recordPasskeyUse(
   if (error) {
     // Non-fatal: losing the counter update only costs clone detection on the
     // *next* assertion, so log and let the ceremony stand.
-    console.error('Failed to record passkey use:', error)
+    logPasskeyUseFailure(error)
     return { success: false, advanced: true, error: error.message }
   }
 

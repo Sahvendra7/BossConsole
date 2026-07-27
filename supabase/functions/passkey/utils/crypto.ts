@@ -153,6 +153,13 @@ async function coseKeyToStoredKey(coseKey: unknown): Promise<{ publicKey: string
       throw new Error('Missing modulus or exponent in RSA public key')
     }
 
+    // Floor the modulus at 2048 bits. Nothing stops an authenticator (or a
+    // native client speaking for one) from offering a short RSA key, and a
+    // credential is long-lived once enrolled.
+    if (n.length < 256) {
+      throw new Error(`RSA modulus too small: ${n.length * 8} bits, minimum 2048`)
+    }
+
     // Import the COSE parameters as a JWK, then export SPKI so verification only
     // ever has to deal with one stored representation.
     const jwkKey = await crypto.subtle.importKey(
@@ -297,6 +304,9 @@ function parseDERSignature(derSignature: Uint8Array): Uint8Array {
     throw new Error('Invalid DER signature: missing INTEGER tag for r')
   }
   const rLength = derSignature[offset++]
+  if (rLength === undefined || offset + rLength > derSignature.length) {
+    throw new Error('Invalid DER signature: r overruns the payload')
+  }
   const r = derSignature.slice(offset, offset + rLength)
   offset += rLength
 
@@ -305,6 +315,9 @@ function parseDERSignature(derSignature: Uint8Array): Uint8Array {
     throw new Error('Invalid DER signature: missing INTEGER tag for s')
   }
   const sLength = derSignature[offset++]
+  if (sLength === undefined || offset + sLength > derSignature.length) {
+    throw new Error('Invalid DER signature: s overruns the payload')
+  }
   const s = derSignature.slice(offset, offset + sLength)
 
   if (r.length === 0 || s.length === 0) {
@@ -451,7 +464,9 @@ function decodeCBOR(buffer: Uint8Array): unknown {
         if (mapLength * 2 > buffer.length - offset) {
           throw new Error('Unexpected end of CBOR input')
         }
-        const map: Record<string | number, unknown> = {}
+        // Object.create(null): an attestation carrying a "__proto__" key would
+        // otherwise set the prototype instead of a property
+        const map: Record<string | number, unknown> = Object.create(null)
         for (let i = 0; i < mapLength; i++) {
           const key = decode(depth + 1)
           const value = decode(depth + 1)

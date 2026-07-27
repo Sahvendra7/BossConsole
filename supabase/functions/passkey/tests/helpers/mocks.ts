@@ -175,6 +175,14 @@ export class MockSupabaseClient {
   }
 
   /**
+   * Drop the queued responses for one table/operation, so a test can replace a
+   * shared fixture's expectations without clearing everything.
+   */
+  clearTableQueue(table: string, operation = 'default'): void {
+    this.mockResponses.delete(`${table}.${operation}`)
+  }
+
+  /**
    * Clear all mocks
    */
   clearMocks(): void {

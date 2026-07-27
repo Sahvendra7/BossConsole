@@ -4,7 +4,7 @@ import { verifyAndConsumeChallenge, storePasskeyInDB } from "../utils/database.t
 import { extractCredentialFromAttestation } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler } from "../utils/error-handler.ts"
-import { ALLOWED_ORIGINS, getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
+import { ALLOWED_ORIGINS, getAllowedOrigins, getAllowedRpIds, rpIdMatchesOrigin } from "../utils/config.ts"
 import { encodedValuesMatch, normalizeBase64Url } from "../utils/base64.ts"
 import {
   challengeMatches,
@@ -115,7 +115,7 @@ export const completeRegistration = withErrorHandler(
 
     // Verify origin here too, not only in the route: the service is the layer
     // that decides whether an attestation is acceptable.
-    if (!ALLOWED_ORIGINS.includes(clientData.origin)) {
+    if (!getAllowedOrigins().includes(clientData.origin)) {
       console.error('❌ Registration origin is not allowed')
       return {
         success: false,
