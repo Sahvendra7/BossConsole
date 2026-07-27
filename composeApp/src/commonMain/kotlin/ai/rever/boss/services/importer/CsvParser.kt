@@ -17,7 +17,6 @@ object CsvParser {
     private val USERNAME_HEADERS = setOf("username", "login_username", "user", "login", "email", "user name")
     private val PASSWORD_HEADERS = setOf("password", "login_password", "pass")
     private val NOTES_HEADERS = setOf("notes", "note", "comment", "comments")
-    private val NAME_HEADERS = setOf("name", "title")
 
     /** A parsed grid: the header row plus the data rows. */
     data class Table(
@@ -58,6 +57,14 @@ object CsvParser {
             val scan = readField(input, i)
             row.add(scan.value)
             i = scan.next
+
+            // "a,b," ends on a separator, so there is a third — empty — field
+            // after it that the loop would otherwise never read. Without this a
+            // row whose last column is an empty password reports MALFORMED_ROW
+            // instead of MISSING_PASSWORD.
+            if (scan.end == FieldEnd.FIELD && i >= input.length) {
+                row.add("")
+            }
 
             if (scan.end != FieldEnd.FIELD) {
                 // A trailing newline at end of file must not emit a phantom row.
@@ -148,6 +155,4 @@ object CsvParser {
     fun passwordColumn(header: List<String>): Int = columnIndex(header, PASSWORD_HEADERS)
 
     fun notesColumn(header: List<String>): Int = columnIndex(header, NOTES_HEADERS)
-
-    fun nameColumn(header: List<String>): Int = columnIndex(header, NAME_HEADERS)
 }

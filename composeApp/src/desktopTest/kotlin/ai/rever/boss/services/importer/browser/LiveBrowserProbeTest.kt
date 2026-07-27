@@ -38,7 +38,7 @@ class LiveBrowserProbeTest {
 
             val logins =
                 if (profile.family == BrowserFamily.CHROMIUM) {
-                    runCatching { ChromiumPasswordReader.count(profile) }.getOrElse { -1 }
+                    ChromiumPasswordReader.count(profile) ?: -1
                 } else {
                     -1
                 }
@@ -71,7 +71,7 @@ class LiveBrowserProbeTest {
 
         BrowserDetector
             .detectProfiles()
-            .filter { it.family == BrowserFamily.CHROMIUM && ChromiumPasswordReader.count(it) > 0 }
+            .filter { it.family == BrowserFamily.CHROMIUM && (ChromiumPasswordReader.count(it) ?: 0) > 0 }
             .forEach { profile ->
                 val outcome =
                     runCatching { ChromiumPasswordReader.read(profile) }

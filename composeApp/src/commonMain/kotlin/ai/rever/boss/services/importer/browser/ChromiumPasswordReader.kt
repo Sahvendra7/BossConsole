@@ -24,10 +24,11 @@ object ChromiumPasswordReader {
      * Counting needs no decryption, so the picker can show a number without
      * triggering a keychain prompt.
      */
-    fun count(profile: BrowserProfile): Int =
-        runCatching {
-            val file = loginDataFile(profile)
-            if (!file.isFile) return 0
+    fun count(profile: BrowserProfile): Int? {
+        val file = loginDataFile(profile)
+        if (!file.isFile) return 0
+
+        return runCatching {
             SqliteSnapshot.read(file) { connection ->
                 connection.createStatement().use { statement ->
                     statement.executeQuery("SELECT COUNT(*) FROM logins WHERE blacklisted_by_user = 0").use { rs ->
@@ -35,7 +36,22 @@ object ChromiumPasswordReader {
                     }
                 }
             }
-        }.getOrElse { 0 }
+        }.getOrElse { error ->
+            // null, not 0. A locked database, a renamed column, or sqlite-jdbc
+            // failing to load would otherwise read as "this browser has no saved
+            // passwords" and the profile would silently disappear from the
+            // picker — the same shape as the keychain-service-name bug.
+            logger.warn(
+                LogCategory.AUTH,
+                "Could not count logins for a browser profile",
+                mapOf(
+                    "browser" to profile.browserName,
+                    "reason" to (error.message ?: error::class.simpleName.orEmpty()),
+                ),
+            )
+            null
+        }
+    }
 
     /**
      * Decrypt every saved login.

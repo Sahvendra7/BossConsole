@@ -228,7 +228,6 @@ private fun SkipReason.describe(): String =
         SkipReason.MISSING_URL -> "no website"
         SkipReason.MISSING_USERNAME -> "no username"
         SkipReason.MISSING_PASSWORD -> "no password"
-        SkipReason.UNSUPPORTED_URL_SCHEME -> "unsupported link"
         SkipReason.MALFORMED_ROW -> "malformed row"
         SkipReason.ALREADY_EXISTS -> "already saved"
     }

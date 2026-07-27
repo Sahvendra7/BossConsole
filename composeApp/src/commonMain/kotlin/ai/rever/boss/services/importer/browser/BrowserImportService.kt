@@ -25,6 +25,8 @@ object BrowserImportService {
     private const val SAFARI_PASSWORD_NOTE =
         "Safari keeps passwords in the login keychain, which asks per item. Use File ▸ Export ▸ Passwords, " +
             "then import the CSV."
+    private const val UNREADABLE_PASSWORD_NOTE =
+        "Saved passwords couldn't be read — the browser may be running, or its database may have moved."
     private const val WINDOWS_PASSWORD_NOTE =
         "Saved passwords can't be read on Windows yet. Export a CSV from the browser instead."
 
@@ -53,11 +55,17 @@ object BrowserImportService {
     private fun capabilitiesOf(profile: BrowserProfile): BrowserCapabilities =
         when (profile.family) {
             BrowserFamily.CHROMIUM -> {
+                // Counted once: each call copies the Login Data database.
+                val logins = if (BrowserDetector.isWindows) null else ChromiumPasswordReader.count(profile)
                 BrowserCapabilities(
                     bookmarkCount = countQuietly { ChromiumBookmarkReader.read(profile).size },
-                    passwordCount =
-                        if (BrowserDetector.isWindows) null else countQuietly { ChromiumPasswordReader.count(profile) },
-                    passwordNote = if (BrowserDetector.isWindows) WINDOWS_PASSWORD_NOTE else null,
+                    passwordCount = logins,
+                    passwordNote =
+                        when {
+                            BrowserDetector.isWindows -> WINDOWS_PASSWORD_NOTE
+                            logins == null -> UNREADABLE_PASSWORD_NOTE
+                            else -> null
+                        },
                 )
             }
 

@@ -55,6 +55,21 @@ class CsvParserTest {
     }
 
     @Test
+    fun `a trailing separator yields a final empty field`() {
+        // "a,b," is three fields, the last empty. Dropping it made a row whose
+        // last column is an empty password report MALFORMED_ROW rather than
+        // MISSING_PASSWORD — the wrong reason shown to the user.
+        assertEquals(listOf("a", "b", ""), CsvParser.parse("a,b,").single())
+    }
+
+    @Test
+    fun `an empty trailing password is reported as missing, not malformed`() {
+        val table = CsvParser.parseTable("url,username,password\nhttps://x.test,alice,")
+
+        assertEquals(3, table!!.rows.single().size)
+    }
+
+    @Test
     fun `does not emit a phantom row for a trailing newline`() {
         val rows = CsvParser.parse("a,b\n1,2\n")
 

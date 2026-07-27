@@ -47,8 +47,16 @@ internal object SqliteSnapshot {
             // Explicit driver load: the host shades dependencies, so relying on
             // ServiceLoader discovery alone is fragile.
             Class.forName("org.sqlite.JDBC")
+
+            // Plain path rather than a file: URI — a Windows path contains
+            // backslashes and a drive letter, which URI parsing rejects.
+            //
+            // Opened read-write on purpose. This is a disposable private copy,
+            // so there is nothing to protect from a write; read-only would stop
+            // SQLite replaying a -wal left behind by a crashed browser, which is
+            // exactly the state this class has to cope with.
             return DriverManager
-                .getConnection("jdbc:sqlite:file:$temp?mode=ro")
+                .getConnection("jdbc:sqlite:${temp.toAbsolutePath()}")
                 .use(block)
         } finally {
             Files.deleteIfExists(temp)
