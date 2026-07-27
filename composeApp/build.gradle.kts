@@ -828,6 +828,34 @@ kotlin {
 }
 
 // ---------------------------------------------------------------------------
+// Drop the accidental ktor SERVER stack.
+//
+// BossConsole declares ktor CLIENT only (see desktopMain above). ktor-server-cio
+// and ktor-server-core arrive transitively through
+// io.github.jan-tennert.supabase:auth-kt, whose only consumer of them is
+// io.github.jan.supabase.auth.server.HttpCallback* — the localhost HTTP callback
+// used by desktop OAuth-provider / SSO sign-in (Utils_desktopKt.startExternalAuth).
+// BOSS never takes that path: it authenticates with OTP, email and passkeys, and
+// no source file outside the standalone `server/` module (not on this graph)
+// imports io.ktor.server.*. Verified with
+// `./gradlew :composeApp:dependencyInsight --configuration desktopRuntimeClasspath
+//  --dependency ktor-server-cio`.
+//
+// Keeping them was not free: 529 io.ktor.server.* classes sat in the host
+// classloader as fallback targets for any plugin that bundles its own ktor
+// server, which is exactly the material a plugin-classloader parent fallback
+// turns into a loader-constraint LinkageError.
+//
+// If BOSS ever adds OAuth-provider or SSO sign-in, delete this block — the
+// symptom would be a NoClassDefFoundError on io/ktor/server/cio/CIO.
+configurations.configureEach {
+    exclude(group = "io.ktor", module = "ktor-server-cio")
+    exclude(group = "io.ktor", module = "ktor-server-cio-jvm")
+    exclude(group = "io.ktor", module = "ktor-server-core")
+    exclude(group = "io.ktor", module = "ktor-server-core-jvm")
+}
+
+// ---------------------------------------------------------------------------
 // macOS code signing resolution
 //
 // Release builds sign with a "Developer ID Application" certificate. CI imports

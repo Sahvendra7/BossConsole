@@ -17,12 +17,26 @@ kotlin = "2.4.0"
 kotlinx-coroutines = "1.11.0"
 ktlint-gradle = "14.2.0"
 kotlinx-datetime = "0.8.0-0.6.x-compat"
-# Pinned to the stack the MCP Kotlin SDK supports (ktor <= 3.3/3.4 → serialization 1.9.x).
-# The terminal-tab plugin bundles ktor 3.3 + mcp-sdk, but resolves kotlinx-serialization
-# parent-first from the host; ktor 3.5 / serialization 1.11 break the bundled MCP server
-# (encodeToSink / sse signature drift). Revert when the MCP SDK supports ktor 3.5+.
-# (ktor 3.5.0 was an automated bump in #736; 3.4.3 was the prior known-good version.)
+# kotlinx-serialization is a SHARED, parent-first package for plugins
+# (PluginClassLoader.defaultSharedPackages), so this line is the version every
+# plugin gets at runtime no matter what it bundles — terminal-tab, for one,
+# bundles ktor 3.3.2 + the MCP Kotlin SDK and ships zero kotlinx.serialization
+# classes of its own. Treat a bump here as a cross-repo change.
+#
+# This pin was 1.9.0 and was raised to 1.11.0 by an automated bump (#839,
+# 2026-07-16) whose comment block still claimed 1.9.x was required. Re-verified
+# on 1.11.0: ktor 3.4.3 asks for serialization 1.9.0 and is upgraded to 1.11.0
+# by conflict resolution; ktor's sink/source converter path resolves against
+# kotlinx-serialization-json-io 1.11.0, which still exports
+# encodeToSink/decodeFromSource; and terminal-tab's bundled MCP server runs
+# against a 1.11.0 host. The old "serialization 1.11 breaks the MCP server"
+# warning does not hold — but the coupling it described does, hence this note.
+# Note terminal-tab's own build.gradle.kts still documents the host as 1.9.0.
 kotlinx-serialization = "1.11.0"
+# ktor is NOT shared with plugins (no io.ktor prefix in defaultSharedPackages),
+# so a plugin's bundled ktor is unaffected by this pin; it constrains the host's
+# own client stack only. 3.5.0 arrived as an automated bump in #736 and was
+# reverted to the prior known-good 3.4.3.
 ktor = "3.4.3"
 logback = "1.5.38"
 precompose = "1.6.2"
