@@ -2,16 +2,12 @@ package ai.rever.boss.services.importer.browser
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import java.security.GeneralSecurityException
-import java.util.Base64
-import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
@@ -44,6 +40,9 @@ internal object ChromiumCrypto {
     private const val ITERATIONS_MAC = 1003
     private const val ITERATIONS_LINUX = 1
     private const val KEY_LENGTH_BITS = 128
+
+    /** Chromium uses a fixed all-spaces IV for the v10 CBC scheme. */
+    private const val IV_LENGTH = 16
     private const val SECURITY_TIMEOUT_SECONDS = 60L
 
     /** Chromium's marker for "encrypted with the v10 scheme". */
@@ -107,31 +106,25 @@ internal object ChromiumCrypto {
     /** Read the per-browser secret out of the macOS login keychain. */
     private fun macKey(browserName: String): SecretKeySpec {
         val service = KEYCHAIN_SERVICES[browserName] ?: "$browserName Safe Storage"
-        val process =
-            ProcessBuilder("security", "find-generic-password", "-w", "-s", service)
-                .redirectErrorStream(false)
-                .start()
+        val result =
+            runProcess(
+                listOf("/usr/bin/security", "find-generic-password", "-w", "-s", service),
+                SECURITY_TIMEOUT_SECONDS,
+            )
+        val secret = result.stdout.trim()
 
-        val secret =
-            process.inputStream
-                .bufferedReader()
-                .readText()
-                .trim()
-        val error = process.errorStream.bufferedReader().readText()
-
-        if (!process.waitFor(SECURITY_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
+        if (result.exitCode == TIMED_OUT_EXIT_CODE) {
             throw KeyUnavailableException("The keychain prompt timed out.")
         }
 
-        if (process.exitValue() != 0 || secret.isEmpty()) {
+        if (result.exitCode != 0 || secret.isEmpty()) {
             logger.warn(
                 LogCategory.AUTH,
                 "Could not read the browser's keychain key",
-                mapOf("service" to service, "exit" to process.exitValue()),
+                mapOf("service" to service, "exit" to result.exitCode),
             )
             throw KeyUnavailableException(
-                if (error.contains("User canceled", ignoreCase = true)) {
+                if (result.stderr.contains("User canceled", ignoreCase = true)) {
                     "Keychain access was denied, so $browserName's passwords can't be read."
                 } else {
                     "$browserName's encryption key isn't in the keychain — it may never have saved a password."
@@ -174,17 +167,19 @@ internal object ChromiumCrypto {
         return try {
             when {
                 blob.startsWithPrefix(V10) || blob.startsWithPrefix(V11) -> {
-                    // macOS/Linux v10 is CBC with a fixed all-spaces IV.
-                    val cipher = Cipher.getInstance("AES/CBC/NoPadding")
-                    val iv = IvParameterSpec(ByteArray(16) { ' '.code.toByte() })
+                    // PKCS5Padding, not NoPadding: with NoPadding nothing in this
+                    // path can fail, so a wrong key silently yields garbage that
+                    // gets stored as the user's password. Padding validation
+                    // rejects a wrong key ~255/256 of the time.
+                    val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+                    val iv = IvParameterSpec(ByteArray(IV_LENGTH) { ' '.code.toByte() })
                     cipher.init(Cipher.DECRYPT_MODE, key, iv)
-                    val plain = cipher.doFinal(blob.copyOfRange(V10.size, blob.size))
-                    String(stripPkcs7(plain), Charsets.UTF_8)
+                    decodeStrictUtf8(cipher.doFinal(blob.copyOfRange(V10.size, blob.size)))
                 }
 
                 else -> {
                     // Older profiles stored the value unencrypted.
-                    String(blob, Charsets.UTF_8)
+                    decodeStrictUtf8(blob)
                 }
             }
         } catch (e: GeneralSecurityException) {
@@ -194,57 +189,30 @@ internal object ChromiumCrypto {
                 mapOf("reason" to (e::class.simpleName ?: "unknown")),
             )
             null
+        } catch (e: CharacterCodingException) {
+            // Padding can pass by chance on a wrong key; a plausible-looking
+            // password that isn't valid UTF-8 is still garbage. Rejecting it
+            // beats writing it into the vault.
+            logger.debug(
+                LogCategory.AUTH,
+                "Skipping a password entry that did not decode as text",
+                mapOf("reason" to (e::class.simpleName ?: "unknown")),
+            )
+            null
         }
     }
 
-    /**
-     * Windows v10 blobs are AES-GCM with a 12-byte nonce. Present for
-     * completeness; unreachable until DPAPI key unwrapping exists.
-     */
-    fun decryptGcm(
-        blob: ByteArray,
-        key: SecretKeySpec,
-    ): String? =
-        try {
-            val nonce = blob.copyOfRange(V10.size, V10.size + 12)
-            val payload = blob.copyOfRange(V10.size + 12, blob.size)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, nonce))
-            String(cipher.doFinal(payload), Charsets.UTF_8)
-        } catch (e: GeneralSecurityException) {
-            logger.debug(LogCategory.AUTH, "GCM decrypt failed", mapOf("reason" to (e::class.simpleName ?: "?")))
-            null
-        }
-
-    /** Read `os_crypt.encrypted_key` from a Chromium `Local State` file. */
-    fun readWindowsEncryptedKey(userDataDir: File): ByteArray? =
-        runCatching {
-            val localState = File(userDataDir, "Local State")
-            if (!localState.isFile) return null
-            val root = Json { ignoreUnknownKeys = true }.parseToJsonElement(localState.readText()).jsonObject
-            val encoded =
-                root["os_crypt"]
-                    ?.jsonObject
-                    ?.get("encrypted_key")
-                    ?.jsonPrimitive
-                    ?.content ?: return null
-            Base64.getDecoder().decode(encoded)
-        }.getOrNull()
+    /** Decode as UTF-8, throwing rather than substituting U+FFFD. */
+    private fun decodeStrictUtf8(bytes: ByteArray): String =
+        Charsets.UTF_8
+            .newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
 
     private fun ByteArray.startsWithPrefix(prefix: ByteArray): Boolean {
         if (size < prefix.size) return false
         return prefix.indices.all { this[it] == prefix[it] }
-    }
-
-    /** CBC/NoPadding leaves PKCS#7 padding in place; strip it if well-formed. */
-    private fun stripPkcs7(data: ByteArray): ByteArray {
-        val pad = data.lastOrNull()?.toInt() ?: 0
-        // Only strip when the length is plausible AND every padding byte
-        // matches; otherwise those bytes were real data.
-        val strippable =
-            pad in 1..16 &&
-                pad <= data.size &&
-                (data.size - pad until data.size).all { data[it].toInt() == pad }
-        return if (strippable) data.copyOfRange(0, data.size - pad) else data
     }
 }

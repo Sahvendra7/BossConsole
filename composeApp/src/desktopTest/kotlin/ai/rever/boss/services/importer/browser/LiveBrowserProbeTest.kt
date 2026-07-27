@@ -15,6 +15,14 @@ import kotlin.test.Test
 class LiveBrowserProbeTest {
     @Test
     fun `report detected browsers`() {
+        // Gated: this reads the developer's real browser profiles and copies
+        // their SQLite databases to temp. A plain `./gradlew test` should not
+        // touch user data.
+        if (System.getenv("BOSS_IMPORT_PROBE") != "1") {
+            println("skipped (set BOSS_IMPORT_PROBE=1 to run)")
+            return
+        }
+
         val profiles = BrowserDetector.detectProfiles()
         println("=== detected profiles: ${profiles.size} ===")
 

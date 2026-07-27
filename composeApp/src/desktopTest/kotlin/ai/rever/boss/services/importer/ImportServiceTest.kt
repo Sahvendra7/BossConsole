@@ -93,6 +93,8 @@ private abstract class RecordingProvider : BookmarkDataProvider {
 }
 
 private class BulkProvider : RecordingProvider() {
+    override val supportsBulkBookmarkAdd: Boolean get() = true
+
     override fun addBookmarks(
         collectionName: String,
         bookmarks: List<Bookmark>,
@@ -160,16 +162,20 @@ class ImportServiceTest {
         }
 
     @Test
-    fun `a provider that overrides addBookmarks is detected as bulk-capable`() {
+    fun `bulk capability is read from the provider, not inferred`() {
+        // The provider declares this. Inferring it from the declaring class —
+        // the earlier approach — could not distinguish a real override from the
+        // interface shim once Kotlin emitted a bridge, and would misreport an
+        // override that delegates to super, `by` delegation, or an IPC proxy.
         assertTrue(ImportService.supportsBulkBookmarkInsert(BulkProvider()))
+        assertFalse(ImportService.supportsBulkBookmarkInsert(LegacyProvider()))
     }
 
     @Test
     fun `the interface carries a real default so older plugins inherit it`() {
-        // This is the backward-compatibility guarantee in one assertion: a
-        // plugin built against an API without addBookmarks must inherit a JVM
-        // default rather than blow up with AbstractMethodError when a newer
-        // host calls it.
+        // The backward-compatibility guarantee in one assertion: a plugin built
+        // against an API without addBookmarks must inherit a JVM default rather
+        // than blow up with AbstractMethodError when a newer host calls it.
         val method =
             BookmarkDataProvider::class.java
                 .getMethod("addBookmarks", String::class.java, List::class.java)
@@ -181,16 +187,6 @@ class ImportServiceTest {
             "must be a default, not abstract",
         )
     }
-
-    // The negative half of supportsBulkBookmarkInsert — a provider that does
-    // NOT override addBookmarks reporting false — cannot be modelled here.
-    // Kotlin emits a delegating bridge onto the first in-module class that
-    // implements the interface (verified: RecordingProvider carries one even
-    // though its source does not declare the method), so every in-module fake
-    // looks bulk-capable. A genuinely older plugin has no such bridge because
-    // the method did not exist when it was compiled. That case was verified
-    // cross-jar against a real bookmarks 2.1.x jar loaded against the new API:
-    // the method resolved to BookmarkDataProvider itself, isInterface = true.
 
     @Test
     fun `a collection is created before bookmarks are added to it`() =

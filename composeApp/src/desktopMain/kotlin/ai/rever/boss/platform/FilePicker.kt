@@ -11,6 +11,14 @@ import javax.swing.SwingUtilities
 
 private val filePickerLogger = BossLogger.forComponent("FilePicker")
 
+/**
+ * Ceiling on a picked file's size.
+ *
+ * Comfortably above any real password or bookmark export (tens of thousands of
+ * entries), and well below what would stall the UI thread reading it.
+ */
+private const val MAX_PICKED_FILE_BYTES = 64L * 1024 * 1024
+
 @Composable
 actual fun rememberFilePicker(
     onFileSelected: (path: String?, content: String?) -> Unit,
@@ -44,8 +52,21 @@ class DesktopFilePicker(
 
             if (selectedFile != null && selectedDir != null) {
                 val file = File(selectedDir, selectedFile)
-                val content = file.readText()
-                onFileSelected(file.absolutePath, content)
+
+                // Bounded read: this runs on the caller's thread (the EDT for a
+                // dialog), and an accidentally-picked multi-gigabyte file would
+                // otherwise freeze the UI on its way to an OutOfMemoryError.
+                if (file.length() > MAX_PICKED_FILE_BYTES) {
+                    filePickerLogger.warn(
+                        LogCategory.FILE,
+                        "Picked file is too large to read - reporting no selection",
+                        mapOf("bytes" to file.length()),
+                    )
+                    onFileSelected(null, null)
+                    return
+                }
+
+                onFileSelected(file.absolutePath, file.readText())
             } else {
                 onFileSelected(null, null)
             }

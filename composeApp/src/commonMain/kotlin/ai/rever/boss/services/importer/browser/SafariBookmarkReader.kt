@@ -10,7 +10,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Reads `~/Library/Safari/Bookmarks.plist`.
@@ -61,36 +60,31 @@ object SafariBookmarkReader {
 
     /** `plutil -convert json -o -` writes the plist to stdout as JSON. */
     private fun runPlutil(file: File): String {
-        val process =
-            ProcessBuilder("plutil", "-convert", "json", "-o", "-", file.absolutePath)
-                .redirectErrorStream(false)
-                .start()
+        val result =
+            runProcess(
+                listOf("plutil", "-convert", "json", "-o", "-", file.absolutePath),
+                PLUTIL_TIMEOUT_SECONDS,
+            )
 
-        val stdout = process.inputStream.bufferedReader().readText()
-        val stderr = process.errorStream.bufferedReader().readText()
+        if (result.exitCode == TIMED_OUT_EXIT_CODE) error("Reading Safari bookmarks timed out.")
 
-        if (!process.waitFor(PLUTIL_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            error("Reading Safari bookmarks timed out.")
-        }
-
-        if (process.exitValue() != 0 || stdout.isBlank()) {
+        if (result.exitCode != 0 || result.stdout.isBlank()) {
             logger.warn(
                 LogCategory.FILE,
                 "plutil could not read Safari bookmarks",
-                mapOf("exit" to process.exitValue()),
+                mapOf("exit" to result.exitCode),
             )
             // A TCC denial surfaces as a permission complaint from plutil, whose
             // wording varies by macOS version — "Operation not permitted",
             // "Permission denied", and "you don't have permission to view it"
             // have all been observed. Match the one word they share rather than
             // any single phrasing.
-            if (stderr.contains("permission", ignoreCase = true)) {
+            if (result.stderr.contains("permission", ignoreCase = true)) {
                 throw SafariAccessDeniedException()
             }
             error("Safari's bookmarks file could not be read.")
         }
-        return stdout
+        return result.stdout
     }
 
     /**

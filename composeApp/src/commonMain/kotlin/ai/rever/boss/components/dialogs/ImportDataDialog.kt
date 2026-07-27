@@ -9,25 +9,15 @@ import ai.rever.boss.services.importer.ImportFileReader
 import ai.rever.boss.services.importer.ImportPreview
 import ai.rever.boss.services.importer.ImportResult
 import ai.rever.boss.services.importer.ImportService
-import ai.rever.boss.services.importer.SkipReason
 import ai.rever.boss.services.importer.browser.BrowserImportService
 import ai.rever.boss.services.importer.browser.DetectedBrowser
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Card
-import androidx.compose.material.CircularProgressIndicator
-import androidx.compose.material.LinearProgressIndicator
 import androidx.compose.material.Text
-import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,11 +25,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -66,6 +53,7 @@ private sealed interface ImportStage {
     data class Finished(
         val passwords: ImportResult?,
         val bookmarks: ImportResult?,
+        val cancelled: Boolean = false,
     ) : ImportStage
 }
 
@@ -81,6 +69,8 @@ private sealed interface ImportStage {
 fun ImportDataDialog(onDismiss: () -> Unit) {
     var stage by remember { mutableStateOf<ImportStage>(ImportStage.ChooseSource) }
     var runningJob by remember { mutableStateOf<Job?>(null) }
+    // What has landed so far, so cancelling can still report it.
+    val partial = remember { PartialProgress() }
     val scope = rememberCoroutineScope()
 
     val canImportPasswords = AuthStateManager.currentUser.value != null
@@ -134,13 +124,16 @@ fun ImportDataDialog(onDismiss: () -> Unit) {
                             preview = preview,
                             canImportPasswords = canImportPasswords,
                             bookmarkProvider = bookmarkProvider,
+                            partial = partial,
                             onStage = { stage = it },
                         )
                     }
             },
             onCancelRunning = {
+                // Rows already written are permanent, so report what actually
+                // landed rather than claiming nothing happened.
                 runningJob?.cancel()
-                stage = ImportStage.Finished(null, null)
+                stage = ImportStage.Finished(partial.passwords, partial.bookmarks, cancelled = true)
             },
         )
     }
@@ -236,6 +229,7 @@ private suspend fun runImport(
     preview: ImportPreview,
     canImportPasswords: Boolean,
     bookmarkProvider: BookmarkDataProvider?,
+    partial: PartialProgress,
     onStage: (ImportStage) -> Unit,
 ) {
     val total = preview.total
@@ -248,6 +242,7 @@ private suspend fun runImport(
         } else {
             null
         }
+    partial.passwords = passwordResult
 
     // Bookmarks continue the same progress bar rather than restarting it.
     val offset = if (passwordResult != null) preview.passwords.size else 0
@@ -260,6 +255,7 @@ private suspend fun runImport(
         } else {
             null
         }
+    partial.bookmarks = bookmarkResult
 
     onStage(ImportStage.Finished(passwordResult, bookmarkResult))
 }
@@ -318,6 +314,7 @@ private fun StageBody(
             FinishedContent(
                 passwords = stage.passwords,
                 bookmarks = stage.bookmarks,
+                cancelled = stage.cancelled,
                 onClose = onCancel,
             )
         }
@@ -326,3 +323,15 @@ private fun StageBody(
 
 /** Wide enough for a browser row plus its explanatory note on one line. */
 private val DIALOG_WIDTH = 560.dp
+
+/**
+ * Results captured as each half finishes.
+ *
+ * Cancelling stops the coroutine before [runImport] can return, but whatever
+ * was already written stays written — so the dialog reads its outcome from
+ * here rather than claiming nothing happened.
+ */
+private class PartialProgress {
+    var passwords: ImportResult? = null
+    var bookmarks: ImportResult? = null
+}

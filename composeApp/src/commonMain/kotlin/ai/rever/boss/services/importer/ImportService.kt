@@ -5,13 +5,14 @@ import ai.rever.boss.plugin.bookmark.Bookmark
 import ai.rever.boss.plugin.workspace.TabConfig
 import ai.rever.boss.services.supabase.SecretService
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
-import ai.rever.boss.utils.WebsiteMatchingUtil
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import java.io.File
+import kotlinx.coroutines.withContext
 
 /**
  * Reads password and bookmark exports and writes them into BOSS.
@@ -51,60 +52,61 @@ object ImportService {
     suspend fun importPasswords(
         passwords: List<ImportedPassword>,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
-    ): ImportResult {
-        val existing = loadExistingSecretKeys()
-        val skipped = mutableListOf<SkippedRow>()
-        val failures = mutableListOf<String>()
-        var imported = 0
+    ): ImportResult =
+        withContext(Dispatchers.IO) {
+            val existing = loadExistingSecretKeys()
+            val skipped = mutableListOf<SkippedRow>()
+            val failures = mutableListOf<String>()
+            var imported = 0
 
-        for ((index, entry) in passwords.withIndex()) {
-            // A cancelled import must stop rather than race through the rest.
-            if (!currentCoroutineContext().isActive) break
+            for ((index, entry) in passwords.withIndex()) {
+                // A cancelled import must stop rather than race through the rest.
+                if (!currentCoroutineContext().isActive) break
 
-            val website = normaliseWebsite(entry.website)
-            val key = website.lowercase() to entry.username.lowercase()
+                val website = normaliseWebsite(entry.website)
+                val key = website.lowercase() to entry.username.lowercase()
 
-            val blocked =
-                when {
-                    website.isEmpty() -> SkipReason.MISSING_URL
-                    key in existing -> SkipReason.ALREADY_EXISTS
-                    else -> null
+                val blocked =
+                    when {
+                        website.isEmpty() || isNonWebEntry(entry.website) -> SkipReason.MISSING_URL
+                        key in existing -> SkipReason.ALREADY_EXISTS
+                        else -> null
+                    }
+
+                if (blocked != null) {
+                    skipped.add(SkippedRow(index + 1, blocked, displayLabel(website, entry.username)))
+                } else {
+                    SecretService
+                        .createSecret(
+                            CreateSecretRequest(
+                                website = website,
+                                username = entry.username,
+                                password = entry.password,
+                                notes = entry.notes,
+                            ),
+                        ).fold(
+                            onSuccess = {
+                                imported++
+                                // Guards against duplicates inside the same file.
+                                existing.add(key)
+                            },
+                            onFailure = { error ->
+                                // The message is ours, never the credential's.
+                                failures.add("${displayLabel(website, entry.username)}: ${error.message ?: "failed"}")
+                            },
+                        )
                 }
 
-            if (blocked != null) {
-                skipped.add(SkippedRow(index + 1, blocked, displayLabel(website, entry.username)))
-            } else {
-                SecretService
-                    .createSecret(
-                        CreateSecretRequest(
-                            website = website,
-                            username = entry.username,
-                            password = entry.password,
-                            notes = entry.notes,
-                        ),
-                    ).fold(
-                        onSuccess = {
-                            imported++
-                            // Guards against duplicates inside the same file.
-                            existing.add(key)
-                        },
-                        onFailure = { error ->
-                            // The message is ours, never the credential's.
-                            failures.add("${displayLabel(website, entry.username)}: ${error.message ?: "failed"}")
-                        },
-                    )
+                onProgress(index + 1, passwords.size)
             }
 
-            onProgress(index + 1, passwords.size)
+            logger.info(
+                LogCategory.AUTH,
+                "Password import finished",
+                mapOf("imported" to imported, "skipped" to skipped.size, "failed" to failures.size),
+            )
+            ImportResult(imported = imported, skipped = skipped, failures = failures)
         }
-
-        logger.info(
-            LogCategory.AUTH,
-            "Password import finished",
-            mapOf("imported" to imported, "skipped" to skipped.size, "failed" to failures.size),
-        )
-        return ImportResult(imported = imported, skipped = skipped, failures = failures)
-    }
 
     /** Every (website, username) already in the vault, lowercased. */
     private suspend fun loadExistingSecretKeys(): MutableSet<Pair<String, String>> {
@@ -136,27 +138,49 @@ object ImportService {
         return keys
     }
 
-    private fun normaliseWebsite(raw: String): String = WebsiteMatchingUtil.extractMainDomain(raw) ?: raw.trim()
+    /**
+     * The value stored as a secret's website, and half of the de-duplication key.
+     *
+     * Deliberately the full host, not `WebsiteMatchingUtil.extractMainDomain`:
+     * that collapses subdomains, so `jira.example.com` and `wiki.example.com`
+     * would both become `example.com` and the second credential would be
+     * discarded as "already saved" — losing a real password and erasing which
+     * host the survivor belonged to. Subdomain collapsing is right for *matching*
+     * a secret to a page at autofill time; it is wrong for storage.
+     */
+    private fun normaliseWebsite(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return ""
+
+        val host =
+            runCatching {
+                val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
+                java.net.URI(withScheme).host
+            }.getOrNull()
+
+        return host?.lowercase()?.removePrefix("www.") ?: trimmed
+    }
+
+    /**
+     * Entries a browser stores for native apps rather than web pages.
+     *
+     * Chrome exports rows like `android://<hash>@com.example`; they have no host
+     * and could never be autofilled, so importing them adds noise only.
+     */
+    private fun isNonWebEntry(raw: String): Boolean = raw.trim().startsWith("android://", ignoreCase = true)
 
     // ==================== Bookmarks ====================
 
     /**
      * True when [provider]'s plugin implements bulk insert itself.
      *
-     * `addBookmarks` is an interface method with a default body, so calling it
-     * always succeeds — an older plugin silently inherits the default, which
-     * loops the single-item path and rewrites collections.json once per
-     * bookmark. Reflection is the only way to tell the two apart, and the
-     * difference matters enough to the user (speed, and on plugins older than
-     * the atomic-write fix, safety) to be worth surfacing.
+     * `addBookmarks` has a default body, so calling it always succeeds — an
+     * older plugin silently inherits the shim, which loops the single-item path
+     * and rewrites collections.json once per bookmark. The provider declares
+     * which it is; inferring it from the declaring class would misreport an
+     * override that delegates to `super`, `by` delegation, or an IPC proxy.
      */
-    fun supportsBulkBookmarkInsert(provider: BookmarkDataProvider): Boolean =
-        runCatching {
-            val declared =
-                provider.javaClass
-                    .getMethod("addBookmarks", String::class.java, List::class.java)
-            !declared.declaringClass.isInterface
-        }.getOrDefault(false)
+    fun supportsBulkBookmarkInsert(provider: BookmarkDataProvider): Boolean = provider.supportsBulkBookmarkAdd
 
     /**
      * Write [bookmarks] into collections, one collection per source folder.
@@ -167,53 +191,66 @@ object ImportService {
         bookmarks: List<ImportedBookmark>,
         provider: BookmarkDataProvider?,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
-    ): ImportResult {
-        if (provider == null) {
-            return ImportResult(
-                failures = listOf("The Bookmarks tool isn't available, so bookmarks couldn't be imported."),
+    ): ImportResult =
+        withContext(Dispatchers.IO) {
+            if (provider == null) {
+                return@withContext ImportResult(
+                    failures = listOf("The Bookmarks tool isn't available, so bookmarks couldn't be imported."),
+                )
+            }
+
+            val bulk = supportsBulkBookmarkInsert(provider)
+            // Ids must be unique per run, not just within a batch: a deterministic
+            // id means re-importing the same export reuses every id from last time,
+            // and removeBookmark filters by id — so deleting one would delete its
+            // twin from the earlier run too.
+            val runId =
+                java.util.UUID
+                    .randomUUID()
+                    .toString()
+                    .take(8)
+            val byFolder = bookmarks.groupBy { it.folder?.takeIf { name -> name.isNotBlank() } ?: DEFAULT_COLLECTION }
+            val failures = mutableListOf<String>()
+            var imported = 0
+            var done = 0
+
+            for ((collectionName, entries) in byFolder) {
+                if (!currentCoroutineContext().isActive) break
+
+                val models = entries.mapIndexed { index, entry -> entry.toBookmark(runId, index) }
+
+                runCatching {
+                    if (bulk) {
+                        provider.addBookmarks(collectionName, models)
+                    } else {
+                        insertOneByOne(provider, collectionName, models)
+                    }
+                }.fold(
+                    onSuccess = { imported += models.size },
+                    onFailure = { error ->
+                        // A cancelled import must unwind, not be reported as a
+                        // per-collection failure the user then sees in the results.
+                        if (error is CancellationException) throw error
+                        failures.add("$collectionName: ${error.message ?: "failed"}")
+                    },
+                )
+
+                done += models.size
+                onProgress(done, bookmarks.size)
+            }
+
+            logger.info(
+                LogCategory.GENERAL,
+                "Bookmark import finished",
+                mapOf(
+                    "imported" to imported,
+                    "collections" to byFolder.size,
+                    "failed" to failures.size,
+                    "bulkPath" to bulk,
+                ),
             )
+            ImportResult(imported = imported, failures = failures)
         }
-
-        val bulk = supportsBulkBookmarkInsert(provider)
-        val byFolder = bookmarks.groupBy { it.folder?.takeIf { name -> name.isNotBlank() } ?: DEFAULT_COLLECTION }
-        val failures = mutableListOf<String>()
-        var imported = 0
-        var done = 0
-
-        for ((collectionName, entries) in byFolder) {
-            if (!currentCoroutineContext().isActive) break
-
-            val models = entries.mapIndexed { index, entry -> entry.toBookmark(collectionName, index) }
-
-            runCatching {
-                if (bulk) {
-                    provider.addBookmarks(collectionName, models)
-                } else {
-                    insertOneByOne(provider, collectionName, models)
-                }
-            }.fold(
-                onSuccess = { imported += models.size },
-                onFailure = { error ->
-                    failures.add("$collectionName: ${error.message ?: "failed"}")
-                },
-            )
-
-            done += models.size
-            onProgress(done, bookmarks.size)
-        }
-
-        logger.info(
-            LogCategory.GENERAL,
-            "Bookmark import finished",
-            mapOf(
-                "imported" to imported,
-                "collections" to byFolder.size,
-                "failed" to failures.size,
-                "bulkPath" to bulk,
-            ),
-        )
-        return ImportResult(imported = imported, failures = failures)
-    }
 
     /**
      * Fallback for plugins with no bulk implementation.
@@ -245,15 +282,16 @@ object ImportService {
     const val DEFAULT_COLLECTION = "Imported"
 
     private fun ImportedBookmark.toBookmark(
-        collectionName: String,
+        importRunId: String,
         index: Int,
     ): Bookmark =
         Bookmark(
             // Bookmark.generateId() is a bare millisecond timestamp, so a bulk
             // insert would hand hundreds of entries the same id — and
             // removeBookmark filters by id, so deleting one would delete them
-            // all. Build something unique per entry instead.
-            id = "imported-${collectionName.hashCode()}-$index-${url.hashCode()}",
+            // all. Unique per entry AND per run: a deterministic id would make
+            // re-importing the same export collide with the previous run.
+            id = "imported-$importRunId-$index-${url.hashCode()}",
             tabConfig = TabConfig(type = "browser", title = title, url = url),
             workspaceName = "",
         )
