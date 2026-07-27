@@ -92,21 +92,25 @@ class PluginClassLoader(
          */
         private fun logRefusal(
             firstSighting: Boolean,
-            details: Map<String, Any?>,
+            pluginId: String,
+            className: String,
+            state: ClassLoaderState,
             refusal: ClassNotFoundException,
         ) {
+            // Built per branch, not up front: the repeat path is the hot one and
+            // its DEBUG call is usually disabled.
             if (firstSighting) {
                 logger.warn(
                     LogCategory.SYSTEM,
                     "Refused to resolve a plugin class against the host after unload",
-                    details,
+                    mapOf("pluginId" to pluginId, "className" to className, "state" to state.name),
                     refusal,
                 )
             } else {
                 logger.debug(
                     LogCategory.SYSTEM,
                     "Refused a repeat request for an already-refused plugin class",
-                    details,
+                    mapOf("pluginId" to pluginId, "className" to className, "state" to state.name),
                 )
             }
         }
@@ -251,8 +255,13 @@ class PluginClassLoader(
         // the plugin's own jar until close() shuts the jar. What is NOT allowed
         // any more is delegating a class the plugin jar cannot supply to the
         // host — see [loadClassChildFirst].
+        //
+        // DEBUG, not WARN: this fires on every post-ACTIVE attempt including the
+        // legitimate ones above, and it is not deduped, so at WARN a retry loop
+        // would bury the shutdown log with the benign message and hide the one
+        // that matters. The refusal in loadClassChildFirst is the WARN.
         if (isUnloading) {
-            logger.warn(
+            logger.debug(
                 LogCategory.SYSTEM,
                 "Attempt to load class from unloading classloader",
                 mapOf(
@@ -282,6 +291,19 @@ class PluginClassLoader(
      * parent — that is the normal path for every host-provided class. Once the
      * loader is unloading or closed the same delegation becomes destructive, so
      * it is refused instead; see the comment in the catch block.
+     *
+     * The two post-ACTIVE states are refused for different reasons, and only one
+     * of them is load-bearing for the LinkageError this exists to prevent:
+     * - [ClassLoaderState.UNLOADED] — CORRECTNESS. The jar is shut, `findClass`
+     *   misses on every name including ones the plugin owns, so delegating
+     *   splices the host's class graph into the plugin's.
+     * - [ClassLoaderState.UNLOAD_IN_PROGRESS] — POLICY. The jar is still open
+     *   here, so a miss is a genuine miss and delegating could not corrupt
+     *   anything. It is refused anyway as fail-fast on a lifecycle bug: the
+     *   plugin's own `dispose()` has already returned by the time this state is
+     *   set (see `DynamicPluginLoader.unloadPlugin`), so a first-time load in
+     *   this window is a straggler that would be refused a moment later anyway
+     *   once `close()` lands. One rule beats two.
      */
     private fun loadClassChildFirst(
         name: String,
@@ -339,15 +361,8 @@ class PluginClassLoader(
             // loop cannot bury the shutdown log. Best effort — logging must
             // never replace the refusal, which is the thing that has to
             // propagate.
-            val details =
-                mapOf(
-                    "pluginId" to pluginId,
-                    "className" to name,
-                    "state" to stateAtRefusal.name,
-                )
-            val firstSighting = refusedClassNames.add(name)
             try {
-                logRefusal(firstSighting, details, refusal)
+                logRefusal(refusedClassNames.add(name), pluginId, name, stateAtRefusal, refusal)
             } catch (_: Throwable) {
                 // Logging can itself fail during shutdown; the refusal stands.
             }

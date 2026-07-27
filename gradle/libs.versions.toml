@@ -27,8 +27,13 @@ kotlinx-datetime = "0.8.0-0.6.x-compat"
 kotlinx-serialization = "1.11.0"
 # ktor is NOT shared with plugins (no io.ktor prefix in defaultSharedPackages),
 # so a plugin's bundled ktor is unaffected by this pin; it constrains the host's
-# own client stack only. 3.5.0 arrived as an automated bump in #736 and was
-# reverted to the prior known-good 3.4.3.
+# own client stack only.
+#
+# 3.5.0 arrived as an automated bump (#736) and was reverted. The reason on
+# record was plugin compatibility, which cannot be right — the host's ktor never
+# reaches a plugin. NO host-side diagnosis was ever recorded, so there is no
+# known reason this cannot move: treat the next 3.5.x bump as worth trying, and
+# if it fails, write down what broke here.
 ktor = "3.4.3"
 logback = "1.5.38"
 precompose = "1.6.2"

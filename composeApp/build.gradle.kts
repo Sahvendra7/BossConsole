@@ -855,7 +855,12 @@ kotlin {
 // declaration here would only remove one of them. Consequence to know about:
 // libs.ktor.server.tests (ktor-server-test-host) needs ktor-server-core, so it
 // cannot be added to a composeApp source set while this block stands.
-// KtorServerAbsentFromHostTest pins both halves of the outcome.
+//
+// Gradle has no module-name wildcard, so this list is an enumeration and cannot
+// anticipate a future ktor-server-sse / -websockets / -netty arriving by some
+// new transitive path. KtorServerAbsentFromHostTest is the drift guard: it
+// scans the classpath for io/ktor/server/ rather than for these four names, so
+// a newcomer fails CI and names itself.
 configurations.configureEach {
     exclude(group = "io.ktor", module = "ktor-server-cio")
     exclude(group = "io.ktor", module = "ktor-server-cio-jvm")

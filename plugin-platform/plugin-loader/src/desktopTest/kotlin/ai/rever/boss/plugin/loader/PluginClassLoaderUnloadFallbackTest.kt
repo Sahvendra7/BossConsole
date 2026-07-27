@@ -159,6 +159,21 @@ class PluginClassLoaderUnloadFallbackTest {
     // --- teardown must not be wedged by the refusal --------------------------
 
     @Test
+    fun `an unloading loader still loads from its own jar`() {
+        val loader = loaderOver(OwnedByPluginA::class.java)
+
+        loader.markUnloading()
+
+        // The jar is open until close(), so the plugin's own classes must still
+        // resolve — what is refused is the parent FALLBACK, not loading itself.
+        // Without this, a mutation that refuses everything post-ACTIVE before
+        // even trying findClass would survive the suite.
+        val resolved = loader.loadClass(OwnedByPluginA::class.java.name)
+        assertSame(loader, resolved.classLoader, "the plugin's own jar must still answer")
+        loader.close()
+    }
+
+    @Test
     fun `classes the loader already defined still resolve after close`() {
         val loader = loaderOver(OwnedByPluginA::class.java)
         val before = loader.loadClass(OwnedByPluginA::class.java.name)
