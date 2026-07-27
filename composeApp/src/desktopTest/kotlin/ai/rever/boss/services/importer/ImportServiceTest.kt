@@ -93,7 +93,7 @@ private abstract class RecordingProvider : BookmarkDataProvider {
 }
 
 private class BulkProvider : RecordingProvider() {
-    override val supportsBulkBookmarkAdd: Boolean get() = true
+    override val supportsBulkAdd: Boolean get() = true
 
     override fun addBookmarks(
         collectionName: String,

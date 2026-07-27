@@ -180,7 +180,7 @@ object ImportService {
      * which it is; inferring it from the declaring class would misreport an
      * override that delegates to `super`, `by` delegation, or an IPC proxy.
      */
-    fun supportsBulkBookmarkInsert(provider: BookmarkDataProvider): Boolean = provider.supportsBulkBookmarkAdd
+    fun supportsBulkBookmarkInsert(provider: BookmarkDataProvider): Boolean = provider.supportsBulkAdd
 
     /**
      * Write [bookmarks] into collections, one collection per source folder.
