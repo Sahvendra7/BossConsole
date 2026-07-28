@@ -27,10 +27,12 @@ internal object SqliteSnapshot {
         source: File,
         block: (Connection) -> T,
     ): T {
-        // A private 0700 directory, not bare temp files: createTempFile is 0600
-        // but Files.copy creates the -wal/-shm sidecars with default attributes
+        // A private directory, not bare temp files: createTempFile is 0600 but
+        // Files.copy creates the -wal/-shm sidecars with default attributes
         // (0644 under a typical umask), and for Login Data the WAL holds
         // usernames, origin URLs and recently written encrypted blobs.
+        // createTempDirectory is 0700 on POSIX; on Windows it inherits the
+        // parent's ACL, which is why the password path stays macOS/Linux only.
         val workDir = Files.createTempDirectory("boss-import-")
         val temp = workDir.resolve("snapshot.sqlite")
 

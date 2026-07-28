@@ -14,14 +14,15 @@ private val filePickerLogger = BossLogger.forComponent("FilePicker")
 /**
  * Ceiling on a picked file's size.
  *
- * Comfortably above any real password or bookmark export (tens of thousands of
- * entries), and well below what would stall the UI thread reading it.
+ * A 100k-entry export is roughly 10 MB, so this is comfortably above anything
+ * real while keeping the read — and the plaintext String it decodes into —
+ * small enough not to stall the UI or balloon the heap.
  */
-private const val MAX_PICKED_FILE_BYTES = 64L * 1024 * 1024
+private const val MAX_PICKED_FILE_BYTES = 16L * 1024 * 1024
 
 @Composable
 actual fun rememberFilePicker(
-    onFileSelected: (path: String?, content: String?) -> Unit,
+    onFileSelected: (path: String?, content: String?, tooLarge: Boolean) -> Unit,
     fileExtensions: List<String>,
     title: String,
 ): FilePicker =
@@ -30,7 +31,7 @@ actual fun rememberFilePicker(
     }
 
 class DesktopFilePicker(
-    private val onFileSelected: (path: String?, content: String?) -> Unit,
+    private val onFileSelected: (path: String?, content: String?, tooLarge: Boolean) -> Unit,
     private val fileExtensions: List<String>,
     private val title: String = "Select File",
 ) : FilePicker {
@@ -62,17 +63,17 @@ class DesktopFilePicker(
                         "Picked file is too large to read - reporting no selection",
                         mapOf("bytes" to file.length()),
                     )
-                    onFileSelected(null, null)
+                    onFileSelected(null, null, true)
                     return
                 }
 
-                onFileSelected(file.absolutePath, file.readText())
+                onFileSelected(file.absolutePath, file.readText(), false)
             } else {
-                onFileSelected(null, null)
+                onFileSelected(null, null, false)
             }
         } catch (e: Exception) {
             filePickerLogger.warn(LogCategory.FILE, "Failed to read picked file - reporting no selection", error = e)
-            onFileSelected(null, null)
+            onFileSelected(null, null, false)
         }
     }
 }

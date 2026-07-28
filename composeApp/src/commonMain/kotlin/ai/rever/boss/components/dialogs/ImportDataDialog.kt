@@ -20,6 +20,7 @@ import androidx.compose.material.Card
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,8 +29,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Where the import flow currently is. */
 private sealed interface ImportStage {
@@ -73,7 +77,10 @@ fun ImportDataDialog(onDismiss: () -> Unit) {
     val partial = remember { PartialProgress() }
     val scope = rememberCoroutineScope()
 
-    val canImportPasswords = AuthStateManager.currentUser.value != null
+    // Collected, not read: signing in while the dialog is open should re-enable
+    // the password half rather than leave it disabled until reopened.
+    val currentUser by AuthStateManager.currentUser.collectAsState()
+    val canImportPasswords = currentUser != null
     val bookmarkProvider = remember { BookmarkAPIAccess.getProvider() }
 
     var browsers by remember { mutableStateOf<List<DetectedBrowser>>(emptyList()) }
@@ -86,7 +93,7 @@ fun ImportDataDialog(onDismiss: () -> Unit) {
         scanning = false
     }
 
-    val picker = rememberImportPicker { stage = it }
+    val picker = rememberImportPicker(scope) { stage = it }
 
     // Dropping the parsed data as the dialog closes keeps plaintext credentials
     // from outliving the flow that needed them.
@@ -125,7 +132,14 @@ fun ImportDataDialog(onDismiss: () -> Unit) {
                             canImportPasswords = canImportPasswords,
                             bookmarkProvider = bookmarkProvider,
                             partial = partial,
-                            onStage = { stage = it },
+                            // Ignore a late write. Cancellation isn't
+                            // instantaneous: the loop's trailing onProgress can
+                            // land after Cancel set Finished, flipping the
+                            // dialog back to a full progress bar with no job
+                            // running — and the scrim is inert while Running,
+                            // so the only way out would be pressing Cancel
+                            // again.
+                            onStage = { next -> if (stage is ImportStage.Running) stage = next },
                         )
                     }
             },
@@ -178,21 +192,44 @@ private fun DialogShell(
  * time — for a password CSV that content is plaintext in memory.
  */
 @Composable
-private fun rememberImportPicker(onStage: (ImportStage) -> Unit) =
-    rememberFilePicker(
-        onFileSelected = { path, content ->
-            if (path != null && content != null) {
-                onStage(
-                    ImportFileReader.parseContent(path, content).fold(
-                        onSuccess = { ImportStage.Review(it) },
-                        onFailure = { ImportStage.Failed(it.message ?: "That file could not be read.") },
-                    ),
-                )
+private fun rememberImportPicker(
+    scope: CoroutineScope,
+    onStage: (ImportStage) -> Unit,
+) = rememberFilePicker(
+    onFileSelected = { path, content, tooLarge ->
+        when {
+            // A distinct outcome, so an oversized file doesn't look identical to
+            // "user cancelled" — which made the button appear to do nothing.
+            tooLarge -> {
+                onStage(ImportStage.Failed("That file is too large to import."))
             }
-        },
-        fileExtensions = listOf("csv", "html", "htm"),
-        title = "Choose a passwords or bookmarks export",
-    )
+
+            path != null && content != null -> {
+                onStage(ImportStage.Running(0, 0))
+                scope.launch {
+                    // Parsing a large CSV allocates one object per row; doing it
+                    // in the picker callback froze the window.
+                    val next =
+                        withContext(Dispatchers.IO) {
+                            ImportFileReader.parseContent(path, content).fold(
+                                onSuccess = { ImportStage.Review(it) },
+                                onFailure = {
+                                    ImportStage.Failed(it.message ?: "That file could not be read.")
+                                },
+                            )
+                        }
+                    onStage(next)
+                }
+            }
+
+            else -> {
+                Unit
+            }
+        }
+    },
+    fileExtensions = listOf("csv", "html", "htm"),
+    title = "Choose a passwords or bookmarks export",
+)
 
 /**
  * Pull everything importable out of a detected browser.
@@ -257,7 +294,7 @@ private suspend fun runImport(
     val offset = if (passwordResult != null) preview.passwords.size else 0
 
     val bookmarkResult =
-        if (preview.bookmarks.isNotEmpty()) {
+        if (preview.bookmarks.isNotEmpty() && bookmarkProvider != null) {
             ImportService.importBookmarks(preview.bookmarks, bookmarkProvider) { done, _, soFar ->
                 partial.bookmarks = soFar
                 onStage(ImportStage.Running(offset + done, total))
@@ -342,6 +379,13 @@ private val DIALOG_WIDTH = 560.dp
  * here rather than claiming nothing happened.
  */
 private class PartialProgress {
+    // Written from Dispatchers.IO by the progress callbacks, read from the main
+    // thread by Cancel. Without @Volatile the cancel path can read a stale value
+    // and under-report what was written — the exact failure this class exists to
+    // prevent.
+    @Volatile
     var passwords: ImportResult? = null
+
+    @Volatile
     var bookmarks: ImportResult? = null
 }

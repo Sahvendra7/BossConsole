@@ -104,13 +104,14 @@ private fun SkippedRows(preview: ImportPreview) {
     Column(Modifier.heightIn(max = SCROLL_LIST_MAX_HEIGHT).verticalScroll(rememberScrollState())) {
         // Capped: a bad export can skip thousands, and the dialog only needs
         // to show enough for the user to recognise the pattern.
-        preview.skipped.take(50).forEach { row ->
+        preview.skipped.take(MAX_LISTED).forEach { row ->
             Text(
                 "Row ${row.rowNumber}: ${row.reason.describe()} — ${row.label}",
                 style = BossTheme.type.micro,
                 color = BossTheme.colors.textMuted,
             )
         }
+        MoreRow(preview.skipped.size - MAX_LISTED)
     }
 }
 
@@ -234,3 +235,17 @@ private fun SkipReason.describe(): String =
 
 /** Caps the skipped/failure lists so the action row stays reachable. */
 private val SCROLL_LIST_MAX_HEIGHT = 120.dp
+
+/** Says how many rows the list left out, rather than truncating silently. */
+@Composable
+private fun MoreRow(remaining: Int) {
+    if (remaining <= 0) return
+    Text(
+        "and $remaining more",
+        style = BossTheme.type.micro,
+        color = BossTheme.colors.textMuted,
+    )
+}
+
+/** Rows shown before the list is summarised. */
+private const val MAX_LISTED = 50

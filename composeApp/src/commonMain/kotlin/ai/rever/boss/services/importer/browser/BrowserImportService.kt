@@ -5,6 +5,8 @@ import ai.rever.boss.services.importer.ImportedBookmark
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 
 /**
@@ -39,7 +41,11 @@ object BrowserImportService {
         withContext(Dispatchers.IO) {
             BrowserDetector
                 .detectProfiles()
-                .map { profile -> DetectedBrowser(profile = profile, capabilities = capabilitiesOf(profile)) }
+                // Concurrently: each Chromium profile costs a full Bookmarks
+                // parse plus a Login Data copy, and doing ten sequentially is
+                // the whole "Looking for installed browsers…" wait.
+                .map { profile -> async { DetectedBrowser(profile, capabilitiesOf(profile)) } }
+                .awaitAll()
                 .filter { detected ->
                     // Browsers create profile directories eagerly, so several
                     // "Profile N" entries typically hold nothing at all. Drop
@@ -132,7 +138,7 @@ object BrowserImportService {
                 return@withContext Result(ImportPreview(bookmarks = bookmarks))
             }
 
-            val passwords =
+            val read =
                 runCatching { ChromiumPasswordReader.read(profile) }
                     .getOrElse { error ->
                         // Bookmarks still import; say why passwords didn't.
@@ -142,7 +148,23 @@ object BrowserImportService {
                         )
                     }
 
-            Result(ImportPreview(passwords = passwords, bookmarks = bookmarks))
+            // Entries that decrypt to nothing are usually sealed by a desktop
+            // keyring (Linux v11), which this cannot open. Without saying so the
+            // user sees "70 passwords" in the picker and then a review screen
+            // with bookmarks only and no explanation — the same silent shape as
+            // the keychain-service-name bug.
+            val sealedNote =
+                if (read.undecryptable > 0) {
+                    "${read.undecryptable} saved passwords could not be decrypted — they are likely sealed by " +
+                        "your desktop keyring. Export a CSV from the browser to import those."
+                } else {
+                    null
+                }
+
+            Result(
+                preview = ImportPreview(passwords = read.passwords, bookmarks = bookmarks),
+                note = sealedNote,
+            )
         }
 
     private fun readBookmarks(profile: BrowserProfile): List<ImportedBookmark> =

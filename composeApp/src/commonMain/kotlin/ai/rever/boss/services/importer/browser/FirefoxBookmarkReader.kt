@@ -24,12 +24,25 @@ object FirefoxBookmarkReader {
     private const val TYPE_BOOKMARK = 1
     private const val TYPE_FOLDER = 2
 
+    /**
+     * Firefox's tags live in moz_bookmarks like everything else: the tags root
+     * holds one folder per tag, and every tagged page is a `type = 1` child
+     * pointing at the same moz_places row. Without excluding them a page with
+     * three tags imports four times — once real, three times titled with the
+     * raw URL under a literal "tags/..." path.
+     */
+    private const val TAGS_ROOT_GUID = "tags________"
+
+    /** Depth guard: a corrupt profile can contain a parent cycle. */
+    private const val MAX_ANCESTOR_HOPS = 32
+
     private data class Row(
         val id: Long,
         val parent: Long,
         val type: Int,
         val title: String,
         val url: String?,
+        val guid: String,
     )
 
     fun placesFile(profile: BrowserProfile): File = File(profile.directory, "places.sqlite")
@@ -44,7 +57,7 @@ object FirefoxBookmarkReader {
             SqliteSnapshot.read(file) { connection ->
                 val sql =
                     """
-                    SELECT b.id, b.parent, b.type, IFNULL(b.title, ''), p.url
+                    SELECT b.id, b.parent, b.type, IFNULL(b.title, ''), p.url, IFNULL(b.guid, '')
                     FROM moz_bookmarks b
                     LEFT JOIN moz_places p ON b.fk = p.id
                     """.trimIndent()
@@ -60,6 +73,7 @@ object FirefoxBookmarkReader {
                                         type = rs.getInt(3),
                                         title = rs.getString(4).orEmpty(),
                                         url = rs.getString(5),
+                                        guid = rs.getString(6).orEmpty(),
                                     ),
                                 )
                             }
@@ -70,14 +84,33 @@ object FirefoxBookmarkReader {
 
         val byId = rows.associateBy { it.id }
         return rows
-            .filter { it.type == TYPE_BOOKMARK && !it.url.isNullOrBlank() && isImportableUrl(it.url) }
-            .map { row ->
+            .filter {
+                it.type == TYPE_BOOKMARK &&
+                    !it.url.isNullOrBlank() &&
+                    isImportableUrl(it.url) &&
+                    !isUnderTagsRoot(it, byId)
+            }.map { row ->
                 ImportedBookmark(
                     title = row.title.ifBlank { row.url.orEmpty() },
                     url = row.url.orEmpty(),
                     folder = folderPath(row, byId),
                 )
             }
+    }
+
+    /** True when [row]'s ancestor chain reaches the tags root. */
+    private fun isUnderTagsRoot(
+        row: Row,
+        byId: Map<Long, Row>,
+    ): Boolean {
+        var current = byId[row.parent]
+        var hops = 0
+        while (current != null && hops < MAX_ANCESTOR_HOPS) {
+            if (current.guid == TAGS_ROOT_GUID) return true
+            current = byId[current.parent]
+            hops++
+        }
+        return false
     }
 
     /** Walk up the parent chain, dropping the unnamed synthetic root. */
@@ -90,7 +123,7 @@ object FirefoxBookmarkReader {
         // Depth guard: a corrupt profile could contain a parent cycle.
         var hops = 0
 
-        while (current != null && current.type == TYPE_FOLDER && hops < 32) {
+        while (current != null && current.type == TYPE_FOLDER && hops < MAX_ANCESTOR_HOPS) {
             val name = ROOT_LABELS[current.title] ?: current.title
             if (name.isNotBlank()) parts.add(name)
             current = byId[current.parent]

@@ -12,7 +12,17 @@ data class ImportedPassword(
     val username: String,
     val password: String,
     val notes: String? = null,
-)
+) {
+    /**
+     * Redacted on purpose.
+     *
+     * The generated toString would print `password=hunter2`, so a single
+     * `mapOf("entry" to entry)` or an exception message interpolating a row
+     * would defeat the whole logging discipline. Enforced rather than
+     * documented.
+     */
+    override fun toString(): String = "ImportedPassword(website=$website, username=***, password=***)"
+}
 
 /**
  * A bookmark parsed out of a browser export.
@@ -55,6 +65,12 @@ data class ImportPreview(
     val skipped: List<SkippedRow> = emptyList(),
 ) {
     val hasAnything: Boolean get() = passwords.isNotEmpty() || bookmarks.isNotEmpty()
+
+    /** Counts only — printing the lists would print every credential. */
+    override fun toString(): String {
+        val counts = "${passwords.size} passwords, ${bookmarks.size} bookmarks, ${skipped.size} skipped"
+        return "ImportPreview($counts)"
+    }
 }
 
 /** Outcome of writing one half of an [ImportPreview] to storage. */

@@ -76,11 +76,12 @@ class LiveBrowserProbeTest {
                 val outcome =
                     runCatching { ChromiumPasswordReader.read(profile) }
                         .fold(
-                            onSuccess = { list ->
+                            onSuccess = { result ->
+                                val list = result.passwords
                                 val withHost = list.count { it.website.startsWith("http") }
                                 val withUser = list.count { it.username.isNotBlank() }
-                                val nonEmptyPw = list.count { it.password.isNotEmpty() }
-                                "decrypted ${list.size} (hosts=$withHost users=$withUser secrets=$nonEmptyPw)"
+                                "decrypted ${list.size} (hosts=$withHost users=$withUser " +
+                                    "undecryptable=${result.undecryptable})"
                             },
                             onFailure = { "FAILED ${it::class.simpleName}: ${it.message}" },
                         )

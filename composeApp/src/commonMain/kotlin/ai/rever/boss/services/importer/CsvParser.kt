@@ -77,6 +77,18 @@ object CsvParser {
         return rows
     }
 
+    /**
+     * True when this quote opens or closes the field rather than being data.
+     *
+     * A quote only opens a field at its start; mid-field it is a literal.
+     * Otherwise `a"b,c` swallows the comma and every later column shifts.
+     */
+    private fun isQuoteToggle(
+        c: Char,
+        inQuotes: Boolean,
+        atFieldStart: Boolean,
+    ): Boolean = c == '"' && (inQuotes || atFieldStart)
+
     /** True when position [i] is the `""` that RFC 4180 uses for a literal quote. */
     private fun isEscapedQuote(
         input: String,
@@ -104,7 +116,7 @@ object CsvParser {
                     i += 2
                 }
 
-                c == '"' -> {
+                isQuoteToggle(c, inQuotes, atFieldStart = i == start) -> {
                     inQuotes = !inQuotes
                     i++
                 }

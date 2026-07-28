@@ -62,9 +62,16 @@ object ChromiumPasswordReader {
      * @throws ChromiumCrypto.UnsupportedPlatformException on Windows
      * @throws ChromiumCrypto.KeyUnavailableException if the key can't be read
      */
-    fun read(profile: BrowserProfile): List<ImportedPassword> {
+
+    /** Decrypted logins, plus how many could not be read and why. */
+    data class Result(
+        val passwords: List<ImportedPassword>,
+        val undecryptable: Int,
+    )
+
+    fun read(profile: BrowserProfile): Result {
         val file = loginDataFile(profile)
-        if (!file.isFile) return emptyList()
+        if (!file.isFile) return Result(emptyList(), 0)
 
         val key = ChromiumCrypto.deriveKey(profile.browserName)
 
@@ -113,6 +120,6 @@ object ChromiumPasswordReader {
             "Read Chromium logins",
             mapOf("browser" to profile.browserName, "usable" to out.size, "undecryptable" to undecryptable),
         )
-        return out
+        return Result(out, undecryptable)
     }
 }

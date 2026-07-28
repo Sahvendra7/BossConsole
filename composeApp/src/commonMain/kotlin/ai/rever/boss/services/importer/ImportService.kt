@@ -231,11 +231,15 @@ object ImportService {
             val failures = mutableListOf<String>()
             var imported = 0
             var done = 0
+            // Counts across the whole run. mapIndexed restarted at 0 per folder,
+            // so the same URL sitting first in two folders produced identical
+            // ids — and the comment below claims global uniqueness.
+            var idSequence = 0
 
             for ((collectionName, entries) in byFolder) {
                 if (!currentCoroutineContext().isActive) break
 
-                val models = entries.mapIndexed { index, entry -> entry.toBookmark(runId, index) }
+                val models = entries.map { entry -> entry.toBookmark(runId, idSequence++) }
 
                 runCatching {
                     // Ensure the collection for BOTH branches. The bulk path

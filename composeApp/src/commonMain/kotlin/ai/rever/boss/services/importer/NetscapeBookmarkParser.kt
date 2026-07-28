@@ -1,5 +1,7 @@
 package ai.rever.boss.services.importer
 
+import ai.rever.boss.services.importer.browser.isImportableUrl
+
 /**
  * Reads the "Netscape Bookmark File" format that every browser still emits from
  * its Export Bookmarks command.
@@ -31,9 +33,6 @@ object NetscapeBookmarkParser {
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
         )
     private val HREF = Regex("""href\s*=\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
-
-    /** Schemes worth importing as a browsable bookmark. */
-    private val IMPORTABLE_SCHEMES = listOf("http://", "https://", "ftp://", "file://")
 
     /**
      * Extract every bookmark, tagging each with the slash-joined folder path it
@@ -72,7 +71,7 @@ object NetscapeBookmarkParser {
                             ?.get(1)
                             ?.trim()
                             .orEmpty()
-                    if (!isImportable(href)) continue
+                    if (!isImportableUrl(href)) continue
 
                     val title = decodeEntities(stripTags(match.groupValues[3])).trim()
                     bookmarks.add(
@@ -87,16 +86,6 @@ object NetscapeBookmarkParser {
         }
 
         return bookmarks
-    }
-
-    /**
-     * Bookmarklets (`javascript:`) and `place:` queries are not pages — importing
-     * them as tabs would produce entries that cannot open.
-     */
-    private fun isImportable(href: String): Boolean {
-        if (href.isEmpty()) return false
-        val lower = href.lowercase()
-        return IMPORTABLE_SCHEMES.any { lower.startsWith(it) }
     }
 
     private fun stripTags(value: String): String = value.replace(Regex("<[^>]*>"), "")

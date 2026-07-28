@@ -117,6 +117,25 @@ class CsvParserTest {
     }
 
     @Test
+    fun `a bare quote mid-field is data, not a delimiter`() {
+        // Toggling quote state anywhere in a field made a"b,c swallow the comma
+        // and shift every later column.
+        val rows = CsvParser.parse("a\"b,c")
+
+        assertEquals(2, rows.single().size)
+        assertEquals("a\"b", rows.single().first())
+    }
+
+    @Test
+    fun `an edge-padded quoted value keeps its whitespace`() {
+        // The password column is read untrimmed: " hunter2 " stored as
+        // "hunter2" is an entry that looks right and does not work.
+        val rows = CsvParser.parse("url,pw\nx," + '"' + " hunter2 " + '"')
+
+        assertEquals(" hunter2 ", rows[1][1])
+    }
+
+    @Test
     fun `reports no password column when the file is not a password export`() {
         val header = listOf("first name", "last name", "company")
 
