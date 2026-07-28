@@ -159,9 +159,14 @@ object ImportFileReader {
     ): RowOutcome {
         fun cell(column: Int): String = if (column >= 0) row.getOrNull(column)?.trim().orEmpty() else ""
 
+        /** Untrimmed: edge whitespace is part of a password, not formatting. */
+        fun rawCell(column: Int): String = if (column >= 0) row.getOrNull(column).orEmpty() else ""
+
         val url = cell(columns.url)
         val username = cell(columns.username)
-        val password = cell(columns.password)
+        // Trimming a quoted " hunter2 " would store a value that looks right and
+        // silently does not work, with nothing to point at.
+        val password = rawCell(columns.password)
 
         val reason =
             when {

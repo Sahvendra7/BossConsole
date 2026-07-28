@@ -51,7 +51,7 @@ object ImportService {
      */
     suspend fun importPasswords(
         passwords: List<ImportedPassword>,
-        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+        onProgress: (done: Int, total: Int, soFar: ImportResult) -> Unit = { _, _, _ -> },
     ): ImportResult =
         withContext(Dispatchers.IO) {
             val existing = loadExistingSecretKeys()
@@ -69,7 +69,17 @@ object ImportService {
                 val blocked =
                     when {
                         website.isEmpty() || isNonWebEntry(entry.website) -> SkipReason.MISSING_URL
+
+                        // Chrome stores logins with an empty username_value.
+                        // The CSV path pre-skips these; without the same check
+                        // the browser path sends them to the RPC, which rejects
+                        // them, and they render as red failures.
+                        entry.username.isBlank() -> SkipReason.MISSING_USERNAME
+
+                        entry.password.isEmpty() -> SkipReason.MISSING_PASSWORD
+
                         key in existing -> SkipReason.ALREADY_EXISTS
+
                         else -> null
                     }
 
@@ -97,7 +107,15 @@ object ImportService {
                         )
                 }
 
-                onProgress(index + 1, passwords.size)
+                // Reported outward, not just returned: withContext discards the
+                // block's value when the job is cancelled, so a cancelled import
+                // would otherwise lose the tally and tell the user nothing was
+                // written after hundreds of rows had been.
+                onProgress(
+                    index + 1,
+                    passwords.size,
+                    ImportResult(imported = imported, skipped = skipped.toList(), failures = failures.toList()),
+                )
             }
 
             logger.info(
@@ -190,7 +208,7 @@ object ImportService {
     suspend fun importBookmarks(
         bookmarks: List<ImportedBookmark>,
         provider: BookmarkDataProvider?,
-        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+        onProgress: (done: Int, total: Int, soFar: ImportResult) -> Unit = { _, _, _ -> },
     ): ImportResult =
         withContext(Dispatchers.IO) {
             if (provider == null) {
@@ -220,13 +238,23 @@ object ImportService {
                 val models = entries.mapIndexed { index, entry -> entry.toBookmark(runId, index) }
 
                 runCatching {
+                    // Ensure the collection for BOTH branches. The bulk path
+                    // previously assumed the plugin does get-or-create; if it
+                    // ever behaves like addBookmark — a silent no-op on a
+                    // missing collection — that is a "successful" import of
+                    // nothing, on the path that actually runs.
+                    ensureCollection(provider, collectionName)
                     if (bulk) {
                         provider.addBookmarks(collectionName, models)
                     } else {
                         insertOneByOne(provider, collectionName, models)
                     }
                 }.fold(
-                    onSuccess = { imported += models.size },
+                    onSuccess = {
+                        // Only credit what a full pass actually wrote; a cancelled
+                        // per-item insert returns early.
+                        imported += if (currentCoroutineContext().isActive) models.size else 0
+                    },
                     onFailure = { error ->
                         // A cancelled import must unwind, not be reported as a
                         // per-collection failure the user then sees in the results.
@@ -236,7 +264,7 @@ object ImportService {
                 )
 
                 done += models.size
-                onProgress(done, bookmarks.size)
+                onProgress(done, bookmarks.size, ImportResult(imported = imported, failures = failures.toList()))
             }
 
             logger.info(
@@ -263,14 +291,22 @@ object ImportService {
      * The pause between inserts spaces out the per-item file rewrites this path
      * triggers.
      */
+    private fun ensureCollection(
+        provider: BookmarkDataProvider,
+        collectionName: String,
+    ) {
+        // createCollection appends unconditionally rather than get-or-create, so
+        // creating blindly would leave a duplicate empty collection behind.
+        if (provider.collections.value.none { it.name == collectionName }) {
+            provider.createCollection(collectionName)
+        }
+    }
+
     private suspend fun insertOneByOne(
         provider: BookmarkDataProvider,
         collectionName: String,
         models: List<Bookmark>,
     ) {
-        if (provider.collections.value.none { it.name == collectionName }) {
-            provider.createCollection(collectionName)
-        }
         models.forEach { bookmark ->
             if (!currentCoroutineContext().isActive) return
             provider.addBookmark(collectionName, bookmark)

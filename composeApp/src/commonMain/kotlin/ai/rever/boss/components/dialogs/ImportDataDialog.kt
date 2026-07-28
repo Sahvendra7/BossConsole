@@ -117,7 +117,7 @@ fun ImportDataDialog(onDismiss: () -> Unit) {
             onRestart = { stage = ImportStage.ChooseSource },
             onCancel = ::close,
             onStart = { preview ->
-                stage = ImportStage.Running(0, preview.total)
+                stage = ImportStage.Running(0, preview.plannedTotal(canImportPasswords, bookmarkProvider != null))
                 runningJob =
                     scope.launch {
                         runImport(
@@ -214,9 +214,16 @@ private suspend fun readBrowser(
     }
 }
 
-/** Total number of items an import will attempt. */
-private val ImportPreview.total: Int
-    get() = passwords.size + bookmarks.size
+/**
+ * Items the import will actually attempt.
+ *
+ * Counts only the halves that will run — including a skipped half would leave
+ * the bar stuck short of the end on a mixed file.
+ */
+private fun ImportPreview.plannedTotal(
+    canImportPasswords: Boolean,
+    bookmarksAvailable: Boolean,
+): Int = (if (canImportPasswords) passwords.size else 0) + (if (bookmarksAvailable) bookmarks.size else 0)
 
 /**
  * Run both halves of an import, reporting progress as a single combined count.
@@ -232,11 +239,13 @@ private suspend fun runImport(
     partial: PartialProgress,
     onStage: (ImportStage) -> Unit,
 ) {
-    val total = preview.total
+    val total = preview.plannedTotal(canImportPasswords, bookmarkProvider != null)
 
     val passwordResult =
         if (canImportPasswords && preview.passwords.isNotEmpty()) {
-            ImportService.importPasswords(preview.passwords) { done, _ ->
+            ImportService.importPasswords(preview.passwords) { done, _, soFar ->
+                // Recorded as it goes: cancellation discards the return value.
+                partial.passwords = soFar
                 onStage(ImportStage.Running(done, total))
             }
         } else {
@@ -249,7 +258,8 @@ private suspend fun runImport(
 
     val bookmarkResult =
         if (preview.bookmarks.isNotEmpty()) {
-            ImportService.importBookmarks(preview.bookmarks, bookmarkProvider) { done, _ ->
+            ImportService.importBookmarks(preview.bookmarks, bookmarkProvider) { done, _, soFar ->
+                partial.bookmarks = soFar
                 onStage(ImportStage.Running(offset + done, total))
             }
         } else {

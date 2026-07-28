@@ -70,7 +70,7 @@ object FirefoxBookmarkReader {
 
         val byId = rows.associateBy { it.id }
         return rows
-            .filter { it.type == TYPE_BOOKMARK && !it.url.isNullOrBlank() && isImportable(it.url) }
+            .filter { it.type == TYPE_BOOKMARK && !it.url.isNullOrBlank() && isImportableUrl(it.url) }
             .map { row ->
                 ImportedBookmark(
                     title = row.title.ifBlank { row.url.orEmpty() },
@@ -97,13 +97,5 @@ object FirefoxBookmarkReader {
             hops++
         }
         return parts.reversed().joinToString("/").ifEmpty { null }
-    }
-
-    private fun isImportable(url: String?): Boolean {
-        val lower = url.orEmpty().lowercase()
-        return lower.startsWith("http://") ||
-            lower.startsWith("https://") ||
-            lower.startsWith("ftp://") ||
-            lower.startsWith("file://")
     }
 }

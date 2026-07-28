@@ -62,7 +62,7 @@ object SafariBookmarkReader {
     private fun runPlutil(file: File): String {
         val result =
             runProcess(
-                listOf("plutil", "-convert", "json", "-o", "-", file.absolutePath),
+                listOf("/usr/bin/plutil", "-convert", "json", "-o", "-", file.absolutePath),
                 PLUTIL_TIMEOUT_SECONDS,
             )
 
@@ -105,7 +105,10 @@ object SafariBookmarkReader {
             when (obj["WebBookmarkType"]?.jsonPrimitive?.contentOrNull) {
                 "WebBookmarkTypeLeaf" -> {
                     val url = obj["URLString"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    if (url.isNotBlank()) {
+                    // Same gate as every other reader: Safari otherwise imports
+                    // javascript: bookmarklets and x-apple-* entries that no
+                    // other source does.
+                    if (isImportableUrl(url)) {
                         val title =
                             obj["URIDictionary"]
                                 ?.jsonObject

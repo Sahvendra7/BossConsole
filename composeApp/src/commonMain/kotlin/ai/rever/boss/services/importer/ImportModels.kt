@@ -61,7 +61,10 @@ data class ImportPreview(
 data class ImportResult(
     val imported: Int = 0,
     val skipped: List<SkippedRow> = emptyList(),
-    /** Messages are sanitised — safe to show and to log. */
+    /**
+     * Shown in the results list. Never logged: each entry embeds the username
+     * and host, and usernames are usually email addresses.
+     */
     val failures: List<String> = emptyList(),
 ) {
     val failed: Int get() = failures.size

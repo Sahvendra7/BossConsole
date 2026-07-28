@@ -246,6 +246,46 @@ class ImportServiceTest {
         }
 
     @Test
+    fun `progress reports the tally as it goes, so cancelling can read it`() =
+        runTest {
+            // The bug this guards: importBookmarks runs inside withContext, which
+            // discards its return value when the job is cancelled — so a result
+            // that is only *returned* is lost, and the dialog told the user
+            // nothing had been written after hundreds of rows had been.
+            val provider = BulkProvider()
+            val input =
+                bookmarks(
+                    "https://a.test/" to "Work",
+                    "https://b.test/" to "Personal",
+                    "https://c.test/" to "Reading",
+                )
+
+            val seen = mutableListOf<Int>()
+            ImportService.importBookmarks(input, provider) { _, _, soFar -> seen.add(soFar.imported) }
+
+            assertTrue(seen.isNotEmpty(), "progress never reported a tally")
+            assertEquals(input.size, seen.last(), "the final progress tally must match what landed")
+            // Monotonic: a partial read must never overstate what was written.
+            assertEquals(seen.sorted(), seen)
+        }
+
+    @Test
+    fun `the collection is ensured on the bulk path too`() =
+        runTest {
+            // The bulk branch used to assume the plugin does get-or-create. A
+            // provider that no-ops on a missing collection would make this a
+            // "successful" import of nothing.
+            val provider = BulkProvider()
+
+            ImportService.importBookmarks(bookmarks("https://a.test/" to "Fresh"), provider)
+
+            assertTrue(
+                provider.createdCollections.contains("Fresh"),
+                "bulk path did not ensure the collection existed",
+            )
+        }
+
+    @Test
     fun `a missing provider degrades instead of throwing`() =
         runTest {
             val result = ImportService.importBookmarks(bookmarks("https://a.test/" to null), provider = null)

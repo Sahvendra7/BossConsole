@@ -26,8 +26,11 @@ internal fun runProcess(
 ): ProcessOutput {
     val process = ProcessBuilder(command).start()
 
-    val out = StringBuilder()
-    val err = StringBuilder()
+    // StringBuffer, not StringBuilder: the bounded joins below can time out, and
+    // reading an unsynchronised builder while a pump thread is still appending
+    // can throw or return torn content.
+    val out = StringBuffer()
+    val err = StringBuffer()
     val outPump = Thread { process.inputStream.bufferedReader().use { out.append(it.readText()) } }
     val errPump = Thread { process.errorStream.bufferedReader().use { err.append(it.readText()) } }
     outPump.isDaemon = true

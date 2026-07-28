@@ -22,23 +22,26 @@ internal object SqliteSnapshot {
     /**
      * Copy [source] to a temp file, run [block] against it, then delete the copy.
      *
-     * Opened read-only so a corrupt or unexpected schema can never write back.
      */
     fun <T> read(
         source: File,
         block: (Connection) -> T,
     ): T {
-        val temp = Files.createTempFile("boss-import-", ".sqlite")
-        val sidecars = listOf("-wal", "-shm")
+        // A private 0700 directory, not bare temp files: createTempFile is 0600
+        // but Files.copy creates the -wal/-shm sidecars with default attributes
+        // (0644 under a typical umask), and for Login Data the WAL holds
+        // usernames, origin URLs and recently written encrypted blobs.
+        val workDir = Files.createTempDirectory("boss-import-")
+        val temp = workDir.resolve("snapshot.sqlite")
 
         try {
             Files.copy(source.toPath(), temp, StandardCopyOption.REPLACE_EXISTING)
-            sidecars.forEach { suffix ->
+            listOf("-wal", "-shm").forEach { suffix ->
                 val extra = File(source.absolutePath + suffix)
                 if (extra.isFile) {
                     Files.copy(
                         extra.toPath(),
-                        File(temp.toString() + suffix).toPath(),
+                        workDir.resolve("snapshot.sqlite$suffix"),
                         StandardCopyOption.REPLACE_EXISTING,
                     )
                 }
@@ -59,8 +62,7 @@ internal object SqliteSnapshot {
                 .getConnection("jdbc:sqlite:${temp.toAbsolutePath()}")
                 .use(block)
         } finally {
-            Files.deleteIfExists(temp)
-            sidecars.forEach { Files.deleteIfExists(File(temp.toString() + it).toPath()) }
+            runCatching { workDir.toFile().deleteRecursively() }
         }
     }
 }

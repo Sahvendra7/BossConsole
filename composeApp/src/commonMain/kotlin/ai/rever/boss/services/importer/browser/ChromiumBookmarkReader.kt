@@ -71,7 +71,7 @@ object ChromiumBookmarkReader {
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
                 "url" -> {
                     val url = obj["url"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    if (url.isNotBlank() && isImportable(url)) {
+                    if (url.isNotBlank() && isImportableUrl(url)) {
                         val name = obj["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
                         out.add(
                             ImportedBookmark(
@@ -89,14 +89,5 @@ object ChromiumBookmarkReader {
                 }
             }
         }
-    }
-
-    /** `chrome://` and `javascript:` entries are not pages worth importing. */
-    private fun isImportable(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.startsWith("http://") ||
-            lower.startsWith("https://") ||
-            lower.startsWith("ftp://") ||
-            lower.startsWith("file://")
     }
 }
