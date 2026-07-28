@@ -21,17 +21,31 @@ import java.io.File
  *
  * Restart requests are delegated to [onRequestRestart] (typically calls
  * KernelService.RequestShutdown so the kernel handles the actual process lifecycle).
+ *
+ * The engine writes no file. It reads source files, and only from inside [projectRoot] —
+ * see [readSourceFiles].
  */
 class RepairEngine(
     private val analyzer: CrashAnalyzer,
     private val snapshotManager: SnapshotManager,
     private val aiClient: AiRepairClient? = null,
-    /** Root directory used to resolve relative source file paths from process manifests. */
+    /**
+     * Root directory used to resolve relative source file paths from process manifests, and
+     * the only directory those files may be read from.
+     *
+     * The default is this process's working directory, which is where the kernel spawned it
+     * from and is not necessarily a project — a packaged app's working directory can be the
+     * filesystem root, which [AllowedRoots] refuses as a root, leaving no source reads at
+     * all. A host that wants manifest source files read should pass the project directory.
+     */
     private val projectRoot: String = System.getProperty("user.dir") ?: ".",
     /** Called to request a restart. Kernel handles the actual re-spawn. */
     private val onRequestRestart: suspend (processId: String, jvmArgsOverride: List<String>) -> Unit = { _, _ -> },
 ) {
     private val logger = LoggerFactory.getLogger(RepairEngine::class.java)
+
+    /** Manifest source file paths come from the diagnosed process, so they are confined. */
+    private val sourceRoots = AllowedRoots.of(File(projectRoot))
 
     // Escalation ladder applied when analyzer confidence is LOW
     private val defaultLadder =
@@ -99,15 +113,7 @@ class RepairEngine(
             }
 
             RepairStrategy.REPAIR_STRATEGY_RESET_STATE -> {
-                try {
-                    snapshotManager.cleanup(processId, keepLast = 0)
-                    onRequestRestart(processId, emptyList())
-                    logger.info("State reset + restart requested for process: {}", processId)
-                    RepairOutcome.StateReset(processId)
-                } catch (e: Exception) {
-                    logger.error("Failed to reset state for process: {}", processId, e)
-                    RepairOutcome.Failed(processId, "State reset failed: ${e.message}")
-                }
+                resetState(processId)
             }
 
             RepairStrategy.REPAIR_STRATEGY_PATCH_CONFIG -> {
@@ -155,24 +161,82 @@ class RepairEngine(
         }
 
     /**
+     * Restarts [processId] on the state it last snapshotted, and deletes nothing.
+     *
+     * A state reset is the third rung of [defaultLadder], so it runs automatically and
+     * without approval. Its wire form, `ResetStateAction`, carries `restore_snapshot` and
+     * `snapshot_id`: the reset is meant to bring a process back on a recorded state, so the
+     * newest snapshot is named here and reported in the outcome. Removing the snapshots
+     * would be the opposite — it would leave a later ROLLBACK with nothing to roll back to,
+     * at the moment a process is already failing repeatedly. With no snapshot recorded this
+     * is a plain restart, which is all the delete-everything form ever amounted to.
+     */
+    private suspend fun resetState(processId: String): RepairOutcome {
+        val snapshotId = latestSnapshotId(processId)
+        return try {
+            onRequestRestart(processId, emptyList())
+            logger.info(
+                "State reset + restart requested for process: {} (restoring snapshot: {})",
+                processId,
+                snapshotId ?: "none recorded",
+            )
+            RepairOutcome.StateReset(processId, snapshotId)
+        } catch (e: Exception) {
+            logger.error("Failed to reset state for process: {}", processId, e)
+            RepairOutcome.Failed(processId, "State reset failed: ${e.message}")
+        }
+    }
+
+    private fun latestSnapshotId(processId: String): String? =
+        try {
+            snapshotManager.listSnapshots(processId).firstOrNull()?.id
+        } catch (_: Exception) {
+            null
+        }
+
+    /**
      * Reads source files listed in the process manifest.
      * Paths are tried as absolute first, then relative to [projectRoot].
      * Files that cannot be read are silently omitted.
+     *
+     * The list comes from the manifest the diagnosed process sent, and the contents go to
+     * [AiRepairClient], i.e. off this machine — so which files the host is willing to read is
+     * not the reporting process's choice. Every candidate is resolved and must land inside
+     * [projectRoot] ([sourceRoots]); one that does not is logged and dropped, never fatal,
+     * because a manifest with a single bad entry should still be diagnosable.
      */
     private fun readSourceFiles(manifest: ProcessManifest?): Map<String, String> {
         if (manifest == null || manifest.sourceFilesList.isEmpty()) return emptyMap()
         return manifest.sourceFilesList
-            .associateWith { path ->
-                try {
-                    val file =
-                        File(path).takeIf { it.isAbsolute && it.isFile }
-                            ?: File(projectRoot, path).takeIf { it.isFile }
-                    file?.readText() ?: ""
-                } catch (_: Exception) {
+            .associateWith { path -> readConfinedSourceFile(path) }
+            .filterValues { it.isNotBlank() }
+    }
+
+    private fun readConfinedSourceFile(declaredPath: String): String =
+        try {
+            val candidate = File(declaredPath).takeIf { it.isAbsolute } ?: File(projectRoot, declaredPath)
+            val confined = sourceRoots.resolve(candidate)
+            when {
+                confined == null -> {
+                    logger.warn(
+                        "Manifest source file {} is outside the roots {} this process reads from — dropped",
+                        declaredPath,
+                        sourceRoots.rootPaths().ifEmpty { listOf("(none)") },
+                    )
                     ""
                 }
-            }.filterValues { it.isNotBlank() }
-    }
+
+                !confined.isFile -> {
+                    ""
+                }
+
+                else -> {
+                    confined.readText()
+                }
+            }
+        } catch (_: Exception) {
+            ""
+        }
 
     private fun buildEscalationReport(
         processId: String,
@@ -200,6 +264,8 @@ sealed class RepairOutcome {
 
     data class StateReset(
         val processId: String,
+        /** The snapshot the restarted process should come back on, or null if none is recorded. */
+        val restoredSnapshotId: String? = null,
     ) : RepairOutcome()
 
     data class ConfigPatched(
