@@ -99,7 +99,14 @@ class AllowedRoots private constructor(
             resolved = resolved.resolve(name)
             if (Files.exists(resolved, LinkOption.NOFOLLOW_LINKS)) return null
         }
-        return resolved
+        // Normalize even though [Path.relativize] has already collapsed the `..` that could
+        // reach here: that collapsing is JDK-version-dependent behaviour, and this is the one
+        // step that makes the containment check below true of the path itself rather than
+        // true by delegation. `resolve` does not normalize, so without it a surviving `..`
+        // would still satisfy `startsWith` component-wise. Nothing writes through this path
+        // today — the caller only reads, and the OS will not traverse an absent component —
+        // but the API judges paths that do not exist yet, and the next caller may create one.
+        return resolved.normalize()
     }
 
     companion object {

@@ -84,6 +84,11 @@ fun main() {
                 analyzer = analyzer,
                 snapshotManager = snapshotManager,
                 aiClient = aiClient,
+                // Stated rather than defaulted: this process has no project directory to
+                // offer — its working directory is whatever the kernel spawned it with —
+                // and manifest source files go to a third-party model, so nothing is read
+                // until a host names a directory it is willing to send.
+                projectRoot = null,
                 onRequestRestart = { processId, _ ->
                     kernelStub.requestShutdown(
                         ShutdownRequest

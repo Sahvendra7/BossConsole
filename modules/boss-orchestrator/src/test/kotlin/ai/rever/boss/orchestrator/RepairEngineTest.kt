@@ -58,13 +58,13 @@ class RepairEngineTest {
 
     private fun engine(
         aiClient: AiRepairClient? = null,
-        root: File = projectRoot,
+        root: File? = projectRoot,
         onRequestRestart: suspend (String, List<String>) -> Unit = { _, _ -> },
     ) = RepairEngine(
         analyzer = CrashAnalyzer(),
         snapshotManager = snapshots,
         aiClient = aiClient,
-        projectRoot = root.absolutePath,
+        projectRoot = root?.absolutePath,
         onRequestRestart = onRequestRestart,
     )
 
@@ -108,6 +108,26 @@ class RepairEngineTest {
             )
 
             assertEquals(mapOf("src/App.kt" to "inside the project"), ai.sourceFiles)
+        }
+
+    @Test
+    fun `no project root means no source file is read, however it is named`() =
+        runTest {
+            // The shipped configuration: OrchestratorMain names no root, so reads are off
+            // rather than confined to whatever the child's working directory happened to be.
+            val inside = File(projectRoot, "src/App.kt").also { it.parentFile.mkdirs() }
+            inside.writeText("inside the project")
+            val ai = RecordingAiClient()
+
+            engine(aiClient = ai, root = null).handleFailure(
+                report(
+                    "p0",
+                    RepairStrategy.REPAIR_STRATEGY_PATCH_SOURCE,
+                    listOf("src/App.kt", inside.absolutePath),
+                ),
+            )
+
+            assertEquals(emptyMap(), ai.sourceFiles)
         }
 
     @Test

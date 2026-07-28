@@ -3,6 +3,7 @@ package ai.rever.boss.orchestrator
 import ai.rever.boss.ipc.proto.ProcessFailureReport
 import ai.rever.boss.ipc.proto.ProcessManifest
 import ai.rever.boss.ipc.proto.RepairStrategy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -31,21 +32,41 @@ class RepairEngine(
     private val aiClient: AiRepairClient? = null,
     /**
      * Root directory used to resolve relative source file paths from process manifests, and
-     * the only directory those files may be read from.
+     * the only directory those files may be read from. **Null means no source file may be
+     * read at all**, which is the default.
      *
-     * The default is this process's working directory, which is where the kernel spawned it
-     * from and is not necessarily a project — a packaged app's working directory can be the
-     * filesystem root, which [AllowedRoots] refuses as a root, leaving no source reads at
-     * all. A host that wants manifest source files read should pass the project directory.
+     * It defaulted to this process's working directory, which is not a project — the kernel
+     * spawns the orchestrator with `ProcessConfig.workDir`, itself defaulting to `File(".")`,
+     * so the child inherits whatever the parent had. For a packaged macOS app that is `/`,
+     * which [AllowedRoots] refuses; but a `.desktop` launch or a service gets `$HOME` or the
+     * install tree, and those are ordinary directories that [AllowedRoots] accepts. Reads
+     * were then confined to somewhere real and arbitrary rather than to nothing, and no
+     * caller had said they should happen at all.
+     *
+     * Requiring the root to be stated keeps "the host didn't say" and "the working directory
+     * happened to be somewhere plausible" from being the same state.
      */
-    private val projectRoot: String = System.getProperty("user.dir") ?: ".",
+    private val projectRoot: String? = null,
     /** Called to request a restart. Kernel handles the actual re-spawn. */
     private val onRequestRestart: suspend (processId: String, jvmArgsOverride: List<String>) -> Unit = { _, _ -> },
 ) {
     private val logger = LoggerFactory.getLogger(RepairEngine::class.java)
 
     /** Manifest source file paths come from the diagnosed process, so they are confined. */
-    private val sourceRoots = AllowedRoots.of(File(projectRoot))
+    private val sourceRoots =
+        if (projectRoot == null) AllowedRoots.none() else AllowedRoots.of(File(projectRoot))
+
+    init {
+        // Say it once at construction. Whether manifest source reads are on, and where they
+        // point, is otherwise invisible: a usable root logs nothing, and the refusals are
+        // warnings that only appear for the roots that were rejected.
+        val roots = sourceRoots.rootPaths()
+        if (roots.isEmpty()) {
+            logger.info("Manifest source reads are off: no usable project root was given")
+        } else {
+            logger.info("Manifest source reads are confined to {}", roots)
+        }
+    }
 
     // Escalation ladder applied when analyzer confidence is LOW
     private val defaultLadder =
@@ -95,6 +116,11 @@ class RepairEngine(
                     onRequestRestart(processId, emptyList())
                     logger.info("Restart requested for process: {}", processId)
                     RepairOutcome.Restarted(processId)
+                } catch (e: CancellationException) {
+                    // Before the Exception arm: CancellationException *is* an Exception, so
+                    // catching it here would turn "the caller hung up" into a repair failure
+                    // and swallow the cancellation the coroutine machinery needs to see.
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Failed to request restart for process: {}", processId, e)
                     RepairOutcome.Failed(processId, "Restart request failed: ${e.message}")
@@ -106,6 +132,11 @@ class RepairEngine(
                     onRequestRestart(processId, listOf("-Xmx512m"))
                     logger.info("Tuned restart requested for process: {}", processId)
                     RepairOutcome.Restarted(processId)
+                } catch (e: CancellationException) {
+                    // Before the Exception arm: CancellationException *is* an Exception, so
+                    // catching it here would turn "the caller hung up" into a repair failure
+                    // and swallow the cancellation the coroutine machinery needs to see.
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Failed to request tuned restart for process: {}", processId, e)
                     RepairOutcome.Failed(processId, "Tuned restart request failed: ${e.message}")
@@ -181,6 +212,11 @@ class RepairEngine(
                 snapshotId ?: "none recorded",
             )
             RepairOutcome.StateReset(processId, snapshotId)
+        } catch (e: CancellationException) {
+            // Before the Exception arm: CancellationException *is* an Exception, so catching
+            // it here would report "state reset failed" when the caller simply hung up, and
+            // swallow the cancellation the coroutine machinery needs to see.
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to reset state for process: {}", processId, e)
             RepairOutcome.Failed(processId, "State reset failed: ${e.message}")
@@ -196,8 +232,8 @@ class RepairEngine(
 
     /**
      * Reads source files listed in the process manifest.
-     * Paths are tried as absolute first, then relative to [projectRoot].
-     * Files that cannot be read are silently omitted.
+     * Paths are tried as absolute first, then relative to [projectRoot] — and a relative one
+     * is dropped outright when no root was given. Files that cannot be read are omitted.
      *
      * The list comes from the manifest the diagnosed process sent, and the contents go to
      * [AiRepairClient], i.e. off this machine — so which files the host is willing to read is
@@ -214,8 +250,13 @@ class RepairEngine(
 
     private fun readConfinedSourceFile(declaredPath: String): String =
         try {
-            val candidate = File(declaredPath).takeIf { it.isAbsolute } ?: File(projectRoot, declaredPath)
-            val confined = sourceRoots.resolve(candidate)
+            // A relative path needs a root to hang off. Without one there is nothing to
+            // resolve against — and `File(null, path)` would quietly resolve it against the
+            // working directory, which is the behaviour a null root exists to refuse.
+            val candidate =
+                File(declaredPath).takeIf { it.isAbsolute }
+                    ?: projectRoot?.let { root -> File(root, declaredPath) }
+            val confined = candidate?.let(sourceRoots::resolve)
             when {
                 confined == null -> {
                     logger.warn(

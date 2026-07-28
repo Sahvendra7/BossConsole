@@ -2,6 +2,7 @@ package ai.rever.boss.orchestrator
 
 import ai.rever.boss.ipc.proto.*
 import ai.rever.boss.process.ProcessRegistry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -137,6 +138,12 @@ class OrchestratorServiceImpl(
             val result =
                 try {
                     onRepairApproved(pending.processId, pending.action)
+                } catch (e: CancellationException) {
+                    // Before the Exception arm: CancellationException *is* an Exception, so
+                    // catching it here would report a refusal when the caller hung up — the
+                    // same dishonest reporting this method was rewritten to remove — and
+                    // swallow the cancellation the coroutine machinery needs to see.
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Failed to execute approved repair {}: {}", request.repairId, e.message)
                     ApprovalResult.Refused("Repair execution failed: ${e.message}")

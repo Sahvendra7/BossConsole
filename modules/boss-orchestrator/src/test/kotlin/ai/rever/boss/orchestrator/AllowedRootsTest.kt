@@ -86,6 +86,41 @@ class AllowedRootsTest {
     }
 
     @Test
+    fun `a dot-dot path to a target that does not exist yet is refused`() {
+        // Every other dot-dot case has an existing target, so all of them exit through the
+        // "a tail component exists" guard. This one reaches the end of the walk with nothing
+        // to stat — the shape a caller that creates the file would use.
+        //
+        // Measured, not assumed: this passes with or without the `normalize()` in
+        // `appendAbsentTail`, because `Path.relativize` on JDK 12+ has already collapsed the
+        // `..` before the walk begins. So the assertion pins the invariant at the API
+        // boundary rather than pinning that one line, and it is what turns a change in that
+        // JDK behaviour — or a refactor that stops routing through `relativize` — into a red
+        // test instead of a silently widened root.
+        val parent = tempDir()
+        val root = File(parent, "project").also { it.mkdirs() }
+        File(parent, "outside").also { it.mkdirs() }
+
+        val roots = AllowedRoots.of(root)
+
+        assertNull(roots.resolve(File(root, "absent/../../outside/created-later.txt")))
+    }
+
+    @Test
+    fun `a file in any granted root resolves`() {
+        // `of(vararg)` was only ever exercised with one usable root, so `roots.any` was
+        // effectively a single-element check.
+        val first = tempDir()
+        val second = tempDir()
+        val inSecond = File(second, "notes.txt").also { it.writeText("data") }
+
+        val roots = AllowedRoots.of(first, second)
+
+        assertEquals(2, roots.rootPaths().size)
+        assertEquals(inSecond.canonicalFile, roots.resolve(inSecond))
+    }
+
+    @Test
     fun `a sibling whose name starts with the root's name is refused`() {
         val parent = tempDir()
         val root = File(parent, "project").also { it.mkdirs() }
