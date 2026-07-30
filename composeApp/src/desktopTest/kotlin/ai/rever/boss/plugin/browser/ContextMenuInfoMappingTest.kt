@@ -122,6 +122,42 @@ class ContextMenuInfoMappingTest {
     }
 
     @Test
+    fun `audio is neither image nor video`() {
+        val result =
+            info(
+                contentTypes = listOf(ContextMenuContentType.MEDIA_AUDIO),
+                mediaType = MediaType.AUDIO,
+                srcUrl = "https://example.com/track.mp3",
+            )
+
+        assertFalse(result.hasImage)
+        assertFalse(result.hasVideo)
+        assertNull(result.imageUrl)
+    }
+
+    @Test
+    fun `a source url with no media signal is not surfaced`() {
+        val result = info(linkUrl = "https://example.com/next", srcUrl = "https://example.com/x.bin")
+
+        assertFalse(result.hasImage)
+        assertNull(result.imageUrl)
+    }
+
+    @Test
+    fun `an inline image too large to carry counts as having no address`() {
+        // A data: source is the whole encoded image; no menu action needs the bytes, and
+        // this is the first path that hands srcUrl to plugins.
+        val result =
+            info(
+                mediaType = MediaType.IMAGE,
+                srcUrl = "data:image/png;base64," + "A".repeat(4096),
+            )
+
+        assertFalse(result.hasImage)
+        assertNull(result.imageUrl)
+    }
+
+    @Test
     fun `a linked image reports both`() {
         val result =
             info(
