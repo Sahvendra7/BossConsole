@@ -98,7 +98,9 @@ import javax.swing.SwingUtilities
  * Longest inline (`data:`) image source worth carrying into a menu. No menu action needs
  * the encoded bytes, and this is the first path that hands a source URL to plugins.
  */
-private const val MAX_INLINE_IMAGE_URL_LENGTH = 2048
+internal const val MAX_INLINE_IMAGE_URL_LENGTH = 2048
+
+private val contextMenuLogger = BossLogger.forComponent("ContextMenuTarget")
 
 /** What Chromium reports about the element a right-click landed on. */
 internal data class ContextMenuTarget(
@@ -140,10 +142,18 @@ internal fun ContextMenuTarget.toContextMenuInfo(
     // The cap applies to data: only. A signed CDN address can carry a long policy and
     // signature and still be a perfectly usable URL; capping those would silently drop the
     // image actions for them, which is invisible to the user and hard to report.
-    val source =
-        srcUrl.takeIf {
-            it.isNotBlank() && (!it.startsWith("data:") || it.length <= MAX_INLINE_IMAGE_URL_LENGTH)
-        }
+    val oversizedInline = srcUrl.startsWith("data:") && srcUrl.length > MAX_INLINE_IMAGE_URL_LENGTH
+    if (oversizedInline) {
+        // A 3KB inline PNG is ordinary, so this drop is reachable in normal browsing and
+        // costs the user their image actions with no other trace — the same invisibility
+        // the comment above refuses for http URLs. One line makes it reportable.
+        contextMenuLogger.debug(
+            LogCategory.BROWSER,
+            "Inline image source too large for a context menu — reporting no image",
+            mapOf("length" to srcUrl.length.toString(), "cap" to MAX_INLINE_IMAGE_URL_LENGTH.toString()),
+        )
+    }
+    val source = srcUrl.takeIf { it.isNotBlank() && !oversizedInline }
     val isImage =
         (mediaType == MediaType.IMAGE || contentTypes.contains(ContextMenuContentType.MEDIA_IMAGE)) &&
             source != null
@@ -194,6 +204,11 @@ internal class BrowserHandleImpl(
     // Context menu callback. Volatile because it is set from the UI thread and read from a
     // JxBrowser callback thread; a stale null read there means no menu at all.
     @Volatile private var contextMenuCallback: ContextMenuCallback? = null
+
+    // Last title Chromium reported, kept so building a context menu never has to call into
+    // the live Browser. browser.title() can be slow as well as throw, and the menu path is
+    // where that costs the user something visible.
+    @Volatile private var lastKnownTitle: String = ""
 
     // Callback for opening links in new tabs (cmd+click, target="_blank", window.open)
     private var openInNewTabCallback: ((String) -> Unit)? = null
@@ -387,6 +402,7 @@ internal class BrowserHandleImpl(
         subscriptions +=
             browser.on(TitleChanged::class.java) { event ->
                 val title = event.title()
+                lastKnownTitle = title
                 titleListeners.forEach { listener ->
                     try {
                         listener(title)
@@ -576,11 +592,17 @@ internal class BrowserHandleImpl(
         try {
             callback(info)
         } catch (e: LinkageError) {
-            // Named explicitly, not folded into a blanket Throwable: a plugin compiled
-            // against a different boss-plugin-api than the one loaded fails exactly this
-            // way, and letting it reach a JxBrowser thread costs everyone's menu rather
-            // than only that plugin's.
+            // Named ahead of the general branch: a plugin compiled against a different
+            // boss-plugin-api than the one loaded fails exactly this way, and it is the
+            // most likely thing to go wrong here.
             logger.warn(LogCategory.BROWSER, "Context menu callback failed to link", error = e)
+        } catch (e: AssertionError) {
+            // Named for the same reason: a plugin's failed `assert`/`error()` is an Error,
+            // not an Exception, and the promise here is that a misbehaving plugin loses only
+            // its own menu. Listed individually rather than catching Throwable because
+            // detekt keeps TooGenericExceptionCaught active on purpose — and a genuinely
+            // fatal Error (OOM, StackOverflow) is not this boundary's to swallow.
+            logger.warn(LogCategory.BROWSER, "Context menu callback failed an assertion", error = e)
         } catch (e: Exception) {
             logger.warn(LogCategory.BROWSER, "Context menu callback threw", error = e)
         }
@@ -610,10 +632,9 @@ internal class BrowserHandleImpl(
                 // these reads can throw when teardown races the callback. Every params read
                 // lives in here, including the frame — they are all part of the target.
                 //
-                // browser.title() deliberately does NOT: it is the one call that goes to the
-                // live Browser, so it can be slow as well as throw, and a try/catch only
-                // covers the throwing half. It is page identity, not the click target, so it
-                // costs nothing to read after the request has been released.
+                // The title comes from lastKnownTitle rather than browser.title(): that was
+                // the last call on this path reaching the live Browser, where being slow
+                // hurts as much as throwing and a try/catch only covers the latter.
                 val read =
                     try {
                         val target =
@@ -626,7 +647,7 @@ internal class BrowserHandleImpl(
                                 isMainFrame = params.isMainFrame(),
                             ).toContextMenuInfo(
                                 pageUrl = params.pageUrl(),
-                                pageTitle = "",
+                                pageTitle = lastKnownTitle,
                             )
                         target to params.frame().orElse(null)
                     } catch (e: Exception) {
@@ -642,8 +663,7 @@ internal class BrowserHandleImpl(
                     }
 
                 if (read == null) return@ShowContextMenuCallback
-                val (target, frame) = read
-                val info = target.copy(pageTitle = runCatching { browser.title() }.getOrDefault(""))
+                val (info, frame) = read
 
                 if (!info.isEditable) {
                     // Runs on a JxBrowser thread; deliverContextMenu bounds a throwing plugin.
@@ -672,13 +692,25 @@ internal class BrowserHandleImpl(
                     // rejects it and kotlinx reroutes to Dispatchers.IO — the coroutine is
                     // already cancelled by then, so the blocking body never runs and the
                     // "never a shared-pool thread" property still holds.)
-                    val lookup = async(contextMenuLookupDispatcher) { frame?.let { getFormFieldInfoFromJS(it) } }
+                    // runCatching inside the child, not around the await: the child is a
+                    // sibling of the timeout rather than inside it (that is what lets the
+                    // timeout fire), so a failure would reach the parent job the moment it
+                    // happened and cancel this launch before the menu is delivered. Losing
+                    // the autofill detail is acceptable; losing the menu is the thing this
+                    // handler exists to prevent.
+                    val lookup =
+                        async(contextMenuLookupDispatcher) {
+                            runCatching { frame?.let { getFormFieldInfoFromJS(it) } }.getOrNull()
+                        }
                     val formFieldInfo = withTimeoutOrNull(FORM_FIELD_LOOKUP_TIMEOUT_MS) { lookup.await() }
+                    // The plugin may have deregistered while we waited — a tab switch or an
+                    // unload — and `disposed` only covers this handle being torn down.
+                    val current = contextMenuCallback ?: return@launch
                     // The lookup can outlive dispose(): cancelling contextMenuScope cannot
                     // interrupt the blocking call either, so check before delivering rather
                     // than pushing a menu at a tab that is gone.
                     if (disposed.get()) return@launch
-                    deliverContextMenu(callback, info.copy(formFieldInfo = formFieldInfo))
+                    deliverContextMenu(current, info.copy(formFieldInfo = formFieldInfo))
                 }
             },
         )

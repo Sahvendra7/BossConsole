@@ -150,7 +150,7 @@ class ContextMenuInfoMappingTest {
         val result =
             info(
                 mediaType = MediaType.IMAGE,
-                srcUrl = "data:image/png;base64," + "A".repeat(4096),
+                srcUrl = "data:image/png;base64," + "A".repeat(MAX_INLINE_IMAGE_URL_LENGTH * 2),
             )
 
         assertFalse(result.hasImage)
@@ -159,7 +159,8 @@ class ContextMenuInfoMappingTest {
 
     @Test
     fun `an inline image right at the cap is still carried`() {
-        val atCap = "data:image/png;base64," + "A".repeat(2048 - "data:image/png;base64,".length)
+        val prefix = "data:image/png;base64,"
+        val atCap = prefix + "A".repeat(MAX_INLINE_IMAGE_URL_LENGTH - prefix.length)
         val result = info(mediaType = MediaType.IMAGE, srcUrl = atCap)
 
         assertTrue(result.hasImage)
@@ -173,7 +174,7 @@ class ContextMenuInfoMappingTest {
         val signed = "https://cdn.example.com/cat.png?" + "k=v&".repeat(700)
         val result = info(mediaType = MediaType.IMAGE, srcUrl = signed)
 
-        assertTrue(signed.length > 2048)
+        assertTrue(signed.length > MAX_INLINE_IMAGE_URL_LENGTH)
         assertTrue(result.hasImage)
         assertEquals(signed, result.imageUrl)
     }
