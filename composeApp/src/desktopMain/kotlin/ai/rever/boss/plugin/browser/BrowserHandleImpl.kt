@@ -67,6 +67,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -89,6 +90,54 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
+
+/**
+ * Map what Chromium reports about a right-click onto the plugin-facing
+ * [BrowserContextMenuInfo].
+ *
+ * Split out of the callback so the truth table is unit-testable without a live
+ * `ShowContextMenuCallback.Params`.
+ *
+ * Two deliberate narrowings:
+ * - [BrowserContextMenuInfo.hasImage] is only reported together with a resolvable
+ *   [BrowserContextMenuInfo.imageUrl]. Chromium reports MEDIA_IMAGE for targets that have
+ *   no source URL (`<canvas>`, CSS backgrounds, some inline SVG), and every image action a
+ *   menu can offer needs the URL — so "image with no address" is not worth advertising.
+ * - Editable is reported for the main frame only. Every action it unlocks —
+ *   `cut`/`copySelection`/`paste`/`selectAll` and `fillCredentials` — runs against
+ *   `browser.mainFrame()` and `document.activeElement`. Offering them for a field inside an
+ *   iframe would act on the wrong frame, and in the credential case could write a password
+ *   into whatever main-frame input happens to be focused. Frame-accurate detection has to
+ *   wait for a frame-accurate fill path.
+ */
+internal fun contextMenuInfoFrom(
+    contentTypes: List<ContextMenuContentType>,
+    mediaType: MediaType,
+    srcUrl: String,
+    linkUrl: String,
+    selectedText: String,
+    isMainFrame: Boolean,
+    pageUrl: String,
+    pageTitle: String,
+): BrowserContextMenuInfo {
+    val source = srcUrl.takeIf { it.isNotBlank() }
+    val isImage =
+        (mediaType == MediaType.IMAGE || contentTypes.contains(ContextMenuContentType.MEDIA_IMAGE)) &&
+            source != null
+    val isVideo =
+        mediaType == MediaType.VIDEO ||
+            contentTypes.contains(ContextMenuContentType.MEDIA_VIDEO)
+    return BrowserContextMenuInfo(
+        linkUrl = linkUrl.takeIf { it.isNotBlank() },
+        selectedText = selectedText.takeIf { it.isNotBlank() },
+        isEditable = isMainFrame && contentTypes.contains(ContextMenuContentType.EDITABLE),
+        hasVideo = isVideo,
+        hasImage = isImage,
+        imageUrl = source.takeIf { isImage },
+        pageUrl = pageUrl,
+        pageTitle = pageTitle,
+    )
+}
 
 /**
  * Desktop implementation of [BrowserHandle] that wraps a JxBrowser [Browser] instance.
@@ -119,8 +168,9 @@ internal class BrowserHandleImpl(
     // Track loading state
     private var _isLoading = false
 
-    // Context menu callback
-    private var contextMenuCallback: ContextMenuCallback? = null
+    // Context menu callback. Volatile because it is set from the UI thread and read from a
+    // JxBrowser callback thread; a stale null read there means no menu at all.
+    @Volatile private var contextMenuCallback: ContextMenuCallback? = null
 
     // Callback for opening links in new tabs (cmd+click, target="_blank", window.open)
     private var openInNewTabCallback: ((String) -> Unit)? = null
@@ -465,6 +515,12 @@ internal class BrowserHandleImpl(
         setupContextMenuHandler()
     }
 
+    /**
+     * How long the menu waits for the form-field detail behind secret auto-fill before
+     * opening without it. Bounds a blocking JS round-trip against a page that may be busy.
+     */
+    private val formFieldLookupTimeoutMs = 500L
+
     private fun setupContextMenuHandler() {
         browser.set(
             ShowContextMenuCallback::class.java,
@@ -484,24 +540,14 @@ internal class BrowserHandleImpl(
                 // for document.activeElement, so a click inside an iframe reported the
                 // previous click's link, and a click anywhere after focusing an input
                 // reported "editable".
-                val contentTypes = params.contentTypes()
-                val mediaType = params.mediaType()
-                val srcUrl = params.srcUrl().takeIf { it.isNotBlank() }
-                val isImage =
-                    mediaType == MediaType.IMAGE ||
-                        contentTypes.contains(ContextMenuContentType.MEDIA_IMAGE)
-                val isVideo =
-                    mediaType == MediaType.VIDEO ||
-                        contentTypes.contains(ContextMenuContentType.MEDIA_VIDEO)
-
                 val info =
-                    BrowserContextMenuInfo(
-                        linkUrl = params.linkUrl().takeIf { it.isNotBlank() },
-                        selectedText = params.selectedText().takeIf { it.isNotBlank() },
-                        isEditable = contentTypes.contains(ContextMenuContentType.EDITABLE),
-                        hasVideo = isVideo,
-                        hasImage = isImage,
-                        imageUrl = srcUrl.takeIf { isImage },
+                    contextMenuInfoFrom(
+                        contentTypes = params.contentTypes(),
+                        mediaType = params.mediaType(),
+                        srcUrl = params.srcUrl(),
+                        linkUrl = params.linkUrl(),
+                        selectedText = params.selectedText(),
+                        isMainFrame = params.isMainFrame(),
                         pageUrl = params.pageUrl(),
                         pageTitle = browser.title(),
                     )
@@ -519,23 +565,21 @@ internal class BrowserHandleImpl(
                 }
 
                 // Secret auto-fill needs details Chromium does not report (field name, id,
-                // autocomplete). That means a JS round-trip, so it happens off this thread
-                // and against the clicked frame — a login form inside an iframe is common.
+                // autocomplete). That means a JS round-trip, so it happens off this thread —
+                // against the main frame, which isEditable is gated to.
                 val frame = params.frame().orElse(null)
                 contextMenuScope.launch {
-                    val formFieldInfo =
-                        if (frame != null) {
-                            runCatching { getFormFieldInfoFromJS(frame) }
-                                .onFailure {
-                                    logger.debug(
-                                        LogCategory.BROWSER,
-                                        "Form-field inspection for context menu failed",
-                                        mapOf("error" to it.toString()),
-                                    )
-                                }.getOrNull()
-                        } else {
-                            null
-                        }
+                    // Raced rather than wrapped: executeJavaScript blocks, so a cancelled
+                    // withTimeoutOrNull would have no suspension point to land on and could
+                    // not interrupt it. Awaiting a separate job does bound the wait — worst
+                    // case the menu opens without the autofill entries instead of never
+                    // opening, which is the failure the rest of this handler exists to avoid.
+                    val lookup = async { frame?.let { getFormFieldInfoFromJS(it) } }
+                    val formFieldInfo = withTimeoutOrNull(formFieldLookupTimeoutMs) { lookup.await() }
+                    // The lookup can outlive dispose(): cancelling contextMenuScope cannot
+                    // interrupt the blocking call either, so check before delivering rather
+                    // than pushing a menu at a tab that is gone.
+                    if (disposed.get()) return@launch
                     callback(info.copy(formFieldInfo = formFieldInfo))
                 }
             },
@@ -1681,7 +1725,9 @@ internal class BrowserHandleImpl(
         coBrowseSink = null
         coBrowseBridge.onEvent = null
         coBrowseScope.cancel()
-        // An in-flight menu lookup would otherwise touch a browser being torn down.
+        // Stops queued menu lookups from starting. A lookup already blocked inside
+        // executeJavaScript cannot be interrupted by cancellation — the delivery site
+        // checks `disposed` before handing anything back.
         contextMenuScope.cancel()
         if (coBrowseInjectRegistered) {
             try {
