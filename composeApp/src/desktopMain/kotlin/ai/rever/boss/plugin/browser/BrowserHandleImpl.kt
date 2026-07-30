@@ -92,11 +92,12 @@ import javax.swing.JFrame
 import javax.swing.SwingUtilities
 
 /**
- * Map what Chromium reports about a right-click onto the plugin-facing
+ * Map what Chromium reports about a right-click *target* onto the plugin-facing
  * [BrowserContextMenuInfo].
  *
  * Split out of the callback so the truth table is unit-testable without a live
- * `ShowContextMenuCallback.Params`.
+ * `ShowContextMenuCallback.Params`. Scoped to the target only — the caller fills in the
+ * page identity, which is carried through untouched.
  *
  * Two deliberate narrowings:
  * - [BrowserContextMenuInfo.hasImage] is only reported together with a resolvable
@@ -110,13 +111,16 @@ import javax.swing.SwingUtilities
  *   into whatever main-frame input happens to be focused. Frame-accurate detection has to
  *   wait for a frame-accurate fill path.
  */
-internal fun contextMenuInfoFrom(
-    contentTypes: List<ContextMenuContentType>,
-    mediaType: MediaType,
-    srcUrl: String,
-    linkUrl: String,
-    selectedText: String,
-    isMainFrame: Boolean,
+internal data class ContextMenuTarget(
+    val contentTypes: List<ContextMenuContentType> = emptyList(),
+    val mediaType: MediaType = MediaType.NONE,
+    val srcUrl: String = "",
+    val linkUrl: String = "",
+    val selectedText: String = "",
+    val isMainFrame: Boolean = true,
+)
+
+internal fun ContextMenuTarget.toContextMenuInfo(
     pageUrl: String,
     pageTitle: String,
 ): BrowserContextMenuInfo {
@@ -541,13 +545,14 @@ internal class BrowserHandleImpl(
                 // previous click's link, and a click anywhere after focusing an input
                 // reported "editable".
                 val info =
-                    contextMenuInfoFrom(
+                    ContextMenuTarget(
                         contentTypes = params.contentTypes(),
                         mediaType = params.mediaType(),
                         srcUrl = params.srcUrl(),
                         linkUrl = params.linkUrl(),
                         selectedText = params.selectedText(),
                         isMainFrame = params.isMainFrame(),
+                    ).toContextMenuInfo(
                         pageUrl = params.pageUrl(),
                         pageTitle = browser.title(),
                     )

@@ -9,8 +9,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Truth table for [contextMenuInfoFrom] — the mapping from what Chromium reports about a
+ * Truth table for [ContextMenuTarget.toContextMenuInfo] — the mapping from what Chromium reports about a
  * right-click onto the plugin-facing info. Pure, so none of this needs a live browser.
+ *
+ * Page identity (url, title) is the caller's to apply and is not asserted here.
  */
 class ContextMenuInfoMappingTest {
     private fun info(
@@ -20,18 +22,14 @@ class ContextMenuInfoMappingTest {
         linkUrl: String = "",
         selectedText: String = "",
         isMainFrame: Boolean = true,
-        pageUrl: String = "https://example.com/",
-        pageTitle: String = "Example",
-    ) = contextMenuInfoFrom(
+    ) = ContextMenuTarget(
         contentTypes = contentTypes,
         mediaType = mediaType,
         srcUrl = srcUrl,
         linkUrl = linkUrl,
         selectedText = selectedText,
         isMainFrame = isMainFrame,
-        pageUrl = pageUrl,
-        pageTitle = pageTitle,
-    )
+    ).toContextMenuInfo(pageUrl = "https://example.com/", pageTitle = "Example")
 
     @Test
     fun `blank strings become null rather than empty`() {
@@ -39,7 +37,6 @@ class ContextMenuInfoMappingTest {
 
         assertNull(result.linkUrl)
         assertNull(result.selectedText)
-        assertEquals("https://example.com/", result.pageUrl)
     }
 
     @Test
@@ -122,7 +119,6 @@ class ContextMenuInfoMappingTest {
         assertFalse(result.isEditable)
         assertFalse(result.hasImage)
         assertFalse(result.hasVideo)
-        assertEquals("Example", result.pageTitle)
     }
 
     @Test
