@@ -605,13 +605,15 @@ internal class BrowserHandleImpl(
                 // for document.activeElement, so a click inside an iframe reported the
                 // previous click's link, and a click anywhere after focusing an input
                 // reported "editable".
-                // Answering is in a finally for the same reason it moved to the front: the
-                // premise is that nothing between the right-click and tell.close() may lose
-                // the menu, and these reads can throw — browser.title() in particular goes
-                // to the live Browser, which the tab closing or the engine dying can pull
-                // out from under this thread. An unanswered request shows nothing at all.
-                // Every params read lives in here, including the frame: they are all part of
-                // the target, and any of them can be racing teardown.
+                // Answering is in a finally for the same reason it moved to the front:
+                // nothing between the right-click and tell.close() may lose the menu, and
+                // these reads can throw when teardown races the callback. Every params read
+                // lives in here, including the frame — they are all part of the target.
+                //
+                // browser.title() deliberately does NOT: it is the one call that goes to the
+                // live Browser, so it can be slow as well as throw, and a try/catch only
+                // covers the throwing half. It is page identity, not the click target, so it
+                // costs nothing to read after the request has been released.
                 val read =
                     try {
                         val target =
@@ -624,7 +626,7 @@ internal class BrowserHandleImpl(
                                 isMainFrame = params.isMainFrame(),
                             ).toContextMenuInfo(
                                 pageUrl = params.pageUrl(),
-                                pageTitle = runCatching { browser.title() }.getOrDefault(""),
+                                pageTitle = "",
                             )
                         target to params.frame().orElse(null)
                     } catch (e: Exception) {
@@ -640,7 +642,8 @@ internal class BrowserHandleImpl(
                     }
 
                 if (read == null) return@ShowContextMenuCallback
-                val (info, frame) = read
+                val (target, frame) = read
+                val info = target.copy(pageTitle = runCatching { browser.title() }.getOrDefault(""))
 
                 if (!info.isEditable) {
                     // Runs on a JxBrowser thread; deliverContextMenu bounds a throwing plugin.
@@ -664,6 +667,11 @@ internal class BrowserHandleImpl(
                     // page costs one parked thread in total; later lookups queue behind it
                     // and time out on schedule, opening without autofill. The wait itself
                     // runs on Dispatchers.Default so the timeout can actually fire.
+                    //
+                    // (If dispose() lands between the launch and this dispatch, the executor
+                    // rejects it and kotlinx reroutes to Dispatchers.IO — the coroutine is
+                    // already cancelled by then, so the blocking body never runs and the
+                    // "never a shared-pool thread" property still holds.)
                     val lookup = async(contextMenuLookupDispatcher) { frame?.let { getFormFieldInfoFromJS(it) } }
                     val formFieldInfo = withTimeoutOrNull(FORM_FIELD_LOOKUP_TIMEOUT_MS) { lookup.await() }
                     // The lookup can outlive dispose(): cancelling contextMenuScope cannot
