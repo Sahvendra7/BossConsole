@@ -95,6 +95,22 @@ import javax.swing.JFrame
 import javax.swing.SwingUtilities
 
 /**
+ * Longest inline (`data:`) image source worth carrying into a menu. No menu action needs
+ * the encoded bytes, and this is the first path that hands a source URL to plugins.
+ */
+private const val MAX_INLINE_IMAGE_URL_LENGTH = 2048
+
+/** What Chromium reports about the element a right-click landed on. */
+internal data class ContextMenuTarget(
+    val contentTypes: List<ContextMenuContentType> = emptyList(),
+    val mediaType: MediaType = MediaType.NONE,
+    val srcUrl: String = "",
+    val linkUrl: String = "",
+    val selectedText: String = "",
+    val isMainFrame: Boolean = true,
+)
+
+/**
  * Map what Chromium reports about a right-click *target* onto the plugin-facing
  * [BrowserContextMenuInfo].
  *
@@ -108,7 +124,7 @@ import javax.swing.SwingUtilities
  *   no source URL (`<canvas>`, CSS backgrounds, some inline SVG), and every image action a
  *   menu can offer needs the URL — so "image with no address" is not worth advertising.
  *   An inline image's source is a `data:` URL of the whole encoded image, which this is
- *   the first path to hand to plugins; past [MAX_IMAGE_URL_LENGTH] it counts as no
+ *   the first path to hand to plugins; past [MAX_INLINE_IMAGE_URL_LENGTH] it counts as no
  *   address rather than shipping megabytes of base64 into every menu.
  * - Editable is reported for the main frame only. Every action it unlocks —
  *   `cut`/`copySelection`/`paste`/`selectAll` and `fillCredentials` — runs against
@@ -117,27 +133,17 @@ import javax.swing.SwingUtilities
  *   into whatever main-frame input happens to be focused. Frame-accurate detection has to
  *   wait for a frame-accurate fill path.
  */
-
-/**
- * Longest media source URL worth carrying into a menu. Ordinary addresses are far below
- * it; only an inline `data:` payload approaches it, and no menu action needs the bytes.
- */
-private const val MAX_IMAGE_URL_LENGTH = 2048
-
-internal data class ContextMenuTarget(
-    val contentTypes: List<ContextMenuContentType> = emptyList(),
-    val mediaType: MediaType = MediaType.NONE,
-    val srcUrl: String = "",
-    val linkUrl: String = "",
-    val selectedText: String = "",
-    val isMainFrame: Boolean = true,
-)
-
 internal fun ContextMenuTarget.toContextMenuInfo(
     pageUrl: String,
     pageTitle: String,
 ): BrowserContextMenuInfo {
-    val source = srcUrl.takeIf { it.isNotBlank() && it.length <= MAX_IMAGE_URL_LENGTH }
+    // The cap applies to data: only. A signed CDN address can carry a long policy and
+    // signature and still be a perfectly usable URL; capping those would silently drop the
+    // image actions for them, which is invisible to the user and hard to report.
+    val source =
+        srcUrl.takeIf {
+            it.isNotBlank() && (!it.startsWith("data:") || it.length <= MAX_INLINE_IMAGE_URL_LENGTH)
+        }
     val isImage =
         (mediaType == MediaType.IMAGE || contentTypes.contains(ContextMenuContentType.MEDIA_IMAGE)) &&
             source != null
@@ -253,18 +259,24 @@ internal class BrowserHandleImpl(
     // blocking JS round-trip, and it must not run on the JxBrowser callback thread (which
     // is answering the menu request) nor on the UI thread.
     //
-    // Its own single thread rather than Dispatchers.IO: a lookup that times out cannot be
-    // cancelled (nothing interrupts the blocking call), so against a wedged renderer each
-    // right-click would park a shared-pool worker indefinitely. Confined here, the cost is
-    // one parked thread and later lookups queue behind it.
+    // The blocking call gets its own single thread rather than Dispatchers.IO: it cannot be
+    // cancelled (nothing interrupts it), so against a wedged renderer each right-click would
+    // park a shared-pool worker indefinitely. Confined here, the cost is one parked thread
+    // and later lookups queue behind it.
     private val contextMenuExecutor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "boss-context-menu-$id").apply { isDaemon = true }
         }
+    private val contextMenuLookupDispatcher = contextMenuExecutor.asCoroutineDispatcher()
+
+    // The coroutine that *waits* on that lookup must NOT share its thread. Both on one
+    // thread, the timeout cannot fire: resuming the awaiting continuation needs a dispatch
+    // onto the thread the blocking lookup is holding, so the wait lasts as long as the
+    // renderer takes and the bound is no bound at all.
     private val contextMenuScope =
         CoroutineScope(
             SupervisorJob() +
-                contextMenuExecutor.asCoroutineDispatcher() +
+                Dispatchers.Default +
                 CoroutineExceptionHandler { _, error ->
                     // Otherwise an escaping failure lands on the default handler and prints
                     // to stderr, bypassing BossLogger.
@@ -563,6 +575,12 @@ internal class BrowserHandleImpl(
     ) {
         try {
             callback(info)
+        } catch (e: LinkageError) {
+            // Named explicitly, not folded into a blanket Throwable: a plugin compiled
+            // against a different boss-plugin-api than the one loaded fails exactly this
+            // way, and letting it reach a JxBrowser thread costs everyone's menu rather
+            // than only that plugin's.
+            logger.warn(LogCategory.BROWSER, "Context menu callback failed to link", error = e)
         } catch (e: Exception) {
             logger.warn(LogCategory.BROWSER, "Context menu callback threw", error = e)
         }
@@ -592,19 +610,23 @@ internal class BrowserHandleImpl(
                 // the menu, and these reads can throw — browser.title() in particular goes
                 // to the live Browser, which the tab closing or the engine dying can pull
                 // out from under this thread. An unanswered request shows nothing at all.
-                val info =
+                // Every params read lives in here, including the frame: they are all part of
+                // the target, and any of them can be racing teardown.
+                val read =
                     try {
-                        ContextMenuTarget(
-                            contentTypes = params.contentTypes(),
-                            mediaType = params.mediaType(),
-                            srcUrl = params.srcUrl(),
-                            linkUrl = params.linkUrl(),
-                            selectedText = params.selectedText(),
-                            isMainFrame = params.isMainFrame(),
-                        ).toContextMenuInfo(
-                            pageUrl = params.pageUrl(),
-                            pageTitle = runCatching { browser.title() }.getOrDefault(""),
-                        )
+                        val target =
+                            ContextMenuTarget(
+                                contentTypes = params.contentTypes(),
+                                mediaType = params.mediaType(),
+                                srcUrl = params.srcUrl(),
+                                linkUrl = params.linkUrl(),
+                                selectedText = params.selectedText(),
+                                isMainFrame = params.isMainFrame(),
+                            ).toContextMenuInfo(
+                                pageUrl = params.pageUrl(),
+                                pageTitle = runCatching { browser.title() }.getOrDefault(""),
+                            )
+                        target to params.frame().orElse(null)
                     } catch (e: Exception) {
                         logger.debug(
                             LogCategory.BROWSER,
@@ -617,7 +639,8 @@ internal class BrowserHandleImpl(
                         tell.close()
                     }
 
-                if (info == null) return@ShowContextMenuCallback
+                if (read == null) return@ShowContextMenuCallback
+                val (info, frame) = read
 
                 if (!info.isEditable) {
                     // Runs on a JxBrowser thread; deliverContextMenu bounds a throwing plugin.
@@ -628,7 +651,6 @@ internal class BrowserHandleImpl(
                 // Secret auto-fill needs details Chromium does not report (field name, id,
                 // autocomplete). That means a JS round-trip, so it happens off this thread —
                 // against the main frame, which isEditable is gated to.
-                val frame = params.frame().orElse(null)
                 contextMenuScope.launch {
                     // Raced rather than wrapped: executeJavaScript blocks, so a cancelled
                     // withTimeoutOrNull would have no suspension point to land on and could
@@ -637,11 +659,12 @@ internal class BrowserHandleImpl(
                     // opening, which is the failure the rest of this handler exists to avoid.
                     //
                     // On timeout the lookup is NOT cancelled — nothing can interrupt it —
-                    // so it keeps a thread until the renderer answers. That thread is this
-                    // scope's own single one rather than a shared pool worker, so a wedged
-                    // page costs one parked thread in total and queues later lookups behind
-                    // it, where they time out and open without autofill.
-                    val lookup = async { frame?.let { getFormFieldInfoFromJS(it) } }
+                    // so it keeps its thread until the renderer answers. That is the
+                    // dedicated single thread rather than a shared pool worker, so a wedged
+                    // page costs one parked thread in total; later lookups queue behind it
+                    // and time out on schedule, opening without autofill. The wait itself
+                    // runs on Dispatchers.Default so the timeout can actually fire.
+                    val lookup = async(contextMenuLookupDispatcher) { frame?.let { getFormFieldInfoFromJS(it) } }
                     val formFieldInfo = withTimeoutOrNull(FORM_FIELD_LOOKUP_TIMEOUT_MS) { lookup.await() }
                     // The lookup can outlive dispose(): cancelling contextMenuScope cannot
                     // interrupt the blocking call either, so check before delivering rather

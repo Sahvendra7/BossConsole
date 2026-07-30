@@ -158,6 +158,27 @@ class ContextMenuInfoMappingTest {
     }
 
     @Test
+    fun `an inline image right at the cap is still carried`() {
+        val atCap = "data:image/png;base64," + "A".repeat(2048 - "data:image/png;base64,".length)
+        val result = info(mediaType = MediaType.IMAGE, srcUrl = atCap)
+
+        assertTrue(result.hasImage)
+        assertEquals(atCap, result.imageUrl)
+    }
+
+    @Test
+    fun `a long http image url is not capped`() {
+        // Signed CDN addresses carry policy and signature query strings and can run long;
+        // dropping them would remove the image actions invisibly.
+        val signed = "https://cdn.example.com/cat.png?" + "k=v&".repeat(700)
+        val result = info(mediaType = MediaType.IMAGE, srcUrl = signed)
+
+        assertTrue(signed.length > 2048)
+        assertTrue(result.hasImage)
+        assertEquals(signed, result.imageUrl)
+    }
+
+    @Test
     fun `a linked image reports both`() {
         val result =
             info(
