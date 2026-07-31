@@ -1,0 +1,14 @@
+{
+  "browser": "ChatGPT Atlas",
+  "benchmark": "Speedometer 3.1",
+  "url": "https://browserbench.org/Speedometer3.1/?startAutomatically=1&iterationCount=10",
+  "iterationCount": 10,
+  "method": "screenshot",
+  "score": 34.8,
+  "confidenceText": "\u00b1 1.2",
+  "screenshot": "results-final/atlas-run1.png",
+  "recordedAt": "2026-07-31T03:47:19.477Z",
+  "elapsedSeconds": 30,
+  "valid": true,
+  "scoreSource": "transcribed from screenshot (no automation endpoint available)"
+}
