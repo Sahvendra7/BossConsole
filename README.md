@@ -160,7 +160,7 @@ An agent with tools is only as safe as the controls around it. BOSS is a **gover
 
 > **Honest scope:** the `boss` MCP server is loopback-only and single-user (local machine), and plugins run in-process (crash-isolated, not OS-sandboxed). BOSS's guarantees are about **governance** — RBAC, per-tool toggles, secret scoping, and signed plugins — giving you fine-grained say over what an agent can do, rather than OS-level process sandboxing.
 >
-> Two specifics worth knowing before you rely on RBAC: **an admin user bypasses every permission check** (`McpToolRegistryImpl.permitted()` returns early on `isAdmin`), so on a single-user desktop the per-tool kill-switch — which admin does *not* bypass — is the control that actually holds; and **permission coverage is per-tool, not blanket**, so some mutating tools declare no permission at all. [**Guardrails for the infrastructure plugins**](#guardrails-for-the-infrastructure-plugins) works this through for Docker and Kubernetes, with the exhaustive list.
+> Two specifics worth knowing before you rely on RBAC: **an admin user bypasses every permission check** (`McpToolRegistryCore.permitted()` returns early on `isAdmin`), so on a single-user desktop the per-tool kill-switch — which admin does *not* bypass — is the control that actually holds; and **permission coverage is per-tool, not blanket**, so some mutating tools declare no permission at all. [**Guardrails for the infrastructure plugins**](#guardrails-for-the-infrastructure-plugins) works this through for Docker and Kubernetes, with the exhaustive list.
 
 ---
 
@@ -214,9 +214,14 @@ Plugin authors add tools by implementing `McpToolProvider` (boss-plugin-api 1.0.
 
 Scoped deliberately: this covers the **Docker and Kubernetes plugins only**, because they reach real infrastructure and because their gating was audited against source. It is not a statement about BOSS's whole tool surface — other tools have their own posture, and nothing here should be read as a claim about them.
 
-> ⚠️ **Read this first: if your user is an admin, RBAC permissions stop nothing.** `McpToolRegistryImpl.permitted()` short-circuits on `isAdmin` before checking any permission, so for an admin operator — the common case on a single-user desktop — every tool in the "permission-gated" list below is exactly as reachable as the ungated ones. The **[per-tool kill-switch](#mcp--give-agents-real-tools) is not bypassed by admin** (enforced at call time, not just when listing tools) and is therefore the only boundary that holds for an admin user. Treat permissions as meaningful for non-admin roles, and the kill-switch as the control that always applies.
+> ⚠️ **Read this first: if your user is an admin, RBAC permissions stop nothing.** `McpToolRegistryCore.permitted()` short-circuits on `isAdmin` before checking any permission, so for an admin operator — the common case on a single-user desktop — every tool in the "permission-gated" list below is exactly as reachable as the ungated ones. The **[per-tool kill-switch](#mcp--give-agents-real-tools) is not bypassed by admin** (enforced at call time, not just when listing tools) and is therefore the only boundary that holds for an admin user. Treat permissions as meaningful for non-admin roles, and the kill-switch as the control that always applies.
 >
-> Being equally honest about that kill-switch: it **fails open**. The disabled set is read once at startup from `~/.boss/mcp-disabled-tools.json`, and if that file is corrupt or unreadable the loader logs a warning and returns an empty set — silently re-enabling every tool. It is also plaintext, and an agent holding `run_command` or `codebase_write` can truncate it, with the change taking effect on the next restart. It is the strongest control available here, not a sandbox.
+> Being equally honest about that kill-switch: it **fails open on both sides**. Toggles you make in the app apply live, but the set is persisted to `~/.boss/mcp-disabled-tools.json` and re-read only at startup — so a hand-edit of that file takes effect on the next launch, and:
+>
+> - **Read side:** if the file is corrupt or unreadable the loader logs a warning and returns an empty set, silently re-enabling every tool.
+> - **Write side:** if persisting fails, the failure is logged and swallowed while the in-memory toggle stands — so a tool you switched off stays off for the session and quietly comes back on the next launch, with no signal that the decision didn't stick.
+>
+> The file is also plaintext, and an agent holding `run_command` or `codebase_write` can truncate it. This is the strongest control available here, not a sandbox. Both fail-open paths are tracked in [#85](https://github.com/risa-labs-inc/BossConsole/issues/85).
 
 **Confirmation dialogs never apply to agents.** Destructive actions taken by hand in the sidebar raise a confirm dialog, but that lives in the panel UI — an agent calling an MCP tool never sees it.
 

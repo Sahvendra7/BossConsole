@@ -134,23 +134,24 @@ class McpToolRegistryCoreTest {
      * through either.
      */
     @Test
-    fun `admin does not bypass the disabled set`() {
-        val core = McpToolRegistryCore(disabledFile = null)
-        core.registerProvider(provider("p1", echoTool("toggle_me")))
-        core.updateAccess(isAdmin = true, permissions = emptySet())
-        assertTrue(core.tools.value.any { it.definition.name == "toggle_me" })
+    fun `admin does not bypass the disabled set`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            core.registerProvider(provider("p1", echoTool("toggle_me")))
+            core.updateAccess(isAdmin = true, permissions = emptySet())
+            assertTrue(core.tools.value.any { it.definition.name == "toggle_me" })
 
-        core.setToolEnabled("toggle_me", enabled = false)
+            core.setToolEnabled("toggle_me", enabled = false)
 
-        assertFalse(
-            core.tools.value.any { it.definition.name == "toggle_me" },
-            "a disabled tool must stay hidden for an admin",
-        )
-        assertTrue(
-            runBlocking { core.invoke("toggle_me", "{}") }.isError,
-            "a disabled tool must not be invocable by an admin",
-        )
-    }
+            assertFalse(
+                core.tools.value.any { it.definition.name == "toggle_me" },
+                "a disabled tool must stay hidden for an admin",
+            )
+            assertTrue(
+                core.invoke("toggle_me", "{}").isError,
+                "a disabled tool must not be invocable by an admin",
+            )
+        }
 
     @Test
     fun `non-admin with requiresAdmin is hidden even holding the listed permissions`() {
