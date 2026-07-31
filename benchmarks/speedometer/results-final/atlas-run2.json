@@ -6,9 +6,10 @@
   "method": "screenshot",
   "score": 34.6,
   "confidenceText": "\u00b1 1.3",
-  "screenshot": "results-final/atlas-run2.png",
+  "screenshot": "results-final/cropped/atlas-run2.png",
   "recordedAt": "2026-07-31T03:51:47.423Z",
   "elapsedSeconds": 27,
-  "valid": true,
-  "scoreSource": "transcribed from screenshot (no automation endpoint available)"
+  "valid": null,
+  "scoreSource": "transcribed from screenshot (no automation endpoint available)",
+  "validNote": "unknown: the committed crop does not include Speedometer's validity banner. Viewport cleared the 850x650 minimum and no warning was visible in the full capture at transcription time."
 }

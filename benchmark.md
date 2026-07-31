@@ -16,14 +16,51 @@ machine was **not** quiet, and one browser's figure is not directly comparable t
 
 | Browser | Version | Engine | Runs | **Median** | Spread | Method |
 |---|---|---|---:|---:|---:|---|
-| **BOSS fluck browser** | BOSS 9.2.63 | — | 47.9 / 47.5 / 48.4 | **47.9** | 1.9% | MCP `browser_run_js` |
-| Comet | 150.0.7871.228 | Chromium 150 | 45.9 / 46.2 / 46.5 | **46.2** | 1.3% | CDP |
+| **BOSS fluck browser** | BOSS 9.2.63 | — | 47.9 / 47.5 / 48.4 | **47.9** ⚠️ | 1.9% | MCP `browser_run_js` |
+| Comet | 150.0.7871.228 | Chromium 150 | 45.9 / 46.2 / 46.5 | **46.2** ⚠️ | 1.3% | CDP |
 | Google Chrome | 151.0.7922.71 | Chromium 151 | 36.2 / 35.3 / 35.5 | **35.5** | 2.5% | CDP |
 | ChatGPT Atlas | 1.2026.189.1 | Chromium 150.0.7871.115 | 34.8 / 34.6 / 34.4 | **34.6** | 1.2% | screenshot |
 | Safari | 26.5.2 | WebKit 626 | 28.8 / 29.9 / 29.9 | **29.9** ⚠️ | 3.7% | screenshot |
 | Firefox | 153.0.1 | Gecko / SpiderMonkey | 22.5 / 30.9 / 22.0 | **22.5** | **40%** | WebDriver |
 
+⚠️ **fluck and Comet are tied within measurement precision** — the 1.7-point gap between
+them is *not* a result. See [Is fluck actually faster than Comet?](#is-fluck-actually-faster-than-comet).
 ⚠️ Safari's number is **not comparable** to the others — see [Caveats](#caveats-read-before-quoting-these-numbers).
+
+The one ordering this data supports firmly is that **fluck and Comet both sit ~30% above
+Chrome and Atlas** — a gap an order of magnitude larger than the run-to-run noise.
+
+## Is fluck actually faster than Comet?
+
+**Not established.** Treat the top two rows as tied.
+
+The runs above have a structural flaw at the top of the table. `run-all.sh` interleaves
+browsers round-robin precisely because load drift on this machine is worth 20-40%
+([caveat 4](#caveats-read-before-quoting-these-numbers)) — but the fluck browser is a tab
+inside the BOSS host, driven over MCP, so it could not join that sweep. Its three runs
+were collected separately, afterwards. The headline margin was therefore the one number
+*not* produced by the controlled protocol, and at 3.7% it was far smaller than the drift
+the protocol defends against.
+
+So it was re-measured properly: Comet and fluck alternated back-to-back, three times,
+each pair within ~2 minutes ([`paired/PAIRED.md`](benchmarks/speedometer/paired/PAIRED.md)).
+
+| Pair | Comet | fluck | fluck margin |
+|---|---:|---:|---:|
+| 1 | 44.7 | 46.5 | +4.0% |
+| 2 | 46.1 | 46.95 | +1.8% |
+| 3 | 45.4 | 48.3 | +6.4% |
+| **median** | **45.4** | **46.95** | **+3.4%** |
+
+fluck was ahead in all three pairs. But +3.4% is the same size as each browser's own
+spread within this experiment (Comet 3.1%, fluck 3.9%), and 3/3 is p = 0.125 under a
+sign test — directionally consistent, not significant. Separating these two would need
+many more runs on a quiet machine.
+
+Supporting this reading: fluck's per-suite means sit uniformly 1-3% under Comet's with
+**no signature**, and Comet actually wins `Charts-chartjs`. A flat small offset is what
+an ambient-load difference looks like — contrast the Chrome/Comet gap below, which has a
+clear DOM-mutation signature.
 
 ### Not benchmarked
 
@@ -118,15 +155,28 @@ benchmark did not isolate which. Do not quote a cause from this document.
    (cropped images under `results-final/cropped/`) with no programmatic value to
    cross-check against. Chrome, Comet, Firefox, and fluck numbers came from reading
    `#result-number` directly out of the live DOM.
-6. **Speedometer reported `valid: true` for every run counted here**, and every viewport
-   exceeded Speedometer's 850×650 minimum (1280×783 Chrome, 1270×780 Comet, 1280×786
-   Firefox, 1432×729 fluck).
+6. **Speedometer reported `valid: true` for every CDP/WebDriver run** (read from
+   `summary.classList`), and every viewport exceeded Speedometer's 850×650 minimum
+   (1280×783 Chrome, 1270×780 Comet, 1280×786 Firefox, 1432×729 fluck). For the
+   screenshot-derived rows (Safari, Atlas) validity is recorded as **`null`, not true** —
+   the committed crops show the score but not Speedometer's validity banner, so asserting
+   `valid: true` there would claim more than the evidence supports.
+7. **fluck's viewport is 1432×729 against 1280×783 for the others.** Both clear the
+   minimum, but Speedometer's DOM work is viewport-dependent, so this is an uncontrolled
+   variable in the fluck comparison — another reason to read the top two rows as tied.
+8. **Ambient CPU is sampled from `ps -Ao pcpu`**, which is a decaying average over up to a
+   minute rather than instantaneous load. It is a co-tenancy indicator, not a precise
+   measure of load during the run.
 
 ## How to reproduce
 
 All scripts live in [`benchmarks/speedometer/`](benchmarks/speedometer/). They are
 dependency-free — Node ≥21 (for the built-in global `WebSocket`) plus `geckodriver` for
 Firefox.
+
+**macOS only.** Every runner shells to `osascript`, `open`, `screencapture`, `sips` and
+`pgrep -f`, and hardcodes `/Applications` paths. `run-all.sh` exits 2 on any other
+platform rather than failing halfway through.
 
 ```bash
 cd benchmarks/speedometer
@@ -136,6 +186,15 @@ brew install geckodriver                     # Firefox only
 RESULTS=results-final REPEATS=3 ITERATIONS=10 \
   BROWSERS="chrome comet firefox safari atlas" ./run-all.sh
 ```
+
+The sweep exits non-zero and lists which runs failed, so a missing result file cannot
+be mistaken for full coverage.
+
+**Keep the benchmark window uncovered for the whole run.** A window the OS considers
+occluded gets its `requestAnimationFrame` throttled, which produces a low score rather
+than an error. `run-chromium.mjs` now refuses to start in that state and flags a run that
+becomes hidden partway, but the screenshot runner cannot check this — so don't stack
+windows over a running benchmark, and don't leave a full-screen app on another Space.
 
 | Script | Role |
 |---|---|
@@ -169,6 +228,16 @@ JSON.stringify({ hidden: document.hidden, vw: innerWidth, vh: innerHeight })
 
 Recorded because each one silently produced plausible-looking wrong numbers:
 
+- **An occluded window silently throttles the benchmark — and still reports `valid: true`.**
+  This is the worst of the set. macOS marks a fully-covered window hidden, and Chromium then
+  throttles `requestAnimationFrame` in it; Speedometer 3.1 measures with rAF. A run in a
+  covered window does not fail — it crawls (284/580 after five minutes, observed) and, if it
+  finishes, yields a much lower score that is indistinguishable from a genuinely slow browser.
+  The harness had checked viewport size and Speedometer's validity flag but never *visibility*.
+  `run-chromium.mjs` now passes `--disable-backgrounding-occluded-windows`, refuses to start a
+  run whose window reports `document.hidden` (retrying the raise first), samples it on every
+  poll, and records `occludedDuringRun` in each result. Every run reported here recorded
+  `false`; the fluck arms were checked before each run with completion time as the cross-check.
 - **Leaked browser processes poisoned later runs.** A failed Comet run left its process
   alive; the next run then contended with it and read 36.0 instead of ~46 — which looked
   exactly like "Comet is as slow as Chrome". `run-chromium.mjs` now polls until no

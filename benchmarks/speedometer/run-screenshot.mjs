@@ -55,6 +55,12 @@ function parseArgs(argv) {
             throw new Error(`Missing required --${required}`);
     }
     args.iterations = Number(args.iterations ?? 10);
+    // An unvalidated value is worse than a crash here: --iterations 1o yields NaN,
+    // iterationCount=NaN goes into the URL, Speedometer silently falls back to its
+    // default, the run completes, and the record serialises iterationCount as null --
+    // a finished-looking result for a workload nobody asked for.
+    if (!Number.isInteger(args.iterations) || args.iterations < 1)
+        throw new Error(`--iterations must be a positive integer, got '${args.iterations}'`);
     // Which processes count toward the CPU signal; defaults to the app name.
     args.match = args.match ?? args.name;
     // `open -a <name>` resolves through LaunchServices, which does not know about

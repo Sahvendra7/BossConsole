@@ -10,7 +10,17 @@
 #
 # BOSS's built-in fluck browser is driven separately through the host's own MCP
 # tools (browser_navigate / browser_run_js), so it is not launched here.
+# No `-e` on purpose: one browser failing must not abandon the rest of a sweep. Failures
+# are collected and summarised at the end instead, and the script exits non-zero -- a
+# silently missing result file is how a sweep reports "all good" while under-covering.
 set -uo pipefail
+
+# Every runner shells to osascript/open/screencapture/sips/pgrep and hardcodes
+# /Applications paths. Fail fast rather than emitting a cascade of ENOENT elsewhere.
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "This harness is macOS-only (needs osascript, open, screencapture, sips)." >&2
+  exit 2
+fi
 
 cd "$(dirname "$0")"
 ITERATIONS="${ITERATIONS:-10}"
@@ -72,12 +82,28 @@ dispatch() { # run browser
 # up, a VM getting busy). Grouping all of a browser's runs together bakes that
 # drift into whichever browser happened to run during it -- interleaving spreads
 # it across all of them so the medians stay comparable.
+FAILED=""
+TOTAL=0
 for run in $(seq 1 "$REPEATS"); do
   for browser in $BROWSERS; do
-    dispatch "$run" "$browser"
-    settle
+    TOTAL=$((TOTAL + 1))
+    if ! dispatch "$run" "$browser"; then
+      FAILED="$FAILED $browser:run$run"
+    fi
+    # Skip the settle after the very last run -- nothing follows it to protect.
+    if [ "$run" -ne "$REPEATS" ] || [ "$browser" != "${BROWSERS##* }" ]; then
+      settle
+    fi
   done
 done
 
 echo "=============== done ==============="
 ls -la "$RESULTS"
+
+if [ -n "$FAILED" ]; then
+  echo
+  echo "FAILED RUNS ($(echo $FAILED | wc -w | tr -d ' ') of $TOTAL):$FAILED" >&2
+  echo "Result files for those runs are missing -- do not treat this sweep as complete." >&2
+  exit 1
+fi
+echo "all $TOTAL runs produced a result file"

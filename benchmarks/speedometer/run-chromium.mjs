@@ -32,8 +32,10 @@ const execFileAsync = promisify(execFile);
 
 const RESULT_POLL_MS = 5_000;
 const LAUNCH_TIMEOUT_MS = 60_000;
-// A 10-iteration Speedometer 3.1 run is ~8-12 min on Apple silicon; allow slack
-// for slower engines without hanging forever on a browser that never finishes.
+// A 10-iteration Speedometer 3.1 run takes ~20-60s on Apple silicon (the score is
+// literally iterations per minute, so ~46 means ~13s of measured work plus load and
+// warmup). The cap is therefore very generous slack, sized so a browser that stalls
+// outright still terminates -- not an estimate of a normal run.
 const RUN_TIMEOUT_MS = 45 * 60_000;
 
 function parseArgs(argv) {
@@ -49,6 +51,12 @@ function parseArgs(argv) {
     }
     args.port = Number(args.port);
     args.iterations = Number(args.iterations ?? 10);
+    // An unvalidated value is worse than a crash here: --iterations 1o yields NaN,
+    // iterationCount=NaN goes into the URL, Speedometer silently falls back to its
+    // default, the run completes, and the record serialises iterationCount as null --
+    // a finished-looking result for a workload nobody asked for.
+    if (!Number.isInteger(args.iterations) || args.iterations < 1)
+        throw new Error(`--iterations must be a positive integer, got '${args.iterations}'`);
     return args;
 }
 
@@ -257,6 +265,11 @@ async function main() {
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-sync",
+            // macOS marks a fully-covered window occluded, and Chromium then
+            // throttles requestAnimationFrame in it. Speedometer 3.1 measures with
+            // rAF, so an occluded window yields a crawling run that still reports
+            // valid:true -- a slow-looking browser that is really just covered up.
+            "--disable-backgrounding-occluded-windows",
             "--window-size=1280,900",
             "--window-position=0,0",
             url,
@@ -286,8 +299,29 @@ async function main() {
         if (viewport.w < 850 || viewport.h < 650)
             console.warn(`[${args.name}] WARNING viewport under Speedometer's 850x650 minimum`);
 
+        // Refuse to measure a window the OS considers hidden. Retry the raise a few
+        // times first -- a window can legitimately still be settling right after launch.
+        let visible = false;
+        for (let attempt = 0; attempt < 5 && !visible; attempt++) {
+            visible = !(await session.evaluate(`document.hidden`));
+            if (visible)
+                break;
+            console.warn(`[${args.name}] window is occluded/hidden; re-raising (attempt ${attempt + 1})`);
+            await raiseWindow(args.name);
+            await sleep(2_000);
+        }
+        if (!visible) {
+            throw new Error(
+                `${args.name} window stayed hidden (document.hidden === true). rAF is throttled ` +
+                    `while occluded, so any score from this run would be meaningless. Un-cover the ` +
+                    `window (a full-screen app on another Space will do it) and re-run.`
+            );
+        }
+
         const deadline = Date.now() + RUN_TIMEOUT_MS;
         const ambientSamples = [];
+        // Occlusion can start mid-run too, so keep watching rather than checking once.
+        let everHidden = false;
         let result = null;
         while (Date.now() < deadline) {
             result = await session.evaluate(EXTRACT_SCORE);
@@ -296,14 +330,23 @@ async function main() {
             const progress = await session.evaluate(PROGRESS);
             const ambient = await ambientCpu(bundleOf(args.binary));
             ambientSamples.push(ambient);
+            if (await session.evaluate(`document.hidden`)) {
+                everHidden = true;
+                console.warn(`[${args.name}] window became hidden mid-run; score will be flagged`);
+            }
             const elapsed = Math.round((RUN_TIMEOUT_MS - (deadline - Date.now())) / 1000);
             console.log(`[${args.name}] ${elapsed}s ${progress} ambient=${ambient}%`);
             await sleep(RESULT_POLL_MS);
         }
         if (!result)
             throw new Error(`Run did not finish within ${RUN_TIMEOUT_MS / 60_000} minutes`);
+        if (everHidden)
+            console.warn(`[${args.name}] WARNING this run was occluded at some point; do not compare it`);
 
         const record = {
+            // false means the window was visible for every sample. A true here
+            // invalidates the score: rAF was throttled for part of the run.
+            occludedDuringRun: everHidden,
             // Competing CPU load during the run, excluding this browser. Reported so
             // a depressed score can be attributed rather than mistaken for a slow engine.
             ambientCpuPercent: ambientSamples.length
