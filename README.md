@@ -159,6 +159,8 @@ An agent with tools is only as safe as the controls around it. BOSS is a **gover
 - **Fault isolation.** Each plugin runs in a supervised scope with a watchdog and auto-restart, so a crashing or hung plugin can't take down the host.
 
 > **Honest scope:** the `boss` MCP server is loopback-only and single-user (local machine), and plugins run in-process (crash-isolated, not OS-sandboxed). BOSS's guarantees are about **governance** — RBAC, per-tool toggles, secret scoping, and signed plugins — giving you fine-grained say over what an agent can do, rather than OS-level process sandboxing.
+>
+> Two specifics worth knowing before you rely on RBAC: **an admin user bypasses every permission check** (`McpToolRegistryImpl.permitted()` returns early on `isAdmin`), so on a single-user desktop the per-tool kill-switch — which admin does *not* bypass — is the control that actually holds; and **permission coverage is per-tool, not blanket**, so some mutating tools declare no permission at all. [**Guardrails for the infrastructure plugins**](#guardrails-for-the-infrastructure-plugins) works this through for Docker and Kubernetes, with the exhaustive list.
 
 ---
 
@@ -208,21 +210,26 @@ Plugin authors add tools by implementing `McpToolProvider` (boss-plugin-api 1.0.
 | **[Docker](https://github.com/risa-labs-inc/boss-plugin-docker)** | Manage project Dockerfiles and Compose stacks plus local containers, images, volumes, and networks; stream logs, inspect services, and preview them inline (`docker_*` MCP tools). |
 | **[Kubernetes](https://github.com/risa-labs-inc/boss-plugin-kubernetes)** | Work across contexts and namespaces with workloads, pods, services, logs, supervised port-forwards, and inline previews — plus full Helm release management: install, upgrade, rollback, history, values, and repos (`k8s_*` and `helm_*` MCP tools). |
 
-#### Guardrails — what actually stops an agent
+#### Guardrails for the infrastructure plugins
 
-These two plugins reach real infrastructure, so it is worth being exact rather than reassuring. **All of the below is verified against plugin source, and it is a mixed picture.**
+Scoped deliberately: this covers the **Docker and Kubernetes plugins only**, because they reach real infrastructure and because their gating was audited against source. It is not a statement about BOSS's whole tool surface — other tools have their own posture, and nothing here should be read as a claim about them.
 
-**Confirmation dialogs do not apply to agents.** Destructive actions taken by hand in the sidebar raise a confirm dialog, but that lives in the panel UI — an agent calling an MCP tool never sees it. Permissions and the kill-switch are the only boundaries that apply to agents.
+> ⚠️ **Read this first: if your user is an admin, RBAC permissions stop nothing.** `McpToolRegistryImpl.permitted()` short-circuits on `isAdmin` before checking any permission, so for an admin operator — the common case on a single-user desktop — every tool in the "permission-gated" list below is exactly as reachable as the ungated ones. The **[per-tool kill-switch](#mcp--give-agents-real-tools) is not bypassed by admin** and is therefore the only boundary that holds for an admin user. Treat permissions as meaningful for non-admin roles, and the kill-switch as the control that always applies.
 
-**Permission-gated (an RBAC grant is required):** `docker_rm`, `docker_stop`, `docker_compose_down` (`docker.manage`); `k8s_delete`, `k8s_scale`, `k8s_rollout_restart` (`kubernetes.manage`); `helm_install`, `helm_upgrade`, `helm_rollback`, `helm_uninstall`, `helm_test` (`kubernetes.manage`); `helm_push` (`helm.publish`).
+**Confirmation dialogs never apply to agents.** Destructive actions taken by hand in the sidebar raise a confirm dialog, but that lives in the panel UI — an agent calling an MCP tool never sees it.
 
-**Not permission-gated today** — this list is exhaustive as of writing: `docker_build`, `docker_start`, `docker_restart`, `docker_compose_up`, `docker_open_service`, `k8s_apply`, `k8s_exec`, `k8s_port_forward`, `k8s_port_forward_stop`, `k8s_use_context`, `k8s_open_resource`, `helm_package`, `helm_dependency_update`, `helm_repo_add`, `helm_repo_update`, `helm_repo_remove`, `helm_open_release`. Use the [per-tool kill-switch](#mcp--give-agents-real-tools) for anything here you don't want reachable.
+**Permission-gated for non-admin roles:** `docker_rm`, `docker_stop`, `docker_compose_down` (`docker.manage`); `k8s_delete`, `k8s_scale`, `k8s_rollout_restart` (`kubernetes.manage`); `helm_install`, `helm_upgrade`, `helm_rollback`, `helm_uninstall`, `helm_test` (`kubernetes.manage`); `helm_push` (`helm.publish`).
 
-> ⚠️ **`k8s_exec` deserves specific attention.** It is arbitrary in-cluster command execution — it opens a pod shell that an agent can then drive — so it **bypasses the Secret protections below** (read a mounted Secret or the service-account token directly) and is not permission-gated. `k8s_apply` is similar in kind: apply a pod that mounts the Secret. Disable both unless you specifically need them.
+**Not permission-gated at all** — exhaustive for *mutating* tools as of writing, and split by how much reach they actually have. Read-only tools (`docker_ps`, `k8s_pods`, `k8s_logs`, the `helm_get_*` family) are also ungated and are not listed; note `k8s_logs` can surface secret material regardless of the redaction below.
 
-**Scope of the other claims.** Ports BOSS publishes itself bind to `127.0.0.1`; ports declared in your own `docker-compose.yml` bind as written, since the plugin runs your file unmodified. The Kubernetes plugin never modifies your kubeconfig — context selection is local to BOSS, so your shells' `kubectl` default is untouched — though `helm repo` commands do write your local Helm config (`~/.config/helm/repositories.yaml`). Secret values are redacted two specific ways: `k8s_yaml` is refused for Secrets, and rendered Helm manifests have `data:`/`stringData:` blocks stripped — subject to the `k8s_exec` caveat above.
+- **Real reach — disable unless needed:** `k8s_exec`, `k8s_apply`, `k8s_port_forward`, `docker_compose_up`, `docker_build`, `docker_start`, `docker_restart`, `helm_repo_add`, `helm_repo_update`, `helm_repo_remove`, `helm_package`, `helm_dependency_update`
+- **Local-only — open a tab or flip an in-memory selection:** `docker_open_service`, `k8s_open_resource`, `k8s_use_context`, `k8s_port_forward_stop`, `helm_open_release`
 
-<sub>Per-tool gating is declared in each plugin's own repo, which releases independently of BOSS — so treat this list as accurate-at-writing and the plugin source as authoritative. Closing the ungated gaps is tracked in [boss-plugin-docker#3](https://github.com/risa-labs-inc/boss-plugin-docker/issues/3) and [boss-plugin-kubernetes#3](https://github.com/risa-labs-inc/boss-plugin-kubernetes/issues/3).</sub>
+> ⚠️ **`k8s_exec` and `k8s_apply` are the two to disable first.** `k8s_exec` is arbitrary in-cluster command execution — it opens a pod shell an agent can then drive — so it **bypasses the Secret protections below** entirely (read a mounted Secret or the service-account token directly). `k8s_apply` is the same class: apply a pod that mounts the Secret.
+
+**Scope of the other claims.** Ports BOSS publishes itself bind to `127.0.0.1`; ports declared in your own `docker-compose.yml` bind as written, since the plugin runs your file unmodified — both a `"8080:8080"` mapping and `--network host` bypass the loopback binding. The Kubernetes plugin never modifies your kubeconfig — context selection is local to BOSS, so your shells' `kubectl` default is untouched — though `helm repo` commands do write your local Helm config (`~/.config/helm/repositories.yaml`). Secret values are redacted two specific ways: `k8s_yaml` is refused for Secrets, and rendered Helm manifests have `data:`/`stringData:` blocks stripped — subject to the `k8s_exec` caveat above.
+
+<sub>Audited 2026-07-31 against **boss-plugin-docker 1.0.2** and **boss-plugin-kubernetes 1.0.3**; compare against your installed versions, since the plugins release independently of BOSS and nothing in CI relates this list to them. Plugin source is authoritative. Closing the ungated gaps is tracked in [boss-plugin-docker#3](https://github.com/risa-labs-inc/boss-plugin-docker/issues/3) and [boss-plugin-kubernetes#3](https://github.com/risa-labs-inc/boss-plugin-kubernetes/issues/3).</sub>
 
 ### AI & automation
 | Plugin | What it does |
