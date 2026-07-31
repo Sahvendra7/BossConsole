@@ -121,6 +121,37 @@ class McpToolRegistryCoreTest {
         assertTrue(core.tools.value.any { it.definition.name == "admin_tool" })
     }
 
+    /**
+     * Admin bypasses every *permission* check, so for an admin operator the
+     * kill-switch is the only access control left — the README's security section
+     * says so explicitly. The two filters in `applyExposed` are independent
+     * conjuncts today; folding them together (an early `if (isAdmin) return true`
+     * over the whole filter) would keep every other test in this file green while
+     * silently making a disabled tool reachable again for admins.
+     *
+     * Asserts both the listing and the call path: `invoke` resolves against the
+     * exposed set, so a stale tool list on the agent's side must not get a call
+     * through either.
+     */
+    @Test
+    fun `admin does not bypass the disabled set`() {
+        val core = McpToolRegistryCore(disabledFile = null)
+        core.registerProvider(provider("p1", echoTool("toggle_me")))
+        core.updateAccess(isAdmin = true, permissions = emptySet())
+        assertTrue(core.tools.value.any { it.definition.name == "toggle_me" })
+
+        core.setToolEnabled("toggle_me", enabled = false)
+
+        assertFalse(
+            core.tools.value.any { it.definition.name == "toggle_me" },
+            "a disabled tool must stay hidden for an admin",
+        )
+        assertTrue(
+            runBlocking { core.invoke("toggle_me", "{}") }.isError,
+            "a disabled tool must not be invocable by an admin",
+        )
+    }
+
     @Test
     fun `non-admin with requiresAdmin is hidden even holding the listed permissions`() {
         val core = McpToolRegistryCore(disabledFile = null)
