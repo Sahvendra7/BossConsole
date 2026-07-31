@@ -171,7 +171,7 @@ BOSS speaks the **Model Context Protocol**. The `terminal-tab` plugin hosts a lo
 | Terminal | `run_command`, `run_in_sidebar`, `run_in_panel`, `list_tabs`, `read_scrollback`, `send_input` |
 | Code & Git | `codebase_read`, `codebase_write`, `codebase_tree`, `git_status`, `git_log`, `git_stage`, `git_checkout` |
 | Browser | `browser_navigate`, `browser_get_url`, `browser_run_js` |
-| Infrastructure | `docker_ps`, `docker_build`, `docker_compose_up`, `k8s_pods`, `k8s_logs`, `k8s_port_forward` |
+| Infrastructure | `docker_ps`, `docker_build`, `docker_compose_up`, `k8s_pods`, `k8s_logs`, `k8s_port_forward`, `helm_releases`, `helm_upgrade` |
 | Secrets | `secrets_list`, `secret_search`, `secret_get`, `secret_create` |
 | Automation | `flow_run`, `rpa_run`, `rpa_record_toggle`, `llmrpa_run`, `evolver_evolve` |
 | Productivity | `bookmarks_list`, `bookmark_add`, `downloads_list`, `plugins_list` |
@@ -205,8 +205,8 @@ Plugin authors add tools by implementing `McpToolProvider` (boss-plugin-api 1.0.
 
 | Plugin | What it does |
 |--------|--------------|
-| **[Docker](https://github.com/risa-labs-inc/boss-plugin-docker)** | Manage project Dockerfiles and Compose stacks plus local containers, images, volumes, and networks; stream logs, inspect services, and preview them inline (`docker_*` MCP tools). Published ports bind to `127.0.0.1`, and destructive actions require confirmation. |
-| **[Kubernetes](https://github.com/risa-labs-inc/boss-plugin-kubernetes)** | Work across contexts and namespaces with workloads, pods, services, Helm releases, logs, supervised port-forwards, and inline previews (`k8s_*` MCP tools). It never changes your active kubeconfig context and redacts Kubernetes Secret values. |
+| **[Docker](https://github.com/risa-labs-inc/boss-plugin-docker)** | Manage project Dockerfiles and Compose stacks plus local containers, images, volumes, and networks; stream logs, inspect services, and preview them inline (13 `docker_*` MCP tools). Published ports bind to `127.0.0.1`, and destructive actions require confirmation. |
+| **[Kubernetes](https://github.com/risa-labs-inc/boss-plugin-kubernetes)** | Work across contexts and namespaces with workloads, pods, services, logs, supervised port-forwards, and inline previews — plus full Helm release management: install, upgrade, rollback, history, values, and repos (20 `k8s_*` + 23 `helm_*` MCP tools). It never writes to your kubeconfig — context selection is local to BOSS, so your shells' `kubectl` default is untouched — and it redacts Secret values: `k8s_yaml` is refused for Secrets, and rendered Helm manifests have `data:`/`stringData:` blocks stripped. |
 
 ### AI & automation
 | Plugin | What it does |
