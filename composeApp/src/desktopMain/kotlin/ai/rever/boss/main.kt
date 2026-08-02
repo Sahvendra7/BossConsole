@@ -9,6 +9,7 @@ import ai.rever.boss.logging.GlobalLogCapture
 import ai.rever.boss.performance.PerformanceDataProviderImpl
 import ai.rever.boss.plugin.PluginStoreSetup
 import ai.rever.boss.plugin.pathutils.BossDirectories
+import ai.rever.boss.plugin.sandbox.ui.PluginRenderRecovery
 import ai.rever.boss.plugin.ui.BossThemeController
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.utils.DeepLinkHandler
@@ -50,6 +51,33 @@ import javax.swing.JPopupMenu
 import kotlin.system.exitProcess
 
 private val logger = BossLogger.forComponent("Main")
+
+/**
+ * What to tell the user after an unattributed render exception.
+ *
+ * Named rather than inlined so the wording is reviewable in one place: the whole
+ * point of recovery is that the user finds out something happened, since the
+ * failure it handles previously left a silently broken window.
+ */
+private fun renderRecoveryMessage(outcome: PluginRenderRecovery.Outcome): String =
+    when (outcome) {
+        is PluginRenderRecovery.Outcome.Quarantined -> {
+            "Paused ${outcome.plugins.joinToString()} — it kept failing to render. " +
+                "Restart it from the panel menu."
+        }
+
+        is PluginRenderRecovery.Outcome.Rebuilt -> {
+            "A plugin panel failed to render and was reloaded."
+        }
+
+        PluginRenderRecovery.Outcome.Unexplained -> {
+            "A UI component keeps failing to render. No plugin accounts for it; the window is still usable."
+        }
+
+        PluginRenderRecovery.Outcome.NotPluginRelated -> {
+            "A UI component failed to render and was recovered."
+        }
+    }
 
 /**
  * Scope for fire-and-forget startup work (PSI warm-up, update-Realtime start).
@@ -502,12 +530,17 @@ fun main(args: Array<String>) {
                                     // would offer to wipe their data over a recovered hiccup.
                                     // It would also stack one crash window per failure.
                                     //
-                                    // The stack trace is already in the log above. The user
-                                    // gets a status message, which is how contained plugin
-                                    // crashes already report themselves.
+                                    // Keeping the window alive is not enough on its own: a
+                                    // repaint over a subtree that still reproduces the fault
+                                    // just leaves the user a broken window and no explanation,
+                                    // which is what containment alone actually delivered.
+                                    // Recovery rebuilds the plugin panels, and quarantines
+                                    // them if the rebuild does not take.
+                                    val outcome =
+                                        PluginRenderRecovery.onUnattributedRenderException(throwable)
                                     ai.rever.boss.components.bars.horizontal.StatusMessageManager
                                         .showMessage(
-                                            "A UI component failed to render and was recovered.",
+                                            renderRecoveryMessage(outcome),
                                             durationMs = 8000,
                                         )
                                     java.awt.Window
