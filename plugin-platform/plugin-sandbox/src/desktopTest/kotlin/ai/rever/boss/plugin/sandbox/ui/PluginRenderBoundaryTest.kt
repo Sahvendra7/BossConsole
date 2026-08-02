@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin.sandbox.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,11 +13,15 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -29,15 +34,26 @@ import kotlin.test.assertTrue
  * window handler then treats it as a host fault and disposes the window, ending
  * the app — which is how a duplicate LazyColumn key in the bookmarks plugin took
  * BossConsole down (BossConsole-Releases#16).
- *
- * These tests assert the boundary catches each phase, hands the throwable to the
- * owner, and leaves the host composition standing.
  */
 // The boundary under test exists to catch anything, so the tests must be able to
 // throw and observe anything — including Errors.
 @Suppress("TooGenericExceptionCaught")
 @OptIn(ExperimentalTestApi::class)
 class PluginRenderBoundaryTest {
+    private companion object {
+        const val PLUGIN_ID = "ai.rever.boss.plugin.dynamic.test"
+
+        /**
+         * Run the boundary's crash hand-off inline instead of on the EDT.
+         *
+         * `runComposeUiTest` does not pump a real event queue, so anything posted
+         * with `invokeLater` never runs and a test that waited for it would hang.
+         * Production still defers — that is what makes the callback safe to write
+         * snapshot state from — and this only changes *when*, not *what*.
+         */
+        val runInline: (() -> Unit) -> Unit = { it() }
+    }
+
     /** Throws while being measured — the phase from the real crash report. */
     @Composable
     private fun ThrowsDuringMeasure(error: Throwable) {
@@ -68,8 +84,9 @@ class PluginRenderBoundaryTest {
             setContent {
                 Box(Modifier.fillMaxSize()) {
                     PluginRenderBoundary(
-                        pluginId = "ai.rever.boss.plugin.dynamic.test",
+                        pluginId = PLUGIN_ID,
                         onRenderCrash = { captured.set(it) },
+                        dispatchToUiThread = runInline,
                         content = content,
                     )
                 }
@@ -85,7 +102,7 @@ class PluginRenderBoundaryTest {
         val captured = captureCrashFrom { ThrowsDuringMeasure(boom) }
 
         assertNotNull(captured, "the measure crash escaped the boundary")
-        assertEquals(boom, captured, "the owner was handed the wrong throwable")
+        assertSame(boom, captured, "the owner was handed the wrong throwable")
     }
 
     @Test
@@ -95,7 +112,7 @@ class PluginRenderBoundaryTest {
         val captured = captureCrashFrom { ThrowsDuringPlacement(boom) }
 
         assertNotNull(captured, "the placement crash escaped the boundary")
-        assertEquals(boom, captured)
+        assertSame(boom, captured)
     }
 
     @Test
@@ -105,68 +122,132 @@ class PluginRenderBoundaryTest {
         val captured = captureCrashFrom { ThrowsDuringDraw(boom) }
 
         assertNotNull(captured, "the draw crash escaped the boundary")
-        assertEquals(boom, captured)
+        assertSame(boom, captured)
     }
 
     @Test
-    fun `the reported duplicate-LazyColumn-key crash is contained`() {
+    fun `the reported duplicate-LazyColumn-key crash is contained and a sibling still renders`() {
         // The actual shape from BossConsole-Releases#16: two items under one key
         // share a subcomposition slot and therefore one LayoutNode, so the list
-        // measures that node twice in a pass. Reproduced here rather than
-        // described, so the boundary is proven against the real failure and not
-        // just a synthetic throw.
+        // measures that node twice in a pass. Reproduced rather than described, so
+        // the boundary is proven against the real failure and not a synthetic one.
         val captured = AtomicReference<Throwable?>(null)
-        var hostStillComposed = false
+        // Set from a draw modifier, not from composition: composition always
+        // completes before measure, so a flag set there would be true whether or
+        // not the crash took the render pass down. Drawing is downstream of the
+        // crash and is the thing that actually has to survive.
+        val siblingDrew = AtomicBoolean(false)
 
         runComposeUiTest {
             setContent {
-                Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize()) {
                     PluginRenderBoundary(
                         pluginId = "ai.rever.boss.plugin.dynamic.bookmarks",
                         onRenderCrash = { captured.set(it) },
+                        dispatchToUiThread = runInline,
                     ) {
-                        LazyColumn(Modifier.fillMaxSize()) {
+                        LazyColumn(Modifier.size(40.dp)) {
                             items(listOf("dup", "dup"), key = { it }) {
                                 Box(Modifier.size(20.dp))
                             }
                         }
                     }
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .drawWithContent {
+                                siblingDrew.set(true)
+                                drawContent()
+                            },
+                    )
                 }
-                // Composed as a sibling of the boundary: if the crash had escaped,
-                // the whole composition would have gone down with it.
-                hostStillComposed = true
             }
         }
 
         assertNotNull(
             captured.get(),
-            "duplicate keys did not throw here — if Compose stopped treating this as an error, " +
+            "duplicate keys did not throw here — if Compose stopped treating this as an error " +
                 "this test needs rewriting, but the boundary is still what contains it",
         )
-        assertTrue(hostStillComposed, "the host composition did not survive the plugin's crash")
+        assertTrue(siblingDrew.get(), "the rest of the window stopped rendering when the plugin crashed")
     }
 
     @Test
     fun `content that renders cleanly is untouched`() {
         val captured = AtomicReference<Throwable?>(null)
-        var childComposed = false
+        val childDrew = AtomicBoolean(false)
 
         runComposeUiTest {
             setContent {
                 Box(Modifier.fillMaxSize()) {
                     PluginRenderBoundary(
-                        pluginId = "ai.rever.boss.plugin.dynamic.test",
+                        pluginId = PLUGIN_ID,
                         onRenderCrash = { captured.set(it) },
+                        dispatchToUiThread = runInline,
                     ) {
-                        Box(Modifier.size(24.dp))
-                        childComposed = true
+                        Box(
+                            Modifier
+                                .size(24.dp)
+                                .drawWithContent {
+                                    childDrew.set(true)
+                                    drawContent()
+                                },
+                        )
                     }
                 }
             }
         }
 
         assertNull(captured.get(), "a healthy subtree must not report a crash")
-        assertTrue(childComposed, "the boundary must not stop its content composing")
+        assertTrue(childDrew.get(), "the boundary must not stop its content rendering")
+    }
+
+    @Test
+    fun `a repeatedly failing subtree is reported once`() {
+        // A failing measure is retried before the rebuild lands. One broken panel
+        // must not produce a burst of identical crash records.
+        val reports = AtomicInteger(0)
+
+        runComposeUiTest {
+            setContent {
+                Box(Modifier.fillMaxSize()) {
+                    PluginRenderBoundary(
+                        pluginId = PLUGIN_ID,
+                        onRenderCrash = { reports.incrementAndGet() },
+                        dispatchToUiThread = runInline,
+                    ) {
+                        ThrowsDuringMeasure(IllegalStateException("still broken"))
+                    }
+                }
+            }
+        }
+
+        assertEquals(1, reports.get(), "the boundary reported the same crash more than once")
+    }
+
+    @Test
+    fun `a throwing crash handler does not escalate the contained crash`() {
+        // Documented guarantee: the handler failing must not turn a crash the
+        // boundary already contained into a fatal one.
+        var escaped: Throwable? = null
+
+        try {
+            runComposeUiTest {
+                setContent {
+                    PluginRenderBoundary(
+                        pluginId = PLUGIN_ID,
+                        onRenderCrash = { throw IllegalStateException("the handler itself is broken") },
+                        dispatchToUiThread = runInline,
+                    ) {
+                        ThrowsDuringMeasure(IllegalStateException("measure blew up"))
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            escaped = t
+        }
+
+        assertNull(escaped, "a throwing crash handler escalated a contained crash")
     }
 
     @Test
@@ -181,8 +262,9 @@ class PluginRenderBoundaryTest {
             runComposeUiTest {
                 setContent {
                     PluginRenderBoundary(
-                        pluginId = "ai.rever.boss.plugin.dynamic.test",
+                        pluginId = PLUGIN_ID,
                         onRenderCrash = { captured.set(it) },
+                        dispatchToUiThread = runInline,
                     ) {
                         ThrowsDuringMeasure(fatal)
                     }
@@ -194,5 +276,42 @@ class PluginRenderBoundaryTest {
 
         assertNull(captured.get(), "a fatal JVM error must not be reported as a plugin crash")
         assertNotNull(escaped, "an OutOfMemoryError must propagate, not be contained")
+        assertTrue(
+            generateSequence(escaped) { it.cause }.any { it === fatal },
+            "something else failed — the OutOfMemoryError itself did not propagate",
+        )
+    }
+
+    @Test
+    fun `rethrowIfUncontainable lets a plugin fault through and stops the rest`() {
+        // Tested directly rather than through the Compose harness: throwing a
+        // CancellationException out of measure tears down the composition scope,
+        // and runComposeUiTest then waits for an idle state that never comes, so
+        // such a test hangs instead of failing. The decision is pure logic, and
+        // the end-to-end propagation half is covered by the OutOfMemoryError test
+        // above.
+        val ordinary = IllegalStateException("a plugin laid itself out wrong")
+        // Must not throw — an ordinary fault is exactly what the boundary contains.
+        ordinary.rethrowIfUncontainable()
+
+        val cancelled = CancellationException("composition cancelled")
+        val cancellationEscaped =
+            try {
+                cancelled.rethrowIfUncontainable()
+                null
+            } catch (t: Throwable) {
+                t
+            }
+        assertSame(cancelled, cancellationEscaped, "cancellation is control flow and must propagate")
+
+        val fatal = OutOfMemoryError("Java heap space")
+        val fatalEscaped =
+            try {
+                fatal.rethrowIfUncontainable()
+                null
+            } catch (t: Throwable) {
+                t
+            }
+        assertSame(fatal, fatalEscaped, "a dead JVM must not be reported as a plugin crash")
     }
 }

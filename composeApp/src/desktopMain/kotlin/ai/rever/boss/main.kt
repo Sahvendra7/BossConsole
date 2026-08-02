@@ -483,7 +483,7 @@ fun main(args: Array<String>) {
                                 // Contain a burst; escalate if the scene keeps throwing, since
                                 // an app that repaints forever without working is worse than
                                 // one that stops.
-                                if (renderCrashPolicy.shouldContain()) {
+                                if (renderCrashPolicy.recordFailureAndShouldContain()) {
                                     logger.error(
                                         LogCategory.UI,
                                         "Unattributed render exception — contained, window kept alive",
@@ -493,10 +493,23 @@ fun main(args: Array<String>) {
                                         ),
                                         throwable,
                                     )
-                                    // Reported, but not fatal: the user gets the crash dialog
-                                    // and keeps their session.
-                                    ai.rever.boss.crash.CrashHandler
-                                        .reportNonFatal(throwable)
+                                    // Deliberately NOT routed through CrashHandler. Its dialog
+                                    // is terminal on every exit — dismiss, submit and Escape
+                                    // all reach terminateAfterCrash(), and clean-and-restart
+                                    // deletes ~/.boss first. Sending a contained fault there
+                                    // would end the session the moment the user pressed
+                                    // Escape, restoring exactly what this branch prevents, and
+                                    // would offer to wipe their data over a recovered hiccup.
+                                    // It would also stack one crash window per failure.
+                                    //
+                                    // The stack trace is already in the log above. The user
+                                    // gets a status message, which is how contained plugin
+                                    // crashes already report themselves.
+                                    ai.rever.boss.components.bars.horizontal.StatusMessageManager
+                                        .showMessage(
+                                            "A UI component failed to render and was recovered.",
+                                            durationMs = 8000,
+                                        )
                                     java.awt.Window
                                         .getWindows()
                                         .forEach { it.repaint() }

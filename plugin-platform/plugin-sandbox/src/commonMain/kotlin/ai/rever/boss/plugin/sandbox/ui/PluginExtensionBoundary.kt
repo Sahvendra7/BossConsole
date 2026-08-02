@@ -99,6 +99,10 @@ fun PluginExtensionBoundary(
             // see PluginRenderBoundary.
             PluginRenderBoundary(
                 pluginId = pluginId,
+                // Writing snapshot state straight from a render pass would
+                // invalidate the composition currently being laid out;
+                // PluginRenderBoundary hands this callback to the EDT for exactly
+                // that reason, so these two writes are safe here.
                 onRenderCrash = { t ->
                     error = t
                     crashCount++

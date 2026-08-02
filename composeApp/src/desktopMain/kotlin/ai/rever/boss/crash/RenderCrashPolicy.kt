@@ -44,7 +44,7 @@ class RenderCrashPolicy(
      * @return true to swallow and keep the window alive, false to escalate.
      */
     @Synchronized
-    fun shouldContain(): Boolean {
+    fun recordFailureAndShouldContain(): Boolean {
         val timestamp = now()
         // Only failures inside the window count, so a healthy app that hits one
         // bad frame an hour never escalates.
@@ -58,8 +58,4 @@ class RenderCrashPolicy(
     /** Failures currently inside the window. Exposed for logging and tests. */
     @Synchronized
     fun recentFailureCount(): Int = recentFailures.size
-
-    /** Forget recorded failures, e.g. after the user recovers the session. */
-    @Synchronized
-    fun reset() = recentFailures.clear()
 }

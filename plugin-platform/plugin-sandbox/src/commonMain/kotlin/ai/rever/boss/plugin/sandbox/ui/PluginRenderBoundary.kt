@@ -63,13 +63,36 @@ import kotlin.coroutines.cancellation.CancellationException
  * which is why the window handler must also stop treating an unattributed render
  * exception as fatal.
  *
+ * Same family, equally unattributable, and equally not covered here:
+ * `Modifier.onGloballyPositioned` / `onSizeChanged` callbacks, which run after
+ * the `layout {}` block has returned and so outside its `try`, and pointer-input
+ * and gesture handlers, which run on their own dispatch.
+ *
+ * ### Layout transparency, and where it stops
+ *
+ * Constraints are forwarded untouched and a healthy subtree measures exactly as
+ * it would without this in the way. Two things an inserted `Layout` cannot make
+ * transparent, invisible at the call site:
+ *
+ * - **Parent data does not cross it.** A `Modifier.weight()` or
+ *   `Modifier.align()` applied inside [content] from a captured outer
+ *   `RowScope`/`ColumnScope` now sits on a grandchild of the real parent and is
+ *   ignored. No current caller does this; the next one might.
+ * - **Multiple roots stack.** If [content] emits several siblings they are
+ *   placed at the same origin with `Box` semantics, where previously the real
+ *   parent would have laid them out.
+ *
  * @param pluginId Plugin that owns [content]; used only for logging here.
- * @param onRenderCrash Invoked at most once, on the render thread, with the
- *   throwable. Must be cheap and must not itself throw — see
- *   [PluginCrashRegistry.recordCrash], which defers its state writes to the EDT
- *   precisely so it is safe to call from inside a render pass.
+ * @param onRenderCrash Invoked at most once per boundary, on the UI thread rather
+ *   than inline, so it is free to write snapshot state. It should not throw; if
+ *   it does, the throw is logged and swallowed rather than allowed to escalate a
+ *   contained crash.
+ * @param dispatchToUiThread How that hand-off happens. Defaults to the EDT. A
+ *   parameter rather than a hardcoded `SwingUtilities.invokeLater` because
+ *   `runComposeUiTest` does not pump a real event queue, so a test that waited on
+ *   the EDT would simply hang — and a boundary whose recovery path cannot be
+ *   tested is not worth much.
  */
-
 // Catching Throwable is this function's entire contract: a boundary that only
 // caught the exception types it could predict would not be a boundary. The
 // narrowing that does matter is [rethrowIfUncontainable], applied first at every
@@ -79,6 +102,7 @@ import kotlin.coroutines.cancellation.CancellationException
 internal fun PluginRenderBoundary(
     pluginId: String,
     onRenderCrash: (Throwable) -> Unit,
+    dispatchToUiThread: (() -> Unit) -> Unit = ::defaultUiThreadDispatch,
     content: @Composable () -> Unit,
 ) {
     val logger = remember { BossLogger.forComponent("PluginRenderBoundary") }
@@ -102,17 +126,26 @@ internal fun PluginRenderBoundary(
             ),
             error,
         )
-        try {
-            onRenderCrash(error)
-        } catch (secondary: Throwable) {
-            secondary.rethrowIfUncontainable()
-            // The handler failing must not turn a contained crash into a fatal one.
-            logger.warn(
-                LogCategory.UI,
-                "Crash handler threw while containing a render crash",
-                mapOf("pluginId" to pluginId),
-                secondary,
-            )
+        // Handed off to the EDT rather than called inline. This runs mid render
+        // pass, and every useful thing a handler wants to do — set error state,
+        // bump a key, record a crash — is a snapshot write that invalidates the
+        // composition currently being laid out. Deferring here means no caller has
+        // to know that: PluginErrorBoundary and PluginExtensionBoundary can both
+        // just write state, instead of one deferring through
+        // PluginCrashRegistry.recordCrash and the other not.
+        dispatchToUiThread {
+            try {
+                onRenderCrash(error)
+            } catch (secondary: Throwable) {
+                secondary.rethrowIfUncontainable()
+                // The handler failing must not turn a contained crash into a fatal one.
+                logger.warn(
+                    LogCategory.UI,
+                    "Crash handler threw while containing a render crash",
+                    mapOf("pluginId" to pluginId),
+                    secondary,
+                )
+            }
         }
     }
 
@@ -128,14 +161,16 @@ internal fun PluginRenderBoundary(
                 }
             },
     ) { measurables, constraints ->
-        // Box semantics: children see relaxed minimums so a wrap-content host
-        // (a status bar item, say) is not forced to expand, while a child that
-        // asks to fill still fills.
-        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
-
+        // Constraints are forwarded untouched, so a subtree that is not crashing
+        // lays out exactly as it would without this boundary in the way. Relaxing
+        // the minimums here — the obvious way to make the error path collapse —
+        // would silently change healthy plugins too: under a parent that passes a
+        // non-zero minimum down (a Column(Modifier.fillMaxWidth()), say), a
+        // wrap-content plugin root would stop stretching and start hugging its
+        // content. The collapse belongs on the error path only, below.
         val placeables =
             try {
-                measurables.map { it.measure(childConstraints) }
+                measurables.map { it.measure(constraints) }
             } catch (t: Throwable) {
                 t.rethrowIfUncontainable()
                 report("measure", t)
@@ -145,6 +180,8 @@ internal fun PluginRenderBoundary(
                 emptyList()
             }
 
+        // No children — the error path — leaves this at the parent's minimum,
+        // which is the smallest the boundary is allowed to be.
         val width = (placeables.maxOfOrNull { it.width } ?: 0).coerceIn(constraints.minWidth, constraints.maxWidth)
         val height = (placeables.maxOfOrNull { it.height } ?: 0).coerceIn(constraints.minHeight, constraints.maxHeight)
 
@@ -170,8 +207,22 @@ internal fun PluginRenderBoundary(
  * Deliberately not a `when` inside each catch block: pulled out here it stays one
  * decision in one place, applied identically by measure, placement, draw and the
  * crash handler itself.
+ *
+ * `internal` rather than private so it can be tested directly. Driving
+ * cancellation through a real Compose runtime is not an option: throwing a
+ * [CancellationException] out of measure tears down the composition's scope and
+ * `runComposeUiTest` then waits for an idle state that never arrives, so the test
+ * hangs rather than fails. The decision itself is pure, so it is tested as such.
  */
-private fun Throwable.rethrowIfUncontainable() {
+internal fun Throwable.rethrowIfUncontainable() {
     if (this is CancellationException) throw this
     if (this is OutOfMemoryError) throw this
 }
+
+/**
+ * Default hand-off for [PluginRenderBoundary]: the AWT event dispatch thread.
+ *
+ * Matches how [PluginCrashRegistry.recordCrash] already defers its own state
+ * writes, so a crash recorded through either route lands on the same thread.
+ */
+private fun defaultUiThreadDispatch(block: () -> Unit) = javax.swing.SwingUtilities.invokeLater(block)

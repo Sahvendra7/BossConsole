@@ -383,12 +383,19 @@ fun PluginErrorBoundary(
                 pluginId = pluginId,
                 onRenderCrash = { e ->
                     sandbox.recordError(e)
-                    // The same recovery a composition crash gets. Note this does
-                    // not set `error` directly: recordCrash defers its state
-                    // writes to the EDT, and this runs mid-render-pass. The
-                    // registry read above (registryCrash) is what flips this
-                    // boundary to its fallback on the next frame.
+                    // The same recovery a composition crash gets: close the tab,
+                    // notify, flip the observable crash state.
                     PluginCrashRegistry.recordCrash(pluginId, e)
+                    // Set locally as well, and not redundantly. recordCrash has two
+                    // branches: with a tab registered it closes the tab and *removes*
+                    // the registry entry again, so registryCrash reads back null and
+                    // this boundary would never render its fallback. If closeAction
+                    // fails, the panel is then left blank with nothing shown and
+                    // nothing logged — the boundary reports only once. Local state is
+                    // what guarantees the user sees an error rather than an empty
+                    // panel. Safe to write here because PluginRenderBoundary hands
+                    // this callback to the EDT rather than calling it mid-render.
+                    error = e
                 },
             ) {
                 content()

@@ -26,8 +26,8 @@ class RenderCrashPolicyTest {
 
     private fun policy(
         clock: FakeClock,
-        maxFailures: Int = 3,
-        windowMillis: Long = 10_000,
+        maxFailures: Int = RenderCrashPolicy.DEFAULT_MAX_FAILURES,
+        windowMillis: Long = RenderCrashPolicy.DEFAULT_WINDOW_MILLIS,
     ) = RenderCrashPolicy(maxFailures = maxFailures, windowMillis = windowMillis, now = { clock.now })
 
     @Test
@@ -36,7 +36,7 @@ class RenderCrashPolicyTest {
         val policy = policy(clock)
 
         repeat(3) { attempt ->
-            assertTrue(policy.shouldContain(), "failure ${attempt + 1} should have been contained")
+            assertTrue(policy.recordFailureAndShouldContain(), "failure ${attempt + 1} should have been contained")
         }
     }
 
@@ -45,9 +45,9 @@ class RenderCrashPolicyTest {
         val clock = FakeClock()
         val policy = policy(clock)
 
-        repeat(3) { policy.shouldContain() }
+        repeat(3) { policy.recordFailureAndShouldContain() }
 
-        assertFalse(policy.shouldContain(), "a scene that keeps throwing must not be contained forever")
+        assertFalse(policy.recordFailureAndShouldContain(), "a scene that keeps throwing must not be contained forever")
     }
 
     @Test
@@ -55,11 +55,11 @@ class RenderCrashPolicyTest {
         val clock = FakeClock()
         val policy = policy(clock)
 
-        repeat(3) { policy.shouldContain() }
+        repeat(3) { policy.recordFailureAndShouldContain() }
         clock.advance(10_001)
 
         assertTrue(
-            policy.shouldContain(),
+            policy.recordFailureAndShouldContain(),
             "an app that hits one bad frame long after the last one is healthy, not looping",
         )
         assertTrue(policy.recentFailureCount() == 1, "stale failures should have been discarded")
@@ -70,11 +70,11 @@ class RenderCrashPolicyTest {
         val clock = FakeClock()
         val policy = policy(clock)
 
-        repeat(3) { policy.shouldContain() }
+        repeat(3) { policy.recordFailureAndShouldContain() }
         // Inside the window by a millisecond: this is still the same burst.
         clock.advance(9_999)
 
-        assertFalse(policy.shouldContain(), "a failure inside the window must not reset the count")
+        assertFalse(policy.recordFailureAndShouldContain(), "a failure inside the window must not reset the count")
     }
 
     @Test
@@ -84,19 +84,20 @@ class RenderCrashPolicyTest {
 
         // One failure per minute, far apart: annoying, but the app is rendering.
         repeat(20) {
-            assertTrue(policy.shouldContain(), "a widely spaced failure should always be contained")
+            assertTrue(policy.recordFailureAndShouldContain(), "a widely spaced failure should always be contained")
             clock.advance(60_000)
         }
     }
 
     @Test
-    fun `reset forgets the burst`() {
-        val clock = FakeClock()
-        val policy = policy(clock)
+    fun `the no-arg constructor uses the documented defaults`() {
+        // main.kt constructs it with no arguments, so the defaults are the values
+        // that actually ship.
+        val policy = RenderCrashPolicy()
 
-        repeat(3) { policy.shouldContain() }
-        policy.reset()
-
-        assertTrue(policy.shouldContain(), "reset should return the policy to a clean state")
+        repeat(RenderCrashPolicy.DEFAULT_MAX_FAILURES) {
+            assertTrue(policy.recordFailureAndShouldContain(), "a failure within the default budget")
+        }
+        assertFalse(policy.recordFailureAndShouldContain(), "the failure past the default budget must escalate")
     }
 }
