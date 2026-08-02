@@ -4,10 +4,13 @@ import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +48,11 @@ import kotlinx.coroutines.launch
  * - Optional inclusion of recent activity logs
  * - Submit to GitHub and dismiss buttons
  *
+ * Layout: a fixed header, a scrollable body, and a pinned footer. The footer keeps the
+ * action buttons and the submit result reachable no matter how tall the body grows —
+ * without it, expanding the technical details section pushes the buttons out of the
+ * (deliberately small) crash window.
+ *
  * @param crashReport The crash report to display
  * @param onDismiss Called when user dismisses without submitting
  * @param onSubmit Called when user wants to submit the report
@@ -65,6 +73,16 @@ fun CrashReportDialog(
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
+    val bodyScrollState = rememberScrollState()
+    val stackTraceScrollState = rememberScrollState()
+
+    // Compose's default scrollbar is black at 12% alpha — invisible against these dark
+    // panels, which would make the thumb useless as a "there is more below" cue.
+    val scrollbarStyle =
+        LocalScrollbarStyle.current.copy(
+            unhoverColor = BossTheme.colors.textMuted.copy(alpha = 0.45f),
+            hoverColor = BossTheme.colors.textSecondary,
+        )
 
     // Render directly in the window (no Dialog wrapper needed since this is shown in its own JFrame)
     Card(
@@ -84,9 +102,9 @@ fun CrashReportDialog(
         elevation = 0.dp,
     ) {
         Column(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier.fillMaxSize().padding(24.dp),
         ) {
-            // Header with error icon
+            // Header with error icon — fixed, never scrolls away
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
@@ -108,196 +126,242 @@ fun CrashReportDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Error summary
-            Card(
-                backgroundColor = BossTheme.colors.raised,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+            // Scrollable body — capped at the space left over by the header and footer, so
+            // anything that grows (expanded stack trace, long exception message) scrolls here
+            // instead of pushing the action buttons past the bottom of the window.
+            // `fill = false` keeps the cap from becoming a floor: when the content is short the
+            // body stays short and the footer sits right below it, as it did before the cap.
+            val bodyOverflows = bodyScrollState.maxValue > 0
+            Box(modifier = Modifier.weight(1f, fill = false).fillMaxWidth()) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(bodyScrollState)
+                            // Leave room for the scrollbar only when one is drawn
+                            .padding(end = if (bodyOverflows) 12.dp else 0.dp),
+                ) {
+                    // Error summary
+                    Card(
+                        backgroundColor = BossTheme.colors.raised,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = crashReport.exceptionType,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BossTheme.colors.alert,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = crashReport.exceptionMessage,
+                                fontSize = 13.sp,
+                                color = BossTheme.colors.textPrimary,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Expandable technical details
+                    Card(
+                        backgroundColor = BossTheme.colors.raised,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column {
+                            // Header row (clickable)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showDetails = !showDetails }
+                                        .padding(12.dp),
+                            ) {
+                                Text(
+                                    text = "Technical Details",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = BossTheme.colors.textPrimary,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Icon(
+                                    imageVector = if (showDetails) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = if (showDetails) "Collapse" else "Expand",
+                                    tint = BossTheme.colors.textSecondary,
+                                )
+                            }
+
+                            // Expandable content
+                            AnimatedVisibility(
+                                visible = showDetails,
+                                enter = expandVertically(),
+                                exit = shrinkVertically(),
+                            ) {
+                                Column(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp)
+                                            .padding(bottom = 12.dp),
+                                ) {
+                                    // Copy button
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End,
+                                    ) {
+                                        TextButton(
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(crashReport.stackTrace))
+                                            },
+                                            colors =
+                                                ButtonDefaults.textButtonColors(
+                                                    contentColor = BossTheme.colors.signal,
+                                                ),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.ContentCopy,
+                                                contentDescription = "Copy",
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Copy to Clipboard", fontSize = 12.sp)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Stack trace — bounded and independently scrollable so a deep
+                                    // trace doesn't turn the body into an endless scroll
+                                    val traceOverflows = stackTraceScrollState.maxValue > 0
+                                    SelectionContainer {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(max = 200.dp)
+                                                    .background(
+                                                        BossTheme.colors.panel,
+                                                        RoundedCornerShape(4.dp),
+                                                    ).padding(8.dp),
+                                        ) {
+                                            Text(
+                                                text = crashReport.stackTrace,
+                                                fontSize = 11.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = BossTheme.colors.textPrimary,
+                                                lineHeight = 14.sp,
+                                                modifier =
+                                                    Modifier
+                                                        .verticalScroll(stackTraceScrollState)
+                                                        .padding(end = if (traceOverflows) 10.dp else 0.dp),
+                                            )
+                                            if (traceOverflows) {
+                                                VerticalScrollbar(
+                                                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                                                    adapter = rememberScrollbarAdapter(stackTraceScrollState),
+                                                    style = scrollbarStyle,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // User notes input
                     Text(
-                        text = crashReport.exceptionType,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = BossTheme.colors.alert,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = crashReport.exceptionMessage,
+                        text = "What were you doing when this happened? (optional)",
                         fontSize = 13.sp,
                         color = BossTheme.colors.textPrimary,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
                     )
-                }
-            }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = userNotes,
+                        onValueChange = { userNotes = it },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 80.dp, max = 120.dp),
+                        placeholder = {
+                            Text(
+                                "Describe what you were doing...",
+                                color = BossTheme.colors.textMuted,
+                            )
+                        },
+                        colors =
+                            TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = BossTheme.colors.textPrimary,
+                                backgroundColor = BossTheme.colors.raised,
+                                focusedBorderColor = BossTheme.colors.signal,
+                                unfocusedBorderColor = BossTheme.colors.line,
+                                cursorColor = BossTheme.colors.signal,
+                            ),
+                        enabled = !isSubmitting,
+                    )
 
-            Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-            // Expandable technical details
-            Card(
-                backgroundColor = BossTheme.colors.raised,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column {
-                    // Header row (clickable)
+                    // Include logs checkbox
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .clickable { showDetails = !showDetails }
-                                .padding(12.dp),
+                                .clickable(enabled = !isSubmitting) { includeLogs = !includeLogs }
+                                .padding(vertical = 4.dp),
                     ) {
-                        Text(
-                            text = "Technical Details",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = BossTheme.colors.textPrimary,
-                            modifier = Modifier.weight(1f),
+                        Checkbox(
+                            checked = includeLogs,
+                            onCheckedChange = null,
+                            colors =
+                                CheckboxDefaults.colors(
+                                    checkedColor = BossTheme.colors.signal,
+                                    uncheckedColor = BossTheme.colors.textMuted,
+                                    checkmarkColor = BossTheme.colors.onSignal,
+                                ),
+                            enabled = !isSubmitting,
                         )
-                        Icon(
-                            imageVector = if (showDetails) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = if (showDetails) "Collapse" else "Expand",
-                            tint = BossTheme.colors.textSecondary,
-                        )
-                    }
-
-                    // Expandable content
-                    AnimatedVisibility(
-                        visible = showDetails,
-                        enter = expandVertically(),
-                        exit = shrinkVertically(),
-                    ) {
-                        Column(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                        ) {
-                            // Copy button
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(crashReport.stackTrace))
-                                    },
-                                    colors =
-                                        ButtonDefaults.textButtonColors(
-                                            contentColor = BossTheme.colors.signal,
-                                        ),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.ContentCopy,
-                                        contentDescription = "Copy",
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Copy to Clipboard", fontSize = 12.sp)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Stack trace
-                            SelectionContainer {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(max = 200.dp)
-                                            .background(
-                                                BossTheme.colors.panel,
-                                                RoundedCornerShape(4.dp),
-                                            ).padding(8.dp)
-                                            .verticalScroll(rememberScrollState()),
-                                ) {
-                                    Text(
-                                        text = crashReport.stackTrace,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = BossTheme.colors.textPrimary,
-                                        lineHeight = 14.sp,
-                                    )
-                                }
-                            }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Include recent activity logs",
+                                fontSize = 14.sp,
+                                color = BossTheme.colors.textPrimary,
+                            )
+                            Text(
+                                text = "Helps with debugging (logs are sanitized)",
+                                fontSize = 11.sp,
+                                color = BossTheme.colors.textMuted,
+                            )
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // User notes input
-            Text(
-                text = "What were you doing when this happened? (optional)",
-                fontSize = 13.sp,
-                color = BossTheme.colors.textPrimary,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = userNotes,
-                onValueChange = { userNotes = it },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 80.dp, max = 120.dp),
-                placeholder = {
-                    Text(
-                        "Describe what you were doing...",
-                        color = BossTheme.colors.textMuted,
-                    )
-                },
-                colors =
-                    TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = BossTheme.colors.textPrimary,
-                        backgroundColor = BossTheme.colors.raised,
-                        focusedBorderColor = BossTheme.colors.signal,
-                        unfocusedBorderColor = BossTheme.colors.line,
-                        cursorColor = BossTheme.colors.signal,
-                    ),
-                enabled = !isSubmitting,
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Include logs checkbox
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !isSubmitting) { includeLogs = !includeLogs }
-                        .padding(vertical = 4.dp),
-            ) {
-                Checkbox(
-                    checked = includeLogs,
-                    onCheckedChange = null,
-                    colors =
-                        CheckboxDefaults.colors(
-                            checkedColor = BossTheme.colors.signal,
-                            uncheckedColor = BossTheme.colors.textMuted,
-                            checkmarkColor = BossTheme.colors.onSignal,
-                        ),
-                    enabled = !isSubmitting,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = "Include recent activity logs",
-                        fontSize = 14.sp,
-                        color = BossTheme.colors.textPrimary,
-                    )
-                    Text(
-                        text = "Helps with debugging (logs are sanitized)",
-                        fontSize = 11.sp,
-                        color = BossTheme.colors.textMuted,
+                if (bodyOverflows) {
+                    VerticalScrollbar(
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                        adapter = rememberScrollbarAdapter(bodyScrollState),
+                        style = scrollbarStyle,
                     )
                 }
+            }
+
+            // Pinned footer — the submit result and the action buttons stay visible regardless of
+            // how much the body above has grown or scrolled. The rule is only drawn when the body
+            // is actually clipping something, where it marks the scroll boundary; without it the
+            // footer would look like a stray divider floating in empty space.
+            if (bodyOverflows) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = BossTheme.colors.line)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
