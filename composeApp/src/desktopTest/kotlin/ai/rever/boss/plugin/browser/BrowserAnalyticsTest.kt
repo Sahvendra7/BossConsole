@@ -49,6 +49,20 @@ class BrowserAnalyticsTest {
     }
 
     @Test
+    fun `refuses a host containing non-ASCII characters`() {
+        // Internationalised names arrive from the browser already punycoded, so a non-ASCII
+        // host is not something it resolved. This guard is also what lets the IPv4 check be
+        // ASCII: without it, "١٢٧.٠.٠.١" would dodge that check and be reported as the
+        // "site" "٠.١" — the one place where tightening to ASCII would have loosened the
+        // boundary rather than closed it.
+        assertNull(BrowserAnalytics.registrableDomain("١٢٧.٠.٠.١"))
+        assertNull(BrowserAnalytics.registrableDomain("пациент.example.com"))
+        assertNull(BrowserAnalytics.registrableDomain("例え.jp"))
+        // Punycode is ASCII, so genuine international sites still report.
+        assertEquals("xn--80ak6aa92e.com", BrowserAnalytics.registrableDomain("xn--80ak6aa92e.com"))
+    }
+
+    @Test
     fun `refuses single-label intranet names and empty input`() {
         assertNull(BrowserAnalytics.registrableDomain("intranet"))
         assertNull(BrowserAnalytics.registrableDomain(""))

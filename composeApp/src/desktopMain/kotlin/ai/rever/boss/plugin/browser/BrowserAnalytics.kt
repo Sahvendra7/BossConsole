@@ -240,11 +240,20 @@ internal object BrowserAnalytics {
         if (host.isEmpty()) return null
         if (host == "localhost" || host.endsWith(".localhost")) return null
 
+        // Internationalised names reach a browser URL already punycoded (`xn--…`), so a host
+        // with a non-ASCII character is not a name the browser resolved. Refuse it rather
+        // than reason about it — and note this must come BEFORE the IPv4 check to be safe,
+        // not after. Making that check ASCII-only for consistency with the sanitizers would
+        // invert its meaning: `١٢٧.٠.٠.١` would stop being recognised as an address and be
+        // reported as the "site" `٠.١`. Here, unlike in the sanitizers, the Unicode-aware
+        // test is the one that refuses more, so the guard belongs upstream of it.
+        if (host.any { it.code > 127 }) return null
+
         val labels = host.split('.').filter { it.isNotEmpty() }
         // Single-label hosts are intranet machine names, not sites.
         if (labels.size < 2) return null
         // An IPv4 literal is an address, not a site.
-        if (labels.size == 4 && labels.all { l -> l.all(Char::isDigit) }) return null
+        if (labels.size == 4 && labels.all { l -> l.all { c -> c in '0'..'9' } }) return null
 
         val lastTwo = labels.takeLast(2).joinToString(".")
         return if (labels.size >= 3 && lastTwo in MULTI_LABEL_SUFFIXES) {
