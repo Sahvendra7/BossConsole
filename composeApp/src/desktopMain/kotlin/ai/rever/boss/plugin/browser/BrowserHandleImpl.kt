@@ -210,12 +210,23 @@ internal class BrowserHandleImpl(
         System.getenv("BOSS_BROWSER_TELEMETRY_DISABLED")?.lowercase() != "true"
 
     /**
-     * Receives in-page interaction batches. Resolves the current authority on demand so a
-     * single-page app's later navigations are attributed to the site actually loaded.
+     * Authority of the page currently loaded in this tab, as last seen by the navigation
+     * handler. Volatile because it is written from a JxBrowser navigation callback and read
+     * from the JS thread that delivers interaction batches.
+     *
+     * Cached rather than resolved on demand: reading it used to call `getCurrentUrl()` →
+     * `browser.url()` from inside `emit()`, which runs on the page's JS thread. `runCatching`
+     * covers a throw but not a stall, and [BrowserInteractionBridge] documents that `emit`
+     * must not block that thread — so the old version contradicted its own contract. The
+     * navigation handler is what would observe an SPA route change anyway, so freshness is
+     * identical and each batch is cheaper.
      */
+    @Volatile private var currentPageAuthority: String? = null
+
+    /** Receives in-page interaction batches, attributed to the page that is actually loaded. */
     private val interactionBridge =
         BrowserInteractionBridge(
-            authorityProvider = { runCatching { suggestableHost(getCurrentUrl()) }.getOrNull() },
+            authorityProvider = { currentPageAuthority },
             windowId = ownerWindowId,
         )
 
@@ -436,8 +447,13 @@ internal class BrowserHandleImpl(
                     // ran at the top of this handler, so didFail is already accurate for this
                     // navigation — a mistyped host commits an error page and must not count as
                     // a visit any more than it counts as history.
-                    suggestableHost(url)?.let { authority ->
-                        if (!NavigationOutcomeTracker.didFail(url)) visitTracker.pageViewed(authority)
+                    // Set unconditionally, including to null: an interaction arriving after a
+                    // navigation to something unreportable (a dev server, an IP) must not be
+                    // attributed to whatever site preceded it.
+                    val authority = suggestableHost(url)
+                    currentPageAuthority = authority
+                    if (authority != null && !NavigationOutcomeTracker.didFail(url)) {
+                        visitTracker.pageViewed(authority)
                     }
 
                     // Skip injection for about:blank pages (used for dashboard display)

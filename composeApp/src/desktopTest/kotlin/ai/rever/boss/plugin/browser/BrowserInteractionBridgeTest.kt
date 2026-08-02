@@ -76,6 +76,55 @@ class BrowserInteractionBridgeTest {
     }
 
     @Test
+    fun `a page looping emit cannot flood the shared event bus`() {
+        // ApplicationEventBus is a MutableSharedFlow with extraBufferCapacity = 64 published
+        // via non-suspending tryEmit — once full, events are DROPPED. This bridge is the
+        // first page-controlled producer on that bus, so an unthrottled page could evict
+        // auth, tab, and file events out from under a slow subscriber. The per-batch caps
+        // bound one call's cost, not the call rate; this is what bounds the rate.
+        var clock = 0L
+        val bridge =
+            BrowserInteractionBridge(
+                authorityProvider = { "availity.com" },
+                windowId = null,
+                nowMs = { clock },
+            )
+
+        // 100 back-to-back full batches inside one window = 5000 entries offered.
+        val admittedFirstWindow = (1..100).sumOf { bridge.admissible(50) }
+        assertEquals(
+            BrowserInteractionBridge.MAX_ENTRIES_PER_WINDOW,
+            admittedFirstWindow,
+            "the window cap must hold no matter how many batches arrive",
+        )
+
+        // The next window starts fresh, so a legitimately busy page isn't punished forever.
+        clock += BrowserInteractionBridge.RATE_WINDOW_MS
+        assertEquals(50, bridge.admissible(50))
+
+        // A clock jumping backwards resets the window rather than wedging it shut or open.
+        clock -= 10 * BrowserInteractionBridge.RATE_WINDOW_MS
+        assertEquals(50, bridge.admissible(50))
+    }
+
+    @Test
+    fun `the rate cap leaves ordinary collector traffic untouched`() {
+        // The collector flushes every 2s with at most 50 entries — roughly 25/sec. A cap that
+        // clipped normal use would quietly lose interactions on any busy page.
+        var clock = 0L
+        val bridge =
+            BrowserInteractionBridge(
+                authorityProvider = { "availity.com" },
+                windowId = null,
+                nowMs = { clock },
+            )
+        repeat(20) {
+            clock += 2000
+            assertEquals(50, bridge.admissible(50), "a normal flush must never be clipped")
+        }
+    }
+
+    @Test
     fun `page content injected through the bridge dies at the sanitizers`() {
         // This is the end-to-end privacy claim, tested across both layers rather than
         // assumed: the collector never reads text, but if a hostile page calls emit()

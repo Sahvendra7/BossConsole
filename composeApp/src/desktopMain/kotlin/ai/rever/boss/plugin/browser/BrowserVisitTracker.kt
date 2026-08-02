@@ -130,6 +130,12 @@ internal class BrowserVisitTracker(
      *
      * Leaves [lastDomain] alone: it is what the *next* [pageViewed] compares against to
      * decide whether the user is still moving around the same site.
+     *
+     * Note this publishes while holding this object's monitor (its callers are all
+     * `@Synchronized`). That is safe only because the emit path is non-blocking — the event
+     * bus is a `MutableSharedFlow` published with `tryEmit`. Swapping in a suspending or
+     * synchronous-dispatch publisher would make a subscriber's work run under this lock,
+     * with a browser navigation callback waiting behind it.
      */
     private fun closeCurrentVisit() {
         val authority = currentAuthority ?: return

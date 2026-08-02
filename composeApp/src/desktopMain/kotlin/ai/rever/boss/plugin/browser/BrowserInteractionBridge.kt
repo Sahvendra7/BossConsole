@@ -28,6 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
 internal class BrowserInteractionBridge(
     private val authorityProvider: () -> String?,
     private val windowId: String?,
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     @JsAccessible
     fun emit(json: String) {
@@ -43,7 +44,8 @@ internal class BrowserInteractionBridge(
 
     private fun handle(json: String) {
         val authority = authorityProvider() ?: return
-        for (entry in parseBatch(json)) {
+        val parsed = parseBatch(json)
+        for (entry in parsed.take(admissible(parsed.size))) {
             BrowserAnalytics.interaction(
                 type = entry.type,
                 authority = authority,
@@ -58,6 +60,35 @@ internal class BrowserInteractionBridge(
             )
         }
     }
+
+    /**
+     * How many of [requested] entries may be published right now, rate-limited per bridge
+     * (so per tab). Excess is dropped silently.
+     *
+     * The per-batch caps in [parseBatch] bound the cost of one call, not the call *rate*.
+     * That matters more here than it looks: `ApplicationEventBus` is a `MutableSharedFlow`
+     * with `extraBufferCapacity = 64` published via a non-suspending `tryEmit`, so once the
+     * buffer fills, events are **dropped on the floor**. This bridge is the first
+     * page-controlled producer on that shared bus — without a rate cap, a page looping
+     * `emit()` could evict `AuthEvent` / `TabEvent` / `FileChangeEvent` deliveries out from
+     * under any subscriber that isn't keeping up. A fixed window is enough: the goal is to
+     * keep abuse cheap to attempt and useless in effect, not to meter precisely.
+     */
+    @Synchronized
+    internal fun admissible(requested: Int): Int {
+        val now = nowMs()
+        // Also resets when the clock jumps backwards, which costs at most one window.
+        if (now - windowStartMs !in 0 until RATE_WINDOW_MS) {
+            windowStartMs = now
+            windowEntries = 0
+        }
+        val allowed = (MAX_ENTRIES_PER_WINDOW - windowEntries).coerceIn(0, requested)
+        windowEntries += allowed
+        return allowed
+    }
+
+    private var windowStartMs: Long = 0
+    private var windowEntries: Int = 0
 
     /** One entry off the wire, still unsanitized — [BrowserAnalytics] is what cleans these. */
     internal data class ParsedInteraction(
@@ -134,5 +165,13 @@ internal class BrowserInteractionBridge(
         /** A well-behaved batch is a few KB; beyond this the caller is not the collector. */
         const val MAX_PAYLOAD_CHARS = 64 * 1024
         const val MAX_BATCH_ENTRIES = 50
+
+        /**
+         * The collector flushes every 2s with at most 50 entries, so it needs ~25/sec. The
+         * cap is an order of magnitude above that: generous for a busy page, far below what
+         * it takes to starve a 64-slot bus.
+         */
+        const val RATE_WINDOW_MS = 1000L
+        const val MAX_ENTRIES_PER_WINDOW = 250
     }
 }
