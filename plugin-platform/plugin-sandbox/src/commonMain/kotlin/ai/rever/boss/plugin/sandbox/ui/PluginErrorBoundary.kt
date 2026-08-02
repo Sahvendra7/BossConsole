@@ -372,7 +372,27 @@ fun PluginErrorBoundary(
             },
             LocalPluginSandbox provides sandbox,
         ) {
-            content()
+            // Composition crashes are caught by PluginCrashInterceptor, which can
+            // find the plugin on the stack. Measure, placement and draw run after
+            // the plugin's composables have returned, so nothing of the plugin is
+            // on the stack there and attribution fails — the window handler then
+            // treats it as a host crash and disposes the window, taking the app
+            // with it. PluginRenderBoundary makes those phases attributable by
+            // position instead.
+            PluginRenderBoundary(
+                pluginId = pluginId,
+                onRenderCrash = { e ->
+                    sandbox.recordError(e)
+                    // The same recovery a composition crash gets. Note this does
+                    // not set `error` directly: recordCrash defers its state
+                    // writes to the EDT, and this runs mid-render-pass. The
+                    // registry read above (registryCrash) is what flips this
+                    // boundary to its fallback on the next frame.
+                    PluginCrashRegistry.recordCrash(pluginId, e)
+                },
+            ) {
+                content()
+            }
         }
     }
 }

@@ -440,6 +440,11 @@ fun main(args: Array<String>) {
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val defaultExceptionHandlerFactory = LocalWindowExceptionHandlerFactory.current
 
+        // Shared across windows on purpose: a corrupted scene tends to throw from
+        // whichever window repaints next, and the question being asked is "is this
+        // app still rendering?", not "is this window still rendering?".
+        val renderCrashPolicy = remember { ai.rever.boss.crash.RenderCrashPolicy() }
+
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val pluginAwareExceptionHandlerFactory =
             remember(defaultExceptionHandlerFactory) {
@@ -464,8 +469,42 @@ fun main(args: Array<String>) {
                                 ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
                                     .tryHandle(pluginId, throwable)
                             } else {
-                                // Not a plugin crash — delegate to default (shows error dialog)
-                                defaultHandler.onException(throwable)
+                                // Unattributed. Compose's default handler shows a dialog and
+                                // disposes the window, which ends a Compose application {} —
+                                // too harsh for one bad frame, and reachable by a plugin whose
+                                // layout throws after its composables have returned, leaving
+                                // nothing of the plugin on the stack to attribute. That is what
+                                // took the app down in BossConsole-Releases#16.
+                                //
+                                // Contain a burst; escalate if the scene keeps throwing, since
+                                // an app that repaints forever without working is worse than
+                                // one that stops.
+                                if (renderCrashPolicy.shouldContain()) {
+                                    logger.error(
+                                        LogCategory.UI,
+                                        "Unattributed render exception — contained, window kept alive",
+                                        mapOf(
+                                            "errorType" to throwable.javaClass.simpleName,
+                                            "recentFailures" to renderCrashPolicy.recentFailureCount().toString(),
+                                        ),
+                                        throwable,
+                                    )
+                                    // Reported, but not fatal: the user gets the crash dialog
+                                    // and keeps their session.
+                                    ai.rever.boss.crash.CrashHandler.reportNonFatal(throwable)
+                                    java.awt.Window.getWindows().forEach { it.repaint() }
+                                } else {
+                                    logger.error(
+                                        LogCategory.UI,
+                                        "Render exceptions are not stopping — escalating to the default handler",
+                                        mapOf(
+                                            "errorType" to throwable.javaClass.simpleName,
+                                            "recentFailures" to renderCrashPolicy.recentFailureCount().toString(),
+                                        ),
+                                        throwable,
+                                    )
+                                    defaultHandler.onException(throwable)
+                                }
                             }
                         }
                     }

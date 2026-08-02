@@ -110,6 +110,26 @@ object CrashHandler {
     }
 
     /**
+     * Report [throwable] through the normal crash path — log, crash report,
+     * dialog — without treating it as fatal.
+     *
+     * For exceptions the app has already contained and recovered from, where the
+     * user should still get a report but the window must stay alive. The render
+     * handler in main.kt uses this instead of Compose's default handler, which
+     * disposes the window (and so ends a Compose `application {}`).
+     *
+     * Note [handleCrash] does not terminate on its own — termination is the
+     * dialog's job via [terminateAfterCrash] — so this shares that path rather
+     * than duplicating it.
+     */
+    fun reportNonFatal(
+        throwable: Throwable,
+        thread: Thread = Thread.currentThread(),
+    ) {
+        handleCrash(thread, throwable)
+    }
+
+    /**
      * Handle an uncaught exception.
      */
     private fun handleCrash(
