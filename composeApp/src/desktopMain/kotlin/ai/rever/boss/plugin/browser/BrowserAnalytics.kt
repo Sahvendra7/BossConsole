@@ -130,6 +130,12 @@ internal object BrowserAnalytics {
      * vocabulary, so anything outside `[a-z0-9-]` is a page doing something unexpected and
      * is refused outright rather than trimmed — a value that needed cleaning was not a tag
      * name, and guessing what it *was* is how content leaks through.
+     *
+     * The range checks are **explicitly ASCII, not `Char.isLowerCase()`/`isDigit()`**. Those
+     * delegate to `Character.*`, which is Unicode-aware: `isLowerCase` is true for Cyrillic,
+     * Greek and Arabic-script letters, and `isDigit` covers the whole `Nd` category. Written
+     * that way, this function called itself a structural-vocabulary check while accepting a
+     * 32-character run of any script — free text in every locale but English.
      */
     internal fun sanitizeToken(
         raw: String?,
@@ -139,19 +145,24 @@ internal object BrowserAnalytics {
             ?.trim()
             ?.lowercase()
             ?.takeIf { it.isNotEmpty() && it.length <= maxLength }
-            ?.takeIf { value -> value.all { c -> c.isLowerCase() || c.isDigit() || c == '-' } }
+            ?.takeIf { value -> value.all { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' } }
 
     /**
      * A form field's `name` attribute. Unlike a tag this is developer-chosen free text, so
-     * it is cleaned rather than refused: unexpected characters are dropped and long digit
+     * it is cleaned rather than refused: unexpected characters are dropped and short digit
      * runs redacted, on the theory that a name is `patientMrn` (a schema label, safe) but
      * could be `mrn-4417882` (an identifier baked into a generated form, not safe).
+     *
+     * ASCII-only for the same reason as [sanitizeToken], and here the mismatch was worse:
+     * filtering with the Unicode-aware `isLetterOrDigit()` while redacting with `\d`, which
+     * is ASCII-only in Java unless `UNICODE_CHARACTER_CLASS` is set, let `mrn٤٤١٧٨٨٢` pass
+     * the filter *and* the redactor untouched. Both halves must agree on an alphabet.
      */
     internal fun sanitizeFieldName(raw: String?): String? =
         raw
             ?.trim()
             ?.take(MAX_FIELD_NAME_LENGTH)
-            ?.filter { c -> c.isLetterOrDigit() || c == '_' || c == '-' || c == '.' || c == '[' || c == ']' }
+            ?.filter { c -> c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c in FIELD_NAME_PUNCTUATION }
             ?.takeIf { it.isNotEmpty() }
             ?.let { DIGIT_RUN.replace(it, "#") }
 
@@ -178,7 +189,19 @@ internal object BrowserAnalytics {
     /** Stand-in domain for a tab with no site loaded, so tab counts still balance. */
     internal const val BLANK_TAB_DOMAIN = "about:blank"
 
-    private val DIGIT_RUN = Regex("""\d{5,}""")
+    /** Punctuation a form field name may keep — array/object syntax and word separators. */
+    private val FIELD_NAME_PUNCTUATION = setOf('_', '-', '.', '[', ']')
+
+    /**
+     * Three digits, not five.
+     *
+     * Five only catches long generated ids. A record number in a form field is routinely
+     * four (`select_patient_4417`), and `BrowserInteractionScript`'s own KDoc names exactly
+     * that shape as what must not escape — so the threshold and the stated intent disagreed.
+     * Three costs almost nothing: `address_line[2]`, `line1`, and `col2` are one or two
+     * digits and survive intact.
+     */
+    private val DIGIT_RUN = Regex("""\d{3,}""")
     private val PATH_SHAPE = Regex("""[a-z0-9-]+(:\d+)?(>[a-z0-9-]+(:\d+)?)*""")
 
     /**

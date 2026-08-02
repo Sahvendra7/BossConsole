@@ -127,6 +127,49 @@ class BrowserAnalyticsTest {
     }
 
     @Test
+    fun `structural tokens are ASCII-only, not merely lowercase`() {
+        // Char.isLowerCase()/isDigit() are Unicode-aware, so a charset check written with
+        // them accepts a 32-character run of any script — free text in every locale but
+        // English, wearing a tag's name. These are the exact strings that slipped through.
+        assertNull(BrowserAnalytics.sanitizeToken("пациентиванов", 32))
+        assertNull(BrowserAnalytics.sanitizeToken("患者情報", 32))
+        assertNull(BrowserAnalytics.sanitizeToken("٤٤١٧٨٨٢", 32))
+        assertNull(BrowserAnalytics.sanitizeToken("mrn٤٤١٧", 32))
+        // The real vocabulary still passes.
+        assertEquals("button", BrowserAnalytics.sanitizeToken("button", 32))
+    }
+
+    @Test
+    fun `field names are ASCII-only, so non-latin digits cannot evade redaction`() {
+        // The filter used Unicode isLetterOrDigit() while the redactor used \d, which is
+        // ASCII-only in Java. Arabic-Indic digits therefore passed the filter AND the
+        // redactor untouched. Both halves have to agree on an alphabet.
+        assertEquals("mrn-", BrowserAnalytics.sanitizeFieldName("mrn-٤٤١٧٨٨٢"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("пациент"))
+        assertEquals("dob", BrowserAnalytics.sanitizeFieldName("dobыф"))
+    }
+
+    @Test
+    fun `element paths are ASCII-only`() {
+        // PATH_SHAPE was already correct — explicit ranges and \d are ASCII in Java — but
+        // pin it so a future "simplification" to \w or isLetter() is caught here.
+        assertNull(BrowserAnalytics.sanitizePath("form>пациент:2>button:1"))
+        assertNull(BrowserAnalytics.sanitizePath("form>div:٢>button:1"))
+    }
+
+    @Test
+    fun `a short record id in a field name is redacted`() {
+        // Four digits is the common shape for a record baked into a generated form, and is
+        // exactly what BrowserInteractionScript's KDoc names as what must not escape.
+        assertEquals("select_patient_#", BrowserAnalytics.sanitizeFieldName("select_patient_4417"))
+        assertEquals("mrn-#", BrowserAnalytics.sanitizeFieldName("mrn-4417882"))
+        // Ordinary short numeric suffixes are schema, not data, and survive.
+        assertEquals("address_line[2]", BrowserAnalytics.sanitizeFieldName("address_line[2]"))
+        assertEquals("line1", BrowserAnalytics.sanitizeFieldName("line1"))
+        assertEquals("col22", BrowserAnalytics.sanitizeFieldName("col22"))
+    }
+
+    @Test
     fun `field names keep the schema and lose the identifier`() {
         assertEquals("patientMrn", BrowserAnalytics.sanitizeFieldName("patientMrn"))
         assertEquals("address_line[2]", BrowserAnalytics.sanitizeFieldName("address_line[2]"))
