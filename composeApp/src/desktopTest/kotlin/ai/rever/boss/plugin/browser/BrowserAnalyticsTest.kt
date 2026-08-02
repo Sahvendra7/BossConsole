@@ -195,6 +195,12 @@ class BrowserAnalyticsTest {
 
     @Test
     fun `field names drop unexpected characters and empties`() {
+        // ACCEPTED RESIDUAL RISK, not an endorsement. Filtering rather than refusing means a
+        // space is removed, which is what makes "John Smith" come out looking like a valid
+        // field name — and the digit redaction does nothing for alphabetic PHI. A real
+        // `name=` attribute essentially never contains a space, so refusing outright (as
+        // sanitizeToken does) would drop it instead. Knowingly deferred; tracked privately in
+        // boss-plugin-analytics#7. Do not read this assertion as "this output is desirable".
         assertEquals("JohnSmith", BrowserAnalytics.sanitizeFieldName("John Smith"))
         assertNull(BrowserAnalytics.sanitizeFieldName("   "))
         assertNull(BrowserAnalytics.sanitizeFieldName(null))
