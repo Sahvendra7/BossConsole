@@ -1,0 +1,167 @@
+package ai.rever.boss.plugin.browser
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+/**
+ * [BrowserAnalytics.registrableDomain] is the privacy boundary for browser telemetry:
+ * whatever it returns is what leaves the device. These pin both halves of that contract —
+ * that it reduces far enough, and that it refuses to report things that aren't sites.
+ */
+class BrowserAnalyticsTest {
+    @Test
+    fun `reduces a subdomain to the registrable domain`() {
+        // The whole point: a subdomain often names a workflow, not just a vendor.
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("portal.availity.com"))
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("a.b.c.availity.com"))
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("availity.com"))
+    }
+
+    @Test
+    fun `strips the port`() {
+        assertEquals("example.com", BrowserAnalytics.registrableDomain("example.com:8443"))
+    }
+
+    @Test
+    fun `keeps three labels for multi-label public suffixes`() {
+        // Without the suffix table these would all collapse to "co.uk" / "com.au",
+        // merging every UK and Australian site into one bucket.
+        assertEquals("bbc.co.uk", BrowserAnalytics.registrableDomain("www.bbc.co.uk"))
+        assertEquals("bbc.co.uk", BrowserAnalytics.registrableDomain("news.bbc.co.uk"))
+        assertEquals("telstra.com.au", BrowserAnalytics.registrableDomain("my.telstra.com.au"))
+    }
+
+    @Test
+    fun `refuses loopback and dev servers`() {
+        assertNull(BrowserAnalytics.registrableDomain("localhost"))
+        assertNull(BrowserAnalytics.registrableDomain("localhost:3000"))
+        assertNull(BrowserAnalytics.registrableDomain("app.localhost"))
+    }
+
+    @Test
+    fun `refuses bare IP addresses`() {
+        // An address is not a site, and a private one says nothing useful.
+        assertNull(BrowserAnalytics.registrableDomain("127.0.0.1"))
+        assertNull(BrowserAnalytics.registrableDomain("192.168.1.20:8080"))
+        assertNull(BrowserAnalytics.registrableDomain("[::1]:3000"))
+        assertNull(BrowserAnalytics.registrableDomain("[2001:db8::1]"))
+    }
+
+    @Test
+    fun `refuses single-label intranet names and empty input`() {
+        assertNull(BrowserAnalytics.registrableDomain("intranet"))
+        assertNull(BrowserAnalytics.registrableDomain(""))
+        assertNull(BrowserAnalytics.registrableDomain("   "))
+    }
+
+    @Test
+    fun `normalizes case and a trailing root dot`() {
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("PORTAL.Availity.COM"))
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("availity.com."))
+    }
+
+    @Test
+    fun `a whole url handed in is still reduced to just the domain`() {
+        // Callers pass an authority, but this is the privacy boundary — it must hold even
+        // when misused. Before hardening, "com/auth?patient=12345678" became the last label
+        // and the query string was returned verbatim.
+        assertEquals(
+            "availity.com",
+            BrowserAnalytics.registrableDomain("https://portal.availity.com/auth?patient=12345678"),
+        )
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("portal.availity.com/auth"))
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("availity.com#frag"))
+    }
+
+    @Test
+    fun `strips credentials embedded in an authority`() {
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("user:pw@portal.availity.com"))
+    }
+
+    @Test
+    fun `no reduction ever carries a path query or fragment`() {
+        val inputs =
+            listOf(
+                "https://portal.availity.com/auth?patient=12345678",
+                "portal.availity.com/a/b/c",
+                "bbc.co.uk/news?id=99",
+                "example.com:8443/x#y",
+            )
+        for (input in inputs) {
+            val result = BrowserAnalytics.registrableDomain(input)
+            assertEquals(
+                null,
+                result?.takeIf { it.any { c -> c == '/' || c == '?' || c == '#' || c == '@' } },
+                "leaked page detail for $input -> $result",
+            )
+        }
+    }
+
+    // ============================================================
+    // In-page interaction sanitizers — the second privacy boundary.
+    // The injected collector is written never to read text, values, labels, or ids out of
+    // the DOM. These pin the independent host-side check on what it does send, because a
+    // site controls its own markup and can name things whatever it likes.
+    // ============================================================
+
+    @Test
+    fun `structural tokens accept the html vocabulary`() {
+        assertEquals("button", BrowserAnalytics.sanitizeToken("BUTTON", 32))
+        assertEquals("input", BrowserAnalytics.sanitizeToken(" input ", 32))
+        assertEquals("menuitem", BrowserAnalytics.sanitizeToken("menuitem", 32))
+        assertEquals("my-widget", BrowserAnalytics.sanitizeToken("my-widget", 32))
+    }
+
+    @Test
+    fun `a structural token carrying anything but a tag is refused whole`() {
+        // Refused, not cleaned: a "tag" needing repair was never a tag, and salvaging a
+        // prefix out of it is how page content would arrive wearing a tag's name.
+        assertNull(BrowserAnalytics.sanitizeToken("Patient Smith, John", 32))
+        assertNull(BrowserAnalytics.sanitizeToken("button#patient-4417", 32))
+        assertNull(BrowserAnalytics.sanitizeToken("mrn: 88421", 32))
+        assertNull(BrowserAnalytics.sanitizeToken("", 32))
+        assertNull(BrowserAnalytics.sanitizeToken("   ", 32))
+        assertNull(BrowserAnalytics.sanitizeToken(null, 32))
+        assertNull(BrowserAnalytics.sanitizeToken("a".repeat(33), 32))
+    }
+
+    @Test
+    fun `field names keep the schema and lose the identifier`() {
+        assertEquals("patientMrn", BrowserAnalytics.sanitizeFieldName("patientMrn"))
+        assertEquals("address_line[2]", BrowserAnalytics.sanitizeFieldName("address_line[2]"))
+        // A generated form can bake a record id into the field name; the name survives so
+        // the field is still identifiable, the number does not.
+        assertEquals("mrn-#", BrowserAnalytics.sanitizeFieldName("mrn-4417882"))
+        assertEquals("dob", BrowserAnalytics.sanitizeFieldName("  dob  "))
+    }
+
+    @Test
+    fun `field names drop unexpected characters and empties`() {
+        assertEquals("JohnSmith", BrowserAnalytics.sanitizeFieldName("John Smith"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("   "))
+        assertNull(BrowserAnalytics.sanitizeFieldName(null))
+        assertNull(BrowserAnalytics.sanitizeFieldName("@@@"))
+        assertEquals(64, BrowserAnalytics.sanitizeFieldName("n".repeat(200))?.length)
+    }
+
+    @Test
+    fun `element paths accept tags and sibling positions only`() {
+        assertEquals("form>div:2>button:1", BrowserAnalytics.sanitizePath("form>div:2>button:1"))
+        assertEquals("button", BrowserAnalytics.sanitizePath("BUTTON"))
+        assertEquals("main>ul>li:12>a:1", BrowserAnalytics.sanitizePath("main>ul>li:12>a:1"))
+    }
+
+    @Test
+    fun `an element path containing a selector is refused`() {
+        // The only way to get a '#', '.', or quote into a path is to have included an id,
+        // class, or attribute selector — precisely the identifying detail excluded by design.
+        assertNull(BrowserAnalytics.sanitizePath("form>div#patient-4417>button"))
+        assertNull(BrowserAnalytics.sanitizePath("form>div.patient-name>button"))
+        assertNull(BrowserAnalytics.sanitizePath("input[value='John Smith']"))
+        assertNull(BrowserAnalytics.sanitizePath("form>div:2>"))
+        assertNull(BrowserAnalytics.sanitizePath(""))
+        assertNull(BrowserAnalytics.sanitizePath(null))
+        assertNull(BrowserAnalytics.sanitizePath("a>".repeat(100)))
+    }
+}
