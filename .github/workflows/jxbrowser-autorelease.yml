@@ -4,9 +4,9 @@ run-name: JxBrowser auto-release${{ inputs.target_version && format(' — {0}', 
 
 on:
   schedule:
-    # TeamDev releases roughly monthly. Hourly polling gives prompt pickup while
-    # avoiding the busiest top-of-hour Actions scheduling window.
-    - cron: '17 * * * *'
+    # TeamDev releases roughly monthly. Four-hour polling keeps pickup prompt
+    # without spending hundreds of no-op runner minutes each month.
+    - cron: '17 */4 * * *'
   workflow_dispatch:
     inputs:
       target_version:
@@ -41,14 +41,24 @@ jobs:
           TARGET_VERSION: ${{ inputs.target_version }}
         run: bash .github/scripts/check-jxbrowser-release.sh
 
-      - name: Report repeated release failures
-        if: steps.release.outputs.reason == 'release_repeatedly_failing'
+      - name: Report auto-release blocker
+        if: steps.release.outputs.reason == 'artifact_not_ready' || steps.release.outputs.reason == 'release_repeatedly_failing'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.latest_version }}
+          REASON: ${{ steps.release.outputs.reason }}
+          BLOCKED_ARTIFACT: ${{ steps.release.outputs.blocked_artifact }}
         run: |
           set -euo pipefail
-          issue_title="JxBrowser $VERSION auto-release is repeatedly failing"
+          if [[ "$REASON" == "artifact_not_ready" ]]; then
+            issue_title="JxBrowser $VERSION release artifacts are not ready"
+            issue_body="TeamDev metadata advertises JxBrowser $VERSION, but the required artifact \`$BLOCKED_ARTIFACT\` is not resolvable. Automatic dispatch is paused until every required platform artifact is available."
+          else
+            issue_title="JxBrowser $VERSION auto-release is repeatedly failing"
+            issue_body="The two most recent automated Chromium branding runs for JxBrowser $VERSION failed. Automatic retries are paused to avoid repeatedly running the full platform matrix.
+
+          Inspect the failed runs, fix the underlying problem, then manually run \`build-chromium-branding.yml\` for version \`$VERSION\`."
+          fi
           issues="$(gh issue list \
             --repo "$GITHUB_REPOSITORY" \
             --state open \
@@ -64,9 +74,46 @@ jobs:
           gh issue create \
             --repo "$GITHUB_REPOSITORY" \
             --title "$issue_title" \
-            --body "The three most recent automated Chromium branding runs for JxBrowser $VERSION failed. Hourly retries are paused to avoid repeatedly running the full platform matrix.
+            --body "$issue_body"
 
-          Inspect the failed runs, fix the underlying problem, then manually run \`build-chromium-branding.yml\` for version \`$VERSION\`. The watcher will resume normally once a complete release exists."
+      - name: Close recovered blocker issues
+        if: steps.release.outputs.latest_version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.latest_version }}
+          REASON: ${{ steps.release.outputs.reason }}
+        run: |
+          set -euo pipefail
+          close_recovered_issue() {
+            local active_reason="$1"
+            local issue_title="$2"
+            local issues issue_numbers issue_number
+            [[ "$REASON" == "$active_reason" ]] && return 0
+            if [[ "$active_reason" == "release_repeatedly_failing" && "$REASON" != "release_already_published" ]]; then
+              return 0
+            fi
+            issues="$(gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --search "$issue_title in:title" \
+              --json number,title)"
+            issue_numbers="$(jq -r --arg title "$issue_title" \
+              '.[] | select(.title == $title) | .number' <<< "$issues")"
+            while IFS= read -r issue_number || [[ -n "$issue_number" ]]; do
+              if [[ -n "$issue_number" ]]; then
+                gh issue close "$issue_number" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --comment "The watcher recovered with status \`$REASON\`; closing this blocker automatically."
+              fi
+            done <<< "$issue_numbers"
+          }
+
+          close_recovered_issue \
+            artifact_not_ready \
+            "JxBrowser $VERSION release artifacts are not ready"
+          close_recovered_issue \
+            release_repeatedly_failing \
+            "JxBrowser $VERSION auto-release is repeatedly failing"
 
       - name: Dispatch Chromium branding
         if: steps.release.outputs.should_dispatch == 'true' && (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)

@@ -33,59 +33,12 @@ jobs:
       - name: Check for a complete published release
         id: release
         env:
+          CHECK_MODE: preflight
           FORCE_REBUILD: ${{ inputs.force_rebuild }}
-          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          if ! [[ "$JXBROWSER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "::error::Invalid JxBrowser version: $JXBROWSER_VERSION"
-            exit 1
-          fi
-
-          tag="chromium-v$JXBROWSER_VERSION"
-          required=()
-          while IFS= read -r asset; do
-            [[ -n "$asset" ]] && required+=("$asset")
-          done < .github/chromium-required-assets.txt
-          release_list="$(gh release list \
-            --repo risa-labs-inc/BossConsole-Releases \
-            --limit 100 \
-            --json tagName,isDraft)"
-          release_metadata="$(jq -c --arg tag "$tag" \
-            'first(.[] | select(.tagName == $tag)) // empty' <<< "$release_list")"
-
-          if [[ -n "$release_metadata" ]]; then
-            release_json="$(gh release view "$tag" \
-              --repo risa-labs-inc/BossConsole-Releases \
-              --json isDraft,assets)"
-            if [[ "$(jq -r '.isDraft' <<< "$release_json")" == "false" ]]; then
-              complete=true
-              for asset in "${required[@]}"; do
-                if ! jq -e --arg asset "$asset" \
-                  '.assets[] | select(.name == $asset)' <<< "$release_json" >/dev/null; then
-                  complete=false
-                  echo "::warning::$tag is missing $asset and will be rebuilt"
-                  break
-                fi
-              done
-              if [[ "$complete" == "true" && "$FORCE_REBUILD" != "true" ]]; then
-                echo "should_build=false" >> "$GITHUB_OUTPUT"
-                echo "release_mode=none" >> "$GITHUB_OUTPUT"
-                echo "$tag is already complete; nothing to rebuild."
-                exit 0
-              fi
-              echo "release_mode=repair_public" >> "$GITHUB_OUTPUT"
-              if [[ "$FORCE_REBUILD" == "true" ]]; then
-                echo "Force rebuild will replace assets in-place on $tag."
-              fi
-            else
-              echo "release_mode=replace_draft" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "release_mode=new" >> "$GITHUB_OUTPUT"
-          fi
-
-          echo "should_build=true" >> "$GITHUB_OUTPUT"
+          RELEASES_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TARGET_VERSION: ${{ inputs.jxbrowser_version }}
+        run: bash .github/scripts/check-jxbrowser-release.sh
 
   # Build the Chromium branding tool first
   build-branding-tool:
@@ -1187,10 +1140,9 @@ jobs:
           echo "Downloaded artifacts:"
           find artifacts -type f -name "*.zip" -exec ls -la {} \;
 
-          required=()
-          while IFS= read -r asset; do
-            [[ -n "$asset" ]] && required+=("$asset")
-          done < .github/chromium-required-assets.txt
+          source .github/scripts/chromium-release-utils.sh
+          load_chromium_required_assets .github/chromium-required-assets.txt
+          required=("${CHROMIUM_REQUIRED_ASSETS[@]}")
           for asset in "${required[@]}"; do
             if [[ -z "$(find artifacts -type f -name "$asset" -print -quit)" ]]; then
               echo "::error::Required Chromium archive is missing: $asset"
@@ -1208,15 +1160,36 @@ jobs:
           set -euo pipefail
           TAG="chromium-v$JXBROWSER_VERSION"
 
+          # A "re-run failed jobs" keeps preflight's cached release_mode. Clean
+          # every matching draft by release ID so create remains idempotent even
+          # when the cached mode says "new". Never delete a public release.
+          release_pages="$(gh api \
+            --paginate \
+            --slurp \
+            'repos/risa-labs-inc/BossConsole-Releases/releases?per_page=100')"
+          public_id="$(jq -r --arg tag "$TAG" \
+            'first(.[][] | select(.tag_name == $tag and .draft == false) | .id) // empty' \
+            <<< "$release_pages")"
+          draft_ids="$(jq -r --arg tag "$TAG" \
+            '.[][] | select(.tag_name == $tag and .draft == true) | .id' \
+            <<< "$release_pages")"
+          while IFS= read -r release_id || [[ -n "$release_id" ]]; do
+            if [[ -n "$release_id" ]]; then
+              echo "Deleting stale draft release ID $release_id"
+              gh api \
+                --method DELETE \
+                "repos/risa-labs-inc/BossConsole-Releases/releases/$release_id"
+            fi
+          done <<< "$draft_ids"
+
           if [[ "$RELEASE_MODE" == "repair_public" ]]; then
             echo "Public release repair will run after the Supabase mirror succeeds."
             exit 0
           fi
 
-          if [[ "$RELEASE_MODE" == "replace_draft" ]]; then
-            gh release delete "$TAG" \
-              --repo risa-labs-inc/BossConsole-Releases \
-              --yes
+          if [[ -n "$public_id" ]]; then
+            echo "::error::$TAG became public after preflight; refusing to create a duplicate draft"
+            exit 1
           fi
 
           gh release create "$TAG" \
@@ -1251,19 +1224,12 @@ jobs:
             fi
           done
 
-          required=()
-          while IFS= read -r asset; do
-            [[ -n "$asset" ]] && required+=("$asset")
-          done < .github/chromium-required-assets.txt
+          source .github/scripts/chromium-release-utils.sh
+          load_chromium_required_assets .github/chromium-required-assets.txt
           uploaded="$(gh release view "$TAG" \
             --repo risa-labs-inc/BossConsole-Releases \
             --json assets --jq '.assets[].name')"
-          for asset in "${required[@]}"; do
-            if ! grep -Fqx "$asset" <<< "$uploaded"; then
-              echo "::error::GitHub release is missing required asset: $asset"
-              exit 1
-            fi
-          done
+          verify_chromium_release_assets "$uploaded" "Draft GitHub release"
 
       # Mirror the engine archives to Supabase (app id "boss-chromium" in the shared
       # app_releases table/bucket) so clients download from Supabase first with the
@@ -1289,6 +1255,9 @@ jobs:
             boss-chromium "$JXBROWSER_VERSION" stable chromium-assets app-releases
 
       - name: Repair or publish GitHub release
+        # force_rebuild also uses repair_public. Version-pinned clients keep
+        # working, though GitHub may briefly serve mixed old/new assets while
+        # each clobber completes; Supabase is already updated at this point.
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           RELEASE_MODE: ${{ needs.preflight.outputs.release_mode }}
@@ -1305,19 +1274,12 @@ jobs:
               fi
             done
 
-            required=()
-            while IFS= read -r asset; do
-              [[ -n "$asset" ]] && required+=("$asset")
-            done < .github/chromium-required-assets.txt
+            source .github/scripts/chromium-release-utils.sh
+            load_chromium_required_assets .github/chromium-required-assets.txt
             uploaded="$(gh release view "$TAG" \
               --repo risa-labs-inc/BossConsole-Releases \
               --json assets --jq '.assets[].name')"
-            for asset in "${required[@]}"; do
-              if ! grep -Fqx "$asset" <<< "$uploaded"; then
-                echo "::error::Repaired GitHub release is missing required asset: $asset"
-                exit 1
-              fi
-            done
+            verify_chromium_release_assets "$uploaded" "Repaired GitHub release"
           else
             gh release edit "$TAG" \
               --repo risa-labs-inc/BossConsole-Releases \

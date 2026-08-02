@@ -40,7 +40,7 @@ jobs:
       - name: 🧪 JxBrowser auto-release detector tests
         # GitHub and Artifact Registry are stubbed so every decision path is
         # deterministic and does not consume credentials.
-        run: bash .github/scripts/test-check-jxbrowser-release.sh
+        run: bash scripts/test/test-jxbrowser-autorelease.sh
 
   version-check:
     runs-on: ubuntu-latest
