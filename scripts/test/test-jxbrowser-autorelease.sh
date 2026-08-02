@@ -82,6 +82,7 @@ draft_release='{
 complete_pages="[[$complete_release]]"
 partial_pages="[[$partial_release]]"
 draft_pages="[[$draft_release]]"
+public_and_draft_pages="[[$complete_release,$draft_release]]"
 
 assert_output() {
   local output="$1"
@@ -157,6 +158,11 @@ run_watch_case \
   "$complete_pages" '[]'
 
 run_watch_case \
+  published_complete_with_stale_draft false release_already_published true \
+  "$public_and_draft_pages" '[]'
+assert_output "$test_dir/published_complete_with_stale_draft.output" 'stale_draft=true'
+
+run_watch_case \
   artifact_not_ready false artifact_not_ready false \
   '[[]]' '[]'
 assert_output "$test_dir/artifact_not_ready.output" 'blocked_artifact=jxbrowser'
@@ -183,7 +189,7 @@ run_watch_case \
   '[[]]' \
   '[
     {"displayTitle":"BOSS Chromium for JxBrowser 9.4.0","status":"completed","conclusion":"failure"},
-    {"displayTitle":"BOSS Chromium for JxBrowser 9.4.0","status":"completed","conclusion":"timed_out"}
+    {"displayTitle":"BOSS Chromium for JxBrowser 9.4.0","status":"completed","conclusion":"cancelled"}
   ]'
 
 metadata_output="$test_dir/metadata.output"
@@ -220,6 +226,17 @@ fi
 echo "✓ invalid_version"
 
 if PATH="$mock_bin:$PATH" \
+  CHECK_MODE=invalid \
+  TARGET_VERSION=9.4.0 \
+  REQUIRED_ASSETS_FILE="$assets_file" \
+  GITHUB_OUTPUT="$test_dir/invalid-mode.output" \
+  bash "$detector" > "$test_dir/invalid-mode.log" 2>&1; then
+  echo "Expected an invalid check mode to fail" >&2
+  exit 1
+fi
+echo "✓ invalid_check_mode"
+
+if PATH="$mock_bin:$PATH" \
   TARGET_VERSION=9.4.0 \
   MOCK_RELEASE_API_EXIT=1 \
   REQUIRED_ASSETS_FILE="$assets_file" \
@@ -253,6 +270,20 @@ run_preflight_case \
 if PATH="$mock_bin:$PATH" \
   CHECK_MODE=preflight \
   TARGET_VERSION=9.4.0 \
+  MOCK_ARTIFACT_READY=false \
+  MOCK_RELEASE_PAGES='[[]]' \
+  SUPABASE_SERVICE_ROLE_KEY=test-key \
+  REQUIRED_ASSETS_FILE="$assets_file" \
+  GITHUB_OUTPUT="$test_dir/preflight-artifact.output" \
+  bash "$detector" > "$test_dir/preflight-artifact.log" 2>&1; then
+  echo "Expected preflight to reject an unavailable mandatory artifact" >&2
+  exit 1
+fi
+echo "✓ preflight_artifact_not_ready"
+
+if PATH="$mock_bin:$PATH" \
+  CHECK_MODE=preflight \
+  TARGET_VERSION=9.4.0 \
   MOCK_RELEASE_PAGES='[[]]' \
   REQUIRED_ASSETS_FILE="$assets_file" \
   GITHUB_OUTPUT="$test_dir/missing-secret.output" \
@@ -270,5 +301,11 @@ load_chromium_required_assets "$parser_fixture"
 [[ "${#CHROMIUM_REQUIRED_ASSETS[@]}" == "2" ]]
 [[ "${CHROMIUM_REQUIRED_ASSETS[1]}" == "second.zip" ]]
 echo "✓ blank_line_and_missing_newline_asset_list"
+
+if verify_chromium_release_assets 'first.zip' 'Test release' > "$test_dir/verify-assets.log" 2>&1; then
+  echo "Expected release asset verification to reject a missing asset" >&2
+  exit 1
+fi
+echo "✓ missing_release_asset"
 
 echo "All JxBrowser release automation tests passed."

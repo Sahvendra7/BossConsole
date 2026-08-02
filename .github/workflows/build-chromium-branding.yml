@@ -117,6 +117,7 @@ jobs:
   build-macos-arm64:
     needs: build-branding-tool
     runs-on: macos-14
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -413,6 +414,7 @@ jobs:
   build-macos-x64:
     needs: build-branding-tool
     runs-on: macos-15-large
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -915,6 +917,7 @@ jobs:
   build-linux-x64:
     needs: build-branding-tool
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -1010,6 +1013,7 @@ jobs:
   build-linux-arm64:
     needs: build-branding-tool
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -1183,6 +1187,10 @@ jobs:
           done <<< "$draft_ids"
 
           if [[ "$RELEASE_MODE" == "repair_public" ]]; then
+            if [[ -z "$public_id" ]]; then
+              echo "::error::$TAG disappeared after preflight; refusing to update Supabase without a repair target"
+              exit 1
+            fi
             echo "Public release repair will run after the Supabase mirror succeeds."
             exit 0
           fi
@@ -1280,6 +1288,9 @@ jobs:
               --repo risa-labs-inc/BossConsole-Releases \
               --json assets --jq '.assets[].name')"
             verify_chromium_release_assets "$uploaded" "Repaired GitHub release"
+            gh release edit "$TAG" \
+              --repo risa-labs-inc/BossConsole-Releases \
+              --latest=false
           else
             gh release edit "$TAG" \
               --repo risa-labs-inc/BossConsole-Releases \

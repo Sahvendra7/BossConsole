@@ -28,16 +28,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/chromium-release-utils.sh"
 
 gh_source() {
-  if [[ -n "${SOURCE_TOKEN:-${GH_TOKEN:-}}" ]]; then
-    GH_TOKEN="${SOURCE_TOKEN:-$GH_TOKEN}" gh "$@"
+  local token="${SOURCE_TOKEN:-${GH_TOKEN:-}}"
+  if [[ -n "$token" ]]; then
+    GH_TOKEN="$token" gh "$@"
   else
     gh "$@"
   fi
 }
 
 gh_releases() {
-  if [[ -n "${RELEASES_TOKEN:-${GH_TOKEN:-}}" ]]; then
-    GH_TOKEN="${RELEASES_TOKEN:-$GH_TOKEN}" gh "$@"
+  local token="${RELEASES_TOKEN:-${GH_TOKEN:-}}"
+  if [[ -n "$token" ]]; then
+    GH_TOKEN="$token" gh "$@"
   else
     gh "$@"
   fi
@@ -52,6 +54,34 @@ noop() {
   exit 0
 }
 
+probe_required_artifacts() {
+  local artifact artifact_url
+  # Metadata can lead platform artifacts briefly. HEAD is intentional: a range
+  # request could download an entire Chromium JAR if an intermediary ignored it.
+  # Windows ARM64 is optional in the release matrix, so it is not a hard gate.
+  local artifacts=(
+    jxbrowser
+    jxbrowser-linux64
+    jxbrowser-linux64-arm
+    jxbrowser-mac
+    jxbrowser-mac-arm
+    jxbrowser-win64
+  )
+  for artifact in "${artifacts[@]}"; do
+    artifact_url="$ARTIFACT_BASE_URL/$artifact/$latest/$artifact-$latest.jar"
+    if ! curl -fsSL --retry 3 --retry-all-errors --max-time 30 \
+      --head --output /dev/null "$artifact_url"; then
+      echo "::warning::JxBrowser $latest is in metadata, but $artifact is not resolvable yet"
+      emit "blocked_artifact=$artifact"
+      if [[ "$CHECK_MODE" == "watch" ]]; then
+        noop "artifact_not_ready"
+      fi
+      echo "ERROR: required JxBrowser artifact is unavailable: $artifact" >&2
+      exit 1
+    fi
+  done
+}
+
 case "$CHECK_MODE" in
   watch|preflight) ;;
   *)
@@ -60,10 +90,7 @@ case "$CHECK_MODE" in
     ;;
 esac
 
-required_commands=(gh jq)
-if [[ "$CHECK_MODE" == "watch" ]]; then
-  required_commands+=(curl)
-fi
+required_commands=(gh jq curl)
 for cmd in "${required_commands[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "ERROR: required command is unavailable: $cmd" >&2
@@ -98,29 +125,6 @@ if [[ "$CHECK_MODE" == "preflight" && -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; th
   exit 1
 fi
 
-if [[ "$CHECK_MODE" == "watch" ]]; then
-  # Metadata can lead platform artifacts briefly. HEAD is intentional: a range
-  # request could download an entire Chromium JAR if an intermediary ignored it.
-  # Windows ARM64 is optional in the release matrix, so it is not a hard gate.
-  artifacts=(
-    jxbrowser
-    jxbrowser-linux64
-    jxbrowser-linux64-arm
-    jxbrowser-mac
-    jxbrowser-mac-arm
-    jxbrowser-win64
-  )
-  for artifact in "${artifacts[@]}"; do
-    artifact_url="$ARTIFACT_BASE_URL/$artifact/$latest/$artifact-$latest.jar"
-    if ! curl -fsSL --retry 3 --retry-all-errors --max-time 30 \
-      --head --output /dev/null "$artifact_url"; then
-      echo "::warning::JxBrowser $latest is in metadata, but $artifact is not resolvable yet"
-      emit "blocked_artifact=$artifact"
-      noop "artifact_not_ready"
-    fi
-  done
-fi
-
 tag="chromium-v$latest"
 # REST pagination has no fixed release window and returns draft metadata to the
 # cross-repository token. An unreadable repository fails this command loudly.
@@ -150,17 +154,28 @@ if [[ -n "$public_release" ]]; then
 elif [[ -n "$draft_release" ]]; then
   release_state="draft"
 fi
+if [[ -n "$public_release" && -n "$draft_release" ]]; then
+  emit "stale_draft=true"
+fi
+
+if [[ "$CHECK_MODE" == "preflight" && "$release_state" == "public_complete" && "${FORCE_REBUILD:-false}" != "true" ]]; then
+  emit "should_build=false"
+  emit "release_mode=none"
+  emit "reason=release_already_published"
+  echo "$tag is already complete; nothing to rebuild."
+  exit 0
+fi
+if [[ "$CHECK_MODE" == "watch" && "$release_state" == "public_complete" ]]; then
+  noop "release_already_published"
+fi
+
+# Automated dispatch and manual/forced builds both fail fast while TeamDev's
+# mandatory platform artifacts are still propagating.
+probe_required_artifacts
 
 if [[ "$CHECK_MODE" == "preflight" ]]; then
   case "$release_state" in
     public_complete)
-      if [[ "${FORCE_REBUILD:-false}" != "true" ]]; then
-        emit "should_build=false"
-        emit "release_mode=none"
-        emit "reason=release_already_published"
-        echo "$tag is already complete; nothing to rebuild."
-        exit 0
-      fi
       emit "should_build=true"
       emit "release_mode=repair_public"
       emit "reason=force_rebuild"
@@ -189,9 +204,6 @@ fi
 
 dispatch_reason="release_missing"
 case "$release_state" in
-  public_complete)
-    noop "release_already_published"
-    ;;
   public_incomplete)
     dispatch_reason="release_assets_incomplete"
     echo "::warning::$tag is missing $missing_asset; a repair build is required"
@@ -203,7 +215,9 @@ case "$release_state" in
 esac
 
 # The branding workflow exposes the version in run-name, making these checks
-# deterministic without downloading run logs or inspecting event payloads.
+# deterministic without downloading run logs or inspecting event payloads. The
+# per-version workflow concurrency group remains the duplicate-dispatch backstop
+# if an extremely busy repository ever pushes a matching run beyond this window.
 run_title="BOSS Chromium for JxBrowser $latest"
 runs_json="$(gh_source run list \
   --repo "$SOURCE_REPO" \
@@ -223,7 +237,8 @@ recent_failures="$(jq -r --arg title "$run_title" '
   | if length == 2 and all(.[];
       .conclusion == "failure"
       or .conclusion == "timed_out"
-      or .conclusion == "startup_failure")
+      or .conclusion == "startup_failure"
+      or .conclusion == "cancelled")
     then 2
     else 0
     end
