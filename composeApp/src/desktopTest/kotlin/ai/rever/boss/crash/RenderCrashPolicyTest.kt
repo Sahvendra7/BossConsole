@@ -16,7 +16,9 @@ import kotlin.test.assertTrue
  */
 class RenderCrashPolicyTest {
     /** Controllable clock — a real one would make the window assertions timing-dependent. */
-    private class FakeClock(var now: Long = 0L) {
+    private class FakeClock(
+        var now: Long = 0L,
+    ) {
         fun advance(millis: Long) {
             now += millis
         }

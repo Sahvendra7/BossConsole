@@ -69,6 +69,12 @@ import kotlin.coroutines.cancellation.CancellationException
  *   [PluginCrashRegistry.recordCrash], which defers its state writes to the EDT
  *   precisely so it is safe to call from inside a render pass.
  */
+
+// Catching Throwable is this function's entire contract: a boundary that only
+// caught the exception types it could predict would not be a boundary. The
+// narrowing that does matter is [rethrowIfUncontainable], applied first at every
+// catch site.
+@Suppress("TooGenericExceptionCaught")
 @Composable
 internal fun PluginRenderBoundary(
     pluginId: String,
@@ -78,15 +84,12 @@ internal fun PluginRenderBoundary(
     val logger = remember { BossLogger.forComponent("PluginRenderBoundary") }
     val reported = remember(pluginId) { AtomicBoolean(false) }
 
-    // Not a composable: called from measure, placement and draw.
+    // Not a composable: called from measure, placement and draw, each of which has
+    // already run rethrowIfUncontainable on the throwable.
     fun report(
         phase: String,
         error: Throwable,
     ) {
-        // A cancelled composition and a dead JVM are not the plugin's to own, and
-        // swallowing either would do more harm than the crash.
-        if (error is CancellationException || error is OutOfMemoryError) throw error
-
         if (!reported.compareAndSet(false, true)) return
 
         logger.error(
@@ -102,7 +105,7 @@ internal fun PluginRenderBoundary(
         try {
             onRenderCrash(error)
         } catch (secondary: Throwable) {
-            if (secondary is CancellationException || secondary is OutOfMemoryError) throw secondary
+            secondary.rethrowIfUncontainable()
             // The handler failing must not turn a contained crash into a fatal one.
             logger.warn(
                 LogCategory.UI,
@@ -120,6 +123,7 @@ internal fun PluginRenderBoundary(
                 try {
                     drawContent()
                 } catch (t: Throwable) {
+                    t.rethrowIfUncontainable()
                     report("draw", t)
                 }
             },
@@ -133,6 +137,7 @@ internal fun PluginRenderBoundary(
             try {
                 measurables.map { it.measure(childConstraints) }
             } catch (t: Throwable) {
+                t.rethrowIfUncontainable()
                 report("measure", t)
                 // Deliberately no children: measuring again this frame would just
                 // hit the same throw. The rebuild triggered by onRenderCrash
@@ -147,8 +152,26 @@ internal fun PluginRenderBoundary(
             try {
                 placeables.forEach { it.place(0, 0) }
             } catch (t: Throwable) {
+                t.rethrowIfUncontainable()
                 report("placement", t)
             }
         }
     }
+}
+
+/**
+ * Rethrow what a plugin boundary has no business containing.
+ *
+ * A cancelled composition is control flow, not a fault, and swallowing it would
+ * strand whoever is awaiting the cancellation. An [OutOfMemoryError] says the JVM
+ * is done; reporting it as "this plugin crashed" would be both wrong and a
+ * distraction from the real problem.
+ *
+ * Deliberately not a `when` inside each catch block: pulled out here it stays one
+ * decision in one place, applied identically by measure, placement, draw and the
+ * crash handler itself.
+ */
+private fun Throwable.rethrowIfUncontainable() {
+    if (this is CancellationException) throw this
+    if (this is OutOfMemoryError) throw this
 }

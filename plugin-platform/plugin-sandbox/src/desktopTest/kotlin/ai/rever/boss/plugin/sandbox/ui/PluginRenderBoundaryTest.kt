@@ -33,6 +33,9 @@ import kotlin.test.assertTrue
  * These tests assert the boundary catches each phase, hands the throwable to the
  * owner, and leaves the host composition standing.
  */
+// The boundary under test exists to catch anything, so the tests must be able to
+// throw and observe anything — including Errors.
+@Suppress("TooGenericExceptionCaught")
 @OptIn(ExperimentalTestApi::class)
 class PluginRenderBoundaryTest {
     /** Throws while being measured — the phase from the real crash report. */

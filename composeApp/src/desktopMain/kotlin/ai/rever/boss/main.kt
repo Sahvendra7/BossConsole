@@ -443,7 +443,11 @@ fun main(args: Array<String>) {
         // Shared across windows on purpose: a corrupted scene tends to throw from
         // whichever window repaints next, and the question being asked is "is this
         // app still rendering?", not "is this window still rendering?".
-        val renderCrashPolicy = remember { ai.rever.boss.crash.RenderCrashPolicy() }
+        val renderCrashPolicy =
+            remember {
+                ai.rever.boss.crash
+                    .RenderCrashPolicy()
+            }
 
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val pluginAwareExceptionHandlerFactory =
@@ -491,8 +495,11 @@ fun main(args: Array<String>) {
                                     )
                                     // Reported, but not fatal: the user gets the crash dialog
                                     // and keeps their session.
-                                    ai.rever.boss.crash.CrashHandler.reportNonFatal(throwable)
-                                    java.awt.Window.getWindows().forEach { it.repaint() }
+                                    ai.rever.boss.crash.CrashHandler
+                                        .reportNonFatal(throwable)
+                                    java.awt.Window
+                                        .getWindows()
+                                        .forEach { it.repaint() }
                                 } else {
                                     logger.error(
                                         LogCategory.UI,
