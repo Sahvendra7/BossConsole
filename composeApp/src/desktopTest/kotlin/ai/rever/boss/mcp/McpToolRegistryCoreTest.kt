@@ -314,6 +314,51 @@ class McpToolRegistryCoreTest {
         assertEquals(emptySet(), core.disabledToolNames.value)
     }
 
+    /**
+     * The write side fails open too, and the README documents it: `saveDisabled`
+     * logs and swallows, while `setToolEnabled` has already updated `_disabled` and
+     * goes on to call `applyExposed()`. So a toggle survives the session but is
+     * never persisted, and the tool returns on the next launch with no signal that
+     * the decision did not stick.
+     *
+     * Pinned because the disabled set is the only control that holds for an admin
+     * user, so both halves of "fails open on both sides" deserve a test. This
+     * asserts today's behaviour, not desired behaviour — BossConsole#85 tracks the
+     * fix, and landing it should flip the final assertion here.
+     */
+    @Test
+    fun `unwritable disabled-tools file still toggles in memory but does not persist`() {
+        // A regular file used as a parent directory: the write cannot succeed.
+        val blocker = tempDisabledFile()
+        blocker.parentFile.mkdirs()
+        blocker.writeText("not a directory")
+        val unwritable = File(blocker, "mcp-disabled-tools.json")
+
+        val core = McpToolRegistryCore(disabledFile = unwritable)
+        core.registerProvider(provider("p1", echoTool("doomed_toggle")))
+
+        // Must not throw, even though persisting is impossible.
+        core.setToolEnabled("doomed_toggle", enabled = false)
+
+        assertEquals(
+            setOf("doomed_toggle"),
+            core.disabledToolNames.value,
+            "the in-memory toggle must still apply for this session",
+        )
+        assertFalse(
+            core.tools.value.any { it.definition.name == "doomed_toggle" },
+            "the tool must be hidden for this session",
+        )
+        // Assert the write genuinely failed rather than landing somewhere else --
+        // otherwise the reload assertion below could pass for the wrong reason.
+        assertFalse(unwritable.exists(), "the unwritable path must not have been created")
+        assertEquals(
+            emptySet(),
+            McpToolRegistryCore(disabledFile = unwritable).disabledToolNames.value,
+            "current behaviour: the toggle is lost on the next launch (see BossConsole#85)",
+        )
+    }
+
     @Test
     fun `null disabledFile skips persistence entirely (pure in-memory)`() {
         val core = McpToolRegistryCore(disabledFile = null)
