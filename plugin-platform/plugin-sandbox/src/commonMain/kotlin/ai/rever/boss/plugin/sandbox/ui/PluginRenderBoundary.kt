@@ -4,6 +4,7 @@ import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.Layout
@@ -81,6 +82,10 @@ import kotlin.coroutines.cancellation.CancellationException
  * - **Multiple roots stack.** If [content] emits several siblings they are
  *   placed at the same origin with `Box` semantics, where previously the real
  *   parent would have laid them out.
+ * - **Intrinsics go through the default policy.** Intrinsic measurements now
+ *   resolve against `Layout`'s defaults rather than the child's own, which for a
+ *   child with a cheap custom intrinsic — or an expensive real measure, such as a
+ *   lazy list — is neither free nor guaranteed to give the same answer.
  *
  * @param pluginId Plugin that owns [content]; used only for logging here.
  * @param onRenderCrash Invoked at most once per boundary, on the UI thread rather
@@ -108,6 +113,16 @@ internal fun PluginRenderBoundary(
     val logger = remember { BossLogger.forComponent("PluginRenderBoundary") }
     val reported = remember(pluginId) { AtomicBoolean(false) }
 
+    // The callback is read through a remembered holder rather than captured
+    // directly. Capturing it would make the measure lambda and draw modifier
+    // below unstable, so Compose would hand Layout a fresh MeasurePolicy on every
+    // recomposition — and LayoutNode.measurePolicy's setter compares by equality
+    // and calls requestRemeasure() on change, forcing a full remeasure of the
+    // plugin subtree each time. This is on the render path of every plugin panel
+    // and status-bar widget, so that is worth avoiding.
+    val currentOnRenderCrash = rememberUpdatedState(onRenderCrash)
+    val currentDispatch = rememberUpdatedState(dispatchToUiThread)
+
     // Not a composable: called from measure, placement and draw, each of which has
     // already run rethrowIfUncontainable on the throwable.
     fun report(
@@ -133,9 +148,9 @@ internal fun PluginRenderBoundary(
         // to know that: PluginErrorBoundary and PluginExtensionBoundary can both
         // just write state, instead of one deferring through
         // PluginCrashRegistry.recordCrash and the other not.
-        dispatchToUiThread {
+        currentDispatch.value {
             try {
-                onRenderCrash(error)
+                currentOnRenderCrash.value(error)
             } catch (secondary: Throwable) {
                 secondary.rethrowIfUncontainable()
                 // The handler failing must not turn a contained crash into a fatal one.
@@ -215,9 +230,26 @@ internal fun PluginRenderBoundary(
  * hangs rather than fails. The decision itself is pure, so it is tested as such.
  */
 internal fun Throwable.rethrowIfUncontainable() {
-    if (this is CancellationException) throw this
-    if (this is OutOfMemoryError) throw this
+    if (isUncontainable(this)) throw this
 }
+
+/**
+ * Whether [error] is something no layer may contain.
+ *
+ * Public and shared so the boundary and the window handler cannot drift. They
+ * did: the boundary rethrew [OutOfMemoryError] so a dead JVM was never blamed on
+ * a plugin, but the window handler then caught it as an unattributed render
+ * fault, contained it, and repainted every window — allocating more under heap
+ * exhaustion, three times over, before anything escalated. The carve-out existed
+ * only in the boundary's tests.
+ *
+ * [StackOverflowError] is included for the same reason: the stack is gone, and
+ * repainting to recover would immediately blow it again.
+ */
+fun isUncontainable(error: Throwable): Boolean =
+    error is CancellationException ||
+        error is OutOfMemoryError ||
+        error is StackOverflowError
 
 /**
  * Default hand-off for [PluginRenderBoundary]: the AWT event dispatch thread.

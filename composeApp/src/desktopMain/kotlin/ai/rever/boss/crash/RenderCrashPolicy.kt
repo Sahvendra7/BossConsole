@@ -25,7 +25,7 @@ package ai.rever.boss.crash
 class RenderCrashPolicy(
     private val maxFailures: Int = DEFAULT_MAX_FAILURES,
     private val windowMillis: Long = DEFAULT_WINDOW_MILLIS,
-    private val now: () -> Long = System::currentTimeMillis,
+    private val now: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     companion object {
         /**

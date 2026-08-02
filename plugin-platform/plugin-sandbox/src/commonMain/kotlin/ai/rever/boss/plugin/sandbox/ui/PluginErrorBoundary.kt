@@ -425,6 +425,13 @@ fun PluginErrorBoundary(
                 PluginRenderBoundary(
                     pluginId = pluginId,
                     onRenderCrash = { e ->
+                        // FIRST, deliberately. report() wraps this callback in a
+                        // try/catch that only logs, and `reported` is already
+                        // latched — so if anything below threw, `error` would never
+                        // be set and the panel would stay blank forever with nothing
+                        // further logged. That is the exact failure this line exists
+                        // to prevent, so it cannot run last.
+                        error = e
                         sandbox.recordError(e)
                         // The same recovery a composition crash gets: close the tab,
                         // notify, flip the observable crash state.

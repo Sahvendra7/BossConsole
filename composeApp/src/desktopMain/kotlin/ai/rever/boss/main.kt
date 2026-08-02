@@ -5,10 +5,13 @@ import ai.rever.boss.cli.CLICommandHandler
 import ai.rever.boss.cli.createBossCLI
 import ai.rever.boss.components.dialogs.ChromiumDownloadContent
 import ai.rever.boss.config.ChromiumAutoDownloader
+import ai.rever.boss.crash.WindowExceptionRoute
+import ai.rever.boss.crash.decideWindowExceptionRoute
 import ai.rever.boss.logging.GlobalLogCapture
 import ai.rever.boss.performance.PerformanceDataProviderImpl
 import ai.rever.boss.plugin.PluginStoreSetup
 import ai.rever.boss.plugin.pathutils.BossDirectories
+import ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
 import ai.rever.boss.plugin.sandbox.ui.PluginRenderRecovery
 import ai.rever.boss.plugin.ui.BossThemeController
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
@@ -485,33 +488,21 @@ fun main(args: Array<String>) {
                         val defaultHandler = defaultExceptionHandlerFactory.exceptionHandler(window)
                         return WindowExceptionHandler { throwable ->
                             val pluginId =
-                                ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
-                                    .attributeToPlugin(throwable)
-                            if (pluginId != null) {
-                                // Plugin crash — let the interceptor handle it (closes tab,
-                                // shows status message)
-                                logger.warn(
-                                    LogCategory.SYSTEM,
-                                    "Compose exception intercepted for plugin",
-                                    mapOf(
-                                        "pluginId" to pluginId,
-                                        "errorType" to throwable.javaClass.simpleName,
-                                    ),
-                                )
-                                ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
-                                    .tryHandle(pluginId, throwable)
-                            } else {
-                                // Unattributed. Compose's default handler shows a dialog and
-                                // disposes the window, which ends a Compose application {} —
-                                // too harsh for one bad frame, and reachable by a plugin whose
-                                // layout throws after its composables have returned, leaving
-                                // nothing of the plugin on the stack to attribute. That is what
-                                // took the app down in BossConsole-Releases#16.
-                                //
-                                // Contain a burst; escalate if the scene keeps throwing, since
-                                // an app that repaints forever without working is worse than
-                                // one that stops.
-                                if (renderCrashPolicy.recordFailureAndShouldContain()) {
+                                PluginCrashInterceptor.attributeToPlugin(throwable)
+                            when (decideWindowExceptionRoute(throwable, pluginId, renderCrashPolicy)) {
+                                WindowExceptionRoute.PluginHandled -> {
+                                    logger.warn(
+                                        LogCategory.SYSTEM,
+                                        "Compose exception intercepted for plugin",
+                                        mapOf(
+                                            "pluginId" to pluginId.orEmpty(),
+                                            "errorType" to throwable.javaClass.simpleName,
+                                        ),
+                                    )
+                                    PluginCrashInterceptor.tryHandle(pluginId.orEmpty(), throwable)
+                                }
+
+                                WindowExceptionRoute.Contain -> {
                                     logger.error(
                                         LogCategory.UI,
                                         "Unattributed render exception — contained, window kept alive",
@@ -521,21 +512,20 @@ fun main(args: Array<String>) {
                                         ),
                                         throwable,
                                     )
-                                    // Deliberately NOT routed through CrashHandler. Its dialog
-                                    // is terminal on every exit — dismiss, submit and Escape
-                                    // all reach terminateAfterCrash(), and clean-and-restart
-                                    // deletes ~/.boss first. Sending a contained fault there
-                                    // would end the session the moment the user pressed
-                                    // Escape, restoring exactly what this branch prevents, and
-                                    // would offer to wipe their data over a recovered hiccup.
-                                    // It would also stack one crash window per failure.
-                                    //
+                                    // Reported, but not through CrashHandler.handleCrash: that
+                                    // dialog is terminal on every exit — dismiss, submit and
+                                    // Escape all reach terminateAfterCrash(), and
+                                    // clean-and-restart deletes ~/.boss first. A recovered
+                                    // fault must not end the session on Escape. recordContained
+                                    // keeps the report and drops the dialog, so a host-side
+                                    // render bug is still visible instead of costing one log
+                                    // line and a toast.
+                                    ai.rever.boss.crash.CrashHandler
+                                        .recordContained(throwable)
                                     // Keeping the window alive is not enough on its own: a
                                     // repaint over a subtree that still reproduces the fault
-                                    // just leaves the user a broken window and no explanation,
-                                    // which is what containment alone actually delivered.
-                                    // Recovery rebuilds the plugin panels, and quarantines
-                                    // them if the rebuild does not take.
+                                    // leaves a broken window and no explanation. Recovery
+                                    // rebuilds the plugin panels, then narrows to one suspect.
                                     val outcome =
                                         PluginRenderRecovery.onUnattributedRenderException(throwable)
                                     ai.rever.boss.components.bars.horizontal.StatusMessageManager
@@ -546,10 +536,12 @@ fun main(args: Array<String>) {
                                     java.awt.Window
                                         .getWindows()
                                         .forEach { it.repaint() }
-                                } else {
+                                }
+
+                                WindowExceptionRoute.Escalate -> {
                                     logger.error(
                                         LogCategory.UI,
-                                        "Render exceptions are not stopping — escalating to the default handler",
+                                        "Render exception is not containable — escalating to the default handler",
                                         mapOf(
                                             "errorType" to throwable.javaClass.simpleName,
                                             "recentFailures" to renderCrashPolicy.recentFailureCount().toString(),

@@ -3,6 +3,8 @@ package ai.rever.boss.plugin.sandbox.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,8 +12,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -279,6 +283,73 @@ class PluginRenderBoundaryTest {
         assertTrue(
             generateSequence(escaped) { it.cause }.any { it === fatal },
             "something else failed — the OutOfMemoryError itself did not propagate",
+        )
+    }
+
+    @Test
+    fun `a healthy subtree measures the same with the boundary as without it`() {
+        // The riskiest claim in this change: the boundary is layout-transparent
+        // for content that is not crashing. Relaxing the child's minimum
+        // constraints — the obvious way to make the error path collapse — would
+        // silently reshape every plugin panel, so it is asserted rather than
+        // commented. Both cases run under a parent that passes a non-zero minimum
+        // width down, which is exactly where the difference would show.
+        val withBoundary = AtomicReference<IntSize?>(null)
+        val without = AtomicReference<IntSize?>(null)
+
+        runComposeUiTest {
+            setContent {
+                Column(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxWidth()) {
+                        PluginRenderBoundary(
+                            pluginId = PLUGIN_ID,
+                            onRenderCrash = { },
+                            dispatchToUiThread = runInline,
+                        ) {
+                            Box(Modifier.size(24.dp).onSizeChanged { withBoundary.set(it) })
+                        }
+                    }
+                    Column(Modifier.fillMaxWidth()) {
+                        Box(Modifier.size(24.dp).onSizeChanged { without.set(it) })
+                    }
+                }
+            }
+        }
+
+        assertNotNull(withBoundary.get(), "the wrapped child never measured")
+        assertEquals(
+            without.get(),
+            withBoundary.get(),
+            "the boundary changed the size of healthy content",
+        )
+    }
+
+    @Test
+    fun `a wrap-content child is not stretched by the boundary`() {
+        // The specific regression the constraint forwarding prevents: under a
+        // parent with a non-zero minimum, a relaxed child would hug its content
+        // where it used to stretch, or vice versa.
+        val measured = AtomicReference<IntSize?>(null)
+
+        runComposeUiTest {
+            setContent {
+                Column(Modifier.fillMaxWidth()) {
+                    PluginRenderBoundary(
+                        pluginId = PLUGIN_ID,
+                        onRenderCrash = { },
+                        dispatchToUiThread = runInline,
+                    ) {
+                        Box(Modifier.fillMaxWidth().height(10.dp).onSizeChanged { measured.set(it) })
+                    }
+                }
+            }
+        }
+
+        val size = measured.get()
+        assertNotNull(size, "the child never measured")
+        assertTrue(
+            size.width > 0,
+            "a fillMaxWidth child under the boundary collapsed instead of filling",
         )
     }
 
