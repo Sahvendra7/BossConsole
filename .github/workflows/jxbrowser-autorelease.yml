@@ -24,6 +24,7 @@ concurrency:
 permissions:
   contents: read
   actions: write
+  issues: write
 
 jobs:
   check-and-dispatch:
@@ -35,9 +36,37 @@ jobs:
       - name: Resolve latest JxBrowser release
         id: release
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASES_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          SOURCE_TOKEN: ${{ github.token }}
           TARGET_VERSION: ${{ inputs.target_version }}
         run: bash .github/scripts/check-jxbrowser-release.sh
+
+      - name: Report repeated release failures
+        if: steps.release.outputs.reason == 'release_repeatedly_failing'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.latest_version }}
+        run: |
+          set -euo pipefail
+          issue_title="JxBrowser $VERSION auto-release is repeatedly failing"
+          issues="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$issue_title in:title" \
+            --json number,title)"
+          issue_number="$(jq -r --arg title "$issue_title" \
+            'first(.[] | select(.title == $title) | .number) // empty' <<< "$issues")"
+          if [[ -n "$issue_number" ]]; then
+            echo "Issue #$issue_number already tracks this failure."
+            exit 0
+          fi
+
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$issue_title" \
+            --body "The three most recent automated Chromium branding runs for JxBrowser $VERSION failed. Hourly retries are paused to avoid repeatedly running the full platform matrix.
+
+          Inspect the failed runs, fix the underlying problem, then manually run \`build-chromium-branding.yml\` for version \`$VERSION\`. The watcher will resume normally once a complete release exists."
 
       - name: Dispatch Chromium branding
         if: steps.release.outputs.should_dispatch == 'true' && (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
