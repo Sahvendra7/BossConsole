@@ -1,19 +1,85 @@
 name: Build BOSS-Branded Chromium
 
+run-name: BOSS Chromium for JxBrowser ${{ inputs.jxbrowser_version }}
+
 on:
   workflow_dispatch:
     inputs:
       jxbrowser_version:
-        description: 'JxBrowser version (e.g., 9.3.0)'
+        description: 'JxBrowser version (e.g., 9.4.0)'
         required: true
-        default: '9.3.0'
+      force_rebuild:
+        description: 'Replace an already-complete release for this version'
+        type: boolean
+        default: false
+
+concurrency:
+  group: jxbrowser-branding-${{ inputs.jxbrowser_version }}
+  cancel-in-progress: false
 
 env:
-  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '9.3.0' }}
+  JXBROWSER_VERSION: ${{ inputs.jxbrowser_version }}
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.release.outputs.should_build }}
+    steps:
+      - name: Check for a complete published release
+        id: release
+        env:
+          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE_REBUILD" == "true" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Force rebuild requested."
+            exit 0
+          fi
+
+          tag="chromium-v$JXBROWSER_VERSION"
+          required=(
+            boss-chromium-macos-arm64.zip
+            boss-chromium-macos-x64.zip
+            boss-chromium-windows-x64.zip
+            boss-chromium-linux-x64.zip
+            boss-chromium-linux-arm64.zip
+          )
+          release_error="$(mktemp)"
+          trap 'rm -f "$release_error"' EXIT
+          if release_json="$(gh release view "$tag" \
+            --repo risa-labs-inc/BossConsole-Releases \
+            --json isDraft,assets 2>"$release_error")"; then
+            if [[ "$(jq -r '.isDraft' <<< "$release_json")" == "false" ]]; then
+              complete=true
+              for asset in "${required[@]}"; do
+                if ! jq -e --arg asset "$asset" \
+                  '.assets[] | select(.name == $asset)' <<< "$release_json" >/dev/null; then
+                  complete=false
+                  echo "::warning::$tag is missing $asset and will be rebuilt"
+                  break
+                fi
+              done
+              if [[ "$complete" == "true" ]]; then
+                echo "should_build=false" >> "$GITHUB_OUTPUT"
+                echo "$tag is already complete; nothing to rebuild."
+                exit 0
+              fi
+            fi
+          elif ! grep -qiE 'release not found|HTTP 404|Not Found' "$release_error"; then
+            echo "::error::Could not check $tag in BossConsole-Releases"
+            cat "$release_error" >&2
+            exit 1
+          fi
+
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+
   # Build the Chromium branding tool first
   build-branding-tool:
+    needs: preflight
+    if: needs.preflight.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Chromium-Branding Tool
@@ -1105,25 +1171,44 @@ jobs:
         with:
           path: artifacts
 
-      - name: List artifacts
+      - name: Validate release artifacts
         run: |
+          set -euo pipefail
           echo "Downloaded artifacts:"
           find artifacts -type f -name "*.zip" -exec ls -la {} \;
 
-      - name: Upload to BossConsole-Releases
+          required=(
+            boss-chromium-macos-arm64.zip
+            boss-chromium-macos-x64.zip
+            boss-chromium-windows-x64.zip
+            boss-chromium-linux-x64.zip
+            boss-chromium-linux-arm64.zip
+          )
+          for asset in "${required[@]}"; do
+            if [[ -z "$(find artifacts -type f -name "$asset" -print -quit)" ]]; then
+              echo "::error::Required Chromium archive is missing: $asset"
+              exit 1
+            fi
+          done
+
+      # Stage the GitHub release as a draft. It becomes the public completion
+      # marker only after every required archive and the Supabase mirror succeed.
+      - name: Stage draft release
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
+          set -euo pipefail
           TAG="chromium-v${{ env.JXBROWSER_VERSION }}"
 
-          # Delete existing release if present
+          # Remove a draft/partial release from an earlier failed attempt. A
+          # complete public release reaches this step only with force_rebuild.
           gh release delete "$TAG" \
             --repo risa-labs-inc/BossConsole-Releases \
             --yes 2>/dev/null || true
 
-          # Create new release
           gh release create "$TAG" \
             --repo risa-labs-inc/BossConsole-Releases \
+            --draft \
             --title "BOSS Chromium v${{ env.JXBROWSER_VERSION }}" \
             --notes "BOSS-branded Chromium binaries for JxBrowser ${{ env.JXBROWSER_VERSION }}
 
@@ -1144,30 +1229,45 @@ jobs:
           These binaries are automatically bundled with BOSS releases.
           The \`executable.name\` file must be preserved for JxBrowser."
 
-          # Upload all artifacts
           for zip in artifacts/*/boss-chromium-*.zip; do
             if [ -f "$zip" ]; then
               echo "Uploading: $zip"
               gh release upload "$TAG" "$zip" \
                 --repo risa-labs-inc/BossConsole-Releases \
-                --clobber || echo "Failed to upload $zip"
+                --clobber
             fi
           done
 
-          echo "Release URL: https://github.com/risa-labs-inc/BossConsole-Releases/releases/tag/$TAG"
+          required=(
+            boss-chromium-macos-arm64.zip
+            boss-chromium-macos-x64.zip
+            boss-chromium-windows-x64.zip
+            boss-chromium-linux-x64.zip
+            boss-chromium-linux-arm64.zip
+          )
+          uploaded="$(gh release view "$TAG" \
+            --repo risa-labs-inc/BossConsole-Releases \
+            --json assets --jq '.assets[].name')"
+          for asset in "${required[@]}"; do
+            if ! grep -qx "$asset" <<< "$uploaded"; then
+              echo "::error::Draft release is missing required asset: $asset"
+              exit 1
+            fi
+          done
 
       # Mirror the engine archives to Supabase (app id "boss-chromium" in the shared
       # app_releases table/bucket) so clients download from Supabase first with the
-      # GitHub release above as backup. Large zips go via TUS chunks inside the script
+      # GitHub release as backup. Large zips go via TUS chunks inside the script
       # (Cloudflare caps single requests at ~100 MB).
       - name: Publish to Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
+          set -euo pipefail
           if [[ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-            echo "ℹ️  SUPABASE_SERVICE_ROLE_KEY not set; skipping Supabase publish."
-            exit 0
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY is required for Chromium releases"
+            exit 1
           fi
           export SUPABASE_URL="${SUPABASE_URL:-https://api.risaboss.com}"
 
@@ -1177,3 +1277,15 @@ jobs:
 
           bash scripts/publish-supabase-release.sh \
             boss-chromium "$JXBROWSER_VERSION" stable chromium-assets app-releases
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="chromium-v${{ env.JXBROWSER_VERSION }}"
+          gh release edit "$TAG" \
+            --repo risa-labs-inc/BossConsole-Releases \
+            --draft=false \
+            --latest=false
+          echo "Release URL: https://github.com/risa-labs-inc/BossConsole-Releases/releases/tag/$TAG"

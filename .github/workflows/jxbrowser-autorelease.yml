@@ -1,0 +1,67 @@
+name: JxBrowser Auto-Release
+
+run-name: JxBrowser auto-release${{ inputs.target_version && format(' — {0}', inputs.target_version) || '' }}
+
+on:
+  schedule:
+    # TeamDev releases roughly monthly. Hourly polling gives prompt pickup while
+    # avoiding the busiest top-of-hour Actions scheduling window.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: 'Force a specific JxBrowser version (testing/backfill)'
+        required: false
+      dry_run:
+        description: 'Resolve and validate the release without dispatching a build'
+        type: boolean
+        default: false
+
+concurrency:
+  group: jxbrowser-autorelease
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check-and-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve latest JxBrowser release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_VERSION: ${{ inputs.target_version }}
+        run: bash .github/scripts/check-jxbrowser-release.sh
+
+      - name: Dispatch Chromium branding
+        if: steps.release.outputs.should_dispatch == 'true' && (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JXBROWSER_VERSION: ${{ steps.release.outputs.latest_version }}
+        run: |
+          gh workflow run build-chromium-branding.yml \
+            --ref main \
+            -f jxbrowser_version="$JXBROWSER_VERSION"
+
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.release.outputs.latest_version }}
+          SHOULD_DISPATCH: ${{ steps.release.outputs.should_dispatch }}
+          REASON: ${{ steps.release.outputs.reason }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## JxBrowser auto-release"
+            echo
+            echo "- Candidate: \`${VERSION:-unresolved}\`"
+            echo "- Dispatch required: \`${SHOULD_DISPATCH:-unknown}\`"
+            echo "- Reason: \`${REASON:-check_failed}\`"
+            echo "- Dry run: \`${DRY_RUN:-false}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
