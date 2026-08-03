@@ -395,10 +395,10 @@ internal fun CrashReportDialog(
 
                 if (bodyOverflows) {
                     // Marks the clipped edge. Overlaid rather than stacked below the body so it
-                    // costs no height — see the footer comment.
+                    // costs no layout height — see the footer comment.
                     Divider(
                         color = BossTheme.colors.line,
-                        modifier = Modifier.align(Alignment.BottomCenter),
+                        modifier = Modifier.align(Alignment.BottomStart).testTag(BOUNDARY_RULE_TAG),
                     )
                     VerticalScrollbar(
                         modifier =
@@ -421,6 +421,36 @@ internal fun CrashReportDialog(
 
             // Submit result message
             submitResult?.let { result ->
+                // Keyed on the result, not recomputed per composition: userNotes is read in this
+                // same restartable scope, so every keystroke in the notes field recomposes the
+                // whole dialog — and this runs several regex passes over a string a TLS or proxy
+                // error can make arbitrarily long.
+                val resultMessage =
+                    remember(result) {
+                        when (result) {
+                            is CrashReportService.SubmitResult.Success -> {
+                                if (result.isNewIssue) {
+                                    "Issue created successfully!"
+                                } else {
+                                    "Added to existing issue."
+                                }
+                            }
+
+                            is CrashReportService.SubmitResult.Error -> {
+                                // The text most likely to end up pasted into a public issue, and it
+                                // interpolates a raw exception message.
+                                //
+                                // sanitizeExceptionMessage, not maskUriParams: the latter redacts
+                                // named params inside a `?`/`#` segment, and the case that
+                                // motivates sanitizing here has neither — "Request timeout has
+                                // expired [url=https://…, …]" passed through verbatim. This is also
+                                // what the rest of the window already gets: CrashHandler runs the
+                                // exception message and stack trace through the same function
+                                // before they reach CrashReport.
+                                LogSanitizer.sanitizeExceptionMessage(result.message)
+                            }
+                        }
+                    }
                 Card(
                     backgroundColor =
                         when (result) {
@@ -436,32 +466,7 @@ internal fun CrashReportDialog(
                     // full exception (CrashReportService), which is where it survives.
                     SelectionContainer {
                         Text(
-                            text =
-                                when (result) {
-                                    is CrashReportService.SubmitResult.Success -> {
-                                        if (result.isNewIssue) {
-                                            "Issue created successfully!"
-                                        } else {
-                                            "Added to existing issue."
-                                        }
-                                    }
-
-                                    is CrashReportService.SubmitResult.Error -> {
-                                        // The text most likely to end up pasted into a public
-                                        // issue, and it interpolates a raw exception message.
-                                        //
-                                        // sanitizeExceptionMessage, not maskUriParams: the latter
-                                        // redacts named params inside a `?`/`#` segment, and the
-                                        // case that motivates sanitizing here has neither —
-                                        // "Request timeout has expired [url=https://…, …]" would
-                                        // have passed through verbatim. This is also what the rest
-                                        // of the window already gets: CrashHandler runs the
-                                        // exception message and stack trace through the same
-                                        // function before they reach CrashReport, so the card is no
-                                        // longer the one string held to a weaker standard.
-                                        LogSanitizer.sanitizeExceptionMessage(result.message)
-                                    }
-                                },
+                            text = resultMessage,
                             fontSize = 13.sp,
                             color = BossTheme.colors.onSignal,
                             // This text is the one part of the footer whose length isn't ours: the
@@ -592,6 +597,9 @@ internal fun CrashReportDialog(
 
 /** Present only while the body is clipping content; see `isClipping`. */
 internal const val BODY_SCROLLBAR_TAG = "crash-dialog-body-scrollbar"
+
+/** The rule marking a clipped body edge. Overlaid, so it must never consume layout height. */
+internal const val BOUNDARY_RULE_TAG = "crash-dialog-boundary-rule"
 
 /** Present only while the stack trace pane is clipping content; see `isClipping`. */
 internal const val TRACE_SCROLLBAR_TAG = "crash-dialog-trace-scrollbar"

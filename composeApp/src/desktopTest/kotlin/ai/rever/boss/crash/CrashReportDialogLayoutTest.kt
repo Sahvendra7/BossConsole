@@ -56,6 +56,13 @@ class CrashReportDialogLayoutTest {
          * direction — the alternative, assuming the frame minimum is also the content minimum,
          * validates against headroom no user has.
          */
+
+        /** The stack-trace pane's `heightIn(max = …)` cap. */
+        val TRACE_PANE_CAP = 200.dp
+
+        /** The rule's own 1dp thickness, so "ends at the body's edge" isn't a strict equality. */
+        val RULE_OVERLAY_TOLERANCE = 2.dp
+
         val WORST_CASE_DECORATION_HEIGHT = 40.dp
         val WORST_CASE_DECORATION_WIDTH = 16.dp
     }
@@ -313,21 +320,62 @@ class CrashReportDialogLayoutTest {
             ),
         )
 
+        // The card must render — without this the two negative assertions below would also pass
+        // if the Error branch were dropped or initialSubmitResult stopped being wired through.
+        // This substring also documents what sanitizing is meant to *preserve*.
+        rule.onNodeWithText("Request timeout has expired", substring = true).assertExists()
+
         rule.onNodeWithText("api.risaboss.com", substring = true).assertDoesNotExist()
-        rule.onNodeWithText("crash-report]", substring = true).assertDoesNotExist()
+        // Hyphenated, so it matches only the URL path — the "Failed to submit crash report:" prose
+        // has a space. Not "crash-report]": the fixture has a comma there, so that literal appears
+        // nowhere in the input and the assertion could never fail.
+        rule.onNodeWithText("crash-report", substring = true).assertDoesNotExist()
     }
 
     @Test
-    fun theStackTracePaneScrollsIndependentlyOfTheBody() {
+    fun theStackTracePaneIsCappedAndScrollsWithinThatCap() {
         setDialogAtMinimumWindowSize()
         rule.onNodeWithText("Technical Details").performClick()
         rule.waitForIdle()
 
-        // The other load-bearing behaviour of this layout: the trace is capped and scrolls on its
-        // own state, so 60 frames don't turn the body into an endless scroll. Its thumb is present
-        // (the pane is clipping), and the checkbox below it is still only a body-scroll away.
+        // The other load-bearing behaviour of this layout: 60 frames don't turn the body into an
+        // endless scroll, because the pane is bounded and takes the overflow itself. Both halves
+        // are asserted — a thumb (it is clipping) and a height inside the 200dp cap. Deliberately
+        // not named "independently": a pane wired to bodyScrollState would still satisfy this, and
+        // the scroll states aren't observable from here.
         rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).assertExists()
+        val paneBounds = rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).getUnclippedBoundsInRoot()
+        val paneHeight = paneBounds.bottom - paneBounds.top
+        assertTrue(
+            paneHeight <= TRACE_PANE_CAP,
+            "trace pane grew past its cap: ${paneHeight.value}dp",
+        )
+
+        // And the body still scrolls past it to reach what's below.
         rule.onNodeWithText("Include recent activity logs").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun theBoundaryRuleCostsNoLayoutHeight() {
+        setDialogAtMinimumWindowSize()
+        rule.onNodeWithText("Technical Details").performClick()
+        rule.waitForIdle()
+
+        // The invariant the overlay exists for: the rule lives *inside* the body region, so it
+        // adds nothing to the parent Column's height.
+        //
+        // Measured against the body scrollbar, which fillMaxHeight()s inside the same Box and so
+        // ends exactly at the body's bottom edge. Overlaid, the rule ends there too; as a footer
+        // sibling it would sit a spacer's width below it. Note this is *not* measured as a
+        // rule-to-footer gap — that gap is 16dp in both shapes, so it cannot tell them apart
+        // (verified by control: a sibling rule passes such an assertion).
+        val bodyBottom = rule.onNodeWithTag(BODY_SCROLLBAR_TAG).getUnclippedBoundsInRoot().bottom
+        val ruleBottom = rule.onNodeWithTag(BOUNDARY_RULE_TAG).getUnclippedBoundsInRoot().bottom
+        assertTrue(
+            ruleBottom <= bodyBottom + RULE_OVERLAY_TOLERANCE,
+            "rule ends ${(ruleBottom - bodyBottom).value}dp below the body — it is a sibling " +
+                "consuming layout height, not an overlay",
+        )
     }
 
     @Test
