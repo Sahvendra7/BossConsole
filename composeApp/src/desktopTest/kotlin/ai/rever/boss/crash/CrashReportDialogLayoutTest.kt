@@ -57,14 +57,11 @@ class CrashReportDialogLayoutTest {
          * validates against headroom no user has.
          */
 
-        /** The stack-trace pane's `heightIn(max = …)` cap. */
-        val TRACE_PANE_CAP = 200.dp
+        val WORST_CASE_DECORATION_HEIGHT = 40.dp
+        val WORST_CASE_DECORATION_WIDTH = 16.dp
 
         /** The rule's own 1dp thickness, so "ends at the body's edge" isn't a strict equality. */
         val RULE_OVERLAY_TOLERANCE = 2.dp
-
-        val WORST_CASE_DECORATION_HEIGHT = 40.dp
-        val WORST_CASE_DECORATION_WIDTH = 16.dp
     }
 
     @get:Rule
@@ -243,11 +240,15 @@ class CrashReportDialogLayoutTest {
         // time waitForIdle() returns, measure has assigned maxValue and both forms agree. The
         // sentinel needs a paused clock; see theBodyScrollbarIsAbsentEvenOnTheFirstFrame.
         rule.onNodeWithTag(BODY_SCROLLBAR_TAG).assertDoesNotExist()
+        // The rule shares the gate, so it must be absent too — otherwise a stray line is drawn
+        // across a dialog with nothing clipped.
+        rule.onNodeWithTag(BOUNDARY_RULE_TAG).assertDoesNotExist()
 
         rule.onNodeWithText("Technical Details").performClick()
         rule.waitForIdle()
 
         rule.onNodeWithTag(BODY_SCROLLBAR_TAG).assertExists()
+        rule.onNodeWithTag(BOUNDARY_RULE_TAG).assertExists()
     }
 
     @Test
@@ -344,10 +345,14 @@ class CrashReportDialogLayoutTest {
         // not named "independently": a pane wired to bodyScrollState would still satisfy this, and
         // the scroll states aren't observable from here.
         rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).assertExists()
-        val paneBounds = rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).getUnclippedBoundsInRoot()
+
+        // Measured on the pane itself, not on the scrollbar inside it: the thumb fills the height
+        // *within* the pane's 8dp padding, so asserting on it would carry 16dp of slack and pass a
+        // cap that had drifted to ~216dp. TRACE_PANE_MAX_HEIGHT is the production constant.
+        val paneBounds = rule.onNodeWithTag(TRACE_PANE_TAG).getUnclippedBoundsInRoot()
         val paneHeight = paneBounds.bottom - paneBounds.top
         assertTrue(
-            paneHeight <= TRACE_PANE_CAP,
+            paneHeight <= TRACE_PANE_MAX_HEIGHT,
             "trace pane grew past its cap: ${paneHeight.value}dp",
         )
 

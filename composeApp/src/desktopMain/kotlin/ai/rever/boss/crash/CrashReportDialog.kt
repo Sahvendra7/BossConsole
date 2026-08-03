@@ -282,7 +282,8 @@ internal fun CrashReportDialog(
                                             modifier =
                                                 Modifier
                                                     .fillMaxWidth()
-                                                    .heightIn(max = 200.dp)
+                                                    .heightIn(max = TRACE_PANE_MAX_HEIGHT)
+                                                    .testTag(TRACE_PANE_TAG)
                                                     .background(
                                                         BossTheme.colors.panel,
                                                         RoundedCornerShape(4.dp),
@@ -395,7 +396,10 @@ internal fun CrashReportDialog(
 
                 if (bodyOverflows) {
                     // Marks the clipped edge. Overlaid rather than stacked below the body so it
-                    // costs no layout height — see the footer comment.
+                    // costs no layout height — see the footer comment. Same *position* as the old
+                    // sibling rule (the body is at its cap, so the ~17dp freed from the footer goes
+                    // straight back to it), but body content now runs right up to the rule instead
+                    // of leaving a 16dp gap above it.
                     Divider(
                         color = BossTheme.colors.line,
                         modifier = Modifier.align(Alignment.BottomStart).testTag(BOUNDARY_RULE_TAG),
@@ -447,6 +451,14 @@ internal fun CrashReportDialog(
                                 // what the rest of the window already gets: CrashHandler runs the
                                 // exception message and stack trace through the same function
                                 // before they reach CrashReport.
+                                //
+                                // Trade accepted: [PATH] takes the host with it, so a DNS, proxy or
+                                // endpoint failure no longer names the endpoint *here* — only in
+                                // the log. The diagnostic half survives ("Request timeout has
+                                // expired", and request_timeout=… since neither `request` nor
+                                // `timeout` marks a secret), which is what makes this narrower than
+                                // a blunt redaction. A blank message also renders "[no message]"
+                                // rather than an empty card.
                                 LogSanitizer.sanitizeExceptionMessage(result.message)
                             }
                         }
@@ -600,6 +612,21 @@ internal const val BODY_SCROLLBAR_TAG = "crash-dialog-body-scrollbar"
 
 /** The rule marking a clipped body edge. Overlaid, so it must never consume layout height. */
 internal const val BOUNDARY_RULE_TAG = "crash-dialog-boundary-rule"
+
+/** The bounded stack-trace viewport. Tagged so a test can measure the cap itself, not its inner content. */
+internal const val TRACE_PANE_TAG = "crash-dialog-trace-pane"
+
+/**
+ * Height cap on the stack-trace viewport. Bounded so a deep trace takes its own overflow instead of
+ * making the body an endless scroll. Shared with the test rather than duplicated, so moving the cap
+ * can't leave an assertion validating the old number.
+ *
+ * Do not remove it as cosmetic: this pane's `verticalScroll` sits inside the body's, which hands
+ * down an unbounded max height. The `heightIn` is what bounds it, and without it the dialog throws
+ * "Vertically scrollable component was measured with an infinity maximum height constraints"
+ * (confirmed by deleting it — eight tests fail on that, not on a size assertion).
+ */
+internal val TRACE_PANE_MAX_HEIGHT = 200.dp
 
 /** Present only while the stack trace pane is clipping content; see `isClipping`. */
 internal const val TRACE_SCROLLBAR_TAG = "crash-dialog-trace-scrollbar"
