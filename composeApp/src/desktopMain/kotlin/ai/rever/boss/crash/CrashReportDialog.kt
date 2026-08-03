@@ -77,7 +77,9 @@ fun CrashReportDialog(
     val bodyScrollState = rememberScrollState()
 
     // Hoisted out of the collapsible content below, so the trace keeps its scroll position
-    // across a collapse/expand cycle instead of snapping back to the top.
+    // across a collapse/expand cycle instead of snapping back to the top. Consequence: while
+    // collapsed its maxValue holds a stale value from when the pane was last measured, so
+    // `traceOverflows` is only meaningful — and is only read — inside that content.
     val stackTraceScrollState = rememberScrollState()
 
     // Whether each region is clipping content, which gates its scrollbar (and its gutter).
@@ -104,6 +106,10 @@ fun CrashReportDialog(
                 hoverColor = thumbHoverColor,
             )
         }
+
+    // Derived from the thumb it makes room for, so restyling the scrollbar can't leave it
+    // overlapping text.
+    val scrollbarGutter = scrollbarStyle.thickness + 4.dp
 
     // Render directly in the window (no Dialog wrapper needed since this is shown in its own JFrame)
     Card(
@@ -159,7 +165,7 @@ fun CrashReportDialog(
                             .fillMaxWidth()
                             .verticalScroll(bodyScrollState)
                             // Leave room for the scrollbar only when one is drawn
-                            .padding(end = if (bodyOverflows) 12.dp else 0.dp),
+                            .padding(end = if (bodyOverflows) scrollbarGutter else 0.dp),
                 ) {
                     // Error summary
                     Card(
@@ -278,7 +284,7 @@ fun CrashReportDialog(
                                                 modifier =
                                                     Modifier
                                                         .verticalScroll(stackTraceScrollState)
-                                                        .padding(end = if (traceOverflows) 10.dp else 0.dp),
+                                                        .padding(end = if (traceOverflows) scrollbarGutter else 0.dp),
                                             )
                                             if (traceOverflows) {
                                                 VerticalScrollbar(

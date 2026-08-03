@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -15,6 +16,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -32,6 +34,15 @@ import kotlin.test.assertTrue
  * `assertIsDisplayed` would pass on a broken layout.
  */
 class CrashReportDialogLayoutTest {
+    private companion object {
+        /**
+         * How far the footer may sit below the content it follows. Correct is ~30dp (a 16dp spacer
+         * plus the checkbox row's padding); a `weight(1f)` regression measures ~271dp. The
+         * threshold sits between those, far from both — it is slack, not a tuned value.
+         */
+        private val MAX_FOOTER_GAP = 80.dp
+    }
+
     @get:Rule
     val rule = createComposeRule()
 
@@ -106,6 +117,27 @@ class CrashReportDialogLayoutTest {
     }
 
     @Test
+    fun footerButtonsAreWhollyOnScreenNotMerelyIntersectingIt() {
+        setDialogAtMinimumWindowSize()
+
+        rule.onNodeWithText("Technical Details").performClick()
+        rule.waitForIdle()
+
+        // assertIsDisplayed() only requires a node's *clipped* bounds to be non-empty, so a button
+        // hanging most of the way off an edge still satisfies it. Comparing clipped against
+        // unclipped bounds is what actually rules that out — cheap, and it closes the one soft spot
+        // in the assertions above.
+        for (label in listOf("Clean Data & Restart", "Don't Send", "Report Issue")) {
+            val node = rule.onNodeWithText(label)
+            assertEquals(
+                node.getUnclippedBoundsInRoot(),
+                node.getBoundsInRoot(),
+                "\"$label\" is partially outside the window",
+            )
+        }
+    }
+
+    @Test
     fun bodyContentBelowTheFoldIsReachableByScrolling() {
         setDialogAtMinimumWindowSize()
 
@@ -151,7 +183,7 @@ class CrashReportDialogLayoutTest {
 
         val gap = footerTop - contentBottom
         assertTrue(
-            gap < 80.dp,
+            gap < MAX_FOOTER_GAP,
             "Footer should follow the content when it fits, but sat ${gap.value}dp below it — " +
                 "the body is claiming space it does not need (regression to plain weight(1f)?)",
         )

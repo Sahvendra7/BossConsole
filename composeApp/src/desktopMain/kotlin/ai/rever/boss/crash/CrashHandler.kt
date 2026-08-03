@@ -465,9 +465,12 @@ object CrashHandler {
     }
 
     /**
-     * Size of the crash window, in px. Exposed because [CrashReportDialog]'s layout guarantees
-     * are only meaningful against the real window — `CrashReportDialogLayoutTest` asserts them at
-     * these exact sizes, and a test that hardcoded its own copies would silently stop testing the
+     * Size of the crash window, in density-independent units — AWT user space here, which
+     * `CrashReportDialogLayoutTest` reads directly as `dp`. Do not scale by density at either
+     * site; the point is that both describe the same window.
+     *
+     * Exposed because [CrashReportDialog]'s layout guarantees are only meaningful against the
+     * real window, and a test holding its own hardcoded copies would silently stop testing the
      * shipped window the moment these changed.
      */
     internal const val WINDOW_PREFERRED_WIDTH = 550
