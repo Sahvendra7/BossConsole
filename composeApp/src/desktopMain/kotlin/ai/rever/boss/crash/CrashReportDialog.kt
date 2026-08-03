@@ -82,15 +82,19 @@ fun CrashReportDialog(
     // `traceOverflows` is only meaningful — and is only read — inside that content.
     val stackTraceScrollState = rememberScrollState()
 
-    // Whether each region is clipping content, which gates its scrollbar (and its gutter).
+    // Whether each region is clipping content, which gates its scrollbar — and, for the body, the
+    // rule above the footer.
     //
-    // `maxValue` starts at Int.MAX_VALUE and is only assigned during measure, so a bare
-    // `> 0` reports "overflowing" on the first composition, before anything is measured —
-    // and that answer is self-reinforcing, because reserving the gutter narrows the content
-    // and makes it taller. A dialog whose content lands within a hair of fitting would then
-    // settle into the scrolling branch it did not need. Excluding the sentinel keeps the
-    // first frame honest; derivedStateOf keeps a settling `maxValue` from recomposing the
-    // whole dialog when the answer hasn't actually flipped.
+    // `maxValue` starts at Int.MAX_VALUE and is only assigned during measure, so a bare `> 0`
+    // reports "overflowing" on the first composition, before anything has been measured. Excluding
+    // the sentinel keeps that first frame honest; derivedStateOf keeps a settling `maxValue` from
+    // recomposing the whole dialog when the answer hasn't actually flipped.
+    //
+    // Note the one remaining feedback path: `bodyOverflows` adds the rule and its spacer to the
+    // footer, which takes ~17dp from the body, which can only make it *more* likely to overflow.
+    // Monotone, so it cannot oscillate — but it can latch, so content within ~17dp of fitting may
+    // keep its scrollbar after the details collapse again. That is why nothing gated on this may
+    // ever change the body's *width*: narrower is taller, and a second monotone path compounds it.
     val bodyOverflows by remember { derivedStateOf { bodyScrollState.isClipping() } }
     val traceOverflows by remember { derivedStateOf { stackTraceScrollState.isClipping() } }
 
@@ -153,6 +157,13 @@ fun CrashReportDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // The body scrollbar overlays this content rather than reserving a gutter beside it.
+            // A gutter would keep the body's right edge from lining up with the footer's, and if
+            // it were gated on overflow it would also feed back into the measurement deciding it:
+            // narrower content is taller content, so overflow would latch on once entered. Nothing
+            // in the body renders hard against its right edge (every card and field has its own
+            // padding), so an overlaid thumb costs nothing.
+            //
             // Scrollable body — capped at the space left over by the header and footer, so
             // anything that grows (expanded stack trace, long exception message) scrolls here
             // instead of pushing the action buttons past the bottom of the window.
@@ -160,12 +171,7 @@ fun CrashReportDialog(
             // body stays short and the footer sits right below it, as it did before the cap.
             Box(modifier = Modifier.weight(1f, fill = false).fillMaxWidth()) {
                 Column(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(bodyScrollState)
-                            // Leave room for the scrollbar only when one is drawn
-                            .padding(end = if (bodyOverflows) scrollbarGutter else 0.dp),
+                    modifier = Modifier.fillMaxWidth().verticalScroll(bodyScrollState),
                 ) {
                     // Error summary
                     Card(
@@ -284,7 +290,12 @@ fun CrashReportDialog(
                                                 modifier =
                                                     Modifier
                                                         .verticalScroll(stackTraceScrollState)
-                                                        .padding(end = if (traceOverflows) scrollbarGutter else 0.dp),
+                                                        // Unconditional here, unlike the body:
+                                                        // trace lines *do* run to the edge, so the
+                                                        // thumb may not overlay them — and inside
+                                                        // this panel a permanent inset has no
+                                                        // alignment reference to break.
+                                                        .padding(end = scrollbarGutter),
                                             )
                                             if (traceOverflows) {
                                                 VerticalScrollbar(
@@ -402,32 +413,36 @@ fun CrashReportDialog(
                     shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text =
-                            when (result) {
-                                is CrashReportService.SubmitResult.Success -> {
-                                    if (result.isNewIssue) {
-                                        "Issue created successfully!"
-                                    } else {
-                                        "Added to existing issue."
+                    // Selectable because the ellipsis can hide the tail of a failure reason, and
+                    // pasting it somewhere is usually the user's next move.
+                    SelectionContainer {
+                        Text(
+                            text =
+                                when (result) {
+                                    is CrashReportService.SubmitResult.Success -> {
+                                        if (result.isNewIssue) {
+                                            "Issue created successfully!"
+                                        } else {
+                                            "Added to existing issue."
+                                        }
                                     }
-                                }
 
-                                is CrashReportService.SubmitResult.Error -> {
-                                    result.message
-                                }
-                            },
-                        fontSize = 13.sp,
-                        color = BossTheme.colors.onSignal,
-                        // This text is the one part of the footer whose length isn't ours: the
-                        // network failures interpolate `e.message` (CrashReportService), which a
-                        // TLS or proxy error can make arbitrarily long. Unbounded, it would grow
-                        // the footer and squeeze the body — re-creating, one level up, the exact
-                        // overflow this layout exists to prevent.
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(12.dp),
-                    )
+                                    is CrashReportService.SubmitResult.Error -> {
+                                        result.message
+                                    }
+                                },
+                            fontSize = 13.sp,
+                            color = BossTheme.colors.onSignal,
+                            // This text is the one part of the footer whose length isn't ours: the
+                            // network failures interpolate `e.message` (CrashReportService), which
+                            // a TLS or proxy error can make arbitrarily long. Unbounded, it would
+                            // grow the footer and squeeze the body — re-creating, one level up, the
+                            // exact overflow this layout exists to prevent.
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }

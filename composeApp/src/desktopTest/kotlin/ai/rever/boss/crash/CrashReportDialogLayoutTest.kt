@@ -22,8 +22,11 @@ import kotlin.test.assertTrue
 /**
  * Layout guarantees for [CrashReportDialog] at the real crash window's sizes.
  *
- * The dialog is hosted in a fixed JFrame (`CrashHandler.showCrashDialogWindow`), 550x700 preferred
- * and 450x500 minimum. A crash report is a lot of content for that box, and expanding "Technical
+ * The dialog is hosted in a JFrame (`CrashHandler.showCrashDialogWindow`) whose *content pane* is
+ * 550x700 preferred and 450x500 minimum. Those constants describe the box the dialog is laid out
+ * in, not the decorated frame around it, so the sizes below are what the dialog really gets.
+ *
+ * A crash report is a lot of content for that box, and expanding "Technical
  * Details" adds ~250dp more — so a body laid out without a scroll region pushes "Report Issue" and
  * "Don't Send" below the bottom edge, where they cannot be clicked and the crash can neither be
  * reported nor dismissed. These tests pin the three properties that keep that from happening:
@@ -94,11 +97,11 @@ class CrashReportDialogLayoutTest {
         }
     }
 
-    /** The tightest real case — the JFrame cannot be resized below this. */
+    /** The tightest real case — the content pane is never smaller than this. */
     private fun setDialogAtMinimumWindowSize() =
         setDialogInWindow(
-            CrashHandler.WINDOW_MIN_WIDTH.dp,
-            CrashHandler.WINDOW_MIN_HEIGHT.dp,
+            CrashHandler.CONTENT_MIN_WIDTH.dp,
+            CrashHandler.CONTENT_MIN_HEIGHT.dp,
         )
 
     @Test
@@ -155,8 +158,8 @@ class CrashReportDialogLayoutTest {
     @Test
     fun collapsedDialogFitsWithoutScrollingAtThePreferredWindowSize() {
         setDialogInWindow(
-            CrashHandler.WINDOW_PREFERRED_WIDTH.dp,
-            CrashHandler.WINDOW_PREFERRED_HEIGHT.dp,
+            CrashHandler.CONTENT_PREFERRED_WIDTH.dp,
+            CrashHandler.CONTENT_PREFERRED_HEIGHT.dp,
         )
 
         // Note the absent performScrollTo: at the preferred size a collapsed report fits, and
@@ -169,8 +172,8 @@ class CrashReportDialogLayoutTest {
     @Test
     fun collapsedFooterSitsBelowTheContentRatherThanAtTheWindowBottom() {
         setDialogInWindow(
-            CrashHandler.WINDOW_PREFERRED_WIDTH.dp,
-            CrashHandler.WINDOW_PREFERRED_HEIGHT.dp,
+            CrashHandler.CONTENT_PREFERRED_WIDTH.dp,
+            CrashHandler.CONTENT_PREFERRED_HEIGHT.dp,
         )
 
         // `weight(1f, fill = false)` is what keeps the body's height cap from also being a floor.

@@ -465,18 +465,25 @@ object CrashHandler {
     }
 
     /**
-     * Size of the crash window, in density-independent units — AWT user space here, which
-     * `CrashReportDialogLayoutTest` reads directly as `dp`. Do not scale by density at either
-     * site; the point is that both describe the same window.
+     * Size of the space [CrashReportDialog] is laid out in — the **content pane**, not the window
+     * frame. In AWT user-space units, which `CrashReportDialogLayoutTest` reads directly as `dp`;
+     * do not scale by density at either site.
      *
-     * Exposed because [CrashReportDialog]'s layout guarantees are only meaningful against the
-     * real window, and a test holding its own hardcoded copies would silently stop testing the
-     * shipped window the moment these changed.
+     * These are applied to the `ComposePanel` and the frame is derived from it by `pack()`, rather
+     * than the other way round, so that they describe exactly the box the dialog gets. Setting
+     * them on the decorated frame instead would silently hand the dialog less than it asked for —
+     * measured at 32px of title bar on macOS, more on Windows and Linux — which is the same order
+     * as the "buttons just below the edge" symptom these numbers exist to bound. The test would
+     * then be validating against headroom no user has.
+     *
+     * Exposed because the dialog's layout guarantees are only meaningful against the real window,
+     * and a test holding its own hardcoded copies would silently stop testing the shipped window
+     * the moment these changed.
      */
-    internal const val WINDOW_PREFERRED_WIDTH = 550
-    internal const val WINDOW_PREFERRED_HEIGHT = 700
-    internal const val WINDOW_MIN_WIDTH = 450
-    internal const val WINDOW_MIN_HEIGHT = 500
+    internal const val CONTENT_PREFERRED_WIDTH = 550
+    internal const val CONTENT_PREFERRED_HEIGHT = 700
+    internal const val CONTENT_MIN_WIDTH = 450
+    internal const val CONTENT_MIN_HEIGHT = 500
 
     /**
      * Show the crash dialog in a separate AWT/Swing window.
@@ -487,10 +494,11 @@ object CrashHandler {
         try {
             val frame = JFrame("BOSS - Crash Report")
             frame.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
-            frame.preferredSize = Dimension(WINDOW_PREFERRED_WIDTH, WINDOW_PREFERRED_HEIGHT)
-            frame.minimumSize = Dimension(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
 
             val composePanel = ComposePanel()
+            // Sized here rather than on the frame so the dialog gets these dimensions exactly;
+            // pack() then derives the frame by adding the decoration insets.
+            composePanel.preferredSize = Dimension(CONTENT_PREFERRED_WIDTH, CONTENT_PREFERRED_HEIGHT)
             composePanel.setContent {
                 CrashReportDialog(
                     crashReport = report,
@@ -521,6 +529,17 @@ object CrashHandler {
 
             frame.contentPane.add(composePanel)
             frame.pack()
+
+            // The minimum applies to the frame, so express the content minimum in frame terms.
+            // Insets are only known after pack() and differ per platform, so computing them here
+            // beats a hardcoded worst-case allowance.
+            val insets = frame.insets
+            frame.minimumSize =
+                Dimension(
+                    CONTENT_MIN_WIDTH + insets.left + insets.right,
+                    CONTENT_MIN_HEIGHT + insets.top + insets.bottom,
+                )
+
             frame.setLocationRelativeTo(null) // Center on screen
             frame.isVisible = true
 
