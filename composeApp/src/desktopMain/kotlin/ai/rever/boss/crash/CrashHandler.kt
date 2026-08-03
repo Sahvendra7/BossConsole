@@ -44,6 +44,33 @@ import javax.swing.WindowConstants
 object CrashHandler {
     private val logger = BossLogger.forComponent("CrashHandler")
 
+    /**
+     * Preferred size of the space [CrashReportDialog] is laid out in — the **content pane**, in
+     * AWT user-space units. Applied to the `ComposePanel`, so `pack()` derives the frame from it
+     * and the dialog gets these dimensions rather than these dimensions minus a title bar.
+     *
+     * Deliberately *not* used to derive the frame minimum below. Doing that needs decoration
+     * insets, which are not reliably known until the window manager has reparented the window —
+     * and reading them at any point in this method is a race on X11. Rather than chase that with
+     * deferred re-packs inside the one code path that runs when the app is already broken, the
+     * minimum stays in frame terms: a content pane a title bar short of [FRAME_MIN_HEIGHT] is
+     * something this dialog now handles by scrolling, which is the entire point of the layout.
+     */
+    internal const val CONTENT_PREFERRED_WIDTH = 550
+
+    /** Height companion to [CONTENT_PREFERRED_WIDTH]. */
+    internal const val CONTENT_PREFERRED_HEIGHT = 700
+
+    /**
+     * Smallest the crash **window** may be resized to, decorations included. The content pane is
+     * therefore this minus the decorations; `CrashReportDialogLayoutTest` derives a deliberately
+     * conservative content box from these rather than assuming the two are equal.
+     */
+    internal const val FRAME_MIN_WIDTH = 450
+
+    /** Height companion to [FRAME_MIN_WIDTH]. */
+    internal const val FRAME_MIN_HEIGHT = 500
+
     /** Where contained (non-fatal, recovered) reports are written, under the BOSS data dir. */
     private const val CONTAINED_REPORT_DIR = "crash-reports"
 
@@ -465,65 +492,6 @@ object CrashHandler {
     }
 
     /**
-     * Size of the space [CrashReportDialog] is laid out in — the **content pane**, not the window
-     * frame. In AWT user-space units, which `CrashReportDialogLayoutTest` reads directly as `dp`;
-     * do not scale by density at either site.
-     *
-     * These are applied to the `ComposePanel` and the frame is derived from it by `pack()`, rather
-     * than the other way round, so that they describe exactly the box the dialog gets. Setting
-     * them on the decorated frame instead would silently hand the dialog less than it asked for —
-     * measured at 32px of title bar on macOS, more on Windows and Linux — which is the same order
-     * as the "buttons just below the edge" symptom these numbers exist to bound. The test would
-     * then be validating against headroom no user has.
-     *
-     * Holding that guarantee needs insets from a *shown* window, not merely a packed one; see
-     * [applyContentSizeToFrame].
-     *
-     * Exposed because the dialog's layout guarantees are only meaningful against the real window,
-     * and a test holding its own hardcoded copies would silently stop testing the shipped window
-     * the moment these changed.
-     */
-    internal const val CONTENT_PREFERRED_WIDTH = 550
-
-    /** Height companion to [CONTENT_PREFERRED_WIDTH]; see it for what these describe. */
-    internal const val CONTENT_PREFERRED_HEIGHT = 700
-
-    /** Narrowest the dialog is ever laid out in; see [CONTENT_PREFERRED_WIDTH]. */
-    internal const val CONTENT_MIN_WIDTH = 450
-
-    /** Shortest the dialog is ever laid out in; see [CONTENT_PREFERRED_WIDTH]. */
-    internal const val CONTENT_MIN_HEIGHT = 500
-
-    /**
-     * Translate the CONTENT_* sizes into frame terms, using insets read from a **shown** window.
-     *
-     * The minimum is a frame property, so the content minimum has to carry the decorations. And if
-     * the insets were unknown when [JFrame.pack] ran — the X11 case — the frame was sized as if
-     * they were zero, leaving the content pane short by exactly the amount the decorations take.
-     * Re-packing with the now-known insets restores the content to its preferred size; where the
-     * first pack was already right, the guard makes this a no-op rather than a second resize.
-     */
-    private fun applyContentSizeToFrame(
-        frame: JFrame,
-        composePanel: ComposePanel,
-    ) {
-        val insets = frame.insets
-        frame.minimumSize =
-            Dimension(
-                CONTENT_MIN_WIDTH + insets.left + insets.right,
-                CONTENT_MIN_HEIGHT + insets.top + insets.bottom,
-            )
-
-        val shortOfPreferred =
-            composePanel.width < CONTENT_PREFERRED_WIDTH ||
-                composePanel.height < CONTENT_PREFERRED_HEIGHT
-        if (shortOfPreferred) {
-            frame.pack()
-            frame.setLocationRelativeTo(null)
-        }
-    }
-
-    /**
      * Show the crash dialog in a separate AWT/Swing window.
      * This window is independent of the main Compose UI, so it will display
      * even when the main UI thread has crashed.
@@ -565,18 +533,15 @@ object CrashHandler {
                 )
             }
 
+            frame.minimumSize = Dimension(FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT)
             frame.contentPane.add(composePanel)
             frame.pack()
             frame.setLocationRelativeTo(null) // Center on screen
             frame.isVisible = true
 
-            // Only now are the decoration insets trustworthy. pack() makes the frame displayable,
-            // so getInsets() answers before this point — but on X11 the window has not been
-            // reparented by the window manager yet and the pre-map guess commonly comes back as
-            // zeros. Reading them here instead is correct on every platform, and on the ones where
-            // they were already right (macOS reports 32px of title bar at peer creation) it changes
-            // nothing.
-            applyContentSizeToFrame(frame, composePanel)
+            // Nothing sizing-related runs past this point on purpose: this is the path that runs
+            // when the app is already broken, and it shares a catch that terminates. Cosmetic
+            // sizing must never be able to take the crash report down with it.
 
             // Bring to front
             frame.toFront()

@@ -45,6 +45,17 @@ class CrashReportDialogLayoutTest {
          * threshold sits between those, far from both — it is slack, not a tuned value.
          */
         val MAX_FOOTER_GAP = 80.dp
+
+        /**
+         * Worst-case window decoration, subtracted from `CrashHandler.FRAME_MIN_*` to get a content
+         * box no platform's is smaller than. Measured 32px of title bar on macOS (0 at the sides);
+         * Windows and common Linux WMs run to roughly 31-40 with side borders. Rounding up means
+         * these tests exercise a box *tighter* than anything that ships, which is the safe
+         * direction — the alternative, assuming the frame minimum is also the content minimum,
+         * validates against headroom no user has.
+         */
+        val WORST_CASE_DECORATION_HEIGHT = 40.dp
+        val WORST_CASE_DECORATION_WIDTH = 16.dp
     }
 
     @get:Rule
@@ -100,11 +111,12 @@ class CrashReportDialogLayoutTest {
         }
     }
 
-    /** The tightest real case — the content pane is never smaller than this. */
-    private fun setDialogAtMinimumWindowSize() =
+    /** Tighter than the smallest content pane that ships; see [WORST_CASE_DECORATION_HEIGHT]. */
+    private fun setDialogAtMinimumWindowSize(submitResult: CrashReportService.SubmitResult? = null) =
         setDialogInWindow(
-            CrashHandler.CONTENT_MIN_WIDTH.dp,
-            CrashHandler.CONTENT_MIN_HEIGHT.dp,
+            CrashHandler.FRAME_MIN_WIDTH.dp - WORST_CASE_DECORATION_WIDTH,
+            CrashHandler.FRAME_MIN_HEIGHT.dp - WORST_CASE_DECORATION_HEIGHT,
+            submitResult,
         )
 
     @Test
@@ -234,9 +246,7 @@ class CrashReportDialogLayoutTest {
         // The one path that can squeeze the body from *below*: the submit-result card sits in the
         // pinned footer, and CrashReportService interpolates e.message into it, which a TLS or
         // proxy failure can make arbitrarily long. maxLines caps it; this is that cap's guard.
-        setDialogInWindow(
-            CrashHandler.CONTENT_MIN_WIDTH.dp,
-            CrashHandler.CONTENT_MIN_HEIGHT.dp,
+        setDialogAtMinimumWindowSize(
             CrashReportService.SubmitResult.Error("Failed to submit crash report: " + "boom ".repeat(1000)),
         )
 
@@ -249,6 +259,31 @@ class CrashReportDialogLayoutTest {
                 node.getUnclippedBoundsInRoot(),
                 node.getBoundsInRoot(),
                 "\"$label\" left the window once a long failure message filled the footer",
+            )
+        }
+    }
+
+    @Test
+    fun theSuccessFooterKeepsBothItsRowsOnScreen() {
+        // Success is structurally different from Error: the result card *plus* a second row holding
+        // "Close" — the only configuration with two button rows, and so the tallest footer the
+        // pinned layout has to fit.
+        setDialogAtMinimumWindowSize(
+            CrashReportService.SubmitResult.Success(
+                issueUrl = "https://github.com/risa-labs-inc/BossConsole/issues/1",
+                isNewIssue = true,
+            ),
+        )
+
+        rule.onNodeWithText("Technical Details").performClick()
+        rule.waitForIdle()
+
+        for (label in listOf("Clean Data & Restart", "Close")) {
+            val node = rule.onNodeWithText(label)
+            assertEquals(
+                node.getUnclippedBoundsInRoot(),
+                node.getBoundsInRoot(),
+                "\"$label\" left the window with the success footer's second row present",
             )
         }
     }

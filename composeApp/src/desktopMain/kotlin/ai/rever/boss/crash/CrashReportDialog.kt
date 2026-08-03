@@ -1,6 +1,7 @@
 package ai.rever.boss.crash
 
 import ai.rever.boss.plugin.ui.BossTheme
+import ai.rever.boss.utils.logging.LogSanitizer
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -62,10 +63,10 @@ import kotlinx.coroutines.launch
  *   submit path fill it in; it exists because that path runs through the [CrashReportService]
  *   object, so the result state is otherwise unreachable — and the footer's behaviour under a long
  *   failure message is exactly what the `maxLines` cap below exists to bound. Also makes the
- *   populated footer previewable.
+ *   populated footer previewable. The dialog is `internal`, so this widens nothing externally.
  */
 @Composable
-fun CrashReportDialog(
+internal fun CrashReportDialog(
     crashReport: CrashReport,
     onDismiss: () -> Unit,
     onSubmit: (userNotes: String?, includeLogs: Boolean) -> Unit,
@@ -445,7 +446,11 @@ fun CrashReportDialog(
                                     }
 
                                     is CrashReportService.SubmitResult.Error -> {
-                                        result.message
+                                        // The text most likely to end up pasted into a public
+                                        // issue, and it interpolates a raw exception message —
+                                        // ktor's routinely carry the request URL. The unmasked
+                                        // form still reaches the log, which is where it belongs.
+                                        LogSanitizer.maskUriParams(result.message)
                                     }
                                 },
                             fontSize = 13.sp,
