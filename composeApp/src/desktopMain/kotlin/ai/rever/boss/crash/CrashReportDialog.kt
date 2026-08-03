@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -74,15 +75,35 @@ fun CrashReportDialog(
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
     val bodyScrollState = rememberScrollState()
+
+    // Hoisted out of the collapsible content below, so the trace keeps its scroll position
+    // across a collapse/expand cycle instead of snapping back to the top.
     val stackTraceScrollState = rememberScrollState()
+
+    // Whether each region is clipping content, which gates its scrollbar (and its gutter).
+    //
+    // `maxValue` starts at Int.MAX_VALUE and is only assigned during measure, so a bare
+    // `> 0` reports "overflowing" on the first composition, before anything is measured —
+    // and that answer is self-reinforcing, because reserving the gutter narrows the content
+    // and makes it taller. A dialog whose content lands within a hair of fitting would then
+    // settle into the scrolling branch it did not need. Excluding the sentinel keeps the
+    // first frame honest; derivedStateOf keeps a settling `maxValue` from recomposing the
+    // whole dialog when the answer hasn't actually flipped.
+    val bodyOverflows by remember { derivedStateOf { bodyScrollState.isClipping() } }
+    val traceOverflows by remember { derivedStateOf { stackTraceScrollState.isClipping() } }
 
     // Compose's default scrollbar is black at 12% alpha — invisible against these dark
     // panels, which would make the thumb useless as a "there is more below" cue.
+    val defaultScrollbarStyle = LocalScrollbarStyle.current
+    val thumbColor = BossTheme.colors.textMuted
+    val thumbHoverColor = BossTheme.colors.textSecondary
     val scrollbarStyle =
-        LocalScrollbarStyle.current.copy(
-            unhoverColor = BossTheme.colors.textMuted.copy(alpha = 0.45f),
-            hoverColor = BossTheme.colors.textSecondary,
-        )
+        remember(defaultScrollbarStyle, thumbColor, thumbHoverColor) {
+            defaultScrollbarStyle.copy(
+                unhoverColor = thumbColor.copy(alpha = 0.45f),
+                hoverColor = thumbHoverColor,
+            )
+        }
 
     // Render directly in the window (no Dialog wrapper needed since this is shown in its own JFrame)
     Card(
@@ -131,7 +152,6 @@ fun CrashReportDialog(
             // instead of pushing the action buttons past the bottom of the window.
             // `fill = false` keeps the cap from becoming a floor: when the content is short the
             // body stays short and the footer sits right below it, as it did before the cap.
-            val bodyOverflows = bodyScrollState.maxValue > 0
             Box(modifier = Modifier.weight(1f, fill = false).fillMaxWidth()) {
                 Column(
                     modifier =
@@ -238,7 +258,6 @@ fun CrashReportDialog(
 
                                     // Stack trace — bounded and independently scrollable so a deep
                                     // trace doesn't turn the body into an endless scroll
-                                    val traceOverflows = stackTraceScrollState.maxValue > 0
                                     SelectionContainer {
                                         Box(
                                             modifier =
@@ -394,6 +413,13 @@ fun CrashReportDialog(
                             },
                         fontSize = 13.sp,
                         color = BossTheme.colors.onSignal,
+                        // This text is the one part of the footer whose length isn't ours: the
+                        // network failures interpolate `e.message` (CrashReportService), which a
+                        // TLS or proxy error can make arbitrarily long. Unbounded, it would grow
+                        // the footer and squeeze the body — re-creating, one level up, the exact
+                        // overflow this layout exists to prevent.
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(12.dp),
                     )
                 }
@@ -511,3 +537,12 @@ fun CrashReportDialog(
         }
     }
 }
+
+/**
+ * True when this region has measured content taller than its viewport.
+ *
+ * Deliberately not `maxValue > 0`: [ScrollState.maxValue] is initialised to [Int.MAX_VALUE] and
+ * only assigned during the measure pass, so the bare comparison reports overflow on the first
+ * composition of any content, however short.
+ */
+private fun ScrollState.isClipping(): Boolean = maxValue in 1 until Int.MAX_VALUE

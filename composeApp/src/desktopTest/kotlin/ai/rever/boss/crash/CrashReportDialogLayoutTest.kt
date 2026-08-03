@@ -6,47 +6,46 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertTrue
 
 /**
- * Layout guarantees for [CrashReportDialog] at the crash window's *minimum* size.
+ * Layout guarantees for [CrashReportDialog] at the real crash window's sizes.
  *
- * The dialog is hosted in a fixed JFrame (`CrashHandler.showCrashDialogWindow`) whose minimum
- * size is 450x500. A crash report is a lot of content for that box, and expanding "Technical
- * Details" adds ~250dp more — so a body laid out without a scroll region pushes "Report Issue"
- * and "Don't Send" below the bottom edge, where they cannot be clicked and the crash cannot be
- * reported or dismissed. These tests pin the two properties that prevent that: the footer is
- * pinned, and the body scrolls.
+ * The dialog is hosted in a fixed JFrame (`CrashHandler.showCrashDialogWindow`), 550x700 preferred
+ * and 450x500 minimum. A crash report is a lot of content for that box, and expanding "Technical
+ * Details" adds ~250dp more — so a body laid out without a scroll region pushes "Report Issue" and
+ * "Don't Send" below the bottom edge, where they cannot be clicked and the crash can neither be
+ * reported nor dismissed. These tests pin the three properties that keep that from happening:
+ * the footer is pinned, the body scrolls, and none of it costs anything when the content fits.
  *
- * The window size is reproduced with `clipToBounds()`, because that is what makes off-window
- * content actually undisplayed — without clipping, overflow is merely painted outside the frame
- * and `assertIsDisplayed` would pass on a broken layout.
+ * The window is reproduced with `clipToBounds()`, because that is what makes off-window content
+ * actually undisplayed — without clipping, overflow is merely painted outside the frame and
+ * `assertIsDisplayed` would pass on a broken layout.
  */
 class CrashReportDialogLayoutTest {
     @get:Rule
     val rule = createComposeRule()
 
-    /** The JFrame minimum from `CrashHandler.showCrashDialogWindow` — the tightest real case. */
-    private val windowWidth = 450.dp
-    private val windowHeight = 500.dp
-
     /** Deep enough that the stack trace pane reaches its 200dp cap. */
-    private fun deepCrashReport(): CrashReport {
-        val frames =
-            (1..60).joinToString("\n") { i ->
-                "\tat ai.rever.boss.example.Frame$i.doWork(Frame$i.kt:$i)"
-            }
-        return CrashReport(
+    private val deepCrashReport =
+        CrashReport(
             signature = "test-signature",
             exceptionType = "java.lang.IllegalStateException",
             exceptionMessage = "Something went badly wrong while doing the thing",
-            stackTrace = "java.lang.IllegalStateException: Something went badly wrong\n$frames",
+            stackTrace =
+                "java.lang.IllegalStateException: Something went badly wrong\n" +
+                    (1..60).joinToString("\n") { i ->
+                        "\tat ai.rever.boss.example.Frame$i.doWork(Frame$i.kt:$i)"
+                    },
             systemInfo =
                 SystemInfo(
                     osName = "Mac OS X",
@@ -62,25 +61,34 @@ class CrashReportDialogLayoutTest {
             appInfo = AppInfo(version = "9.9.9", platform = "macos", isDebug = true),
             timestamp = 0L,
         )
-    }
 
     @Composable
     private fun Dialog() {
         CrashReportDialog(
-            crashReport = deepCrashReport(),
+            crashReport = deepCrashReport,
             onDismiss = {},
             onSubmit = { _, _ -> },
             onCleanAndRestart = {},
         )
     }
 
-    private fun setDialogAtMinimumWindowSize() {
+    private fun setDialogInWindow(
+        width: Dp,
+        height: Dp,
+    ) {
         rule.setContent {
-            Box(modifier = Modifier.size(windowWidth, windowHeight).clipToBounds()) {
+            Box(modifier = Modifier.size(width, height).clipToBounds()) {
                 Dialog()
             }
         }
     }
+
+    /** The tightest real case — the JFrame cannot be resized below this. */
+    private fun setDialogAtMinimumWindowSize() =
+        setDialogInWindow(
+            CrashHandler.WINDOW_MIN_WIDTH.dp,
+            CrashHandler.WINDOW_MIN_HEIGHT.dp,
+        )
 
     @Test
     fun actionButtonsStayVisibleWhenTechnicalDetailsAreExpanded() {
@@ -110,5 +118,42 @@ class CrashReportDialogLayoutTest {
 
         // Scrolling the body must not have carried the footer away with it.
         rule.onNodeWithText("Report Issue").assertIsDisplayed()
+    }
+
+    @Test
+    fun collapsedDialogFitsWithoutScrollingAtThePreferredWindowSize() {
+        setDialogInWindow(
+            CrashHandler.WINDOW_PREFERRED_WIDTH.dp,
+            CrashHandler.WINDOW_PREFERRED_HEIGHT.dp,
+        )
+
+        // Note the absent performScrollTo: at the preferred size a collapsed report fits, and
+        // must still fit — nothing may be pushed below the fold to pay for chrome it doesn't need.
+        rule.onNodeWithText("Include recent activity logs").assertIsDisplayed()
+        rule.onNodeWithText("What were you doing when this happened? (optional)").assertIsDisplayed()
+        rule.onNodeWithText("Report Issue").assertIsDisplayed()
+    }
+
+    @Test
+    fun collapsedFooterSitsBelowTheContentRatherThanAtTheWindowBottom() {
+        setDialogInWindow(
+            CrashHandler.WINDOW_PREFERRED_WIDTH.dp,
+            CrashHandler.WINDOW_PREFERRED_HEIGHT.dp,
+        )
+
+        // `weight(1f, fill = false)` is what keeps the body's height cap from also being a floor.
+        // Visibility assertions cannot see the difference — with a plain `weight(1f)` everything
+        // is still displayed, just with the footer stranded at the bottom edge and ~230dp of dead
+        // space above it. Only the geometry shows it, so this measures the geometry.
+        val contentBottom =
+            rule.onNodeWithText("Helps with debugging (logs are sanitized)").getBoundsInRoot().bottom
+        val footerTop = rule.onNodeWithText("Report Issue").getBoundsInRoot().top
+
+        val gap = footerTop - contentBottom
+        assertTrue(
+            gap < 80.dp,
+            "Footer should follow the content when it fits, but sat ${gap.value}dp below it — " +
+                "the body is claiming space it does not need (regression to plain weight(1f)?)",
+        )
     }
 }

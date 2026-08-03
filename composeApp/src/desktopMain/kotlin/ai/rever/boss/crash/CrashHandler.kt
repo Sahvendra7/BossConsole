@@ -465,6 +465,17 @@ object CrashHandler {
     }
 
     /**
+     * Size of the crash window, in px. Exposed because [CrashReportDialog]'s layout guarantees
+     * are only meaningful against the real window — `CrashReportDialogLayoutTest` asserts them at
+     * these exact sizes, and a test that hardcoded its own copies would silently stop testing the
+     * shipped window the moment these changed.
+     */
+    internal const val WINDOW_PREFERRED_WIDTH = 550
+    internal const val WINDOW_PREFERRED_HEIGHT = 700
+    internal const val WINDOW_MIN_WIDTH = 450
+    internal const val WINDOW_MIN_HEIGHT = 500
+
+    /**
      * Show the crash dialog in a separate AWT/Swing window.
      * This window is independent of the main Compose UI, so it will display
      * even when the main UI thread has crashed.
@@ -473,8 +484,8 @@ object CrashHandler {
         try {
             val frame = JFrame("BOSS - Crash Report")
             frame.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
-            frame.preferredSize = Dimension(550, 700)
-            frame.minimumSize = Dimension(450, 500)
+            frame.preferredSize = Dimension(WINDOW_PREFERRED_WIDTH, WINDOW_PREFERRED_HEIGHT)
+            frame.minimumSize = Dimension(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
 
             val composePanel = ComposePanel()
             composePanel.setContent {
