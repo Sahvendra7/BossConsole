@@ -98,11 +98,10 @@ internal fun CrashReportDialog(
     // the sentinel keeps that first frame honest; derivedStateOf keeps a settling `maxValue` from
     // recomposing the whole dialog when the answer hasn't actually flipped.
     //
-    // Note the one remaining feedback path: `bodyOverflows` adds the rule and its spacer to the
-    // footer, which takes ~17dp from the body, which can only make it *more* likely to overflow.
-    // Monotone, so it cannot oscillate — but it can latch, so content within ~17dp of fitting may
-    // keep its scrollbar after the details collapse again. That is why nothing gated on this may
-    // ever change the body's *width*: narrower is taller, and a second monotone path compounds it.
+    // Nothing gated on this may change the body's size, in either axis. Both the scrollbar and the
+    // boundary rule are overlays inside the body for that reason: a gated element that consumed
+    // layout space would feed back into the measurement deciding whether to show it — monotone, so
+    // never oscillating, but able to latch overflow on for content that sits near the boundary.
     val bodyOverflows by remember { derivedStateOf { bodyScrollState.isClipping() } }
     val traceOverflows by remember { derivedStateOf { stackTraceScrollState.isClipping() } }
 
@@ -395,6 +394,12 @@ internal fun CrashReportDialog(
                 }
 
                 if (bodyOverflows) {
+                    // Marks the clipped edge. Overlaid rather than stacked below the body so it
+                    // costs no height — see the footer comment.
+                    Divider(
+                        color = BossTheme.colors.line,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                     VerticalScrollbar(
                         modifier =
                             Modifier
@@ -408,14 +413,10 @@ internal fun CrashReportDialog(
             }
 
             // Pinned footer — the submit result and the action buttons stay visible regardless of
-            // how much the body above has grown or scrolled. The rule is only drawn when the body
-            // is actually clipping something, where it marks the scroll boundary; without it the
-            // footer would look like a stray divider floating in empty space.
-            if (bodyOverflows) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider(color = BossTheme.colors.line)
-            }
-
+            // how much the body above has grown or scrolled. The rule marking the scroll boundary
+            // is drawn as an overlay at the bottom of the body above, not as a sibling here: as a
+            // sibling it took ~17dp from the body, and gating that on bodyOverflows fed back into
+            // the measurement deciding it. Same visual, no layout height, no feedback path.
             Spacer(modifier = Modifier.height(16.dp))
 
             // Submit result message
@@ -447,10 +448,18 @@ internal fun CrashReportDialog(
 
                                     is CrashReportService.SubmitResult.Error -> {
                                         // The text most likely to end up pasted into a public
-                                        // issue, and it interpolates a raw exception message —
-                                        // ktor's routinely carry the request URL. The unmasked
-                                        // form still reaches the log, which is where it belongs.
-                                        LogSanitizer.maskUriParams(result.message)
+                                        // issue, and it interpolates a raw exception message.
+                                        //
+                                        // sanitizeExceptionMessage, not maskUriParams: the latter
+                                        // redacts named params inside a `?`/`#` segment, and the
+                                        // case that motivates sanitizing here has neither —
+                                        // "Request timeout has expired [url=https://…, …]" would
+                                        // have passed through verbatim. This is also what the rest
+                                        // of the window already gets: CrashHandler runs the
+                                        // exception message and stack trace through the same
+                                        // function before they reach CrashReport, so the card is no
+                                        // longer the one string held to a weaker standard.
+                                        LogSanitizer.sanitizeExceptionMessage(result.message)
                                     }
                                 },
                             fontSize = 13.sp,

@@ -23,9 +23,11 @@ import kotlin.test.assertTrue
 /**
  * Layout guarantees for [CrashReportDialog] at the real crash window's sizes.
  *
- * The dialog is hosted in a JFrame (`CrashHandler.showCrashDialogWindow`) whose *content pane* is
- * 550x700 preferred and 450x500 minimum. Those constants describe the box the dialog is laid out
- * in, not the decorated frame around it, so the sizes below are what the dialog really gets.
+ * The dialog is hosted in a JFrame (`CrashHandler.showCrashDialogWindow`). Its *content pane* is
+ * 550x700 preferred — that size is applied to the ComposePanel, so the dialog gets it exactly — but
+ * the 450x500 minimum is a **frame** dimension, decorations included. The content pane at that
+ * minimum is therefore smaller by the title bar, which is why the sizes below subtract
+ * [WORST_CASE_DECORATION_HEIGHT] rather than using the minimum as-is.
  *
  * A crash report is a lot of content for that box, and expanding "Technical
  * Details" adds ~250dp more — so a body laid out without a scroll region pushes "Report Issue" and
@@ -119,6 +121,27 @@ class CrashReportDialogLayoutTest {
             submitResult,
         )
 
+    /**
+     * Asserts each label is entirely within the window, not merely overlapping it.
+     *
+     * `assertIsDisplayed()` only requires a node's *clipped* bounds to be non-empty, so a button
+     * hanging most of the way off an edge satisfies it. Comparing clipped against unclipped bounds
+     * is what actually rules that out.
+     */
+    private fun assertWhollyOnScreen(
+        vararg labels: String,
+        because: String,
+    ) {
+        for (label in labels) {
+            val node = rule.onNodeWithText(label)
+            assertEquals(
+                node.getUnclippedBoundsInRoot(),
+                node.getBoundsInRoot(),
+                "\"$label\" is not wholly on screen: $because",
+            )
+        }
+    }
+
     @Test
     fun actionButtonsStayVisibleWhenTechnicalDetailsAreExpanded() {
         setDialogAtMinimumWindowSize()
@@ -141,18 +164,12 @@ class CrashReportDialogLayoutTest {
         rule.onNodeWithText("Technical Details").performClick()
         rule.waitForIdle()
 
-        // assertIsDisplayed() only requires a node's *clipped* bounds to be non-empty, so a button
-        // hanging most of the way off an edge still satisfies it. Comparing clipped against
-        // unclipped bounds is what actually rules that out — cheap, and it closes the one soft spot
-        // in the assertions above.
-        for (label in listOf("Clean Data & Restart", "Don't Send", "Report Issue")) {
-            val node = rule.onNodeWithText(label)
-            assertEquals(
-                node.getUnclippedBoundsInRoot(),
-                node.getBoundsInRoot(),
-                "\"$label\" is partially outside the window",
-            )
-        }
+        assertWhollyOnScreen(
+            "Clean Data & Restart",
+            "Don't Send",
+            "Report Issue",
+            because = "the expanded details must not push the footer past an edge",
+        )
     }
 
     @Test
@@ -253,14 +270,12 @@ class CrashReportDialogLayoutTest {
         rule.onNodeWithText("Technical Details").performClick()
         rule.waitForIdle()
 
-        for (label in listOf("Clean Data & Restart", "Don't Send", "Report Issue")) {
-            val node = rule.onNodeWithText(label)
-            assertEquals(
-                node.getUnclippedBoundsInRoot(),
-                node.getBoundsInRoot(),
-                "\"$label\" left the window once a long failure message filled the footer",
-            )
-        }
+        assertWhollyOnScreen(
+            "Clean Data & Restart",
+            "Don't Send",
+            "Report Issue",
+            because = "a long failure message filled the footer",
+        )
     }
 
     @Test
@@ -278,13 +293,49 @@ class CrashReportDialogLayoutTest {
         rule.onNodeWithText("Technical Details").performClick()
         rule.waitForIdle()
 
-        for (label in listOf("Clean Data & Restart", "Close")) {
-            val node = rule.onNodeWithText(label)
-            assertEquals(
-                node.getUnclippedBoundsInRoot(),
-                node.getBoundsInRoot(),
-                "\"$label\" left the window with the success footer's second row present",
-            )
-        }
+        assertWhollyOnScreen(
+            "Clean Data & Restart",
+            "Close",
+            because = "the success footer adds a second button row",
+        )
+    }
+
+    @Test
+    fun aSubmitFailureIsSanitizedBeforeItIsShown() {
+        // This card is selectable and the likeliest thing to be pasted into a public issue, and its
+        // text interpolates a raw exception message. maskUriParams — which this originally used —
+        // only redacts named params inside a `?`/`#` segment, so it returned a ktor timeout message
+        // carrying the request URL completely untouched.
+        setDialogAtMinimumWindowSize(
+            CrashReportService.SubmitResult.Error(
+                "Failed to submit crash report: Request timeout has expired " +
+                    "[url=https://api.risaboss.com/functions/v1/crash-report, request_timeout=15000 ms]",
+            ),
+        )
+
+        rule.onNodeWithText("api.risaboss.com", substring = true).assertDoesNotExist()
+        rule.onNodeWithText("crash-report]", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun theStackTracePaneScrollsIndependentlyOfTheBody() {
+        setDialogAtMinimumWindowSize()
+        rule.onNodeWithText("Technical Details").performClick()
+        rule.waitForIdle()
+
+        // The other load-bearing behaviour of this layout: the trace is capped and scrolls on its
+        // own state, so 60 frames don't turn the body into an endless scroll. Its thumb is present
+        // (the pane is clipping), and the checkbox below it is still only a body-scroll away.
+        rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).assertExists()
+        rule.onNodeWithText("Include recent activity logs").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun theTraceScrollbarIsAbsentWhileTheDetailsAreCollapsed() {
+        setDialogAtMinimumWindowSize()
+
+        // Collapsed, the pane isn't composed at all — so this also pins that the hoisted trace
+        // scroll state's stale maxValue never leaks a thumb into the collapsed dialog.
+        rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).assertDoesNotExist()
     }
 }
