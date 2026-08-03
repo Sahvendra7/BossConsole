@@ -452,13 +452,21 @@ internal fun CrashReportDialog(
                                 // exception message and stack trace through the same function
                                 // before they reach CrashReport.
                                 //
-                                // Trade accepted: [PATH] takes the host with it, so a DNS, proxy or
-                                // endpoint failure no longer names the endpoint *here* — only in
-                                // the log. The diagnostic half survives ("Request timeout has
-                                // expired", and request_timeout=… since neither `request` nor
-                                // `timeout` marks a secret), which is what makes this narrower than
-                                // a blunt redaction. A blank message also renders "[no message]"
-                                // rather than an empty card.
+                                // Scope, measured rather than assumed: a host is removed when it
+                                // appears *inside a URL* — filePathPattern swallows everything after
+                                // the scheme colon, which covers ktor's `[url=…]` messages. A bare
+                                // host does not match any location pattern and renders verbatim:
+                                // UnknownHostException.getMessage() is just the hostname, so
+                                // "Failed to submit crash report: proxy.corp.internal" survives
+                                // intact. Harmless for our own public endpoint, not necessarily so
+                                // for a corporate proxy — see #109.
+                                //
+                                // Cost of what it does remove: the endpoint is no longer named
+                                // here, only in the log. The diagnostic half survives ("Request
+                                // timeout has expired", and request_timeout=… since neither
+                                // `request` nor `timeout` marks a secret), which keeps this
+                                // narrower than a blunt redaction. A blank message renders
+                                // "[no message]" where maskUriParams gave "[empty]".
                                 LogSanitizer.sanitizeExceptionMessage(result.message)
                             }
                         }

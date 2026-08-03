@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
+import kotlin.math.abs
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -56,11 +57,14 @@ class CrashReportDialogLayoutTest {
          * direction — the alternative, assuming the frame minimum is also the content minimum,
          * validates against headroom no user has.
          */
-
         val WORST_CASE_DECORATION_HEIGHT = 40.dp
         val WORST_CASE_DECORATION_WIDTH = 16.dp
 
-        /** The rule's own 1dp thickness, so "ends at the body's edge" isn't a strict equality. */
+        /**
+         * dp-to-px rounding slack. Both edges compared are anchored to the same Box — the rule by
+         * `Alignment.BottomStart`, the scrollbar by `fillMaxHeight()` — so they land on the same
+         * bottom edge exactly; the rule's 1dp thickness only moves its *top*.
+         */
         val RULE_OVERLAY_TOLERANCE = 2.dp
     }
 
@@ -264,6 +268,8 @@ class CrashReportDialogLayoutTest {
         )
 
         rule.onNodeWithTag(BODY_SCROLLBAR_TAG).assertDoesNotExist()
+        // Shares the gate, so the sentinel would paint a stray rule on frame 1 too.
+        rule.onNodeWithTag(BOUNDARY_RULE_TAG).assertDoesNotExist()
     }
 
     @Test
@@ -346,14 +352,27 @@ class CrashReportDialogLayoutTest {
         // the scroll states aren't observable from here.
         rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).assertExists()
 
-        // Measured on the pane itself, not on the scrollbar inside it: the thumb fills the height
-        // *within* the pane's 8dp padding, so asserting on it would carry 16dp of slack and pass a
-        // cap that had drifted to ~216dp. TRACE_PANE_MAX_HEIGHT is the production constant.
+        // Measured on the pane itself, not the scrollbar inside it: the thumb fills the height
+        // *within* the pane's 8dp padding, so asserting on it would carry 16dp of slack.
+        //
+        // Bounded against the body viewport rather than against TRACE_PANE_MAX_HEIGHT. Asserting a
+        // shared constant against itself is tautological — it holds at any cap value, while the
+        // property it claims to protect does not. This bound is the property that actually matters
+        // and it does not move when the cap is tuned: the pane must leave room in the body for
+        // everything below it.
+        //
+        // Controlled at cap = 400dp, where it fires: "trace pane (400.0dp) fills the body viewport
+        // (268.0dp)". Note it is not what catches an *extreme* cap — at 2000dp the trace stops
+        // clipping inside the pane, so the thumb assertion above fires first. This bound owns the
+        // middle range, where the pane still clips but has eaten the body.
         val paneBounds = rule.onNodeWithTag(TRACE_PANE_TAG).getUnclippedBoundsInRoot()
         val paneHeight = paneBounds.bottom - paneBounds.top
+        val bodyBounds = rule.onNodeWithTag(BODY_SCROLLBAR_TAG).getUnclippedBoundsInRoot()
+        val bodyViewport = bodyBounds.bottom - bodyBounds.top
         assertTrue(
-            paneHeight <= TRACE_PANE_MAX_HEIGHT,
-            "trace pane grew past its cap: ${paneHeight.value}dp",
+            paneHeight < bodyViewport,
+            "trace pane (${paneHeight.value}dp) fills the body viewport (${bodyViewport.value}dp), " +
+                "so a deep trace has become the body's scroll",
         )
 
         // And the body still scrolls past it to reach what's below.
@@ -376,10 +395,13 @@ class CrashReportDialogLayoutTest {
         // (verified by control: a sibling rule passes such an assertion).
         val bodyBottom = rule.onNodeWithTag(BODY_SCROLLBAR_TAG).getUnclippedBoundsInRoot().bottom
         val ruleBottom = rule.onNodeWithTag(BOUNDARY_RULE_TAG).getUnclippedBoundsInRoot().bottom
+        // Two-sided: `<=` alone would also pass a rule pinned to the *top* of the body, which is a
+        // visible bug unrelated to overlay-vs-sibling.
+        val delta = ruleBottom - bodyBottom
         assertTrue(
-            ruleBottom <= bodyBottom + RULE_OVERLAY_TOLERANCE,
-            "rule ends ${(ruleBottom - bodyBottom).value}dp below the body — it is a sibling " +
-                "consuming layout height, not an overlay",
+            abs(delta.value) <= RULE_OVERLAY_TOLERANCE.value,
+            "rule ends ${delta.value}dp from the body's bottom edge — expected it flush with it; " +
+                "below means a sibling consuming layout height, above means it is not at the edge",
         )
     }
 
@@ -390,5 +412,15 @@ class CrashReportDialogLayoutTest {
         // Collapsed, the pane isn't composed at all — so this also pins that the hoisted trace
         // scroll state's stale maxValue never leaks a thumb into the collapsed dialog.
         rule.onNodeWithTag(TRACE_SCROLLBAR_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun aBlankFailureMessageRendersThePlaceholderNotAnEmptyCard() {
+        // Unreachable today (every Error interpolates a prefix), but it is the one behaviour the
+        // sanitizer swap changed beyond redaction: maskUriParams answered "[empty]" for blank input,
+        // sanitizeExceptionMessage answers "[no message]".
+        setDialogAtMinimumWindowSize(CrashReportService.SubmitResult.Error(""))
+
+        rule.onNodeWithText("[no message]", substring = true).assertExists()
     }
 }
