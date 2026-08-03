@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +58,11 @@ import kotlinx.coroutines.launch
  * @param crashReport The crash report to display
  * @param onDismiss Called when user dismisses without submitting
  * @param onSubmit Called when user wants to submit the report
+ * @param initialSubmitResult Seeds the submit-result card. Production leaves this null and lets the
+ *   submit path fill it in; it exists because that path runs through the [CrashReportService]
+ *   object, so the result state is otherwise unreachable — and the footer's behaviour under a long
+ *   failure message is exactly what the `maxLines` cap below exists to bound. Also makes the
+ *   populated footer previewable.
  */
 @Composable
 fun CrashReportDialog(
@@ -64,12 +70,13 @@ fun CrashReportDialog(
     onDismiss: () -> Unit,
     onSubmit: (userNotes: String?, includeLogs: Boolean) -> Unit,
     onCleanAndRestart: (() -> Unit)? = null,
+    initialSubmitResult: CrashReportService.SubmitResult? = null,
 ) {
     var userNotes by remember { mutableStateOf("") }
     var includeLogs by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
-    var submitResult by remember { mutableStateOf<CrashReportService.SubmitResult?>(null) }
+    var submitResult by remember { mutableStateOf(initialSubmitResult) }
 
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
@@ -299,7 +306,11 @@ fun CrashReportDialog(
                                             )
                                             if (traceOverflows) {
                                                 VerticalScrollbar(
-                                                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                                                    modifier =
+                                                        Modifier
+                                                            .align(Alignment.CenterEnd)
+                                                            .fillMaxHeight()
+                                                            .testTag(TRACE_SCROLLBAR_TAG),
                                                     adapter = rememberScrollbarAdapter(stackTraceScrollState),
                                                     style = scrollbarStyle,
                                                 )
@@ -384,7 +395,11 @@ fun CrashReportDialog(
 
                 if (bodyOverflows) {
                     VerticalScrollbar(
-                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                        modifier =
+                            Modifier
+                                .align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .testTag(BODY_SCROLLBAR_TAG),
                         adapter = rememberScrollbarAdapter(bodyScrollState),
                         style = scrollbarStyle,
                     )
@@ -413,8 +428,10 @@ fun CrashReportDialog(
                     shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    // Selectable because the ellipsis can hide the tail of a failure reason, and
-                    // pasting it somewhere is usually the user's next move.
+                    // Selectable so the visible reason can be copied — pasting it somewhere is
+                    // usually the user's next move. Selection only reaches painted text, so the
+                    // tail past the ellipsis is not recoverable here; both error paths log the
+                    // full exception (CrashReportService), which is where it survives.
                     SelectionContainer {
                         Text(
                             text =
@@ -558,6 +575,12 @@ fun CrashReportDialog(
         }
     }
 }
+
+/** Present only while the body is clipping content; see `isClipping`. */
+internal const val BODY_SCROLLBAR_TAG = "crash-dialog-body-scrollbar"
+
+/** Present only while the stack trace pane is clipping content; see `isClipping`. */
+internal const val TRACE_SCROLLBAR_TAG = "crash-dialog-trace-scrollbar"
 
 /**
  * True when this region has measured content taller than its viewport.

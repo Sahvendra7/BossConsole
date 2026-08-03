@@ -476,14 +476,52 @@ object CrashHandler {
      * as the "buttons just below the edge" symptom these numbers exist to bound. The test would
      * then be validating against headroom no user has.
      *
+     * Holding that guarantee needs insets from a *shown* window, not merely a packed one; see
+     * [applyContentSizeToFrame].
+     *
      * Exposed because the dialog's layout guarantees are only meaningful against the real window,
      * and a test holding its own hardcoded copies would silently stop testing the shipped window
      * the moment these changed.
      */
     internal const val CONTENT_PREFERRED_WIDTH = 550
+
+    /** Height companion to [CONTENT_PREFERRED_WIDTH]; see it for what these describe. */
     internal const val CONTENT_PREFERRED_HEIGHT = 700
+
+    /** Narrowest the dialog is ever laid out in; see [CONTENT_PREFERRED_WIDTH]. */
     internal const val CONTENT_MIN_WIDTH = 450
+
+    /** Shortest the dialog is ever laid out in; see [CONTENT_PREFERRED_WIDTH]. */
     internal const val CONTENT_MIN_HEIGHT = 500
+
+    /**
+     * Translate the CONTENT_* sizes into frame terms, using insets read from a **shown** window.
+     *
+     * The minimum is a frame property, so the content minimum has to carry the decorations. And if
+     * the insets were unknown when [JFrame.pack] ran — the X11 case — the frame was sized as if
+     * they were zero, leaving the content pane short by exactly the amount the decorations take.
+     * Re-packing with the now-known insets restores the content to its preferred size; where the
+     * first pack was already right, the guard makes this a no-op rather than a second resize.
+     */
+    private fun applyContentSizeToFrame(
+        frame: JFrame,
+        composePanel: ComposePanel,
+    ) {
+        val insets = frame.insets
+        frame.minimumSize =
+            Dimension(
+                CONTENT_MIN_WIDTH + insets.left + insets.right,
+                CONTENT_MIN_HEIGHT + insets.top + insets.bottom,
+            )
+
+        val shortOfPreferred =
+            composePanel.width < CONTENT_PREFERRED_WIDTH ||
+                composePanel.height < CONTENT_PREFERRED_HEIGHT
+        if (shortOfPreferred) {
+            frame.pack()
+            frame.setLocationRelativeTo(null)
+        }
+    }
 
     /**
      * Show the crash dialog in a separate AWT/Swing window.
@@ -529,19 +567,16 @@ object CrashHandler {
 
             frame.contentPane.add(composePanel)
             frame.pack()
-
-            // The minimum applies to the frame, so express the content minimum in frame terms.
-            // Insets are only known after pack() and differ per platform, so computing them here
-            // beats a hardcoded worst-case allowance.
-            val insets = frame.insets
-            frame.minimumSize =
-                Dimension(
-                    CONTENT_MIN_WIDTH + insets.left + insets.right,
-                    CONTENT_MIN_HEIGHT + insets.top + insets.bottom,
-                )
-
             frame.setLocationRelativeTo(null) // Center on screen
             frame.isVisible = true
+
+            // Only now are the decoration insets trustworthy. pack() makes the frame displayable,
+            // so getInsets() answers before this point — but on X11 the window has not been
+            // reparented by the window manager yet and the pre-map guess commonly comes back as
+            // zeros. Reading them here instead is correct on every platform, and on the ones where
+            // they were already right (macOS reports 32px of title bar at peer creation) it changes
+            // nothing.
+            applyContentSizeToFrame(frame, composePanel)
 
             // Bring to front
             frame.toFront()

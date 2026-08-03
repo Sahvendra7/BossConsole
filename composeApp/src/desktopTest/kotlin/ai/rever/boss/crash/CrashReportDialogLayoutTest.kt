@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -43,7 +44,7 @@ class CrashReportDialogLayoutTest {
          * plus the checkbox row's padding); a `weight(1f)` regression measures ~271dp. The
          * threshold sits between those, far from both — it is slack, not a tuned value.
          */
-        private val MAX_FOOTER_GAP = 80.dp
+        val MAX_FOOTER_GAP = 80.dp
     }
 
     @get:Rule
@@ -77,22 +78,24 @@ class CrashReportDialogLayoutTest {
         )
 
     @Composable
-    private fun Dialog() {
+    private fun Dialog(submitResult: CrashReportService.SubmitResult? = null) {
         CrashReportDialog(
             crashReport = deepCrashReport,
             onDismiss = {},
             onSubmit = { _, _ -> },
             onCleanAndRestart = {},
+            initialSubmitResult = submitResult,
         )
     }
 
     private fun setDialogInWindow(
         width: Dp,
         height: Dp,
+        submitResult: CrashReportService.SubmitResult? = null,
     ) {
         rule.setContent {
             Box(modifier = Modifier.size(width, height).clipToBounds()) {
-                Dialog()
+                Dialog(submitResult)
             }
         }
     }
@@ -190,5 +193,63 @@ class CrashReportDialogLayoutTest {
             "Footer should follow the content when it fits, but sat ${gap.value}dp below it — " +
                 "the body is claiming space it does not need (regression to plain weight(1f)?)",
         )
+    }
+
+    @Test
+    fun theBodyScrollbarAppearsOnlyWhileTheBodyIsClipping() {
+        setDialogInWindow(
+            CrashHandler.CONTENT_PREFERRED_WIDTH.dp,
+            CrashHandler.CONTENT_PREFERRED_HEIGHT.dp,
+        )
+
+        // Pins the *gating*: a thumb appears when, and only when, there is travel to offer.
+        // Verified by control that this does NOT catch the `maxValue > 0` sentinel bug — by the
+        // time waitForIdle() returns, measure has assigned maxValue and both forms agree. The
+        // sentinel needs a paused clock; see theBodyScrollbarIsAbsentEvenOnTheFirstFrame.
+        rule.onNodeWithTag(BODY_SCROLLBAR_TAG).assertDoesNotExist()
+
+        rule.onNodeWithText("Technical Details").performClick()
+        rule.waitForIdle()
+
+        rule.onNodeWithTag(BODY_SCROLLBAR_TAG).assertExists()
+    }
+
+    @Test
+    fun theBodyScrollbarIsAbsentEvenOnTheFirstFrame() {
+        // The sentinel guard specifically. Every other assertion in this class runs after
+        // waitForIdle(), by which point measure has assigned maxValue and the naive `maxValue > 0`
+        // form behaves identically — so pausing the clock is the only way to observe the frame the
+        // sentinel affects.
+        rule.mainClock.autoAdvance = false
+        setDialogInWindow(
+            CrashHandler.CONTENT_PREFERRED_WIDTH.dp,
+            CrashHandler.CONTENT_PREFERRED_HEIGHT.dp,
+        )
+
+        rule.onNodeWithTag(BODY_SCROLLBAR_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun aLongSubmitFailureCannotPushTheButtonsOffTheWindow() {
+        // The one path that can squeeze the body from *below*: the submit-result card sits in the
+        // pinned footer, and CrashReportService interpolates e.message into it, which a TLS or
+        // proxy failure can make arbitrarily long. maxLines caps it; this is that cap's guard.
+        setDialogInWindow(
+            CrashHandler.CONTENT_MIN_WIDTH.dp,
+            CrashHandler.CONTENT_MIN_HEIGHT.dp,
+            CrashReportService.SubmitResult.Error("Failed to submit crash report: " + "boom ".repeat(1000)),
+        )
+
+        rule.onNodeWithText("Technical Details").performClick()
+        rule.waitForIdle()
+
+        for (label in listOf("Clean Data & Restart", "Don't Send", "Report Issue")) {
+            val node = rule.onNodeWithText(label)
+            assertEquals(
+                node.getUnclippedBoundsInRoot(),
+                node.getBoundsInRoot(),
+                "\"$label\" left the window once a long failure message filled the footer",
+            )
+        }
     }
 }
