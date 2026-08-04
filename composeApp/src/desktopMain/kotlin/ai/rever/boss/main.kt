@@ -755,11 +755,11 @@ fun main(args: Array<String>) {
                                 // anyone asks when it appears unexpectedly — an engine
                                 // mismatch is exactly what triggers it.
                                 status =
-                                    when {
-                                        downloadProgress.isExtracting -> "Extracting $engineLabel..."
-                                        downloadProgress.totalBytes > 0 -> "Installing $engineLabel..."
-                                        else -> "Connecting to download $engineLabel..."
-                                    },
+                                    ai.rever.boss.components.dialogs.engineDownloadStatus(
+                                        engineLabel = engineLabel,
+                                        isExtracting = downloadProgress.isExtracting,
+                                        totalBytes = downloadProgress.totalBytes,
+                                    ),
                                 error = downloadProgress.error,
                                 onCancel = { exitApplication() },
                                 onRetry = {
