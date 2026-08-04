@@ -520,6 +520,14 @@ jobs:
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
 
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
+
             echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
             ls -la "$CHROMIUM_DIR"
           else
@@ -728,6 +736,14 @@ jobs:
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
 
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
+
             echo "✅ Chromium bundled into app structure"
             ls -la "$CHROMIUM_DIR"
           else
@@ -914,6 +930,14 @@ jobs:
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
 
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
+
             echo "✅ Chromium bundled into app structure"
             ls -la "$CHROMIUM_DIR"
           else
@@ -1092,6 +1116,14 @@ jobs:
             # Copy branded Chromium files
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
 
             echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
             ls -la "$CHROMIUM_DIR"
@@ -1354,6 +1386,10 @@ jobs:
             New-Item -ItemType Directory -Force -Path $CHROMIUM_DIR | Out-Null
             Copy-Item -Path 'branded-chromium/*' -Destination $CHROMIUM_DIR -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$CHROMIUM_DIR/*.zip" -Force -ErrorAction SilentlyContinue
+            # Stamp the version the app expects — see the POSIX bundling steps.
+            # No BOM and no trailing newline: the reader trims, but Set-Content
+            # would prepend a UTF-8 BOM that a plain string compare would fail on.
+            [System.IO.File]::WriteAllText("$CHROMIUM_DIR/version.txt", $env:JXBROWSER_VERSION)
             Write-Host "Branded Chromium bundled at: $CHROMIUM_DIR"
             Get-ChildItem $CHROMIUM_DIR
           } else {

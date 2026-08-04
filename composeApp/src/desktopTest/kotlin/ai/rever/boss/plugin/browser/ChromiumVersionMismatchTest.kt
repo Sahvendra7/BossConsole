@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin.browser
 
+import ai.rever.boss.config.ChromiumAutoDownloader
 import com.teamdev.jxbrowser.VersionInfo
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.File
@@ -269,6 +270,55 @@ class ChromiumVersionMismatchTest {
         assertEquals(
             FluckEngine.EngineStartupAction.Boot,
             FluckEngine.engineStartupAction(hasUsableEngine = true, cacheHealthy = true),
+        )
+    }
+
+    /** Writes a version stamp into [dir], as packaging and the downloader both do. */
+    private fun stamp(
+        dir: java.nio.file.Path,
+        version: String,
+    ) = File(dir.toFile(), "version.txt").writeText(version)
+
+    @Test
+    fun `a bundled engine stamped with a different version is not a candidate`() {
+        // The #123 fix. Off macOS the framework probe makes no claim, so before
+        // packaging wrote a stamp a stale BUNDLED engine won first priority with no
+        // check at all — and could not be repaired, because the download writes to
+        // the cache the resolver then never reached. Runs on every leg: the stamp is
+        // the only cross-platform version signal, which is the whole point.
+        val bundled = engineBundle(VersionInfo.chromiumVersion())
+        stamp(bundled, "0.0.0-not-this-build")
+
+        assertEquals(
+            emptyList(),
+            FluckEngine.engineCandidates(bundled = bundled, cache = bundled, cacheHealthy = false),
+            "A bundled engine stamped for a different build must be skipped",
+        )
+    }
+
+    @Test
+    fun `a bundled engine stamped with the required version is kept`() {
+        val bundled = engineBundle(VersionInfo.chromiumVersion())
+        stamp(bundled, ChromiumAutoDownloader.effectiveVersion)
+
+        assertEquals(
+            listOf(bundled),
+            FluckEngine.engineCandidates(bundled = bundled, cache = bundled, cacheHealthy = false),
+        )
+    }
+
+    @Test
+    fun `an unstamped bundled engine is still allowed through`() {
+        // Deliberately more lenient than the cache, which treats a missing stamp as
+        // a broken extraction. App images built before packaging stamped carry no
+        // version.txt, and refusing those would make every such user re-download
+        // for no reason — so "can't tell" stays fail-open, matching the framework
+        // probe's rule.
+        val bundled = engineBundle(VersionInfo.chromiumVersion())
+
+        assertEquals(
+            listOf(bundled),
+            FluckEngine.engineCandidates(bundled = bundled, cache = bundled, cacheHealthy = false),
         )
     }
 
