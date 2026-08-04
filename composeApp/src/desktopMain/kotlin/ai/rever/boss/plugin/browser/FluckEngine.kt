@@ -1195,11 +1195,11 @@ object FluckEngine {
      * reports "BOSS-branded Chromium not found", which is both wrong (it is
      * present, just stale) and names a folder that may not be the offending one.
      */
-    private fun noUsableEngineReason(): String {
-        // Derived from engineCandidates so the reason can never describe a
-        // different set than the one that was searched. cacheHealthy = true so a
-        // cache the resolver skipped can still be named in the diagnosis.
-        val present = engineCandidates(cacheHealthy = true).filter { isValidChromiumDir(it) }
+    internal fun noUsableEngineReason(locations: List<java.nio.file.Path> = engineLocations()): String {
+        // Derived from engineLocations, NOT engineCandidates: a diagnosis has to
+        // describe the engines that were rejected, and the candidate list has by
+        // definition already dropped them.
+        val present = locations.filter { isValidChromiumDir(it) }
 
         return present.firstNotNullOfOrNull { chromiumVersionMismatch(it) }
             ?: if (present.isNotEmpty()) {
@@ -1262,11 +1262,26 @@ object FluckEngine {
         bundled: java.nio.file.Path? = getBundledChromiumPath(),
         cache: java.nio.file.Path = BossDirectories.resolve("boss-chromium").toPath(),
         cacheHealthy: Boolean = cacheIsHealthy(),
+        required: String = ChromiumAutoDownloader.effectiveVersion,
     ): List<java.nio.file.Path> =
         listOfNotNull(
-            bundled?.takeIf { bundledStampIsAcceptable(it) },
+            bundled?.takeIf { bundledStampIsAcceptable(it, required) },
             cache.takeIf { cacheHealthy },
         )
+
+    /**
+     * Every place an engine may live, unfiltered.
+     *
+     * Separate from [engineCandidates] because the diagnosis needs to see engines
+     * the selection rule *rejected* — that is the whole point of a diagnosis. With
+     * both derived from the filtered list, a stale bundled engine was excluded and
+     * the reason fell through to "BOSS-branded Chromium not found" while it sat
+     * right there, reintroducing exactly the wrong-message problem #122 removed.
+     */
+    internal fun engineLocations(
+        bundled: java.nio.file.Path? = getBundledChromiumPath(),
+        cache: java.nio.file.Path = BossDirectories.resolve("boss-chromium").toPath(),
+    ): List<java.nio.file.Path> = listOfNotNull(bundled, cache)
 
     /**
      * Whether a bundled engine's version stamp permits using it.
@@ -1285,9 +1300,11 @@ object FluckEngine {
      * download writes to the cache, which the resolver then never reaches
      * (BossConsole#123).
      */
-    private fun bundledStampIsAcceptable(bundled: java.nio.file.Path): Boolean {
+    private fun bundledStampIsAcceptable(
+        bundled: java.nio.file.Path,
+        required: String = ChromiumAutoDownloader.effectiveVersion,
+    ): Boolean {
         val stamped = ChromiumAutoDownloader.installedVersionAt(bundled)
-        val required = ChromiumAutoDownloader.effectiveVersion
         val acceptable = stamped == null || stamped == required
         if (!acceptable) {
             logger.warn(

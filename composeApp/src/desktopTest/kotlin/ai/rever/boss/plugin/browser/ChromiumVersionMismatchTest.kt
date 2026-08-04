@@ -1,6 +1,5 @@
 package ai.rever.boss.plugin.browser
 
-import ai.rever.boss.config.ChromiumAutoDownloader
 import com.teamdev.jxbrowser.VersionInfo
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.File
@@ -30,6 +29,14 @@ import kotlin.test.assertTrue
  * boots.
  */
 class ChromiumVersionMismatchTest {
+    /**
+     * A fixed required version. Reading ChromiumAutoDownloader.effectiveVersion
+     * here would force BrowserEngineSettingsManager's init, which reads — and on a
+     * redundant pin rewrites — the developer's real ~/.boss config. Tests must not
+     * mutate real user state.
+     */
+    private val requiredVersion = "9.9.9-test"
+
     private val temps = mutableListOf<File>()
     private val isMac =
         System
@@ -291,7 +298,12 @@ class ChromiumVersionMismatchTest {
 
         assertEquals(
             emptyList(),
-            FluckEngine.engineCandidates(bundled = bundled, cache = bundled, cacheHealthy = false),
+            FluckEngine.engineCandidates(
+                bundled = bundled,
+                cache = bundled,
+                cacheHealthy = false,
+                required = requiredVersion,
+            ),
             "A bundled engine stamped for a different build must be skipped",
         )
     }
@@ -299,11 +311,16 @@ class ChromiumVersionMismatchTest {
     @Test
     fun `a bundled engine stamped with the required version is kept`() {
         val bundled = engineBundle(VersionInfo.chromiumVersion())
-        stamp(bundled, ChromiumAutoDownloader.effectiveVersion)
+        stamp(bundled, requiredVersion)
 
         assertEquals(
             listOf(bundled),
-            FluckEngine.engineCandidates(bundled = bundled, cache = bundled, cacheHealthy = false),
+            FluckEngine.engineCandidates(
+                bundled = bundled,
+                cache = bundled,
+                cacheHealthy = false,
+                required = requiredVersion,
+            ),
         )
     }
 
@@ -318,8 +335,68 @@ class ChromiumVersionMismatchTest {
 
         assertEquals(
             listOf(bundled),
-            FluckEngine.engineCandidates(bundled = bundled, cache = bundled, cacheHealthy = false),
+            FluckEngine.engineCandidates(
+                bundled = bundled,
+                cache = bundled,
+                cacheHealthy = false,
+                required = requiredVersion,
+            ),
         )
+    }
+
+    @Test
+    fun `the diagnosis can still see an engine the selection rule rejected`() {
+        // engineLocations is deliberately unfiltered. Deriving the "no usable
+        // engine" reason from the candidate list instead would hide a stale
+        // bundled engine and report "not found" while it sat right there — the
+        // wrong-message problem #122 removed, reintroduced for the bundled case.
+        val bundled = engineBundle(VersionInfo.chromiumVersion())
+        stamp(bundled, "0.0.0-not-this-build")
+        val cache = engineBundle(VersionInfo.chromiumVersion())
+
+        assertEquals(
+            emptyList(),
+            FluckEngine.engineCandidates(
+                bundled = bundled,
+                cache = cache,
+                cacheHealthy = false,
+                required = requiredVersion,
+            ),
+            "precondition: the stale bundled engine is rejected as a candidate",
+        )
+        assertEquals(
+            listOf(bundled, cache),
+            FluckEngine.engineLocations(bundled = bundled, cache = cache),
+            "but both remain visible to the diagnosis",
+        )
+    }
+
+    @Test
+    fun `a present-but-stale engine is never reported as not found`() {
+        // The defect this PR's own review caught: deriving the reason from the
+        // FILTERED candidate list hid a rejected bundled engine, so the user was
+        // told "BOSS-branded Chromium not found" while it sat right there. Asserts
+        // on the reason itself rather than on the helpers, because swapping which
+        // list it reads is invisible to a helper-level test — verified: it was.
+        val stale = engineBundle("150.0.7871.47")
+
+        val reason = FluckEngine.noUsableEngineReason(listOf(stale))
+
+        assertFalse(
+            reason.contains("not found"),
+            "An engine that is present and merely stale must not be reported as missing",
+        )
+        if (isMac) {
+            assertTrue(
+                reason.contains("150.0.7871.47"),
+                "On macOS the framework layout is readable, so name the build found",
+            )
+        }
+    }
+
+    @Test
+    fun `a genuinely absent engine is still reported as not found`() {
+        assertTrue(FluckEngine.noUsableEngineReason(emptyList()).contains("not found"))
     }
 
     @Test
