@@ -257,10 +257,16 @@ fun BrowserEngineSettings() {
                     // at startup — until then the download has changed nothing the
                     // user can see, which reads like the install silently failed.
                     SettingsButtonRow(
-                        label = status,
+                        label = "Staged — restart to apply",
                         buttonText = "Restart BOSS",
                         onClick = { ApplicationRestarter.restartApplication() },
-                        description = "Applies the staged engine. Unsaved work in open tabs is lost.",
+                        // Verified rather than assumed: restartApplication exits via
+                        // exitProcess, which runs the shutdown hook, and that hook
+                        // calls LastSessionCoordinator.saveOnProcessExit — so tabs do
+                        // come back. Saying "unsaved work is lost" here would have
+                        // been false, and would have talked people out of the one
+                        // action that makes their download take effect.
+                        description = "$status BOSS reopens with your tabs restored; running terminal processes end.",
                     )
                 } else {
                     SettingsInfoRow(
