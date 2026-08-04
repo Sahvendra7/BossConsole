@@ -1230,6 +1230,11 @@ object FluckEngine {
      * engine boot with the guard reporting everything fine (BossConsole#121).
      */
 
+    /** Paths already reported as stale, so the warning is not repeated per call. */
+    private val warnedStalePaths =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet<String>()
+
     /** Whether the downloaded cache is well-formed and at the required version. */
     private fun cacheIsHealthy(): Boolean = ChromiumAutoDownloader.isChromiumInstalled()
 
@@ -1250,9 +1255,11 @@ object FluckEngine {
      * through the guard, pre-warm against the wrong engine, and bring back the
      * UnsatisfiedLinkError this whole line of work exists to prevent.
      *
-     * The bundled engine has no `version.txt` to check, but it ships inside the app
-     * image and so is consistent with the jar by construction; on macOS the
-     * framework check covers it anyway.
+     * The bundled engine is checked by [bundledStampIsAcceptable] instead. It gets a
+     * `version.txt` of its own, written by every bundling site in `release.yml`, so
+     * the same cross-platform signal covers both candidates. Before that stamp
+     * existed this paragraph claimed the bundled engine was "consistent with the jar
+     * by construction" — the assumption BossConsole#123 disproved.
      *
      * Parameters are injectable purely so the rule is testable — the real values
      * come from `java.home` and the user's home directory, which a test cannot
@@ -1306,7 +1313,11 @@ object FluckEngine {
     ): Boolean {
         val stamped = ChromiumAutoDownloader.installedVersionAt(bundled)
         val acceptable = stamped == null || stamped == required
-        if (!acceptable) {
+        // Once per path: engineCandidates is called from hasUsableEngine at startup,
+        // from getChromiumDir on every initializeEngine attempt (which retries), and
+        // from the diagnosis — so a stale bundle otherwise logs the same WARN several
+        // times a launch and reads like several distinct faults during triage.
+        if (!acceptable && warnedStalePaths.add(bundled.toString())) {
             logger.warn(
                 LogCategory.BROWSER,
                 "Ignoring bundled browser engine stamped with a different version",

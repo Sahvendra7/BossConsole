@@ -400,6 +400,68 @@ class ChromiumVersionMismatchTest {
     }
 
     @Test
+    fun `a stale-stamped bundled engine yields to the downloaded cache`() {
+        // The behaviour #123 is actually about, which the filter tests did not
+        // reach: they all passed cacheHealthy = false and asserted an empty list,
+        // so none showed the repair path working. Runs on every leg — the cache is
+        // gated on cacheHealthy, not on the macOS framework probe.
+        val bundled = engineBundle(VersionInfo.chromiumVersion())
+        stamp(bundled, "0.0.0-not-this-build")
+        val cache = engineBundle(VersionInfo.chromiumVersion())
+        stamp(cache, requiredVersion)
+
+        assertEquals(
+            listOf(cache),
+            FluckEngine.engineCandidates(
+                bundled = bundled,
+                cache = cache,
+                cacheHealthy = true,
+                required = requiredVersion,
+            ),
+            "A stale bundled engine must step aside so the downloaded cache can be used",
+        )
+    }
+
+    @Test
+    fun `a trailing newline in the stamp is tolerated`() {
+        // echo -n is tidy, not load-bearing: installedVersionAt trims. Pinning it
+        // means a future bundling site using plain echo does not silently produce a
+        // stamp that never matches.
+        val bundled = engineBundle(VersionInfo.chromiumVersion())
+        stamp(bundled, "$requiredVersion\n")
+
+        assertEquals(
+            listOf(bundled),
+            FluckEngine.engineCandidates(
+                bundled = bundled,
+                cache = bundled,
+                cacheHealthy = false,
+                required = requiredVersion,
+            ),
+        )
+    }
+
+    @Test
+    fun `a BOM-prefixed stamp is not accepted`() {
+        // Why the PowerShell site uses WriteAllText rather than Set-Content: U+FEFF
+        // is not Character.isWhitespace, so trim() does not remove it and the
+        // comparison fails. Without this the reason lives only in a workflow comment.
+        val bundled = engineBundle(VersionInfo.chromiumVersion())
+        stamp(bundled, "\uFEFF$requiredVersion")
+
+        assertEquals(
+            emptyList(),
+            FluckEngine.engineCandidates(
+                bundled = bundled,
+                cache = bundled,
+                cacheHealthy = false,
+                required = requiredVersion,
+            ),
+            "A BOM-prefixed stamp must not silently pass as a match",
+        )
+    }
+
+    @Test
     fun `the message carries no filesystem path`() {
         // It reaches classifyError, which substring-matches for "host", "connect",
         // "license" and friends to choose a remedy — so a home directory containing

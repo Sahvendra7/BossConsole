@@ -19,13 +19,15 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKFLOW="$HERE/../../.github/workflows/release.yml"
+WORKFLOWS="$HERE/../../.github/workflows/release.yml $HERE/../../.github/workflows/release-lite.yml"
 
 pass=0; fail=0
 ok()  { echo "  ok: $1"; pass=$((pass + 1)); }
 bad() { echo "  FAIL: $1" >&2; fail=$((fail + 1)); }
 
-[[ -f "$WORKFLOW" ]] || { echo "FATAL: $WORKFLOW not found" >&2; exit 1; }
+for w in $WORKFLOWS; do
+    [[ -f "$w" ]] || { echo "FATAL: $w not found" >&2; exit 1; }
+done
 
 # A "bundling site" copies the unpacked branded-chromium into the app image.
 # Both spellings appear: POSIX shell on macOS/Linux/Windows-x64, PowerShell on
@@ -36,10 +38,16 @@ BUNDLE_RE='cp -r branded-chromium/\*|Copy-Item -Path .branded-chromium/\*'
 # is satisfied by the prose and passes with the actual write deleted. (Verified:
 # it did exactly that.) Same trap as matching "rm -rf" inside a comment that says
 # "before an irreversible rm -rf".
-STAMP_RE='> *"\$CHROMIUM_DIR/version\.txt"|WriteAllText\("\$CHROMIUM_DIR/version\.txt"'
+# Matches a redirect or WriteAllText into any path ending in version.txt. Not tied
+# to one variable name: release-lite stamps "$APP_DIR/chromium/version.txt" while
+# release.yml uses "$CHROMIUM_DIR/...", and a matcher pinned to the latter reported
+# genuinely-stamped sites as unstamped.
+STAMP_RE='> *"[^"]*version\.txt"|WriteAllText\("[^"]*version\.txt"'
 
 # while-read rather than mapfile: macOS ships bash 3.2, and a guard that only
 # runs on the CI box is a guard nobody can check before pushing.
+for WORKFLOW in $WORKFLOWS; do
+echo "--- $(basename "$WORKFLOW") ---"
 bundle_lines=""
 while IFS= read -r n; do
     bundle_lines="$bundle_lines $n"
@@ -76,13 +84,25 @@ else
 fi
 
 # The stamp must carry the version the build actually fetched, not a literal.
-stamp_lines=$(grep -cE "$STAMP_RE" "$WORKFLOW" || true)
 if grep -E "$STAMP_RE" "$WORKFLOW" | grep -qE 'JXBROWSER_VERSION'; then
     ok "stamps reference JXBROWSER_VERSION rather than a hardcoded value"
 else
     bad "no stamp references JXBROWSER_VERSION — a hardcoded version would go stale silently"
 fi
 
+# An empty JXBROWSER_VERSION writes an empty version.txt, which the app reads as
+# "no stamp" and lets through — silently reverting to the unchecked behaviour on a
+# green release build. Every extraction must fail loudly instead.
+extractions=$(grep -cE "JXBROWSER_VERSION=\\\$\(grep|\\\$JXBROWSER_VERSION = \\\$matches" "$WORKFLOW" || true)
+guards=$(grep -cE '\-z "\$JXBROWSER_VERSION"|Could not extract jxbrowser version' "$WORKFLOW" || true)
+if (( guards >= extractions && extractions > 0 )); then
+    ok "all $extractions version extraction(s) guarded against an empty result"
+else
+    bad "only $guards guard(s) for $extractions extraction(s) — an empty version silently disables the stamp"
+fi
+
+done
+
 echo
-echo "passed: $pass, failed: $fail (version.txt mentions: $stamp_lines)"
+echo "passed: $pass, failed: $fail"
 (( fail == 0 )) || exit 1
