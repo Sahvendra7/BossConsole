@@ -12,6 +12,7 @@ import ai.rever.boss.config.BrowserEngineSettingsManager
 import ai.rever.boss.config.ChromiumAutoDownloader
 import ai.rever.boss.config.ChromiumReleaseSource
 import ai.rever.boss.config.EngineVersionListing
+import ai.rever.boss.utils.ApplicationRestarter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,6 +72,12 @@ fun BrowserEngineSettings() {
     var versionsError by remember { mutableStateOf<String?>(null) }
     var installProgress by remember { mutableStateOf<ChromiumAutoDownloader.DownloadProgress?>(null) }
     var installStatus by remember { mutableStateOf<String?>(null) }
+
+    // Separate from installStatus so a completed stage can offer the restart it
+    // requires. The message alone rendered as a description on an empty-value row —
+    // easy to miss after a several-hundred-MB download, and the staged engine does
+    // nothing at all until the app is restarted.
+    var stagedAwaitingRestart by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         try {
@@ -203,6 +210,7 @@ fun BrowserEngineSettings() {
                     buttonText = if (selectedVersion == installedVersion) "Reinstall" else "Install",
                     onClick = {
                         installStatus = null
+                        stagedAwaitingRestart = false
                         installProgress = ChromiumAutoDownloader.DownloadProgress(0, 0)
                         val versionToInstall = selectedVersion
                         val overrideToPersist = selectedOverride
@@ -225,7 +233,8 @@ fun BrowserEngineSettings() {
                                         BrowserEngineSettingsManager.updateSettings(
                                             BrowserEngineSettingsData(selectedVersion = overrideToPersist),
                                         )
-                                        "Engine $versionToInstall downloaded — restart BOSS to apply."
+                                        stagedAwaitingRestart = true
+                                        "Engine $versionToInstall is staged. It is not in use until BOSS restarts."
                                     },
                                     onFailure = { e ->
                                         "Install failed: ${e.message ?: "unknown error"}"
@@ -242,11 +251,24 @@ fun BrowserEngineSettings() {
 
             installStatus?.let { status ->
                 Spacer(modifier = Modifier.height(8.dp))
-                SettingsInfoRow(
-                    label = "Status",
-                    value = "",
-                    description = status,
-                )
+                if (stagedAwaitingRestart) {
+                    // An action, not a note. A staged engine sits in
+                    // boss-chromium.pending and is swapped in by promotePendingInstall
+                    // at startup — until then the download has changed nothing the
+                    // user can see, which reads like the install silently failed.
+                    SettingsButtonRow(
+                        label = status,
+                        buttonText = "Restart BOSS",
+                        onClick = { ApplicationRestarter.restartApplication() },
+                        description = "Applies the staged engine. Unsaved work in open tabs is lost.",
+                    )
+                } else {
+                    SettingsInfoRow(
+                        label = "Status",
+                        value = "",
+                        description = status,
+                    )
+                }
             }
         }
     }
