@@ -125,6 +125,12 @@ private fun containRenderFault(
 private val startupScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
 fun main(args: Array<String>) {
+    // Codex invokes this headless credential helper. Handle it before AWT,
+    // plugins, logging, or the single-instance lock so stdout stays token-only.
+    if (ai.rever.boss.llm.RisaLlmTokenCommand.isRequested(args)) {
+        exitProcess(ai.rever.boss.llm.RisaLlmTokenCommand.execute())
+    }
+
     val startupBeganMs = System.currentTimeMillis()
 
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
