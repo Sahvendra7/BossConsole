@@ -378,6 +378,12 @@ verify_jwt = false  # Verifies the caller and checks finance.read itself (getUse
 import_map = "./functions/qbo-token/deno.json"
 entrypoint = "./functions/qbo-token/index.ts"
 
+[functions.google-token]
+enabled = true
+verify_jwt = false  # Verifies the caller and checks finance.read itself (getUser + JWT claims)
+import_map = "./functions/google-token/deno.json"
+entrypoint = "./functions/google-token/index.ts"
+
 [functions.latest-release]
 enabled = true
 # MUST be false: these are public website/browser "download latest" links with no
