@@ -6,9 +6,10 @@ import kotlin.test.assertEquals
 class RisaLlmTokenCommandTest {
     @Test
     fun extractsSafeGatewayError() {
-        val message = RisaLlmTokenCommand.parseGatewayError(
-            """{"error":{"message":"RISA LLM access has been disabled for this account"}}"""
-        )
+        val message =
+            RisaLlmTokenCommand.parseGatewayError(
+                """{"error":{"message":"RISA LLM access has been disabled for this account"}}""",
+            )
 
         assertEquals("RISA LLM access has been disabled for this account", message)
     }
