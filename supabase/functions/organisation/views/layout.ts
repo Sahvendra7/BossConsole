@@ -34,7 +34,6 @@ import { esc } from "../utils/html.ts"
 const STYLES = `
   :root {
     --ink: #05070B;
-    --panel: #080B11;
     --raised: #0E141E;
     --line: #1C2432;
     --line-strong: #2E3B4F;
@@ -44,8 +43,9 @@ const STYLES = `
     --signal-dim: #0A45C4;
     --signal-wash: #0A1A3C;
     --signal-text: #88A9FF;
-    --ok: #2FD98A;
-    --warn: #F0B429;
+    /* Kept because it is used as a BORDER (danger hover). Its ok/warn siblings
+       were removed: nothing painted them, and an unused vivid status colour is
+       exactly what gets reached for as text. */
     --alert: #FF5D5D;
     /* Text-safe variants. On ink the status colours already clear 4.5:1, so these
        alias them; on paper they do not, which is why the pair exists at all. Same
@@ -62,7 +62,6 @@ const STYLES = `
   @media (prefers-color-scheme: light) {
     :root {
       --ink: #F5F7FB;
-      --panel: #FFFFFF;
       --raised: #FFFFFF;
       --line: #DCE2EB;
       --line-strong: #A8B2C2;
@@ -72,8 +71,6 @@ const STYLES = `
       --signal-dim: #0A45C4;
       --signal-wash: #DCE7FF;
       --signal-text: #0F5BFF;
-      --ok: #1E9E63;
-      --warn: #A8710A;
       --alert: #D33B4A;
       /* Darkened until each clears 4.5:1 on EVERY light surface it lands on: the
          white card, the paper page, and the 10% status tint behind a banner. The
