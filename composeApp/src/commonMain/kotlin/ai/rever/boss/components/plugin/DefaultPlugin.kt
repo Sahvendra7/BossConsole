@@ -1642,6 +1642,11 @@ private class DefaultContextMenuProvider : ContextMenuProvider {
                 text = label,
                 icon = icon,
                 subMenu = subMenu?.map { it.toContextMenuItem() },
+                // Passed through unwrapped, deliberately. Attribution happens where
+                // ContextMenu actually invokes it (PluginExecutionBoundary.invokeAttributed),
+                // which costs no allocation - wrapping here handed back a fresh closure per
+                // item per recomposition, so the items compared unequal every time and Compose
+                // could never skip the menu subtree.
                 onClick = onClick,
             )
         }

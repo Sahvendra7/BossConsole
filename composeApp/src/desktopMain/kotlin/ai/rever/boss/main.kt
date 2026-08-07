@@ -89,8 +89,11 @@ private fun containRenderFault(
         ),
         throwable,
     )
-    // Reported, but not through CrashHandler.handleCrash: that dialog is terminal
-    // on every exit, so a recovered fault would end the session on Escape.
+    // Reported, but not through CrashHandler.handleCrash: a fault the render path
+    // has already contained and recovered from must not interrupt the user to ask
+    // about it. (That dialog was also terminal on every exit; a plugin-attributed
+    // crash now recovers instead, but a contained fault still has no business
+    // opening it.)
     // recordContained writes the report to disk instead, so a host-side render bug
     // stays visible rather than costing one log line and a toast.
     ai.rever.boss.crash.CrashHandler
@@ -137,6 +140,20 @@ fun main(args: Array<String>) {
     }
 
     val startupBeganMs = System.currentTimeMillis()
+
+    // Logging FIRST, before anything that can log. Everything below this line does:
+    // setLinuxWMClass and setupNativeLibraryPaths both log, applyToSystemProperties emits the
+    // audit trail of which Chromium flags this session runs with, ChromiumFlagsSettingsManager's
+    // init warns about a corrupt settings file, and the Skiko block warns about an unrecognised
+    // backend. Configuring the level afterwards meant none of them respected BOSS_LOG_LEVEL - and
+    // the flag audit is the line most worth being able to turn up.
+    //
+    // Safe this early, checked rather than assumed: configureFromEnvironment only reads env and
+    // system properties, and initialize() only registers a shutdown hook. Neither resolves a path,
+    // so setupNativeLibraryPaths reassigning java.io.tmpdir below cannot affect them - file
+    // logging is opt-in through configure() with an explicit path.
+    BossLogger.configureFromEnvironment()
+    BossLogger.initialize() // Register shutdown hook for log flushing
 
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
     setLinuxWMClass()
@@ -187,10 +204,6 @@ fun main(args: Array<String>) {
     // This ensures Swing popup menus (context menus) appear above the browser view
     JPopupMenu.setDefaultLightWeightPopupEnabled(false)
 
-    // Initialize logging framework early
-    BossLogger.configureFromEnvironment()
-    BossLogger.initialize() // Register shutdown hook for log flushing
-
     // Uninstall hook (Windows): `BOSS.exe --unregister-protocol` removes the boss://
     // handler that WindowsProtocolHandler registers at runtime, so uninstalling does not
     // leave a registry handler pointing at a deleted executable. Handled before any
@@ -207,13 +220,32 @@ fun main(args: Array<String>) {
     ai.rever.boss.plugin.sandbox.ui
         .installCrashInterceptor()
 
+    // Teach the attribution boundary how to identify a plugin classloader for real.
+    // Without this it falls back to asking the loader for its own id, which a plugin
+    // that defines classes through a nested loader of its own could answer with
+    // somebody else's - and attribution now decides which plugin gets disabled and
+    // written out of installed.json. A type check against a class only the host
+    // constructs cannot be forged. Installed before any plugin loads.
+    ai.rever.boss.plugin.sandbox.PluginExecutionBoundary
+        .installPluginIdResolver(
+            ai.rever.boss.crash
+                .hostPluginIdResolver(),
+        )
+
     // Register notification callback for plugin crashes.
     // Tab closing is handled directly by PluginCrashRegistry via the closeAction
     // registered in BossMainPanelContent. This callback only shows the status message.
     ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry.onCrashNotify = { pluginId, error ->
-        val errorMsg = error.message?.take(60) ?: error.javaClass.simpleName
+        // Both halves are plugin-controlled and share one status-bar slot: the id
+        // comes from a manifest, and the message from plugin code. A newline or a
+        // few hundred characters in either pushes the rest of the line out of view.
+        val errorMsg =
+            (error.message ?: error.javaClass.simpleName)
+                .map { if (it.isISOControl()) ' ' else it }
+                .joinToString("")
+                .take(60)
         ai.rever.boss.components.bars.horizontal.StatusMessageManager.showMessage(
-            "Plugin '$pluginId' crashed: $errorMsg",
+            "Plugin '${ai.rever.boss.crash.displayPluginId(pluginId)}' crashed: $errorMsg",
             durationMs = 8000,
         )
     }
@@ -415,13 +447,13 @@ fun main(args: Array<String>) {
     // unchanged platforms cannot regress. See JxBrowserConfig.renderingMode and
     // benchmarks/speedometer/win/WINDOWS.md.
     ai.rever.boss.components.overlays.OverlayConfig.heavyweightPopup =
-        { onDismiss, popupOffset, focusable, popupContent ->
+        { onDismiss, anchorInWindow, anchoring, popupOffset, focusable, popupContent ->
             ai.rever.boss.components.overlays
-                .HeavyweightPopup(onDismiss, popupOffset, focusable, popupContent)
+                .HeavyweightPopup(onDismiss, anchorInWindow, anchoring, popupOffset, focusable, popupContent)
         }
-    ai.rever.boss.components.overlays.OverlayConfig.heavyweightModal = { onDismiss, modalContent ->
+    ai.rever.boss.components.overlays.OverlayConfig.heavyweightModal = { properties, onDismiss, modalContent ->
         ai.rever.boss.components.overlays
-            .HeavyweightModal(onDismiss, modalContent)
+            .HeavyweightModal(properties, onDismiss, modalContent)
     }
     ai.rever.boss.components.overlays.OverlayConfig.heavyweightTooltip = { text ->
         ai.rever.boss.components.overlays.SwingTooltip
@@ -430,6 +462,21 @@ fun main(args: Array<String>) {
     ai.rever.boss.components.overlays.OverlayConfig.hideHeavyweightTooltip = {
         ai.rever.boss.components.overlays.SwingTooltip
             .hide()
+    }
+    ai.rever.boss.components.overlays.OverlayConfig.heavyweightHud = { alignment, hudContent ->
+        ai.rever.boss.components.overlays
+            .HeavyweightHud(alignment, hudContent)
+    }
+    ai.rever.boss.components.overlays.OverlayConfig.heavyweightGhost = { size, ghostContent ->
+        ai.rever.boss.components.overlays
+            .HeavyweightGhost(size, ghostContent)
+    }
+    // plugin-ui-core owns the modal registry (plugins draw dialogs too) and depends on nothing but
+    // Compose, so it cannot log. Give it this logger instead: the condition it reports is a dialog
+    // that silently fell back to lightweight and is now hidden behind the page, which is invisible
+    // on screen and would otherwise have to be diagnosed from a screenshot.
+    ai.rever.boss.plugin.ui.BossOverlayHost.diagnostics = { message ->
+        logger.warn(LogCategory.UI, message)
     }
     ai.rever.boss.components.overlays.OverlayConfig.useHeavyweightPopups =
         ai.rever.boss.config.JxBrowserConfig.renderingMode ==
