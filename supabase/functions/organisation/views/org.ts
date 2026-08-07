@@ -35,11 +35,11 @@ ${tabs(basePath, org.slug, "overview", org.is_admin)}
 <section class="card">
   <div class="stat"><b>${esc(org.member_count)}</b><span>members</span></div>
   <div class="stat"><b>${esc(roles.length)}</b><span>roles</span></div>
-  <div class="stat"><b>${esc(org.visibility)}</b><span>visibility</span></div>
-  <div class="stat"><b>${esc(org.join_policy.replace(/_/g, " "))}</b><span>joining</span></div>
+  <div class="stat phrase"><b>${esc(org.visibility)}</b><span>visibility</span></div>
+  <div class="stat phrase"><b>${esc(org.join_policy.replace(/_/g, " "))}</b><span>joining</span></div>
   ${
       org.primary_domain
-        ? `<div class="stat"><b>${esc(org.primary_domain)}</b><span>domain</span></div>`
+        ? `<div class="stat phrase"><b>${esc(org.primary_domain)}</b><span>domain</span></div>`
         : ""
     }
 </section>
