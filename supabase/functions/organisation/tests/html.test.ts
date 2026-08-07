@@ -4,7 +4,7 @@
  */
 
 import { assert, assertEquals } from "@std/assert"
-import { attrUrl, cspNonce, esc, jsonForScript } from "../utils/html.ts"
+import { attrUrl, cspNonce, emailText, esc, jsonForScript } from "../utils/html.ts"
 
 Deno.test("esc neutralises every HTML metacharacter", () => {
   assertEquals(esc(`<script>`), "&lt;script&gt;")
@@ -118,4 +118,40 @@ Deno.test("no view emits a duplicate class attribute", async () => {
     const dupes = source.match(/class="[^"]*"[^>]*class="[^"]*"/g) ?? []
     assertEquals(dupes, [], `${entry.name} has duplicate class attributes: ${dupes.join(", ")}`)
   }
+})
+
+Deno.test("emailText wraps the address in Cloudflare's opt-out and still escapes it", () => {
+  const out = emailText("someone@example.com")
+  assert(out.startsWith("<!--email_off-->"))
+  assert(out.endsWith("<!--/email_off-->"))
+  assert(out.includes("someone@example.com"))
+
+  // The comments tell a proxy to leave the region alone. They are not escaping,
+  // so the value must still be escaped inside them.
+  const hostile = emailText(`"><script>alert(1)</script>`)
+  assertEquals(hostile.includes("<script>"), false)
+  assert(hostile.includes("&lt;script&gt;"))
+})
+
+Deno.test("every email rendered into a page goes through emailText", async () => {
+  // Cloudflare rewrites any address it finds in the HTML into a __cf_email__ span
+  // that needs a script our CSP blocks, so a plain esc(...) of an email renders as
+  // the literal words "email protected". That is not a styling problem: it makes
+  // the roster unable to answer who is who, which is the page's whole job.
+  //
+  // Source-scanned rather than output-scanned because the failure is invisible in
+  // our own output - it happens at the edge, after we have rendered.
+  const dir = new URL("../views/", import.meta.url)
+  const offenders: string[] = []
+  for await (const entry of Deno.readDir(dir)) {
+    if (!entry.name.endsWith(".ts")) continue
+    const source = await Deno.readTextFile(new URL(entry.name, dir))
+    source.split("\n").forEach((line, i) => {
+      // An interpolation that escapes something whose name says it is an email.
+      if (/\$\{esc\([^)]*email[^)]*\)/i.test(line)) {
+        offenders.push(`${entry.name}:${i + 1}: ${line.trim()}`)
+      }
+    })
+  }
+  assertEquals(offenders, [], "use emailText(...) for an email address, not esc(...)")
 })
