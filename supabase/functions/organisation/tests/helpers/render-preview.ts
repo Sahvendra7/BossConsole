@@ -1,5 +1,6 @@
 /**
- * Render every page to a file so a human (or a screenshot) can look at them.
+ * Render every page, in every state that changes its markup, so a human (or a
+ * screenshot) can look at them.
  *
  * Not a test - a development harness. The views are pure functions of their
  * data, so they can be rendered without a database, a session or a running
@@ -14,13 +15,16 @@
  *   deno run --allow-write --allow-read tests/helpers/render-preview.ts <outDir>
  */
 
-import { adminPage } from "../../views/admin.ts"
+import { adminPage, inviteOnlyPage } from "../../views/admin.ts"
 import { orgPage } from "../../views/org.ts"
 import { invalidInvitePage, joinPage } from "../../views/join.ts"
 import { errorPage, NOT_AVAILABLE_MESSAGE } from "../../views/error.ts"
 import type { OrgDetail, OrgDomain, OrgInvite, OrgMember, OrgRole } from "../../services/org.ts"
 
 const NONCE = "previewnonce"
+/** A plausible one-time invite URL. Only its shape matters to the rendering. */
+const INVITE =
+  "https://api.risaboss.com/functions/v1/organisation/join/hK3nQ8mZ0pW7xR4tL9vB2cN6dF1sA5gJ"
 const BASE = "/functions/v1/organisation"
 
 const org: OrgDetail = {
@@ -187,6 +191,22 @@ const pages: Record<string, string> = {
     invites,
     banner: { kind: "error", message: "That value was not accepted. Check the field and try again." },
   }),
+  // The one-time invite card. It carries `.highlight`, which had never rendered
+  // (a bare .highlight loses to section.card on specificity) and which no preview
+  // covered - so the visual check could not have caught it. That is the gap this
+  // page and the two below close.
+  "admin-new-invite.html": adminPage({
+    nonce: NONCE,
+    basePath: BASE,
+    csrf: "preview-csrf",
+    org,
+    members,
+    roles,
+    domains,
+    invites,
+    newInviteUrl: INVITE,
+  }),
+  "invite-only.html": inviteOnlyPage(NONCE, BASE, "risa_labs", INVITE),
   "join.html": joinPage({
     nonce: NONCE,
     orgName: "Risa Labs",
@@ -200,6 +220,13 @@ const pages: Record<string, string> = {
     title: "Not available - BOSS",
     heading: "Not available",
     message: NOT_AVAILABLE_MESSAGE,
+  }),
+  "error-with-action.html": errorPage({
+    nonce: NONCE,
+    title: "Not available - BOSS",
+    heading: "Not available",
+    message: NOT_AVAILABLE_MESSAGE,
+    action: { href: `${BASE}/o/risa_labs`, label: "Back to the organisation" },
   }),
 }
 

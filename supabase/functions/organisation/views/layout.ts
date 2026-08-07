@@ -66,22 +66,23 @@ const STYLES = `
       --line: #DCE2EB;
       --line-strong: #A8B2C2;
       --text: #05070B;
-      --text-2: #687081;
+      --text-2: #5C6372;
       --signal: #0F5BFF;
       --signal-dim: #0A45C4;
       --signal-wash: #DCE7FF;
       --signal-text: #0F5BFF;
       --alert: #D33B4A;
-      /* Darkened until each clears 4.5:1 on EVERY light surface it lands on: the
-         white card, the paper page, and the 10% status tint behind a banner. The
-         tint is the binding one - it is darker than white, so solving against the
-         card alone left both banners at ~4.2:1. The fills above stay as the mirror. */
-      --ok-text: #188050;
-      --warn-text: #996709;
-      --alert-text: #C83846;
+      /* Solved against every surface each one actually lands on, which is more than
+         the card: a status pill sits in a table cell, and "tbody tr:hover td" puts
+         --token-wash behind it. Missing that surface is how the first pass shipped
+         --ok-text at 3.01:1 on a hovered row while the contrast test read green -
+         the test checked the card and the banner tint and no wash at all. */
+      --ok-text: #177B4D;
+      --warn-text: #926209;
+      --alert-text: #C43745;
       --signal-on-wash: #0C3FBF;
       --on-signal: #FFFFFF;
-      --token-wash: rgba(104, 112, 129, 0.10);
+      --token-wash: rgba(5, 7, 11, 0.06);
       --shadow: 0 1px 2px rgba(5, 7, 11, 0.06);
     }
   }
@@ -249,11 +250,14 @@ const STYLES = `
      carries values like "request to join", so the overflow was reachable rather
      than theoretical. Top-aligned, or a wrapped row hangs off the tallest value. */
   .stat { display: inline-block; margin: 0 30px 8px 0; vertical-align: top; }
+  /* An explicit line box, shared by both sizes. Unitless line-height scaled with
+     font-size, so the 21px figure and the 15px phrase produced boxes 6px apart and
+     their captions no longer sat on one line. */
   .stat b {
     display: block; font-size: 21px; font-weight: 650; letter-spacing: -0.3px;
-    font-variant-numeric: tabular-nums;
+    line-height: 32px; font-variant-numeric: tabular-nums;
   }
-  .stat.phrase b { font-size: 15px; font-weight: 600; letter-spacing: 0; line-height: 1.75; }
+  .stat.phrase b { font-size: 15px; font-weight: 600; letter-spacing: 0; }
   .stat span {
     color: var(--text-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
   }
@@ -273,7 +277,10 @@ const STYLES = `
      a violation on every page. */
   .spaced { margin-top: 16px; }
   .tight { margin-top: 12px; }
-  .highlight { border-color: var(--signal); }
+  /* section.card.highlight, not .highlight: "section.card" sets border-color at
+     specificity (0,1,1) and a bare ".highlight" is (0,1,0), so the accent lost and
+     this rule had never rendered. */
+  section.card.highlight { border-color: var(--signal); }
   .linkish { color: var(--signal-text); }
 
   @media (max-width: 620px) {
@@ -302,6 +309,11 @@ export interface LayoutOptions {
 /**
  * Wrap page content in the document shell.
  *
+ * The banner carries no `role="status"`. A live region is announced when its
+ * content CHANGES; this one is server-rendered into the initial document, so the
+ * role would never fire and would only misdescribe the element. It is early in
+ * the reading order instead, which is what actually reaches a screen reader here.
+ *
  * `body` is expected to be already-escaped markup built by the caller. The
  * banner message is escaped HERE, because it is the one string that routinely
  * originates from an RPC error and would otherwise be interpolated raw.
@@ -310,7 +322,7 @@ export function layout({ title, nonce, body, banner }: LayoutOptions): string {
   const bannerHtml = banner
     ? `<div class="banner ${
       banner.kind === "ok" ? "ok" : "error"
-    }" role="status">${esc(banner.message)}</div>`
+    }">${esc(banner.message)}</div>`
     : ""
 
   return `<!DOCTYPE html>

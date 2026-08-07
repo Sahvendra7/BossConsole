@@ -2,18 +2,29 @@
  * Every colour pair the pages actually paint must clear its WCAG floor.
  *
  * This exists because looking at the page is not enough. The light theme was
- * screenshotted, read as fine, and had six sub-AA pairs in it: hint text at
- * 2.54:1, the admin pill at 4.27:1, and both banners around 4.1:1. None of that
- * is visible to a person who already knows what the words say.
+ * screenshotted, read as fine, and had six sub-AA pairs in it. None of that is
+ * visible to a person who already knows what the words say.
  *
- * The tokens are parsed out of the real stylesheet rather than duplicated here.
- * A copy would drift, and a test that agrees with a stale copy of the thing it
- * guards is worse than no test.
+ * ## Both halves are read out of the stylesheet
  *
- * THE BINDING SURFACE IS OFTEN NOT THE OBVIOUS ONE. Banner text sits on a 10%
- * status tint, which on a light theme is DARKER than the card behind it, so
- * solving against the card left both banners failing. Each pair below names the
- * surface the text really lands on.
+ * Tokens AND the translucent surfaces are parsed from `layout.ts`. The first
+ * version parsed the tokens and hardcoded the surfaces, and that is exactly how
+ * it missed three failures: it knew about the card and the banner tint, and had
+ * no `--token-wash` surface at all - which is where every role name, permission
+ * string and organisation slug is painted, and what `tbody tr:hover td` puts
+ * behind a whole row. `--ok-text` was at 3.01:1 on a hovered row while this file
+ * reported green.
+ *
+ * So the rule is: if a background is a colour with alpha, this file composites it
+ * from the real declaration rather than from a copy. A copy drifts, and a test
+ * that agrees with a stale copy of the thing it guards is worse than no test.
+ *
+ * ## Surfaces are per-token, because they are not interchangeable
+ *
+ * `--alert-text` colours a danger button, which lives in a table cell and so can
+ * sit on the hover wash. It never sits on a doubled wash, because nothing puts a
+ * `.pill.mono` inside it. Holding every token to every surface would force the
+ * palette darker than the pages need.
  */
 
 import { assert } from "@std/assert"
@@ -24,19 +35,40 @@ const TEXT_FLOOR = 4.5
 /** WCAG 1.4.11: a UI component boundary, not text. */
 const UI_FLOOR = 3.0
 
-function tokensIn(block: string): Record<string, string> {
-  const out: Record<string, string> = {}
+type Palette = Record<string, string>
+
+function tokensIn(block: string): Palette {
+  const out: Palette = {}
   for (const [, name, hex] of block.matchAll(/--([a-z0-9-]+):\s*(#[0-9A-Fa-f]{6})/g)) {
     out[name] = hex
   }
   return out
 }
 
-/** The `:root` block, and the light block layered over it as the cascade does. */
-function palettes(): { dark: Record<string, string>; light: Record<string, string> } {
-  const dark = tokensIn(STYLESHEET.split(":root {")[1].split("}")[0])
-  const lightOnly = tokensIn(STYLESHEET.split("prefers-color-scheme: light")[1].split("}")[0])
-  return { dark, light: { ...dark, ...lightOnly } }
+/** `--token-wash: rgba(r, g, b, a)` out of a palette block, as a hex plus alpha. */
+function washIn(block: string): { hex: string; alpha: number } {
+  const m = block.match(/--token-wash:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/)
+  assert(m, "no --token-wash rgba() found; the wash surfaces below would be invented")
+  const [, r, g, b, a] = m
+  const hex = "#" + [r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")
+  return { hex, alpha: Number(a) }
+}
+
+/**
+ * The tint behind `.banner.ok` / `.banner.error`, read from the rule itself.
+ *
+ * Hardcoding these was the other half of the same mistake: the alpha could be
+ * raised to 0.14 in the stylesheet and this file would keep re-deriving the old
+ * 0.10 surface and keep reporting pass.
+ */
+function bannerTint(kind: "ok" | "error"): { hex: string; alpha: number } {
+  const rule = STYLESHEET.match(new RegExp(`\\.banner\\.${kind}\\s*\\{[^}]*\\}`))
+  assert(rule, `no .banner.${kind} rule found`)
+  const m = rule[0].match(/background-color:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/)
+  assert(m, `.banner.${kind} has no rgba background to composite`)
+  const [, r, g, b, a] = m
+  const hex = "#" + [r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")
+  return { hex, alpha: Number(a) }
 }
 
 function channel(value: number): number {
@@ -56,79 +88,147 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-/** Flatten an rgba() fill onto its backdrop, the way the browser composites it. */
+/** Flatten a translucent fill onto its backdrop, the way the browser composites it. */
 function over(fill: string, alpha: number, backdrop: string): string {
   const parse = (hex: string) =>
     [0, 2, 4].map((i) => parseInt(hex.replace("#", "").slice(i, i + 2), 16))
   const [f, b] = [parse(fill), parse(backdrop)]
-  const mixed = f.map((v, i) => Math.round(v * alpha + b[i] * (1 - alpha)))
-  return "#" + mixed.map((v) => v.toString(16).padStart(2, "0")).join("")
+  return "#" + f.map((v, i) => Math.round(v * alpha + b[i] * (1 - alpha)))
+    .map((v) => v.toString(16).padStart(2, "0")).join("")
 }
 
-/** The status tints used by `.banner.ok` / `.banner.error`, at their real alpha. */
-const OK_TINT = "#2FD98A"
-const ERROR_TINT = "#FF5D5D"
-
-interface Pair {
-  what: string
-  fg: string
-  bg: (t: Record<string, string>) => string
-  floor?: number
-}
-
-const PAIRS: Pair[] = [
-  { what: "body text on the page", fg: "text", bg: (t) => t.ink },
-  { what: "body text on a card", fg: "text", bg: (t) => t.raised },
-  // Hints, table headers, empty states and the footer all use this. It replaced
-  // the app's textMuted, which is 2.54:1 on a white card - fine as a label beside
-  // a value in a 300px panel, not fine as the only text in a paragraph.
-  { what: "hints and headers on a card", fg: "text-2", bg: (t) => t.raised },
-  { what: "hints and headers on the page", fg: "text-2", bg: (t) => t.ink },
-  { what: "a link on the page", fg: "signal-text", bg: (t) => t.ink },
-  { what: "a link on a card", fg: "signal-text", bg: (t) => t.raised },
-  { what: "the admin pill's glyph", fg: "signal-on-wash", bg: (t) => t["signal-wash"] },
-  { what: "a primary button's label", fg: "on-signal", bg: (t) => t.signal },
-  { what: "an ok pill on a card", fg: "ok-text", bg: (t) => t.raised },
-  { what: "a warn pill on a card", fg: "warn-text", bg: (t) => t.raised },
-  { what: "a danger button's label", fg: "alert-text", bg: (t) => t.raised },
-  { what: "ok banner text on its tint", fg: "ok-text", bg: (t) => over(OK_TINT, 0.10, t.raised) },
-  {
-    what: "error banner text on its tint",
-    fg: "alert-text",
-    bg: (t) => over(ERROR_TINT, 0.10, t.raised),
-  },
-  // Not text: `signal` is a fill and a border. It is 3.8:1 on ink BY DESIGN, which
-  // is why `signal-text` exists at all. Holding it to 4.5 would "fix" it by
-  // brightening the brand blue, which is the wrong repair.
-  { what: "signal as a control border", fg: "signal", bg: (t) => t.ink, floor: UI_FLOOR },
-]
-
-for (const [themeName, theme] of Object.entries(palettes())) {
-  for (const pair of PAIRS) {
-    Deno.test(`${themeName}: ${pair.what} clears its floor`, () => {
-      const fg = theme[pair.fg]
-      assert(fg, `no --${pair.fg} token in the ${themeName} palette`)
-      const bg = pair.bg(theme)
-      const floor = pair.floor ?? TEXT_FLOOR
-      const ratio = contrast(fg, bg)
-      assert(
-        ratio >= floor,
-        `${themeName} ${pair.what}: ${fg} on ${bg} is ${ratio.toFixed(2)}:1, needs ${floor}:1`,
-      )
-    })
+/** Every background any text in these pages lands on, composited. */
+function surfaces(theme: Palette, block: string) {
+  const wash = washIn(block)
+  const ok = bannerTint("ok")
+  const err = bannerTint("error")
+  const washOnCard = over(wash.hex, wash.alpha, theme.raised)
+  return {
+    card: theme.raised,
+    page: theme.ink,
+    // .pill.mono in a card, and any cell in a hovered row.
+    washOnCard,
+    // .slug sits in the page header, not in a card.
+    washOnPage: over(wash.hex, wash.alpha, theme.ink),
+    // .pill.mono inside a hovered row stacks its own wash on the row's.
+    washStacked: over(wash.hex, wash.alpha, washOnCard),
+    okBanner: over(ok.hex, ok.alpha, theme.raised),
+    errorBanner: over(err.hex, err.alpha, theme.raised),
+    signalWash: theme["signal-wash"],
+    signal: theme.signal,
   }
 }
 
-Deno.test("the light palette really does override the status text colours", () => {
-  // A guard against the pairs above passing vacuously. If the light block stopped
-  // redefining these, every light assertion would silently re-check the dark
-  // values and still pass - the shape of vacuous test this suite has been bitten
-  // by before.
-  const { dark, light } = palettes()
+type SurfaceName = keyof ReturnType<typeof surfaces>
+
+/** What each token colours, and therefore what it must clear. */
+const USAGE: Array<{ token: string; where: string; on: SurfaceName[]; floor?: number }> = [
+  {
+    token: "text",
+    where: "body copy",
+    on: ["card", "page"],
+  },
+  {
+    // The widest reach in the sheet: hints, table headers, plain and mono pills,
+    // the slug, empty states, the footer and tab labels.
+    token: "text-2",
+    where: "hints, headers, identifier pills and the slug",
+    on: ["card", "page", "washOnCard", "washOnPage", "washStacked"],
+  },
+  {
+    token: "signal-text",
+    where: "links and tab labels",
+    on: ["card", "page", "washOnCard"],
+  },
+  {
+    token: "signal-on-wash",
+    where: "the admin pill",
+    // Its own wash is opaque, so a hovered row does not show through it.
+    on: ["signalWash"],
+  },
+  {
+    token: "ok-text",
+    where: "ok pills and the ok banner",
+    on: ["card", "washOnCard", "okBanner"],
+  },
+  {
+    token: "warn-text",
+    where: "warn pills",
+    on: ["card", "washOnCard"],
+  },
+  {
+    token: "alert-text",
+    where: "the danger button and the error banner",
+    on: ["card", "washOnCard", "errorBanner"],
+  },
+  {
+    token: "on-signal",
+    where: "a primary button's label",
+    on: ["signal"],
+  },
+  {
+    // Not text. `signal` is 3.8:1 on ink BY DESIGN, which is why signal-text
+    // exists. Holding it to 4.5 would "fix" it by brightening the brand blue.
+    token: "signal",
+    where: "a control border",
+    on: ["page"],
+    floor: UI_FLOOR,
+  },
+]
+
+function palettes(): Array<{ name: string; theme: Palette; block: string }> {
+  const darkBlock = STYLESHEET.split(":root {")[1].split("}")[0]
+  const lightBlock = STYLESHEET.split("prefers-color-scheme: light")[1].split("}")[0]
+  const dark = tokensIn(darkBlock)
+  return [
+    { name: "dark", theme: dark, block: darkBlock },
+    // The light block only overrides; the cascade leaves the rest of :root standing.
+    { name: "light", theme: { ...dark, ...tokensIn(lightBlock) }, block: lightBlock },
+  ]
+}
+
+for (const { name, theme, block } of palettes()) {
+  const surf = surfaces(theme, block)
+  for (const use of USAGE) {
+    for (const surfaceName of use.on) {
+      Deno.test(`${name}: ${use.token} on ${surfaceName} (${use.where})`, () => {
+        const fg = theme[use.token]
+        assert(fg, `no --${use.token} in the ${name} palette`)
+        const bg = surf[surfaceName]
+        assert(bg, `no ${surfaceName} surface`)
+        const floor = use.floor ?? TEXT_FLOOR
+        const ratio = contrast(fg, bg)
+        assert(
+          ratio >= floor,
+          `${name}: --${use.token} (${fg}) on ${surfaceName} (${bg}) is ` +
+            `${ratio.toFixed(2)}:1, needs ${floor}:1`,
+        )
+      })
+    }
+  }
+}
+
+Deno.test("the light palette really does override the colours under test", () => {
+  // Without this, a light block that stopped redefining these would leave every
+  // light assertion silently re-checking the dark values and still passing.
+  const [dark, light] = palettes()
   for (const token of ["ok-text", "warn-text", "alert-text", "signal-on-wash", "text-2", "ink"]) {
     assert(
-      dark[token] !== light[token],
+      dark.theme[token] !== light.theme[token],
       `--${token} is identical in both palettes, so the light assertions prove nothing about it`,
     )
   }
+})
+
+Deno.test("each palette declares its own token wash", () => {
+  // The wash defines three of the surfaces above. If a palette stopped declaring
+  // one, washIn would fall back to the other palette's block and every wash
+  // assertion would be measured against the wrong backdrop.
+  const [dark, light] = palettes()
+  const a = washIn(dark.block)
+  const b = washIn(light.block)
+  assert(
+    a.hex !== b.hex || a.alpha !== b.alpha,
+    "both palettes declare the same --token-wash; one of them is not being read",
+  )
 })
