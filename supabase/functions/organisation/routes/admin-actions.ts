@@ -25,7 +25,7 @@ import { clientKey, rateLimit } from "../utils/rate-limit.ts"
 import { publicBaseUrl } from "../utils/config.ts"
 import { mintSession, newCsrfToken, sessionCookieHeader } from "../utils/session.ts"
 import { inviteOnlyPage } from "../views/admin.ts"
-import { checkbox, field, intField, rawField, uuidField } from "../utils/request.ts"
+import { checkbox, field, intField, isHttpUrl, rawField, uuidField } from "../utils/request.ts"
 import { requireCsrfBody, requireOrgAdmin, requireOrgSession } from "./guards.ts"
 import { adminPage } from "../views/admin.ts"
 import type { SessionPayload } from "../utils/session.ts"
@@ -136,6 +136,20 @@ adminActionRoutes.post("/o/:slug/admin/settings", async (ctx) => {
     publishPolicy = oneOf(field(body, "publish_policy"), ["owner_only", "admins", "members"])
   } catch {
     return redirectTo(facts, session.slug, { err: "invalid_input" })
+  }
+
+  // Validated HERE as well as in the RPC, because the RPC's readable sentence never
+  // reaches the page: finish() collapses every failure to err=rejected, which renders
+  // as "The change was refused" - the exact generic message the database-side check
+  // was added to replace. A dedicated key is the only way to name the field while
+  // keeping the fixed-key vocabulary that stops caller text being reflected.
+  //
+  // Deliberately duplicated rather than forwarded: the RPC keeps its own check for
+  // callers that are not this route, and this one exists so the admin is told which
+  // field to fix.
+  const websiteRaw = rawField(body, "website")
+  if (websiteRaw !== null && websiteRaw.trim() !== "" && !isHttpUrl(websiteRaw.trim())) {
+    return redirectTo(facts, session.slug, { err: "invalid_website" })
   }
 
   const result = await callForActor("update_organisation_settings", session.sub, {

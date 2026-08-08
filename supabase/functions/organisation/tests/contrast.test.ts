@@ -141,6 +141,7 @@ function surfaces(theme: Palette, block: string) {
     errorBanner: over(err.hex, err.alpha, theme.raised),
     signalWash: theme["signal-wash"],
     signal: theme.signal,
+    signalDim: theme["signal-dim"],
   }
 }
 
@@ -150,8 +151,10 @@ type SurfaceName = keyof ReturnType<typeof surfaces>
 const USAGE: Array<{ token: string; where: string; on: SurfaceName[]; floor?: number }> = [
   {
     token: "text",
-    where: "body copy",
-    on: ["card", "page"],
+    // washOnCard because `tbody tr:hover td` puts the wash behind ordinary cell
+    // text, and button.secondary:hover paints --text on it.
+    where: "body copy, including a hovered row",
+    on: ["card", "page", "washOnCard"],
   },
   {
     // The widest reach in the sheet: hints, table headers, plain and mono pills,
@@ -189,8 +192,10 @@ const USAGE: Array<{ token: string; where: string; on: SurfaceName[]; floor?: nu
   },
   {
     token: "on-signal",
-    where: "a primary button's label",
-    on: ["signal"],
+    // signalDim is the hover fill for both the primary button and the active tab,
+    // so the label is read on it as often as on signal itself.
+    where: "a primary button's label, at rest and hovered",
+    on: ["signal", "signalDim"],
   },
   {
     // Not text. `signal` is 3.8:1 on ink BY DESIGN, which is why signal-text
@@ -269,9 +274,13 @@ Deno.test("each palette block parses whole, not truncated at a stray brace", () 
   // The assertions above only catch a token that is both missing AND under test,
   // so a truncation that drops an unchecked token passes unnoticed. A floor on the
   // count makes that loud.
-  for (const { name, theme } of palettes()) {
-    const count = Object.keys(theme).length
-    assert(count >= 18, `${name} palette parsed only ${count} tokens - block truncated?`)
+  // Counted on each block AS PARSED, not on the merged palette. light is built as
+  // {...dark, ...light}, so counting the merge meant a light block truncated to
+  // zero tokens still reported the full dark count - the guard could not fail for
+  // the palette it was most needed for.
+  for (const { name, block } of palettes()) {
+    const own = Object.keys(tokensIn(block)).length
+    assert(own >= 18, `the ${name} block parsed only ${own} tokens - truncated at a brace?`)
   }
 })
 

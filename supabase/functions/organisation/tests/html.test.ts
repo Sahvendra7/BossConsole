@@ -175,7 +175,9 @@ Deno.test("every table sits in a focusable scroll region", async () => {
   for await (const entry of Deno.readDir(dir)) {
     if (!entry.name.endsWith(".ts")) continue
     const source = await Deno.readTextFile(new URL(entry.name, dir))
-    const tables = (source.match(/<table>/g) ?? []).length
+    // <table[\s>] rather than <table>, so adding an attribute cannot silently
+    // drop a table out of the count.
+    const tables = (source.match(/<table[\s>]/g) ?? []).length
     if (tables === 0) continue
     const wrappers = (source.match(/class="scroller"/g) ?? []).length +
       (source.match(/scrollable\(/g) ?? []).length

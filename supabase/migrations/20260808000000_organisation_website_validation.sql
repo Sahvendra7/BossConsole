@@ -266,6 +266,229 @@ $$;
 
 
 -- ---------------------------------------------------------------------------
+-- create_organisation_internal re-checks on the write path
+-- ---------------------------------------------------------------------------
+-- The header above claimed this and the first version did not do it. Same
+-- signature as 20260807000000, so CREATE OR REPLACE keeps the grants.
+
+CREATE OR REPLACE FUNCTION "public"."create_organisation_internal"(
+    "p_slug" "text",
+    "p_name" "text",
+    "p_description" "text" DEFAULT NULL::"text",
+    "p_owner_id" "uuid" DEFAULT NULL::"uuid",
+    "p_domain" "text" DEFAULT NULL::"text",
+    "p_visibility" "text" DEFAULT 'private'::"text",
+    "p_join_policy" "text" DEFAULT 'invite_only'::"text",
+    "p_is_system" boolean DEFAULT false,
+    "p_admin_role_name" "text" DEFAULT NULL::"text",
+    "p_user_role_name" "text" DEFAULT NULL::"text",
+    "p_auto_assign_member_role" boolean DEFAULT true,
+    "p_website" "text" DEFAULT NULL::"text"
+) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+DECLARE
+    v_org_id UUID;
+    v_admin_name TEXT;
+    v_user_name TEXT;
+    v_admin_role_id UUID;
+    v_user_role_id UUID;
+    v_base_role_id UUID;
+    v_domain TEXT;
+    v_website TEXT;
+    v_website_error TEXT;
+    v_token TEXT;
+BEGIN
+    IF p_owner_id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'An owner is required');
+    END IF;
+
+    IF p_slug IS NULL OR NOT (p_slug ~ '^[a-z][a-z0-9_]{1,30}$') THEN
+        RETURN jsonb_build_object('success', false, 'error',
+            'Slug must be 2-31 characters, lowercase letters, digits and underscores, starting with a letter');
+    END IF;
+
+    IF p_visibility NOT IN ('private', 'public') THEN
+        RETURN jsonb_build_object('success', false, 'error', 'visibility must be private or public');
+    END IF;
+
+    IF p_join_policy NOT IN ('invite_only', 'request_to_join', 'open') THEN
+        RETURN jsonb_build_object('success', false, 'error',
+            'join_policy must be invite_only, request_to_join or open');
+    END IF;
+
+    -- p_is_system bypasses the reserved-slug check. Only the boss-org seed passes
+    -- it, and only because 'boss' is on the reserved list precisely BECAUSE of the
+    -- boss_admin collision -- which the seed sidesteps by passing explicit
+    -- boss_org_* role names.
+    IF NOT p_is_system AND public.is_reserved_organisation_slug(p_slug) THEN
+        RETURN jsonb_build_object('success', false, 'error',
+            format('Slug "%s" is reserved, or its role names (%s, %s) are already taken',
+                   p_slug,
+                   public.organisation_role_name(p_slug, 'admin'),
+                   public.organisation_role_name(p_slug, 'user')));
+    END IF;
+
+    v_admin_name := COALESCE(p_admin_role_name, public.organisation_role_name(p_slug, 'admin'));
+    v_user_name  := COALESCE(p_user_role_name,  public.organisation_role_name(p_slug, 'user'));
+
+    -- Re-check the derived names even for a system organisation. This is the H2
+    -- guard on the write path: mapping an EXISTING role (which could be a global
+    -- system role such as boss_admin) into organisation_roles is the escalation.
+    IF EXISTS (SELECT 1 FROM public.roles r WHERE r.name IN (v_admin_name, v_user_name)) THEN
+        RETURN jsonb_build_object('success', false, 'error',
+            format('Role name "%s" or "%s" already exists', v_admin_name, v_user_name));
+    END IF;
+
+    -- public.roles.name is validated ^[a-z][a-z0-9_]{2,50}$ by create_new_role;
+    -- enforce the length here too so a 31-character slug cannot produce a
+    -- 37-character name that a later role RPC would reject.
+    IF char_length(v_admin_name) > 50 OR char_length(v_user_name) > 50 THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Slug is too long for the derived role names');
+    END IF;
+
+    -- The optional domain claim is validated HERE, before the first INSERT, and
+    -- the placement is the whole point.
+    --
+    -- A plain RETURN from PL/pgSQL is a normal return: it rolls back NOTHING.
+    -- Only a propagating exception aborts the transaction. These two checks used
+    -- to sit at step 8, after the organisation, both roles, the hierarchy edges,
+    -- the permission grants, the founder membership and the founder user_roles
+    -- row had all been inserted -- so a refused domain returned success:false
+    -- while all eight inserts committed. That left an orphan organisation nothing
+    -- pointed at, silently owned by the requester, and because the slug was now
+    -- taken the originating request could never be approved on a retry.
+    --
+    -- Reachable in normal operation: two pending requests naming the same domain,
+    -- or a domain added to reserved_email_domains between submit and approve.
+    -- submit_organisation_request checks the domain too, but that check is a
+    -- TOCTOU, which is exactly why the re-check exists.
+    IF p_domain IS NOT NULL AND btrim(p_domain) <> '' THEN
+        v_domain := lower(btrim(p_domain));
+
+        IF EXISTS (SELECT 1 FROM public.reserved_email_domains red WHERE red.domain = v_domain) THEN
+            RETURN jsonb_build_object('success', false, 'error',
+                format('"%s" is a reserved email domain and cannot be claimed by an organisation', v_domain));
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM public.organisation_domains d WHERE d.domain = v_domain) THEN
+            RETURN jsonb_build_object('success', false, 'error',
+                format('Domain "%s" is already claimed by another organisation', v_domain));
+        END IF;
+    END IF;
+
+    -- Re-checked on the write path, for the same reason the domain below is: this
+    -- function is service_role-callable directly, and its own comment says that is
+    -- the supported use. Today every caller passes a value that already cleared an
+    -- identical CHECK on organisation_requests, but that is a coincidence of two
+    -- textually identical predicates - and without this, a direct caller gets a
+    -- raw 23514 propagating out of approve_organisation_request as an unhandled
+    -- exception instead of the {success:false,error} object every other refusal
+    -- there returns.
+    v_website := NULLIF(btrim(COALESCE(p_website, '')), '');
+    v_website_error := public.validate_website(v_website);
+    IF v_website_error IS NOT NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', v_website_error);
+    END IF;
+
+    -- 1. The organisation.
+    BEGIN
+        INSERT INTO public.organisations (
+            slug, name, description, visibility, join_policy,
+            owner_id, created_by, is_system, auto_assign_member_role, website
+        ) VALUES (
+            p_slug, btrim(p_name), p_description, p_visibility, p_join_policy,
+            p_owner_id, p_owner_id, p_is_system, p_auto_assign_member_role,
+            v_website
+        ) RETURNING id INTO v_org_id;
+    EXCEPTION WHEN unique_violation THEN
+        RETURN jsonb_build_object('success', false, 'error',
+            format('An organisation with slug "%s" already exists', p_slug));
+    END;
+
+    -- 2. The two roles. is_system = false is REQUIRED: enforce_org_role_not_system
+    --    refuses to map a system role, and delete_role refuses to delete one, so a
+    --    system-flagged organisation role would be both unmappable and uncleanable.
+    INSERT INTO public.roles (name, description, is_system)
+    VALUES (v_admin_name, format('Administrators of the "%s" organisation', btrim(p_name)), false)
+    RETURNING id INTO v_admin_role_id;
+
+    INSERT INTO public.roles (name, description, is_system)
+    VALUES (v_user_name, format('Members of the "%s" organisation', btrim(p_name)), false)
+    RETURNING id INTO v_user_role_id;
+
+    -- 3. The mapping that makes them organisation roles.
+    INSERT INTO public.organisation_roles (org_id, role_id, kind, created_by) VALUES
+        (v_org_id, v_admin_role_id, 'admin', p_owner_id),
+        (v_org_id, v_user_role_id,  'user',  p_owner_id);
+
+    -- 4. Hierarchy: <slug>_admin -> <slug>_user -> user.
+    --    The second edge is what H3 is about: it puts the global `user` role in an
+    --    organisation admin's get_grantable_role_ids. That is rendered inert by
+    --    enforce_org_role_permission_scope, which makes role.* / user.* /
+    --    api_key.* / plugins.admin.* un-grantable to any organisation role.
+    SELECT r.id INTO v_base_role_id FROM public.roles r WHERE r.name = 'user';
+
+    INSERT INTO public.role_hierarchy (parent_role_id, child_role_id)
+    VALUES (v_admin_role_id, v_user_role_id)
+    ON CONFLICT DO NOTHING;
+
+    IF v_base_role_id IS NOT NULL THEN
+        INSERT INTO public.role_hierarchy (parent_role_id, child_role_id)
+        VALUES (v_user_role_id, v_base_role_id)
+        ON CONFLICT DO NOTHING;
+    END IF;
+
+    -- 5. Permissions. All of these pass is_org_grantable_permission's allowlist.
+    INSERT INTO public.role_permissions (role_id, permission_id)
+    SELECT v_admin_role_id, p.id FROM public.permissions p
+    WHERE p.name IN ('organisation.admin', 'organisation.read')
+    ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+    INSERT INTO public.role_permissions (role_id, permission_id)
+    SELECT v_user_role_id, p.id FROM public.permissions p
+    WHERE p.name = 'organisation.read'
+    ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+    -- 6. Founder membership.
+    INSERT INTO public.organisation_members (org_id, user_id, status, joined_at, join_source)
+    VALUES (v_org_id, p_owner_id, 'active', now(), 'founder')
+    ON CONFLICT (org_id, user_id) DO NOTHING;
+
+    -- 7. The founder holds the admin role. assigned_by is NULL: a system
+    --    assignment, matching handle_new_user's convention for the base role.
+    INSERT INTO public.user_roles (user_id, role_id, assigned_by, assigned_at)
+    VALUES (p_owner_id, v_admin_role_id, NULL, now())
+    ON CONFLICT (user_id, role_id) DO NOTHING;
+
+    -- 8. Optional unverified domain claim. Already validated above, before the
+    --    first INSERT, so nothing here can return a failure after committing rows.
+    --    The unique index on organisation_domains.domain is the backstop for a
+    --    concurrent claim landing between that check and this insert; it RAISES,
+    --    which does roll the transaction back.
+    IF p_domain IS NOT NULL AND btrim(p_domain) <> '' THEN
+        -- URL-safe: translate()'s 3-character FROM against a 2-character TO also
+        -- DELETES the '=' padding.
+        v_token := translate(
+            pg_catalog.encode(extensions.gen_random_bytes(24), 'base64'), '+/=', '-_');
+
+        INSERT INTO public.organisation_domains (
+            org_id, domain, is_primary, verification_token, created_by
+        ) VALUES (v_org_id, v_domain, true, v_token, p_owner_id);
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'org_id', v_org_id::text,
+        'slug', p_slug,
+        'admin_role', v_admin_name,
+        'user_role', v_user_name);
+END;
+$$;
+
+
+-- ---------------------------------------------------------------------------
 -- An approver must be able to see the website they are approving
 -- ---------------------------------------------------------------------------
 -- The whole threat model here is that any authenticated user supplies this value

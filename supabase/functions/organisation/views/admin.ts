@@ -115,7 +115,7 @@ function settingsCard(action: string, csrf: string, org: OrgDetail, roles: OrgRo
     <div class="row">
       <div>
         <label for="website">Website</label>
-        <input type="text" id="website" name="website" maxlength="500"
+        <input type="url" id="website" name="website" maxlength="500"
                placeholder="https://acme.com" value="${esc(org.website ?? "")}">
       </div>
     </div>
