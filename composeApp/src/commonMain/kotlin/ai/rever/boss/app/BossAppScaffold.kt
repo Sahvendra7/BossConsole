@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -83,18 +84,34 @@ private val TOAST_OVERLAY_INITIAL_SIZE = DpSize(432.dp, 600.dp)
  * seconds: a parent-sized HUD swallows every click beneath it, which is fine for a switcher held
  * for a moment and not for this.
  *
- * **The empty check is the load-bearing line.** `PluginToastHost` composes its padded `Column`
- * unconditionally, and `DefaultPlugin.pluginToastState` is never null, so without it every loaded
- * plugin would hold an always-on-top, click-eating overlay window open for the whole session -
- * over other applications too, since it is always-on-top. Guarding on the content matches what
- * `TabCycleOverlayHost` and both drag ghosts already do.
+ * **Two guards, and both are load-bearing**, because the overlay window is always-on-top and a
+ * non-focusable AWT window still eats mouse events (the JVM has no portable click-through). So
+ * wherever it sits is a dead region, of this app and of whatever is in front of it.
  *
- * Extracted from the scaffold so this guard can be tested directly; see `ToastOverlayTest`.
+ *  - **Empty.** `PluginToastHost` composes its padded `Column` unconditionally and
+ *    `DefaultPlugin.pluginToastState` is never null, so without this every loaded plugin would
+ *    hold a window open for the whole session.
+ *  - **Window focus.** Toast lifetime is NOT bounded by a timer: `ToastDuration.INDEFINITE` skips
+ *    auto-dismissal entirely, it is part of the plugin IPC surface, and the host itself raises one
+ *    (`BossPluginNotificationService.notifyPluginDisabled`, an ERROR toast with a "Re-enable"
+ *    action - precisely the kind a user leaves sitting while they go elsewhere). Escaping the
+ *    scene is only worth anything while the user is looking at this window, so an unfocused window
+ *    draws toasts in place, exactly as before this overlay existed. That also stops
+ *    `HeavyweightCorner`'s frame-clock loop, which would otherwise run for as long as the toast.
+ *
+ * Guarding on content matches what `TabCycleOverlayHost` and both drag ghosts already do.
+ *
+ * Extracted from the scaffold so both guards can be tested directly; see `ToastOverlayTest`.
  */
 @Composable
 internal fun BoxScope.ToastOverlay(toastState: PluginToastState) {
     val toasts by toastState.toasts.collectAsState()
     if (toasts.isEmpty()) return
+
+    if (!LocalWindowInfo.current.isWindowFocused) {
+        PluginToastHost(toastState = toastState, modifier = Modifier.align(Alignment.TopEnd))
+        return
+    }
     OverlayCorner(
         alignment = Alignment.TopEnd,
         initialSize = TOAST_OVERLAY_INITIAL_SIZE,

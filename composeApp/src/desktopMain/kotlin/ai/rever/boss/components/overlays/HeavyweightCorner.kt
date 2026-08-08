@@ -1,6 +1,8 @@
 package ai.rever.boss.components.overlays
 
 import ai.rever.boss.plugin.browser.LocalAwtWindow
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,10 +50,11 @@ import java.awt.Window as AwtWindow
  * Two things here are deliberately not the obvious implementation, both because the obvious one
  * fails silently:
  *
- *  - Content is measured against [initialSize], **never against the window's current size** (see
- *    [measuredAgainst]). Measuring against the window makes the size a one-way ratchet: the window
- *    shrinks to fit what is showing, the next toast is then measured inside that smaller window,
- *    measures clipped, and the overlay can never grow back.
+ *  - Content is measured against a ceiling ([initialSize], clamped to the parent by
+ *    [clampCeiling]), **never against the window's current size** (see [measuredAgainst]).
+ *    Measuring against the window makes the size a one-way ratchet: the window shrinks to fit what
+ *    is showing, the next toast is then measured inside that smaller window, measures clipped, and
+ *    the overlay can never grow back.
  *  - Parent bounds come from the CONTENT PANE, not the window (see [contentPaneBounds]), and are
  *    re-read on the frame clock rather than remembered once.
  */
@@ -66,6 +69,13 @@ fun HeavyweightCorner(
     var measured by remember { mutableStateOf<DpSize?>(null) }
     val size = measured ?: initialSize
     var bounds by remember(parent) { mutableStateOf(contentPaneBounds(parent)) }
+    // Clamp the ceiling to the parent. The ceiling is a hard clip, not a soft start, and toast text
+    // is arbitrary plugin content: three wordy toasts can exceed a fixed height, and because the
+    // window is CONTENT-sized the overflow is not cosmetic - the bottom toast's dismiss button ends
+    // up outside the window, unclickable, on the INDEFINITE path where dismissing is the only way
+    // out. Clamping to the parent keeps the overlay inside the window without reintroducing any
+    // dependency on the overlay's OWN size, which is what the ratchet was.
+    val ceiling = clampCeiling(initialSize, bounds)
 
     val state =
         rememberWindowState(
@@ -109,7 +119,7 @@ fun HeavyweightCorner(
                 Modifier
                     // Order matters: the constraint override is OUTSIDE, so the observer inside it
                     // reports a size measured against the ceiling rather than against the window.
-                    .measuredAgainst(initialSize)
+                    .measuredAgainst(ceiling)
                     .onGloballyPositioned { coordinates ->
                         val next =
                             DpSize(
@@ -170,12 +180,33 @@ internal fun Modifier.measuredAgainst(ceiling: DpSize): Modifier =
  * instead of converting at all; a corner anchor has no equivalent escape, so it converts correctly.
  */
 internal fun contentPaneBounds(parent: AwtWindow?): IntArray? {
-    val pane = (parent as? RootPaneContainer)?.contentPane?.takeIf { it.isShowing } ?: return null
-    return runCatching {
-        val at = pane.locationOnScreen
-        intArrayOf(at.x, at.y, pane.width, pane.height)
-    }.getOrNull()
+    val pane = (parent as? RootPaneContainer)?.contentPane?.takeIf { it.isShowing }
+    val bounds =
+        pane?.let {
+            runCatching { it.locationOnScreen }.getOrNull()?.let { at ->
+                intArrayOf(at.x, at.y, it.width, it.height)
+            }
+        }
+    // Loud, once. A null here does not degrade gracefully: cornerPosition falls back to 0,0, which
+    // is the top-left of the PRIMARY display, so the overlay detaches from the window entirely.
+    // OverlayWindowBounds makes the same condition loud for the same reason - it was silent once,
+    // and an intermittent report of exactly this had nothing to correlate against.
+    if (bounds == null && unmeasurableParentReported.compareAndSet(false, true)) {
+        logger.warn(
+            LogCategory.UI,
+            "Corner overlay could not measure its parent content pane - placing at the screen origin",
+            mapOf("reason" to if (pane == null) "no showing content pane" else "locationOnScreen failed"),
+        )
+    }
+    return bounds
 }
+
+/** One warning per session for [contentPaneBounds]; it is consulted on the frame clock. */
+private val unmeasurableParentReported =
+    java.util.concurrent.atomic
+        .AtomicBoolean(false)
+
+private val logger = BossLogger.forComponent("HeavyweightCorner")
 
 /**
  * Top-left corner, in AWT logical units, for an overlay of [size] placed at [alignment] inside
@@ -210,4 +241,22 @@ internal fun cornerPosition(
                 else -> slackY / 2
             }
     return x to y
+}
+
+/**
+ * [initialSize], reduced to fit inside [bounds] when the parent is smaller.
+ *
+ * Only ever shrinks, and never consults the overlay's own current size - that dependency is exactly
+ * the ratchet [measuredAgainst] exists to break. A null [bounds] leaves the ceiling alone, since an
+ * unmeasurable parent says nothing about how big the content may be.
+ */
+internal fun clampCeiling(
+    initialSize: DpSize,
+    bounds: IntArray?,
+): DpSize {
+    if (bounds == null) return initialSize
+    return DpSize(
+        minOf(initialSize.width.value, bounds[2].toFloat()).dp,
+        minOf(initialSize.height.value, bounds[3].toFloat()).dp,
+    )
 }
