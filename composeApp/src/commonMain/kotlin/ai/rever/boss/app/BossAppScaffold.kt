@@ -6,6 +6,7 @@ import ai.rever.boss.components.bars.horizontal.BossTopBar
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.overlays.DraggingItemOverlay
+import ai.rever.boss.components.overlays.OverlayCorner
 import ai.rever.boss.components.overlays.TabDraggingOverlay
 import ai.rever.boss.components.plugin.LocalPanelPluginIdResolver
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
@@ -56,7 +57,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+
+/**
+ * Size of the toast overlay window before its content has been measured.
+ *
+ * An upper bound, deliberately, not an estimate: the heavyweight overlay measures its content
+ * inside a window of this size, so anything smaller measures CLIPPED content and the overlay then
+ * settles at the clipped size. Width is `PluginToastHost`'s own `widthIn(max = 400.dp)` plus its
+ * 16.dp padding on each side; the height is just roomy enough for a tall stack of toasts.
+ */
+private val TOAST_OVERLAY_INITIAL_SIZE = DpSize(432.dp, 900.dp)
 
 /**
  * Provides every CompositionLocal that plugins and host UI below BossApp read:
@@ -355,11 +368,18 @@ internal fun BossAppScaffold(
 
             // Plugin notification toasts — the render surface for every plugin's
             // PluginContext.notificationProvider.showToast().
+            //
+            // OverlayCorner rather than a plain aligned Box: drawn in this scaffold they land
+            // BEHIND the heavyweight browser surface, so a toast raised while a browser tab is
+            // showing is invisible. Corner and not OverlayHud because a toast stays up for
+            // seconds — a parent-sized HUD would make the window unclickable for that whole time.
             state.currentDefaultPlugin?.pluginToastState?.let { toastState ->
-                PluginToastHost(
-                    toastState = toastState,
-                    modifier = Modifier.align(Alignment.TopEnd),
-                )
+                OverlayCorner(
+                    alignment = Alignment.TopEnd,
+                    initialSize = TOAST_OVERLAY_INITIAL_SIZE,
+                ) {
+                    PluginToastHost(toastState = toastState)
+                }
             }
 
             // MRU tab-switcher overlay (Ctrl+Tab in most-recently-used mode)
