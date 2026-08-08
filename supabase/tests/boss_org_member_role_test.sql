@@ -20,7 +20,7 @@
 -- the first thing below.
 
 begin;
-select plan(11);
+select plan(13);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: the boss organisation has to exist, or every assertion here is vacuous
@@ -212,6 +212,50 @@ select is(
        join public.organisations o on o.id = m.org_id
       where o.slug = 'boss' and m.status = 'active'),
     're-running the backfill changes nothing'
+);
+
+-- ===========================================================================
+-- The repair clears a tie that already exists
+-- ===========================================================================
+-- The assertions above prove a tie cannot be CREATED any more. They say nothing
+-- about the rows written between 20260806000000 and 20260806010000, whose tie is
+-- permanent and leaves primary_role plan-dependent for the life of the row.
+--
+-- Recreate that state by hand - set the organisation role's assigned_at back onto
+-- its peer - then run 20260806020000's statement verbatim.
+update public.user_roles ur
+   set assigned_at = peer.assigned_at
+  from public.user_roles peer,
+       public.organisation_roles orl,
+       public.roles r
+ where ur.user_id = '70000000-0000-0000-0000-000000000002'
+   and orl.role_id = ur.role_id and orl.kind = 'user'
+   and peer.user_id = ur.user_id and peer.role_id = r.id and r.name = 'user';
+
+select is(
+    (select count(distinct assigned_at)::int from public.user_roles
+      where user_id = '70000000-0000-0000-0000-000000000002'),
+    1,
+    'the historical tie is reproducible, so the repair below is not vacuous'
+);
+
+update public.user_roles ur
+   set assigned_at = ur.assigned_at + interval '1 microsecond'
+  from public.organisation_roles orl
+ where orl.role_id = ur.role_id
+   and orl.kind = 'user'
+   and exists (
+       select 1 from public.user_roles peer
+        where peer.user_id = ur.user_id
+          and peer.role_id <> ur.role_id
+          and peer.assigned_at = ur.assigned_at
+   );
+
+select is(
+    (select count(distinct assigned_at)::int from public.user_roles
+      where user_id = '70000000-0000-0000-0000-000000000002'),
+    2,
+    'the repair clears an existing tie, and moves the organisation role later'
 );
 
 select * from finish();

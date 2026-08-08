@@ -24,6 +24,20 @@ export function esc(value: unknown): string {
 }
 
 /**
+ * Wrap a table so it can scroll AND be scrolled from a keyboard.
+ *
+ * `tabindex="0"` is what makes the region operable without a pointer (WCAG
+ * 2.1.1). These tables are read-only and contain no links or controls, so
+ * without it the box scrolls for a mouse and is simply unreachable otherwise.
+ *
+ * `role="region"` plus a label is what stops that tab stop being a mystery: a
+ * focusable div with no name announces as nothing.
+ */
+export function scrollable(label: string, table: string): string {
+  return `<div class="scroller" tabindex="0" role="region" aria-label="${esc(label)}">${table}</div>`
+}
+
+/**
  * JSON safe to embed inside a `<script>` block.
  *
  * Two hazards, both of which JSON.stringify leaves open:

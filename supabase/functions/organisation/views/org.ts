@@ -5,7 +5,7 @@
  * of CSRF concerns entirely.
  */
 
-import { esc } from "../utils/html.ts"
+import { esc, scrollable } from "../utils/html.ts"
 import { layout, tabs } from "./layout.ts"
 import type { OrgDetail, OrgMember, OrgRole } from "../services/org.ts"
 
@@ -75,10 +75,10 @@ function membersTable(members: OrgMember[]): string {
       <td>${esc(formatDate(member.joined_at))}</td>
     </tr>`).join("")
 
-  return `<table>
+  return scrollable("Members", `<table>
   <thead><tr><th>Email</th><th>Standing</th><th>Roles</th><th>Joined</th></tr></thead>
   <tbody>${rows}</tbody>
-</table>`
+</table>`)
 }
 
 function rolesTable(roles: OrgRole[]): string {
@@ -96,10 +96,10 @@ function rolesTable(roles: OrgRole[]): string {
   }</td>
     </tr>`).join("")
 
-  return `<table>
+  return scrollable("Roles", `<table>
   <thead><tr><th>Role</th><th>Kind</th><th>Members</th><th>Permissions</th></tr></thead>
   <tbody>${rows}</tbody>
-</table>`
+</table>`)
 }
 
 /**

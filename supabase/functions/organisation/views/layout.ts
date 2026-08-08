@@ -156,11 +156,20 @@ const STYLES = `
   section.card {
     background-color: var(--raised); border: 1px solid var(--line); border-radius: 10px;
     padding: 22px; margin-bottom: 16px; box-shadow: var(--shadow);
-    /* Tables scroll inside their own card rather than widening the page. The old
-       rule hid every column past the third below 620px, which did not make the
-       table fit - it deleted "Joined" and "Permissions" from the reader's view. */
-    overflow-x: auto;
   }
+
+  /* The scroll lives on a wrapper around the table, not on the card.
+     Two reasons it moved off .card:
+       - overflow-x on a block computes overflow-y to auto as well, so every card
+         became a scroll container in both axes and the heading and hint scrolled
+         sideways along with the table;
+       - a scrollable region is only operable from a keyboard if it can take
+         focus, and these tables are entirely read-only, so they contain nothing
+         focusable. Without tabindex a keyboard user still could not reach
+         "Joined" or "Permissions" on a narrow viewport - the same content loss
+         the old display:none rule caused, in a different modality. */
+  .scroller { overflow-x: auto; }
+  .scroller:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
   /* A real heading, not the uppercase micro-label the desktop panel uses. The
      admin page has six substantial sections on a 960px canvas; an eyebrow is the
      right weight for a 300px sidebar and too quiet to structure a page. */

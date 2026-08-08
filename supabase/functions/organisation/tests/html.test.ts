@@ -4,7 +4,7 @@
  */
 
 import { assert, assertEquals } from "@std/assert"
-import { attrUrl, cspNonce, esc, jsonForScript } from "../utils/html.ts"
+import { attrUrl, cspNonce, esc, jsonForScript, scrollable } from "../utils/html.ts"
 import { layout } from "../views/layout.ts"
 
 Deno.test("esc neutralises every HTML metacharacter", () => {
@@ -160,4 +160,38 @@ Deno.test("the region wraps the page exactly once", () => {
   const page = layout({ title: "t", nonce: "n", body: "<p>x</p>" })
   assertEquals(page.split("<!--email_off-->").length - 1, 1)
   assertEquals(page.split("<!--/email_off-->").length - 1, 1)
+})
+
+Deno.test("every table sits in a focusable scroll region", async () => {
+  // The scroll container replaced a rule that hid every column past the third.
+  // But a scrollable region is only operable from a keyboard if it can take focus
+  // (WCAG 2.1.1), and these tables are read-only - no links, no controls, nothing
+  // focusable inside. Without tabindex the columns are reachable with a mouse and
+  // unreachable otherwise, which is the same content loss in a different modality.
+  //
+  // Source-scanned: whether a table is wrapped is a property of the markup, and
+  // the failure is invisible in rendered output unless you try to tab to it.
+  const dir = new URL("../views/", import.meta.url)
+  for await (const entry of Deno.readDir(dir)) {
+    if (!entry.name.endsWith(".ts")) continue
+    const source = await Deno.readTextFile(new URL(entry.name, dir))
+    const tables = (source.match(/<table>/g) ?? []).length
+    if (tables === 0) continue
+    const wrappers = (source.match(/class="scroller"/g) ?? []).length +
+      (source.match(/scrollable\(/g) ?? []).length
+    assertEquals(
+      wrappers,
+      tables,
+      `${entry.name}: ${tables} table(s) but ${wrappers} scroll wrapper(s)`,
+    )
+  }
+})
+
+Deno.test("the scroll region is focusable and named", () => {
+  // A focusable div with no accessible name announces as nothing, so the tab stop
+  // becomes a mystery rather than a feature.
+  const out = scrollable("Members", "<table></table>")
+  assert(out.includes('tabindex="0"'), "not focusable")
+  assert(out.includes('role="region"'), "no region role")
+  assert(out.includes('aria-label="Members"'), "no accessible name")
 })
