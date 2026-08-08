@@ -2,6 +2,8 @@ package ai.rever.boss.plugin
 
 import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MicrokernelRuntime
+import ai.rever.boss.components.plugin.findRelocatedPluginJar
+import ai.rever.boss.components.plugin.resolveReloadJarPath
 import ai.rever.boss.components.registery.PanelComponentStoreRegistry
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
@@ -21,6 +23,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.swing.SwingUtilities
 
@@ -169,20 +172,28 @@ class PluginLoaderDelegateImpl(
             // Checking existence up front also means a reload that cannot succeed no longer
             // tears the running plugin down first.
             val loadedJarPath = dynamicPluginManager.getPluginInfo(pluginId)?.jarPath
-            val persistedJarPath =
-                PluginPersistence.getInstalledPlugins().firstOrNull { it.pluginId == pluginId }?.jarPath
+            // Disk IO, and this runs on reloadScope (Dispatchers.Default): reading the record
+            // parses installed.json and, on a cold cache, opens every plugin jar's manifest.
             val jarPath =
-                resolveReloadJarPath(loadedJarPath, persistedJarPath) { File(it).isFile }
+                withContext(Dispatchers.IO) {
+                    val persistedJarPath =
+                        PluginPersistence.getInstalledPlugins().firstOrNull { it.pluginId == pluginId }?.jarPath
+                    resolveReloadJarPath(
+                        loadedJarPath = loadedJarPath,
+                        persistedJarPath = persistedJarPath,
+                        exists = { File(it).isFile },
+                        relocated = {
+                            val dir = (loadedJarPath ?: persistedJarPath)?.let { File(it).parentFile }
+                            findRelocatedPluginJar(dir, pluginId)?.absolutePath
+                        },
+                    )
+                }
 
             if (jarPath == null) {
                 logger.warn(
                     LogCategory.SYSTEM,
-                    "Cannot reload - no readable JAR for plugin",
-                    mapOf(
-                        "pluginId" to pluginId,
-                        "loadedJarPath" to (loadedJarPath ?: "none"),
-                        "persistedJarPath" to (persistedJarPath ?: "none"),
-                    ),
+                    "Cannot reload - no existing JAR for plugin",
+                    mapOf("pluginId" to pluginId, "loadedJarPath" to (loadedJarPath ?: "none")),
                 )
                 return null
             }
@@ -479,32 +490,3 @@ class PluginLoaderDelegateImpl(
         }
     }
 }
-
-/**
- * The JAR a reload should load: the one the plugin is running from, else the installer's
- * recorded one, else null.
- *
- * Both candidates are checked against [exists], and that is the whole point. A reload is
- * usually triggered by an update that has already replaced the jar on disk - the new file is
- * version-named, so it has a DIFFERENT name and the old one is deleted, which makes
- * [loadedJarPath] reliably stale in exactly the case reload matters most. `installed.json` is
- * written by every install path, so [persistedJarPath] is the installer's own record of what
- * should be loaded now.
- *
- * Preference order is deliberate: the loaded path wins while it still exists, so an
- * in-place hot reload (evolver copies a jar over the same path) behaves exactly as before and
- * this only changes the case that was already failing. Returning null rather than guessing
- * lets the caller keep the plugin running instead of unloading it for a load that cannot work.
- *
- * Pure, with [exists] injected, so the decision is testable without touching a filesystem.
- */
-internal fun resolveReloadJarPath(
-    loadedJarPath: String?,
-    persistedJarPath: String?,
-    exists: (String) -> Boolean,
-): String? =
-    when {
-        loadedJarPath != null && exists(loadedJarPath) -> loadedJarPath
-        persistedJarPath != null && exists(persistedJarPath) -> persistedJarPath
-        else -> null
-    }
