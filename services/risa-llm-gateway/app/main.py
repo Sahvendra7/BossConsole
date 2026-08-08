@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -12,12 +13,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from .bridge import (
+    MAX_REQUEST_BYTES,
     BridgeRequestError,
     ToolRoute,
     extract_error_message,
     flatten_namespace_tools,
+    read_bounded_body,
     rewrite_json_body,
     rewrite_sse_line,
+    upstream_error_message,
 )
 from .broker import BrokerError, TokenBroker
 from .clients import LiteLlmKeyIssuer, SupabaseIdentityClient
@@ -26,7 +30,7 @@ from .entitlements import CloudSqlEntitlementStore
 from .settings import Settings
 
 
-MAX_REQUEST_BYTES = 4 * 1024 * 1024
+logger = logging.getLogger("risa_llm_gateway")
 
 
 @asynccontextmanager
@@ -94,12 +98,13 @@ async def exchange_token(request: Request) -> Response:
     except BrokerError as exc:
         return error_response(exc.status_code, exc.message)
 
-    settings: Settings = request.app.state.settings
     return JSONResponse(
         content={
             "access_token": issued.key,
             "expires_at": issued.expires_at,
-            "refresh_after_seconds": settings.key_refresh_seconds,
+            # The issuer's remaining reuse window, not the configured maximum: a
+            # reused key has less life left than a fresh one.
+            "refresh_after_seconds": issued.refresh_after_seconds,
             "token_type": "Bearer",
         },
         headers={"Cache-Control": "no-store"},
@@ -121,8 +126,8 @@ async def responses_proxy(request: Request) -> Response:
     if not authorization or not authorization.startswith("Bearer "):
         return error_response(401, "RISA LLM authentication required", request_id)
 
-    raw_body = await request.body()
-    if len(raw_body) > MAX_REQUEST_BYTES:
+    raw_body = await read_bounded_body(request, MAX_REQUEST_BYTES)
+    if raw_body is None:
         return error_response(413, "Request body is too large", request_id)
     try:
         payload = json.loads(raw_body)
@@ -159,7 +164,20 @@ async def responses_proxy(request: Request) -> Response:
     if upstream.status_code >= 400:
         error_body = await upstream.aread()
         await upstream.aclose()
-        return error_response(upstream.status_code, extract_error_message(error_body), request_id)
+        # Upstream error bodies from LiteLLM/vLLM routinely carry the model config
+        # and api_base, so the client gets a message this gateway wrote. The
+        # detail is logged only when the operator opts in, because the same body
+        # can quote the request it rejected and prompt logging is prohibited here.
+        if settings.log_upstream_errors:
+            logger.warning(
+                "upstream error status=%s request_id=%s detail=%s",
+                upstream.status_code,
+                request_id,
+                extract_error_message(error_body),
+            )
+        else:
+            logger.warning("upstream error status=%s request_id=%s", upstream.status_code, request_id)
+        return error_response(upstream.status_code, upstream_error_message(upstream.status_code), request_id)
 
     headers = {
         "Content-Type": content_type,

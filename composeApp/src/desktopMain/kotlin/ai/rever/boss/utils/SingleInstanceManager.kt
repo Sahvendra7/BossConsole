@@ -592,7 +592,7 @@ private fun buildLlmTokenResponse(providerOverride: (() -> Result<String>)?): St
             }
     return result.fold(
         onSuccess = { token ->
-            if (token.startsWith("sk-") && token.none { it == '\n' || it == '\r' }) {
+            if (isSingleLineCredential(token)) {
                 RESPONSE_LLM_TOKEN_PREFIX + token
             } else {
                 RESPONSE_ERROR_PREFIX + "The RISA LLM gateway returned an invalid credential."
@@ -609,6 +609,22 @@ private fun buildLlmTokenResponse(providerOverride: (() -> Result<String>)?): St
     )
 }
 
+/**
+ * Whether [token] can be sent as one response line.
+ *
+ * The wire format is line-based, so a credential carrying CR or LF would let a
+ * gateway response inject a second line. Deliberately does *not* check a vendor
+ * prefix: pinning `sk-` here turns a LiteLLM key-format change into "the gateway
+ * returned an invalid credential" with nothing to diagnose from, and the caller
+ * that actually understands the credential is the gateway.
+ */
+internal val isSingleLineCredential: (String) -> Boolean =
+    { token -> token.isNotBlank() && token.none { it == '\n' || it == '\r' || it == ' ' } }
+
+/**
+ * Waits for the next connection, or returns null once the channel is gone —
+ * which is what [SingleInstanceManager.release] closing it looks like from here.
+ */
 private fun acceptNextClient(
     serverChannel: ServerSocketChannel?,
     isListening: () -> Boolean,
@@ -782,7 +798,11 @@ object SingleInstanceManager {
                             MAX_REQUEST_BYTES,
                         )
                     val request = line?.let { parseRequestLine(it) }
-                    if (request?.verb == VERB_LLM_TOKEN) {
+                    // Only a caller that presented the live token gets the longer
+                    // budget: minting a credential is a round trip to the gateway,
+                    // and nothing an unauthenticated caller sends should change what
+                    // this process is willing to spend on it.
+                    if (request != null && request.verb == VERB_LLM_TOKEN && presentsLiveToken(request)) {
                         budget.cancel(false)
                         budget = SingleInstanceWire.closeAfterBudget(channel, LLM_TOKEN_TIMEOUT_MS)
                     }
@@ -801,13 +821,23 @@ object SingleInstanceManager {
     }
 
     /**
+     * Whether a request presented the token this process published. Reads as a
+     * property rather than a function so the gate can be consulted from more than
+     * one place without tripping the object's function-count ceiling.
+     */
+    private val presentsLiveToken: (SingleInstanceRequest) -> Boolean
+        get() = { request ->
+            val expected = published?.token
+            expected != null && tokensMatch(expected, request.token)
+        }
+
+    /**
      * Checks the token, then acts on the request, returning the response to send
      * back. A request that does not present the live token is refused here,
      * before its contents mean anything.
      */
     private fun responseFor(request: SingleInstanceRequest?): String {
-        val expected = published?.token
-        if (request == null || expected == null || !tokensMatch(expected, request.token)) {
+        if (request == null || !presentsLiveToken(request)) {
             logger.warn(LogCategory.SYSTEM, "Refused a single-instance request that did not present the channel token")
             return RESPONSE_REJECTED
         }

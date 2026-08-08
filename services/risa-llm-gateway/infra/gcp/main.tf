@@ -203,8 +203,15 @@ resource "google_secret_manager_secret_iam_member" "litellm_coreweave" {
 }
 
 resource "google_cloud_run_v2_service" "litellm" {
-  name                = "risa-llm-litellm"
-  location            = var.region
+  name     = "risa-llm-litellm"
+  location = var.region
+  # Reachable but not invocable: IAM grants run.invoker to the gateway service
+  # account alone, and no allUsers binding exists. Ingress cannot be narrowed to
+  # internal while the gateway reaches this service at its public `uri` with
+  # PRIVATE_RANGES_ONLY egress - that traffic arrives as external and would be
+  # refused. Tightening it means giving the gateway a private path to LiteLLM
+  # first (Private Service Connect, or an internal load balancer), which is
+  # tracked separately rather than folded in here.
   ingress             = "INGRESS_TRAFFIC_ALL"
   deletion_protection = false
 

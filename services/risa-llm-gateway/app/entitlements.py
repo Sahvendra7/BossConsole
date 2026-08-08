@@ -46,11 +46,22 @@ class CloudSqlEntitlementStore:
         try:
             async with self.pool.acquire() as connection:
                 async with connection.transaction():
+                    # The conflict branch updates the email and nothing else. It
+                    # deliberately never touches `enabled`: a disabled row stays
+                    # disabled across login, passkey and token refresh, which is the
+                    # whole revocation story. Refreshing the email matters because
+                    # that is the column an operator greps to find a user to
+                    # revoke, and it would otherwise keep the address the account
+                    # had when it first appeared. `updated_at` moves only on a real
+                    # change, so it keeps meaning "last modified".
                     await connection.execute(
                         """
                         INSERT INTO llm_entitlements (user_id, email, enabled, source)
                         VALUES ($1, $2, true, 'verified_domain')
-                        ON CONFLICT (user_id) DO NOTHING
+                        ON CONFLICT (user_id) DO UPDATE
+                        SET email = EXCLUDED.email,
+                            updated_at = now()
+                        WHERE llm_entitlements.email IS DISTINCT FROM EXCLUDED.email
                         """,
                         user.user_id,
                         user.email.strip().lower(),

@@ -31,6 +31,11 @@ class Entitlement:
 class IssuedKey:
     key: str
     expires_at: str
+    # How long this key may be reused before asking for another. A reused key has
+    # less life left than a fresh one, so the caller must be told the remaining
+    # window rather than the configured maximum, or it will hold a key past its
+    # expiry and see 401s it cannot explain.
+    refresh_after_seconds: int = 0
 
 
 class IdentityClient(Protocol):

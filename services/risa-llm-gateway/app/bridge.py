@@ -12,6 +12,49 @@ from typing import Any
 MAX_FLATTENED_TOOLS = 64
 MAX_TOOL_CATALOG_BYTES = 128 * 1024
 MAX_ERROR_CHARS = 1600
+MAX_REQUEST_BYTES = 4 * 1024 * 1024
+
+# Client-facing text for an upstream failure, written here rather than forwarded.
+# Upstream error bodies from LiteLLM/vLLM routinely carry the model config and
+# api_base, so the client gets a message this gateway owns. Keyed by status, with
+# a status-class fallback so a new upstream status degrades to a generic entry.
+UPSTREAM_ERROR_MESSAGES = {
+    400: "The model gateway rejected the request.",
+    401: "The RISA LLM credential is not valid or has expired. Restart Codex to fetch a new one.",
+    403: "The RISA LLM credential is not permitted to use this model.",
+    404: "The requested model is not available on the RISA LLM gateway.",
+    413: "Request body is too large",
+    429: "The RISA LLM rate limit was reached. Wait a moment and retry.",
+}
+
+
+def upstream_error_message(status_code: int) -> str:
+    if status_code in UPSTREAM_ERROR_MESSAGES:
+        return UPSTREAM_ERROR_MESSAGES[status_code]
+    if status_code >= 500:
+        return "The model gateway is temporarily unavailable. Retry shortly."
+    return "The model gateway returned an error."
+
+
+async def read_bounded_body(request: Any, limit: int) -> bytes | None:
+    """
+    Read at most [limit] bytes from [request], returning None once it exceeds them.
+
+    Streams rather than calling `request.body()`: that buffers the whole body
+    before any check can run, so a chunked request with no Content-Length is
+    unbounded however the length header is validated.
+
+    Takes [request] as Any so this module stays importable without FastAPI, which
+    is what lets the tests cover it - nothing here needs more than `.stream()`.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 class BridgeRequestError(ValueError):

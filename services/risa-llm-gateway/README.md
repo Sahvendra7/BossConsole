@@ -45,7 +45,11 @@ VPC connector, a service mesh, or a Supabase database migration.
 4. Cloud SQL auto-provisions the first allowed request. An existing disabled row remains disabled
    across login, passkey, and token refresh.
 5. LiteLLM issues a short-lived key restricted to `coreweave-glm-5-2` and tags usage with the
-   stable Supabase user ID.
+   stable Supabase user ID. One live key is reused per user until its refresh window elapses, and
+   the RPM/TPM/parallel limits are set on the LiteLLM **user** as well as on each key. Per-key
+   limits alone bound nothing: a caller that asks twice would otherwise just hold two keys and
+   double its own ceiling. A request fails rather than issuing a key if that ceiling cannot be
+   written.
 6. The gateway authenticates to LiteLLM with its Google service account. LiteLLM grants Cloud Run
    invocation only to that account.
 7. The CoreWeave credential is readable only by the LiteLLM service account.
@@ -56,6 +60,17 @@ provides a coarse abuse ceiling. Per-user RPM/TPM controls remain in LiteLLM.
 
 Do not enable prompt, request-body, Authorization-header, or source-code logging at the gateway,
 load balancer, LiteLLM callbacks, or Cloud Logging sinks.
+
+An upstream failure is reported to the client with text this gateway wrote, keyed by status code,
+never with the upstream body: LiteLLM and vLLM error messages routinely include the model config
+and `api_base`. `RISA_LLM_LOG_UPSTREAM_ERRORS` puts the upstream detail in the log for debugging
+and is off by default, because that body can quote the request it rejected.
+
+LiteLLM's Cloud Run service keeps `INGRESS_TRAFFIC_ALL`. It is invocable only by the gateway's
+service account and has no `allUsers` binding, so it is reachable but not usable. Narrowing ingress
+needs the gateway to reach it privately first; today it calls LiteLLM's public `uri` with
+`PRIVATE_RANGES_ONLY` egress, which arrives as external traffic and an internal-only setting would
+refuse.
 
 ## Local development
 

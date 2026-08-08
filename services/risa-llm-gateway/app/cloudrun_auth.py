@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import time
@@ -28,13 +29,25 @@ class CloudRunIdentityTokenProvider:
         self.audience = audience
         self._token: str | None = None
         self._expires_at = 0
+        self._lock = asyncio.Lock()
 
     async def token(self) -> str | None:
         if not self.audience:
             return None
-        if self._token and self._expires_at - 60 > int(time.time()):
+        if self._fresh():
             return self._token
 
+        # Single-flight: every proxied request needs this token, so without the
+        # lock a cold start sends one metadata fetch per concurrent request.
+        async with self._lock:
+            if self._fresh():
+                return self._token
+            return await self._fetch()
+
+    def _fresh(self) -> bool:
+        return bool(self._token) and self._expires_at - 60 > int(time.time())
+
+    async def _fetch(self) -> str:
         try:
             response = await self.http.get(
                 f"{METADATA_IDENTITY_URL}?audience={quote(self.audience, safe='')}&format=full",
@@ -52,10 +65,18 @@ class CloudRunIdentityTokenProvider:
 
 
 def _jwt_expiry(token: str) -> int:
+    """
+    The `exp` claim, or a short pessimistic lifetime when it cannot be read.
+
+    The fallback is deliberately shorter than the refresh margin so an
+    unparseable token is re-fetched on the next call rather than cached for
+    minutes: the alternative is failing every request until a window we guessed
+    elapses.
+    """
     try:
         payload = token.split(".", 2)[1]
         payload += "=" * (-len(payload) % 4)
         body = json.loads(base64.urlsafe_b64decode(payload))
         return int(body["exp"])
     except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
-        return int(time.time()) + 300
+        return int(time.time())

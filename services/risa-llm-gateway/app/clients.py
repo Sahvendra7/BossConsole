@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -36,7 +39,28 @@ class SupabaseIdentityClient:
         return VerifiedUser(user_id=user_id, email=email, email_confirmed=confirmed)
 
 
+@dataclass
+class _CachedKey:
+    key: str
+    expires_at: str
+    reuse_until: float
+
+
 class LiteLlmKeyIssuer:
+    """
+    Issues model-scoped LiteLLM keys, one live key per user at a time.
+
+    Two things bound what one account can spend, because per-key limits alone
+    bound nothing: a caller that asks twice simply holds two keys and doubles its
+    own ceiling.
+
+    1. A live key is reused until its refresh window elapses, so a client that
+       calls /auth/token in a loop gets the same credential back.
+    2. The limits are also set on the LiteLLM *user*, which LiteLLM applies across
+       every key that user holds. That is the durable ceiling; the cache is only a
+       per-instance optimisation and does not survive a Cloud Run scale-out.
+    """
+
     def __init__(
         self,
         http: httpx.AsyncClient,
@@ -46,18 +70,28 @@ class LiteLlmKeyIssuer:
         self.http = http
         self.settings = settings
         self.identity_tokens = identity_tokens
+        self._cache: dict[str, _CachedKey] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     async def issue_key(self, user: VerifiedUser) -> IssuedKey:
-        headers = {
-            "Authorization": f"Bearer {self.settings.litellm_master_key}",
-            "Content-Type": "application/json",
-        }
-        try:
-            identity_token = await self.identity_tokens.token()
-        except IdentityTokenError as exc:
-            raise BrokerError(502, "Could not authenticate to the model gateway") from exc
-        if identity_token:
-            headers["X-Serverless-Authorization"] = f"Bearer {identity_token}"
+        # Per-user lock: without it, concurrent Codex processes on one laptop
+        # each miss the cache and mint their own key, which is the case the cache
+        # exists to prevent.
+        lock = self._locks.setdefault(user.user_id, asyncio.Lock())
+        async with lock:
+            cached = self._cache.get(user.user_id)
+            now = time.monotonic()
+            if cached is not None and cached.reuse_until > now:
+                return IssuedKey(
+                    key=cached.key,
+                    expires_at=cached.expires_at,
+                    refresh_after_seconds=int(cached.reuse_until - now),
+                )
+            return await self._mint(user)
+
+    async def _mint(self, user: VerifiedUser) -> IssuedKey:
+        headers = await self._litellm_headers()
+        await self._apply_user_limits(user, headers)
 
         response = await self.http.post(
             f"{self.settings.litellm_url}/key/generate",
@@ -87,7 +121,60 @@ class LiteLlmKeyIssuer:
         expires = body.get("expires")
         if not isinstance(key, str) or not key or not isinstance(expires, str) or not expires:
             raise BrokerError(502, "LiteLLM returned an incomplete key response")
-        return IssuedKey(key=key, expires_at=expires)
+
+        reuse_seconds = self.settings.key_refresh_seconds
+        self._cache[user.user_id] = _CachedKey(
+            key=key,
+            expires_at=expires,
+            reuse_until=time.monotonic() + reuse_seconds,
+        )
+        return IssuedKey(key=key, expires_at=expires, refresh_after_seconds=reuse_seconds)
+
+    async def _apply_user_limits(self, user: VerifiedUser, headers: dict[str, str]) -> None:
+        """
+        Persist the ceiling on the LiteLLM user, so it holds across every key.
+
+        /user/new rejects a user that already exists, so an existing one is
+        updated instead. Failing to apply the ceiling fails the request: this is
+        the spend control, and issuing an unbounded key because the limits could
+        not be written is the outcome it exists to prevent.
+        """
+        payload: dict[str, Any] = {
+            "user_id": user.user_id,
+            "rpm_limit": self.settings.rpm_limit,
+            "tpm_limit": self.settings.tpm_limit,
+            "max_parallel_requests": self.settings.max_parallel_requests,
+        }
+        if self.settings.user_max_budget is not None:
+            payload["max_budget"] = self.settings.user_max_budget
+            payload["budget_duration"] = self.settings.user_budget_duration
+
+        for endpoint in ("/user/new", "/user/update"):
+            try:
+                response = await self.http.post(
+                    f"{self.settings.litellm_url}{endpoint}",
+                    headers=headers,
+                    json=payload,
+                )
+            except httpx.HTTPError as exc:
+                raise BrokerError(502, "Could not reach the model gateway") from exc
+            if response.status_code == 200:
+                return
+
+        raise BrokerError(502, "Could not apply the RISA LLM usage ceiling")
+
+    async def _litellm_headers(self) -> dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {self.settings.litellm_master_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            identity_token = await self.identity_tokens.token()
+        except IdentityTokenError as exc:
+            raise BrokerError(502, "Could not authenticate to the model gateway") from exc
+        if identity_token:
+            headers["X-Serverless-Authorization"] = f"Bearer {identity_token}"
+        return headers
 
 
 def _json_object(response: httpx.Response, error_message: str) -> dict[str, Any]:

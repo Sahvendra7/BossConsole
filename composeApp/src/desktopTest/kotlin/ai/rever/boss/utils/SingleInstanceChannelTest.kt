@@ -228,6 +228,33 @@ class SingleInstanceChannelTest {
     }
 
     @Test
+    fun `a credential request without the channel token is refused, not served`() {
+        // The verb must not be enough on its own: the token gate is what stands
+        // between any local process and a billable credential.
+        SingleInstanceManager.llmTokenProviderOverride = { Result.success("sk-should-not-be-served") }
+        assertTrue(SingleInstanceManager.acquireLock())
+        val descriptor = assertNotNull(readPublishedDescriptor())
+
+        val wrongToken = "e".repeat(TOKEN_HEX_LENGTH)
+        val response = exchange(descriptor, formatLlmTokenRequest(wrongToken))
+
+        assertEquals(RESPONSE_REJECTED, response)
+        assertFalse(response.orEmpty().contains("sk-"))
+    }
+
+    @Test
+    fun `a credential is refused when it would not survive the line format`() {
+        // A response line carrying CR or LF would let the gateway inject a second
+        // line. Deliberately not a vendor-prefix check: see isSingleLineCredential.
+        assertFalse(isSingleLineCredential("sk-good\nLLM_TOKEN sk-injected"))
+        assertFalse(isSingleLineCredential("sk-good\r\nrubbish"))
+        assertFalse(isSingleLineCredential("   "))
+        assertTrue(isSingleLineCredential("sk-plain"))
+        // A key-format change must not read as an invalid credential.
+        assertTrue(isSingleLineCredential("litellm_v2_abc123"))
+    }
+
+    @Test
     fun `a descriptor nothing answers on is reclaimed instead of blocking startup`() {
         // A crashed instance leaves a descriptor behind. It names a live-looking
         // endpoint, but nothing is listening there.

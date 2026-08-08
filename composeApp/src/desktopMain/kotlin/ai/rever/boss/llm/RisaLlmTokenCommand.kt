@@ -1,5 +1,6 @@
 package ai.rever.boss.llm
 
+import ai.rever.boss.services.auth.CoreAuthService
 import ai.rever.boss.services.supabase.SupabaseConfig
 import ai.rever.boss.utils.SingleInstanceManager
 import io.github.jan.supabase.auth.auth
@@ -123,17 +124,24 @@ object RisaLlmTokenCommand {
         }
     }
 
+    /**
+     * Refreshes through [CoreAuthService] rather than calling supabase-kt
+     * directly. Supabase rotates the refresh token, so a second refresh
+     * overlapping the app's own presents an already-used token, and a rejected
+     * refresh token is what drops the user to the login screen. That service
+     * owns the single-flight lock the recovery loop also holds.
+     */
     private suspend fun refreshSession(): io.github.jan.supabase.auth.user.UserSession {
-        val auth = SupabaseConfig.client.auth
         try {
-            auth.refreshCurrentSession()
+            CoreAuthService.refreshSession()
         } catch (_: Exception) {
             error(
                 "Your BOSS session expired. Open BOSS, sign in again, and retry.",
             )
         }
 
-        return auth.currentSessionOrNull()
+        return SupabaseConfig.client.auth
+            .currentSessionOrNull()
             ?: error(
                 "Your BOSS session expired. Open BOSS, sign in again, and retry.",
             )
