@@ -20,7 +20,7 @@
 -- the first thing below.
 
 begin;
-select plan(9);
+select plan(11);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: the boss organisation has to exist, or every assertion here is vacuous
@@ -83,6 +83,32 @@ select ok(
     ),
     'the global user role is still assigned alongside it'
 );
+
+-- ===========================================================================
+-- The assigned_at tie that primary_role rides on
+-- ===========================================================================
+-- handle_new_user assigns the global `user` role and then calls the helper, both
+-- inside one transaction. now() is transaction_timestamp() and does not advance,
+-- so before 20260806010000 both rows landed with an identical assigned_at.
+--
+-- get_user_roles_for_hook aggregates ORDER BY assigned_at and the token hook takes
+-- element 1 as primary_role. A tie makes that claim plan-dependent, so a signup
+-- could report its role as boss_org_user. Not an escalation - permissions come
+-- from the full array - but nondeterministic and displayed.
+select is(
+    (select count(distinct ur.assigned_at)::int
+       from public.user_roles ur
+      where ur.user_id = '70000000-0000-0000-0000-000000000002'),
+    2,
+    'the two roles a signup receives have distinct assigned_at, so the sort has no tie'
+);
+
+select is(
+    (select (public.get_user_roles_for_hook('70000000-0000-0000-0000-000000000002'))[1]),
+    'user',
+    'the global user role sorts first, so primary_role is deterministic'
+);
+
 
 -- ===========================================================================
 -- The flag is what drives it, not a hardcoded organisation name

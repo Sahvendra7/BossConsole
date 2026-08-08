@@ -21,10 +21,12 @@
  *
  * ## Surfaces are per-token, because they are not interchangeable
  *
- * `--alert-text` colours a danger button, which lives in a table cell and so can
- * sit on the hover wash. It never sits on a doubled wash, because nothing puts a
- * `.pill.mono` inside it. Holding every token to every surface would force the
- * palette darker than the pages need.
+ * `--warn-text` colours a pill that can sit on a hovered row, but never inside a
+ * `.pill.mono`, so it is not held to the doubled wash. `--alert-text` IS held to a
+ * doubled surface, because a .danger button's own hover fill composites on top of
+ * the row wash beneath it. Holding every token to every surface would force the
+ * palette darker than the pages need; holding one to too few is how the danger
+ * label shipped at 4.09:1.
  */
 
 import { assert } from "@std/assert"
@@ -49,6 +51,24 @@ function tokensIn(block: string): Palette {
 function washIn(block: string): { hex: string; alpha: number } {
   const m = block.match(/--token-wash:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/)
   assert(m, "no --token-wash rgba() found; the wash surfaces below would be invented")
+  const [, r, g, b, a] = m
+  const hex = "#" + [r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")
+  return { hex, alpha: Number(a) }
+}
+
+/**
+ * The tint `button.danger:hover` paints, read from the rule.
+ *
+ * This one composites on top of the ROW hover wash, not on the card: every
+ * .danger button in these pages lives in a table cell, so hovering the button
+ * necessarily hovers its row. That doubled surface is the only state the label is
+ * ever read in, and it was the last surface this file did not model.
+ */
+function dangerHoverFill(): { hex: string; alpha: number } {
+  const rule = STYLESHEET.match(/button\.danger:hover\s*\{[^}]*\}/)
+  assert(rule, "no button.danger:hover rule found")
+  const m = rule[0].match(/background-color:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/)
+  assert(m, "button.danger:hover has no rgba background to composite")
   const [, r, g, b, a] = m
   const hex = "#" + [r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")
   return { hex, alpha: Number(a) }
@@ -113,6 +133,11 @@ function surfaces(theme: Palette, block: string) {
     // .pill.mono inside a hovered row stacks its own wash on the row's.
     washStacked: over(wash.hex, wash.alpha, washOnCard),
     okBanner: over(ok.hex, ok.alpha, theme.raised),
+    // Two translucent layers: the row wash, then the button's own hover fill.
+    dangerHover: (() => {
+      const d = dangerHoverFill()
+      return over(d.hex, d.alpha, washOnCard)
+    })(),
     errorBanner: over(err.hex, err.alpha, theme.raised),
     signalWash: theme["signal-wash"],
     signal: theme.signal,
@@ -159,7 +184,8 @@ const USAGE: Array<{ token: string; where: string; on: SurfaceName[]; floor?: nu
   {
     token: "alert-text",
     where: "the danger button and the error banner",
-    on: ["card", "washOnCard", "errorBanner"],
+    // dangerHover is the binding one and was missing: 4.09:1 on paper.
+    on: ["card", "washOnCard", "errorBanner", "dangerHover"],
   },
   {
     token: "on-signal",

@@ -20,6 +20,21 @@
  * stylesheet had `.linkish` and `.pill.admin` painting the accent as text, which
  * is the same regression the app corrected across ~90 call sites.
  *
+ * ## Cloudflare must not rewrite the page
+ *
+ * api.risaboss.com is behind Cloudflare, whose Email Address Obfuscation rewrites
+ * any address in an HTML response into a `__cf_email__` anchor plus an injected
+ * decoder script. Our CSP is `default-src 'none'` with `script-src` nonce-only, so
+ * that script is blocked and the address never decodes - every member on the
+ * roster rendered as the literal words "email protected".
+ *
+ * The whole page is wrapped in Cloudflare's `<!--email_off-->` region rather than
+ * each email field. The first fix was per-field, and the failure is per-RESPONSE:
+ * Cloudflare rewrites any address it finds, not only ones from a column called
+ * email, so a join request reading "reach me at me@corp.com" broke identically on
+ * the very page the fix was for. One region covers the class; a list of fields
+ * covers whatever someone remembered.
+ *
  * ## Light mode is not decoration here
  *
  * The in-app browser bridges the host theme to `prefers-color-scheme`
@@ -52,7 +67,12 @@ const STYLES = `
        fill-versus-glyph split the app makes for signal, applied to status. */
     --ok-text: #2FD98A;
     --warn-text: #F0B429;
-    --alert-text: #FF5D5D;
+    /* alert-text alone is moved off its fill value. Every .danger button sits in a
+       table cell, so hovering the button also hovers the row: the 12% tint from
+       button.danger:hover composites on top of --token-wash, and the label is read
+       on that doubled surface every single time it is read at all. At the fill
+       value that was 4.34:1 here and 4.09:1 on paper. */
+    --alert-text: #FF6868;
     --signal-on-wash: #88A9FF;
     --on-signal: #FFFFFF;
     --token-wash: rgba(154, 167, 187, 0.12);
@@ -79,7 +99,7 @@ const STYLES = `
          the test checked the card and the banner tint and no wash at all. */
       --ok-text: #177B4D;
       --warn-text: #926209;
-      --alert-text: #C43745;
+      --alert-text: #B63340;
       --signal-on-wash: #0C3FBF;
       --on-signal: #FFFFFF;
       --token-wash: rgba(5, 7, 11, 0.06);
@@ -336,11 +356,13 @@ export function layout({ title, nonce, body, banner }: LayoutOptions): string {
 <style nonce="${esc(nonce)}">${STYLES}</style>
 </head>
 <body>
+<!--email_off-->
 <div class="wrap">
 ${bannerHtml}
 ${body}
 <footer class="page">BOSS Organisation</footer>
 </div>
+<!--/email_off-->
 </body>
 </html>`
 }

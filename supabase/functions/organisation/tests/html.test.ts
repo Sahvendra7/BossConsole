@@ -4,7 +4,8 @@
  */
 
 import { assert, assertEquals } from "@std/assert"
-import { attrUrl, cspNonce, emailText, esc, jsonForScript } from "../utils/html.ts"
+import { attrUrl, cspNonce, esc, jsonForScript } from "../utils/html.ts"
+import { layout } from "../views/layout.ts"
 
 Deno.test("esc neutralises every HTML metacharacter", () => {
   assertEquals(esc(`<script>`), "&lt;script&gt;")
@@ -120,38 +121,43 @@ Deno.test("no view emits a duplicate class attribute", async () => {
   }
 })
 
-Deno.test("emailText wraps the address in Cloudflare's opt-out and still escapes it", () => {
-  const out = emailText("someone@example.com")
-  assert(out.startsWith("<!--email_off-->"))
-  assert(out.endsWith("<!--/email_off-->"))
-  assert(out.includes("someone@example.com"))
+Deno.test("every page is inside Cloudflare's email-obfuscation opt-out", () => {
+  // api.risaboss.com is behind Cloudflare, which rewrites any address in an HTML
+  // response into a __cf_email__ anchor needing a decoder script our CSP blocks.
+  // Every member on the roster rendered as the literal words "email protected".
+  //
+  // Asserted on the LAYOUT, not on each field. The first fix wrapped the four
+  // known email columns, and the failure is per-response: a join request reading
+  // "reach me at me@corp.com" goes through request_message and broke identically.
+  // One region covers the class; a list of fields covers whatever was remembered.
+  const page = layout({ title: "t", nonce: "n", body: "<p>someone@example.com</p>" })
 
-  // The comments tell a proxy to leave the region alone. They are not escaping,
-  // so the value must still be escaped inside them.
-  const hostile = emailText(`"><script>alert(1)</script>`)
-  assertEquals(hostile.includes("<script>"), false)
-  assert(hostile.includes("&lt;script&gt;"))
+  const open = page.indexOf("<!--email_off-->")
+  const close = page.indexOf("<!--/email_off-->")
+  const content = page.indexOf("someone@example.com")
+
+  assert(open > -1, "no email_off region")
+  assert(close > open, "the region is not closed after it opens")
+  assert(content > open && content < close, "page content is outside the region")
 })
 
-Deno.test("every email rendered into a page goes through emailText", async () => {
-  // Cloudflare rewrites any address it finds in the HTML into a __cf_email__ span
-  // that needs a script our CSP blocks, so a plain esc(...) of an email renders as
-  // the literal words "email protected". That is not a styling problem: it makes
-  // the roster unable to answer who is who, which is the page's whole job.
-  //
-  // Source-scanned rather than output-scanned because the failure is invisible in
-  // our own output - it happens at the edge, after we have rendered.
-  const dir = new URL("../views/", import.meta.url)
-  const offenders: string[] = []
-  for await (const entry of Deno.readDir(dir)) {
-    if (!entry.name.endsWith(".ts")) continue
-    const source = await Deno.readTextFile(new URL(entry.name, dir))
-    source.split("\n").forEach((line, i) => {
-      // An interpolation that escapes something whose name says it is an email.
-      if (/\$\{esc\([^)]*email[^)]*\)/i.test(line)) {
-        offenders.push(`${entry.name}:${i + 1}: ${line.trim()}`)
-      }
-    })
-  }
-  assertEquals(offenders, [], "use emailText(...) for an email address, not esc(...)")
+Deno.test("free text that is not an email column is inside the region too", () => {
+  // The case the per-field fix missed. request_message is whatever a person typed.
+  const page = layout({
+    title: "t",
+    nonce: "n",
+    body: `<td>${esc("reach me at me@corp.com")}</td>`,
+  })
+  const open = page.indexOf("<!--email_off-->")
+  const close = page.indexOf("<!--/email_off-->")
+  const content = page.indexOf("me@corp.com")
+  assert(content > open && content < close)
+})
+
+Deno.test("the region wraps the page exactly once", () => {
+  // Nesting regions is not something Cloudflare documents, and two opens would
+  // mean someone reintroduced the per-field form inside the per-page one.
+  const page = layout({ title: "t", nonce: "n", body: "<p>x</p>" })
+  assertEquals(page.split("<!--email_off-->").length - 1, 1)
+  assertEquals(page.split("<!--/email_off-->").length - 1, 1)
 })

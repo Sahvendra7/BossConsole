@@ -24,36 +24,6 @@ export function esc(value: unknown): string {
 }
 
 /**
- * An email address, kept readable through Cloudflare.
- *
- * These pages are served from api.risaboss.com, which is behind Cloudflare, and
- * Cloudflare's Email Address Obfuscation rewrites every address it finds in an
- * HTML response into
- *
- *   <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="...">
- *     [email protected]
- *   </a>
- *
- * and injects a script to decode it in the browser. Our CSP is
- * `default-src 'none'` with `script-src` limited to the page's own nonce, so that
- * injected script is BLOCKED and the address never decodes. Every member on the
- * roster rendered as the literal words "email protected" - which makes an admin
- * page listing who is in the organisation useless for its one job.
- *
- * `<!--email_off-->` is Cloudflare's documented opt-out for a region of a page.
- * Fixing it here rather than by turning the feature off in the dashboard keeps the
- * change in the repository and scoped to the pages that need it, and fixing it
- * here rather than by allowing Cloudflare's script in the CSP keeps `script-src`
- * nonce-only.
- *
- * The value is still escaped: the comments only tell a proxy to leave the region
- * alone, they are not an escaping mechanism.
- */
-export function emailText(value: unknown): string {
-  return `<!--email_off-->${esc(value)}<!--/email_off-->`
-}
-
-/**
  * JSON safe to embed inside a `<script>` block.
  *
  * Two hazards, both of which JSON.stringify leaves open:

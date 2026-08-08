@@ -7,7 +7,7 @@
  * regardless of what was rendered.
  */
 
-import { emailText, esc } from "../utils/html.ts"
+import { esc } from "../utils/html.ts"
 import { csrfField, layout, tabs } from "./layout.ts"
 import { formatDate } from "./org.ts"
 import { CSRF_FIELD } from "../utils/csrf.ts"
@@ -161,7 +161,7 @@ function settingsCard(action: string, csrf: string, org: OrgDetail, roles: OrgRo
 function pendingCard(action: string, csrf: string, pending: OrgMember[]): string {
   const rows = pending.map((member) => `
     <tr>
-      <td>${emailText(member.email ?? "unknown")}</td>
+      <td>${esc(member.email ?? "unknown")}</td>
       <td>${esc(member.request_message ?? "")}</td>
       <td>${esc(formatDate(member.requested_at))}</td>
       <td>
@@ -204,7 +204,7 @@ function membersCard(
 
   const rows = members.map((member) => `
     <tr>
-      <td>${emailText(member.email ?? "unknown")}
+      <td>${esc(member.email ?? "unknown")}
         ${member.is_owner ? '<span class="pill admin">owner</span>' : ""}</td>
       <td>${
     (member.roles ?? []).map((r) => `<span class="pill mono">${esc(r)}</span>`).join("") ||

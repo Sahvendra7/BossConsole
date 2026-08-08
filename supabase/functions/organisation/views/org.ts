@@ -5,7 +5,7 @@
  * of CSRF concerns entirely.
  */
 
-import { emailText, esc } from "../utils/html.ts"
+import { esc } from "../utils/html.ts"
 import { layout, tabs } from "./layout.ts"
 import type { OrgDetail, OrgMember, OrgRole } from "../services/org.ts"
 
@@ -46,7 +46,7 @@ ${tabs(basePath, org.slug, "overview", org.is_admin)}
 
 <section class="card">
   <h2>Members</h2>
-  <p class="hint">Owned by ${emailText(org.owner_email ?? "unknown")}.</p>
+  <p class="hint">Owned by ${esc(org.owner_email ?? "unknown")}.</p>
   ${membersTable(active)}
 </section>
 
@@ -63,7 +63,7 @@ function membersTable(members: OrgMember[]): string {
 
   const rows = members.map((member) => `
     <tr>
-      <td>${emailText(member.email ?? "unknown")}</td>
+      <td>${esc(member.email ?? "unknown")}</td>
       <td>${
     member.is_owner
       ? '<span class="pill admin">owner</span>'
