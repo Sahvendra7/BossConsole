@@ -159,13 +159,39 @@ class PluginLoaderDelegateImpl(
         return try {
             logger.info(LogCategory.SYSTEM, "Reloading plugin via delegate", mapOf("pluginId" to pluginId))
 
-            // Get the JAR path before unloading
-            val pluginInfo = dynamicPluginManager.getPluginInfo(pluginId)
-            val jarPath = pluginInfo?.jarPath
+            // Resolve the JAR before unloading, and resolve it against the DISK rather than
+            // trusting the loaded record. Reloads are most often triggered BY an update that
+            // just replaced the jar: the updater writes a version-named file and deletes the
+            // old one, so the path this plugin was loaded from is exactly the path that no
+            // longer exists. Taking it on trust unloaded the plugin and then failed to load
+            // it, leaving it gone until the next restart.
+            //
+            // Checking existence up front also means a reload that cannot succeed no longer
+            // tears the running plugin down first.
+            val loadedJarPath = dynamicPluginManager.getPluginInfo(pluginId)?.jarPath
+            val persistedJarPath =
+                PluginPersistence.getInstalledPlugins().firstOrNull { it.pluginId == pluginId }?.jarPath
+            val jarPath =
+                resolveReloadJarPath(loadedJarPath, persistedJarPath) { File(it).isFile }
 
             if (jarPath == null) {
-                logger.warn(LogCategory.SYSTEM, "Cannot reload - JAR path not found", mapOf("pluginId" to pluginId))
+                logger.warn(
+                    LogCategory.SYSTEM,
+                    "Cannot reload - no readable JAR for plugin",
+                    mapOf(
+                        "pluginId" to pluginId,
+                        "loadedJarPath" to (loadedJarPath ?: "none"),
+                        "persistedJarPath" to (persistedJarPath ?: "none"),
+                    ),
+                )
                 return null
+            }
+            if (jarPath != loadedJarPath) {
+                logger.info(
+                    LogCategory.SYSTEM,
+                    "Reloading from the installed record - the loaded JAR is gone, most likely replaced by an update",
+                    mapOf("pluginId" to pluginId, "loadedJarPath" to (loadedJarPath ?: "none"), "jarPath" to jarPath),
+                )
             }
 
             // Unload
@@ -453,3 +479,32 @@ class PluginLoaderDelegateImpl(
         }
     }
 }
+
+/**
+ * The JAR a reload should load: the one the plugin is running from, else the installer's
+ * recorded one, else null.
+ *
+ * Both candidates are checked against [exists], and that is the whole point. A reload is
+ * usually triggered by an update that has already replaced the jar on disk - the new file is
+ * version-named, so it has a DIFFERENT name and the old one is deleted, which makes
+ * [loadedJarPath] reliably stale in exactly the case reload matters most. `installed.json` is
+ * written by every install path, so [persistedJarPath] is the installer's own record of what
+ * should be loaded now.
+ *
+ * Preference order is deliberate: the loaded path wins while it still exists, so an
+ * in-place hot reload (evolver copies a jar over the same path) behaves exactly as before and
+ * this only changes the case that was already failing. Returning null rather than guessing
+ * lets the caller keep the plugin running instead of unloading it for a load that cannot work.
+ *
+ * Pure, with [exists] injected, so the decision is testable without touching a filesystem.
+ */
+internal fun resolveReloadJarPath(
+    loadedJarPath: String?,
+    persistedJarPath: String?,
+    exists: (String) -> Boolean,
+): String? =
+    when {
+        loadedJarPath != null && exists(loadedJarPath) -> loadedJarPath
+        persistedJarPath != null && exists(persistedJarPath) -> persistedJarPath
+        else -> null
+    }
