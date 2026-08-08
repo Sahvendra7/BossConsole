@@ -20,7 +20,7 @@
 -- the first thing below.
 
 begin;
-select plan(13);
+select plan(14);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: the boss organisation has to exist, or every assertion here is vacuous
@@ -255,7 +255,17 @@ select is(
     (select count(distinct assigned_at)::int from public.user_roles
       where user_id = '70000000-0000-0000-0000-000000000002'),
     2,
-    'the repair clears an existing tie, and moves the organisation role later'
+    'the repair clears an existing tie'
+);
+
+-- Direction, not just distinctness. Nudging the ORGANISATION row rather than its
+-- peer is the whole point: `user` has to stay first, because the token hook takes
+-- element 1 as primary_role. count(distinct) = 2 would also hold if the repair had
+-- moved the wrong row.
+select is(
+    (public.get_user_roles_for_hook('70000000-0000-0000-0000-000000000002'))[1],
+    'user',
+    'and moves the ORGANISATION role later, so primary_role is still user'
 );
 
 select * from finish();

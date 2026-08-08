@@ -58,10 +58,6 @@ const STYLES = `
     --signal-dim: #0A45C4;
     --signal-wash: #0A1A3C;
     --signal-text: #88A9FF;
-    /* Kept because it is used as a BORDER (danger hover). Its ok/warn siblings
-       were removed: nothing painted them, and an unused vivid status colour is
-       exactly what gets reached for as text. */
-    --alert: #FF5D5D;
     /* Text-safe variants. On ink the status colours already clear 4.5:1, so these
        alias them; on paper they do not, which is why the pair exists at all. Same
        fill-versus-glyph split the app makes for signal, applied to status. */
@@ -74,6 +70,16 @@ const STYLES = `
        value that was 4.34:1 here and 4.09:1 on paper. */
     --alert-text: #FF6868;
     --signal-on-wash: #88A9FF;
+    /* Opaque border colours, not a percentage of the fill.
+       Every status border used to be 45% of the DARK hue in BOTH themes, which put
+       all six under the 3:1 WCAG 1.4.11 floor for a component boundary - 2.11:1 for
+       the danger pill on ink, 1.33:1 for the warn pill on paper. Flattening the
+       alpha by hand is also what let the light theme keep painting dark hues while
+       its --alert token went unused by everything but one hover border. */
+    --ok-border: #2FD98A;
+    --warn-border: #F0B429;
+    --alert-border: #FF5D5D;
+    --signal-border: #0F5BFF;
     --on-signal: #FFFFFF;
     --token-wash: rgba(154, 167, 187, 0.12);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -91,7 +97,6 @@ const STYLES = `
       --signal-dim: #0A45C4;
       --signal-wash: #DCE7FF;
       --signal-text: #0F5BFF;
-      --alert: #D33B4A;
       /* Solved against every surface each one actually lands on, which is more than
          the card: a status pill sits in a table cell, and "tbody tr:hover td" puts
          --token-wash behind it. Missing that surface is how the first pass shipped
@@ -101,6 +106,11 @@ const STYLES = `
       --warn-text: #926209;
       --alert-text: #B63340;
       --signal-on-wash: #0C3FBF;
+      /* Darkened until each clears 3:1 on a white card. */
+      --ok-border: #24A569;
+      --warn-border: #B6891F;
+      --alert-border: #FA5B5B;
+      --signal-border: #0F5BFF;
       --on-signal: #FFFFFF;
       --token-wash: rgba(5, 7, 11, 0.06);
       --shadow: 0 1px 2px rgba(5, 7, 11, 0.06);
@@ -200,11 +210,11 @@ const STYLES = `
   }
   /* A wash behind readable text, never the accent AS text. */
   .pill.admin {
-    border-color: rgba(15, 91, 255, 0.45); background-color: var(--signal-wash);
+    border-color: var(--signal-border); background-color: var(--signal-wash);
     color: var(--signal-on-wash); font-weight: 600;
   }
-  .pill.ok { border-color: rgba(47, 217, 138, 0.45); color: var(--ok-text); }
-  .pill.warn { border-color: rgba(240, 180, 41, 0.45); color: var(--warn-text); }
+  .pill.ok { border-color: var(--ok-border); color: var(--ok-text); }
+  .pill.warn { border-color: var(--warn-border); color: var(--warn-text); }
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 12px;
@@ -254,9 +264,9 @@ const STYLES = `
   button.secondary:hover { background-color: var(--token-wash); color: var(--text); border-color: var(--line-strong); }
   button.danger {
     background-color: transparent; color: var(--alert-text);
-    border-color: rgba(255, 93, 93, 0.45); font-weight: 500;
+    border-color: var(--alert-border); font-weight: 500;
   }
-  button.danger:hover { background-color: rgba(255, 93, 93, 0.12); border-color: var(--alert); }
+  button.danger:hover { background-color: rgba(255, 93, 93, 0.12); border-color: var(--alert-border); }
   /* inline-flex, not inline: a form holding a select AND a button needs the two to
      stay on one line and share a gap. Two adjacent forms in one cell (approve and
      reject) get the margin, since flex gap does not reach across siblings. */
@@ -269,8 +279,8 @@ const STYLES = `
     border-radius: 8px; padding: 12px 15px; margin-bottom: 18px; font-size: 14px;
     border: 1px solid transparent;
   }
-  .banner.error { background-color: rgba(255, 93, 93, 0.10); border-color: rgba(255, 93, 93, 0.45); color: var(--alert-text); }
-  .banner.ok { background-color: rgba(47, 217, 138, 0.10); border-color: rgba(47, 217, 138, 0.45); color: var(--ok-text); }
+  .banner.error { background-color: rgba(255, 93, 93, 0.10); border-color: var(--alert-border); color: var(--alert-text); }
+  .banner.ok { background-color: rgba(47, 217, 138, 0.10); border-color: var(--ok-border); color: var(--ok-text); }
 
   /* ---- stats ----------------------------------------------------------- */
 

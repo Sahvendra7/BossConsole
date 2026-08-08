@@ -200,6 +200,14 @@ const USAGE: Array<{ token: string; where: string; on: SurfaceName[]; floor?: nu
     on: ["page"],
     floor: UI_FLOOR,
   },
+  // Borders were not checked at all until now, and every one of them failed: each
+  // was 45% of the DARK hue in BOTH themes, giving 2.11:1 for the danger pill on
+  // ink and 1.33:1 for the warn pill on paper. They are opaque tokens now, held to
+  // the 3:1 WCAG 1.4.11 floor against the card they sit on.
+  { token: "ok-border", where: "an ok pill's edge", on: ["card"], floor: UI_FLOOR },
+  { token: "warn-border", where: "a warn pill's edge", on: ["card"], floor: UI_FLOOR },
+  { token: "alert-border", where: "the danger button's edge", on: ["card"], floor: UI_FLOOR },
+  { token: "signal-border", where: "the admin pill's edge", on: ["card"], floor: UI_FLOOR },
 ]
 
 function palettes(): Array<{ name: string; theme: Palette; block: string }> {
@@ -243,6 +251,18 @@ Deno.test("the light palette really does override the colours under test", () =>
       dark.theme[token] !== light.theme[token],
       `--${token} is identical in both palettes, so the light assertions prove nothing about it`,
     )
+  }
+})
+
+Deno.test("each palette block parses whole, not truncated at a stray brace", () => {
+  // palettes() splits on the first "}", so ONE closing brace inside a comment in
+  // either block silently shortens the palette and tokensIn returns fewer tokens.
+  // The assertions above only catch a token that is both missing AND under test,
+  // so a truncation that drops an unchecked token passes unnoticed. A floor on the
+  // count makes that loud.
+  for (const { name, theme } of palettes()) {
+    const count = Object.keys(theme).length
+    assert(count >= 18, `${name} palette parsed only ${count} tokens - block truncated?`)
   }
 })
 

@@ -13,7 +13,7 @@
 -- with the constraint dropped.
 
 begin;
-select plan(12);
+select plan(19);
 
 insert into auth.users (id, email, email_confirmed_at) values
     ('90000000-0000-0000-0000-000000000001', 'websiteasker@pgtap.test', now()),
@@ -109,8 +109,8 @@ select is(
 select ok(
     (public.submit_organisation_request(
         'Plain', 'plainsite', null, null, null,
-        null, '90000000-0000-0000-0000-000000000001') ->> 'success')::boolean,
-    'the website is optional'
+        'https://plainsite.example', '90000000-0000-0000-0000-000000000001') ->> 'success')::boolean,
+    'a second request is accepted'
 );
 
 
@@ -131,6 +131,73 @@ select throws_ok(
     '23514',
     null,
     'an empty string is refused, so "unset" has exactly one representation'
+);
+
+-- ===========================================================================
+-- The ADMIN path, which is the one that is actually used
+-- ===========================================================================
+-- Everything above goes through submit_organisation_request, which a person uses
+-- once. update_organisation_settings is what an administrator uses, and it had no
+-- validation at all: the column CHECK raised 23514, which aborted the WHOLE
+-- UPDATE, so a mistyped website silently discarded every other field in the same
+-- submission and the page could only say "the change was refused".
+select is(
+    (public.update_organisation_settings(
+        (select id from public.organisations where slug = 'acmesite'),
+        'Renamed', null, null, null, null, null, false,
+        'acmesite.example', false, '90000000-0000-0000-0000-000000000002') ->> 'error'),
+    'Website must be a full http:// or https:// address',
+    'the admin path returns a readable error rather than raising a constraint violation'
+);
+
+select is(
+    (select name from public.organisations where slug = 'acmesite'),
+    'Acme',
+    'and it fails closed - the name in the same submission was not applied'
+);
+
+-- The empty-means-empty rule, which is deliberately not COALESCE.
+select ok(
+    (public.update_organisation_settings(
+        (select id from public.organisations where slug = 'acmesite'),
+        null, null, null, null, null, null, false, '', false,
+        '90000000-0000-0000-0000-000000000002') ->> 'success')::boolean,
+    'an empty website is accepted by the admin path'
+);
+select is(
+    (select website from public.organisations where slug = 'acmesite'),
+    null,
+    'an empty string CLEARS the website'
+);
+
+select ok(
+    (public.update_organisation_settings(
+        (select id from public.organisations where slug = 'acmesite'),
+        'Acme', null, null, null, null, null, false, null, false,
+        '90000000-0000-0000-0000-000000000002') ->> 'success')::boolean,
+    'a NULL website is accepted'
+);
+select is(
+    (select website from public.organisations where slug = 'acmesite'),
+    null,
+    'and a NULL LEAVES IT ALONE rather than clearing or restoring it'
+);
+
+
+-- ===========================================================================
+-- An approver can see what they are approving
+-- ===========================================================================
+-- The threat model is that any authenticated user supplies this and it becomes a
+-- link on a page other members read. Review is the control between those two
+-- facts, and the queue was not projecting the field at all.
+select is(
+    (select r ->> 'website'
+       from jsonb_array_elements(
+                public.list_organisation_requests(
+                    p_actor_id => '90000000-0000-0000-0000-000000000001') -> 'data') r
+      where r ->> 'slug' = 'plainsite'),
+    'https://plainsite.example',
+    'the request queue shows the website an approver is about to publish'
 );
 
 select * from finish();

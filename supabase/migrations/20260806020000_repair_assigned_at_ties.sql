@@ -24,6 +24,12 @@
 -- Idempotent, and correct whether the affected population is zero or every user
 -- created in that window - it repairs whatever it finds and is a no-op otherwise,
 -- which is why it does not need the count known in advance.
+--
+-- ONE CASE IT DOES NOT RESOLVE, stated so the claim above is not read too widely:
+-- two ORGANISATION user-roles assigned in the same transaction would both shift by
+-- the same microsecond and stay tied to each other. They would no longer tie with
+-- `user`, so primary_role is still correct, which is what this exists to protect.
+-- Not reachable today - only the boss organisation assigns a role at signup.
 -- ============================================================================
 
 

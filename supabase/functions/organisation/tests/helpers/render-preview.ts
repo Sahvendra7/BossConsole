@@ -43,7 +43,7 @@ const org: OrgDetail = {
   is_owner: true,
   is_admin: true,
   can_publish: true,
-  publish_policy: "admins_only",
+  publish_policy: "admins",
 }
 
 const members: OrgMember[] = [

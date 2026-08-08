@@ -40,7 +40,7 @@ ${
       // supplies. rel="noreferrer" because this is the one outbound link here.
       ? `<p class="sub"><a href="${
         attrUrl(org.website, ["http", "https"])
-      }" rel="noopener noreferrer">${esc(org.website)}</a></p>`
+      }" target="_blank" rel="noopener noreferrer">${esc(org.website)}</a></p>`
       : ""
   }
 ${tabs(basePath, org.slug, "overview", org.is_admin)}
