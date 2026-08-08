@@ -27,6 +27,7 @@ import ai.rever.boss.plugin.api.LocalWindowIdProvider
 import ai.rever.boss.plugin.api.LocalWindowProjectStateProvider
 import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
 import ai.rever.boss.plugin.sandbox.notification.PluginToastHost
+import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
 import ai.rever.boss.updater.UpdateAvailableDialog
 import ai.rever.boss.updater.UpdateBanner
@@ -45,6 +46,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,14 +64,44 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
- * Size of the toast overlay window before its content has been measured.
+ * Hard upper bound on the toast overlay: its size before measurement, and the ceiling every later
+ * measurement is taken against.
  *
- * An upper bound, deliberately, not an estimate: the heavyweight overlay measures its content
- * inside a window of this size, so anything smaller measures CLIPPED content and the overlay then
- * settles at the clipped size. Width is `PluginToastHost`'s own `widthIn(max = 400.dp)` plus its
- * 16.dp padding on each side; the height is just roomy enough for a tall stack of toasts.
+ * A bound, not an estimate. The overlay measures its content against this rather than against its
+ * own current size, so content that would exceed it is CLIPPED rather than merely starting small.
+ * Width is `PluginToastHost`'s own `widthIn(max = 400.dp)` plus its 16.dp padding on each side;
+ * height comfortably clears `PluginToastState`'s three-toast maximum. It is also the region the
+ * overlay swallows clicks in until measurement lands, so it is kept no larger than it needs to be.
  */
-private val TOAST_OVERLAY_INITIAL_SIZE = DpSize(432.dp, 900.dp)
+private val TOAST_OVERLAY_INITIAL_SIZE = DpSize(432.dp, 600.dp)
+
+/**
+ * Plugin toasts, layered above the heavyweight browser surface.
+ *
+ * Drawn in the scaffold they land BEHIND that surface, so a toast raised while a browser tab is
+ * showing is invisible. `OverlayCorner` rather than `OverlayHud` because a toast stays up for
+ * seconds: a parent-sized HUD swallows every click beneath it, which is fine for a switcher held
+ * for a moment and not for this.
+ *
+ * **The empty check is the load-bearing line.** `PluginToastHost` composes its padded `Column`
+ * unconditionally, and `DefaultPlugin.pluginToastState` is never null, so without it every loaded
+ * plugin would hold an always-on-top, click-eating overlay window open for the whole session -
+ * over other applications too, since it is always-on-top. Guarding on the content matches what
+ * `TabCycleOverlayHost` and both drag ghosts already do.
+ *
+ * Extracted from the scaffold so this guard can be tested directly; see `ToastOverlayTest`.
+ */
+@Composable
+internal fun BoxScope.ToastOverlay(toastState: PluginToastState) {
+    val toasts by toastState.toasts.collectAsState()
+    if (toasts.isEmpty()) return
+    OverlayCorner(
+        alignment = Alignment.TopEnd,
+        initialSize = TOAST_OVERLAY_INITIAL_SIZE,
+    ) {
+        PluginToastHost(toastState = toastState)
+    }
+}
 
 /**
  * Provides every CompositionLocal that plugins and host UI below BossApp read:
@@ -368,18 +400,8 @@ internal fun BossAppScaffold(
 
             // Plugin notification toasts — the render surface for every plugin's
             // PluginContext.notificationProvider.showToast().
-            //
-            // OverlayCorner rather than a plain aligned Box: drawn in this scaffold they land
-            // BEHIND the heavyweight browser surface, so a toast raised while a browser tab is
-            // showing is invisible. Corner and not OverlayHud because a toast stays up for
-            // seconds — a parent-sized HUD would make the window unclickable for that whole time.
             state.currentDefaultPlugin?.pluginToastState?.let { toastState ->
-                OverlayCorner(
-                    alignment = Alignment.TopEnd,
-                    initialSize = TOAST_OVERLAY_INITIAL_SIZE,
-                ) {
-                    PluginToastHost(toastState = toastState)
-                }
+                ToastOverlay(toastState = toastState)
             }
 
             // MRU tab-switcher overlay (Ctrl+Tab in most-recently-used mode)
