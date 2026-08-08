@@ -146,6 +146,9 @@ adminActionRoutes.post("/o/:slug/admin/settings", async (ctx) => {
     // textarea reported ?ok=settings_saved with the old text still on the page - the same
     // no-op-reported-as-success shape as the max_uses bug.
     p_description: rawField(body, "description"),
+    // rawField, like the description: an empty string CLEARS it, and only a missing
+    // value leaves it alone. field() would collapse the two.
+    p_website: rawField(body, "website"),
     p_visibility: visibility,
     p_join_policy: joinPolicy,
     p_publish_policy: publishPolicy,

@@ -5,7 +5,7 @@
  * of CSRF concerns entirely.
  */
 
-import { esc, scrollable } from "../utils/html.ts"
+import { attrUrl, esc, scrollable } from "../utils/html.ts"
 import { layout, tabs } from "./layout.ts"
 import type { OrgDetail, OrgMember, OrgRole } from "../services/org.ts"
 
@@ -30,6 +30,19 @@ export function orgPage({ nonce, basePath, org, members, roles }: OrgPageOptions
   ${org.is_system ? '<span class="pill">system</span>' : ""}
 </header>
 <p class="sub">${esc(org.description ?? "No description.")}</p>
+${
+    org.website
+      // attrUrl with http/https opted in. Everywhere else on these pages it is
+      // called with no schemes at all, which refuses anything but a same-origin
+      // path - correct for our own links, and wrong for the one field that is
+      // deliberately external. It still refuses javascript:, data: and a
+      // protocol-relative //host, which is what matters for a value a requester
+      // supplies. rel="noreferrer" because this is the one outbound link here.
+      ? `<p class="sub"><a href="${
+        attrUrl(org.website, ["http", "https"])
+      }" rel="noopener noreferrer">${esc(org.website)}</a></p>`
+      : ""
+  }
 ${tabs(basePath, org.slug, "overview", org.is_admin)}
 
 <section class="card">

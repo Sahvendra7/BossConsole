@@ -39,6 +39,7 @@ const org: OrgDetail = {
   member_count: 89,
   pending_count: 2,
   primary_domain: "risalabs.ai",
+  website: "https://risalabs.ai",
   is_owner: true,
   is_admin: true,
   can_publish: true,
