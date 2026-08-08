@@ -27,14 +27,30 @@ export function esc(value: unknown): string {
  * Wrap a table so it can scroll AND be scrolled from a keyboard.
  *
  * `tabindex="0"` is what makes the region operable without a pointer (WCAG
- * 2.1.1). These tables are read-only and contain no links or controls, so
- * without it the box scrolls for a mouse and is simply unreachable otherwise.
+ * 2.1.1) - but ONLY when the content has nothing focusable of its own, which is
+ * why it is a parameter rather than always on. The overview tables are read-only
+ * and would otherwise scroll for a mouse and be unreachable any other way; the
+ * admin tables hold selects and buttons and are already reachable through them.
  *
  * `role="region"` plus a label is what stops that tab stop being a mystery: a
  * focusable div with no name announces as nothing.
  */
-export function scrollable(label: string, table: string): string {
-  return `<div class="scroller" tabindex="0" role="region" aria-label="${esc(label)}">${table}</div>`
+export function scrollable(
+  label: string,
+  table: string,
+  /**
+   * Whether the region needs its own tab stop.
+   *
+   * Only when the table holds NOTHING focusable. A scroll region containing a link
+   * or a control is already reachable by tabbing to that control, and adding
+   * tabindex there just inserts an extra empty stop - five of them on the admin
+   * page, which is the page with the most controls. The read-only overview tables
+   * are the case that needs it: no link, no button, nothing to tab to.
+   */
+  focusable = true,
+): string {
+  const focus = focusable ? ' tabindex="0"' : ""
+  return `<div class="scroller"${focus} role="region" aria-label="${esc(label)}">${table}</div>`
 }
 
 /**

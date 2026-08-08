@@ -13,7 +13,7 @@
 -- with the constraint dropped.
 
 begin;
-select plan(19);
+select plan(23);
 
 insert into auth.users (id, email, email_confirmed_at) values
     ('90000000-0000-0000-0000-000000000001', 'websiteasker@pgtap.test', now()),
@@ -170,6 +170,23 @@ select is(
     'an empty string CLEARS the website'
 );
 
+-- SET A REAL VALUE FIRST. The previous version passed NULL while the column was
+-- already NULL, so "leaves it alone" could not be told from "cleared it" - the
+-- exact confusion the CASE WHEN exists to prevent, and it would have stayed green
+-- under website = COALESCE(p_website, website).
+select ok(
+    (public.update_organisation_settings(
+        (select id from public.organisations where slug = 'acmesite'),
+        null, null, null, null, null, null, false, 'https://restored.example', false,
+        '90000000-0000-0000-0000-000000000002') ->> 'success')::boolean,
+    'a website can be set again after being cleared'
+);
+select is(
+    (select website from public.organisations where slug = 'acmesite'),
+    'https://restored.example',
+    'and it is stored'
+);
+
 select ok(
     (public.update_organisation_settings(
         (select id from public.organisations where slug = 'acmesite'),
@@ -179,8 +196,26 @@ select ok(
 );
 select is(
     (select website from public.organisations where slug = 'acmesite'),
+    'https://restored.example',
+    'and a NULL LEAVES IT ALONE - it did not clear a website that was really set'
+);
+
+-- Case-insensitivity, untested on either side until now.
+select ok(
+    (public.update_organisation_settings(
+        (select id from public.organisations where slug = 'acmesite'),
+        null, null, null, null, null, null, false, 'HTTPS://Acme.Example', false,
+        '90000000-0000-0000-0000-000000000002') ->> 'success')::boolean,
+    'an upper-case scheme is accepted, matching the column CHECK regex'
+);
+
+-- The approval path refusing a bad value, which nothing covered.
+select isnt(
+    (select public.submit_organisation_request(
+        'Bad Approve', 'badapprove', null, null, null,
+        'ftp://acme.example', '90000000-0000-0000-0000-000000000001') ->> 'error'),
     null,
-    'and a NULL LEAVES IT ALONE rather than clearing or restoring it'
+    'a non-http scheme never reaches approval, because submit refuses it'
 );
 
 

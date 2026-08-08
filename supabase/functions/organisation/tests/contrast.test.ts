@@ -208,6 +208,15 @@ const USAGE: Array<{ token: string; where: string; on: SurfaceName[]; floor?: nu
   { token: "warn-border", where: "a warn pill's edge", on: ["card"], floor: UI_FLOOR },
   { token: "alert-border", where: "the danger button's edge", on: ["card"], floor: UI_FLOOR },
   { token: "signal-border", where: "the admin pill's edge", on: ["card"], floor: UI_FLOOR },
+  // The edge of every form control. Checked against BOTH the card and the control's
+  // own fill, because those two are nearly the same colour in both themes - so this
+  // line is the only thing identifying the control's boundary at rest.
+  {
+    token: "line-strong",
+    where: "form control and pill edges",
+    on: ["card", "page"],
+    floor: UI_FLOOR,
+  },
 ]
 
 function palettes(): Array<{ name: string; theme: Palette; block: string }> {

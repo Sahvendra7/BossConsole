@@ -51,7 +51,14 @@ const STYLES = `
     --ink: #05070B;
     --raised: #0E141E;
     --line: #1C2432;
-    --line-strong: #2E3B4F;
+    /* The edge of every input, select, textarea, secondary button, plain pill and
+       table header. It was the one border NOT in the contrast matrix, and it failed
+       the same 3:1 floor the status borders are held to - 1.63:1 on the card. That
+       matters more than a card edge: the control's own fill (--ink) is nearly
+       indistinguishable from the card (--raised), so this line is the only thing
+       identifying where the control is. :focus-visible covers the focused state,
+       not identification at rest. */
+    --line-strong: #5A6474;
     --text: #E7EDFA;
     --text-2: #9AA7BB;
     --signal: #0F5BFF;
@@ -90,7 +97,7 @@ const STYLES = `
       --ink: #F5F7FB;
       --raised: #FFFFFF;
       --line: #DCE2EB;
-      --line-strong: #A8B2C2;
+      --line-strong: #868E9B;
       --text: #05070B;
       --text-2: #5C6372;
       --signal: #0F5BFF;
@@ -145,6 +152,10 @@ const STYLES = `
     border-radius: 5px; padding: 2px 7px;
   }
   .sub { color: var(--text-2); font-size: 15px; margin-bottom: 26px; max-width: 68ch; }
+  /* A website may be 500 characters with no spaces, and it is rendered as its own
+     link text. max-width cannot break an unbroken token, so without this it runs
+     off the page rather than wrapping. */
+  .sub a { overflow-wrap: anywhere; }
 
   /* ---- tabs ------------------------------------------------------------ */
 
@@ -320,7 +331,6 @@ const STYLES = `
      specificity (0,1,1) and a bare ".highlight" is (0,1,0), so the accent lost and
      this rule had never rendered. */
   section.card.highlight { border-color: var(--signal); }
-  .linkish { color: var(--signal-text); }
 
   @media (max-width: 620px) {
     body { padding: 18px 14px 14px; }

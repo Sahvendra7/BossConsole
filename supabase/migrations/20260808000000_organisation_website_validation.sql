@@ -54,6 +54,13 @@ END;
 $$;
 
 ALTER FUNCTION "public"."validate_website"("text") OWNER TO "postgres";
+-- Every other helper in this schema pairs the OWNER with an explicit REVOKE and
+-- GRANT (organisation_role_name and is_reserved_organisation_slug both do in
+-- 20260801010000). Without them this defaults to PUBLIC and is anon-callable
+-- through PostgREST. The impact is nil - it is pure and touches no data - but the
+-- convention is what makes an exception visible.
+REVOKE EXECUTE ON FUNCTION "public"."validate_website"("text") FROM PUBLIC, "anon";
+GRANT EXECUTE ON FUNCTION "public"."validate_website"("text") TO "authenticated", "service_role";
 COMMENT ON FUNCTION "public"."validate_website"("text") IS 'Returns the error message for an unacceptable organisation website, or NULL. Shared by submit_organisation_request, update_organisation_settings and create_organisation_internal so the rule cannot drift between the path a requester uses and the one an administrator uses.';
 
 
@@ -75,6 +82,7 @@ DECLARE
     v_pending_count INTEGER;
     v_domain TEXT;
     v_website TEXT;
+    v_website_error TEXT;
 BEGIN
     v_actor := public.resolve_org_actor(p_actor_id);
     IF v_actor IS NULL THEN
@@ -138,8 +146,9 @@ BEGIN
     -- field any authenticated user can fill in. The renderer refuses those too;
     -- this is the half that stops one being stored at all.
     v_website := NULLIF(btrim(COALESCE(p_website, '')), '');
-    IF public.validate_website(v_website) IS NOT NULL THEN
-        RETURN jsonb_build_object('success', false, 'error', public.validate_website(v_website));
+    v_website_error := public.validate_website(v_website);
+    IF v_website_error IS NOT NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', v_website_error);
     END IF;
 
     BEGIN
@@ -176,6 +185,7 @@ CREATE OR REPLACE FUNCTION "public"."update_organisation_settings"(
     SET "search_path" TO ''
     AS $$
 DECLARE
+    v_website_error TEXT;
     v_actor UUID;
 BEGIN
     v_actor := public.resolve_org_actor(p_actor_id);
@@ -221,9 +231,9 @@ BEGIN
     -- policy and the auto-assign checkbox with it, and the page could only say
     -- "the change was refused". This is the path an administrator actually uses;
     -- submit_organisation_request is the one a person uses once.
-    IF public.validate_website(NULLIF(btrim(COALESCE(p_website, '')), '')) IS NOT NULL THEN
-        RETURN jsonb_build_object('success', false, 'error',
-            public.validate_website(NULLIF(btrim(COALESCE(p_website, '')), '')));
+    v_website_error := public.validate_website(NULLIF(btrim(COALESCE(p_website, '')), ''));
+    IF v_website_error IS NOT NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', v_website_error);
     END IF;
 
     UPDATE public.organisations
