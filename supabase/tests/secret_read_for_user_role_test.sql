@@ -198,7 +198,7 @@ select is(
 -- unprivileged caller which role ids are real.
 select set_config('request.jwt.claims',
     '{"sub":"60000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
-select like(
+select alike(
     public.share_secret(
         p_secret_id => (select v from t_vault where k='own'),
         p_target_role_id => '00000000-0000-0000-0000-0000000000ff'
@@ -211,7 +211,7 @@ select like(
 -- not a replacement for can_manage_secret.
 select set_config('request.jwt.claims',
     '{"sub":"60000000-0000-0000-0000-000000000003","role":"authenticated"}', true);
-select like(
+select alike(
     public.share_secret(
         p_secret_id => (select v from t_vault where k='own'),
         p_target_user_id => '60000000-0000-0000-0000-000000000002'
