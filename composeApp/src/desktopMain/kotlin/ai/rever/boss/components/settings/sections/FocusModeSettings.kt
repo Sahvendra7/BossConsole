@@ -67,7 +67,6 @@ fun FocusModeSettings() {
                         }
                     },
                     description = "Project selector, settings, etc.",
-                    enabled = settings.enabled,
                 )
                 SettingsToggle(
                     label = "Left sidebar",
@@ -78,7 +77,6 @@ fun FocusModeSettings() {
                         }
                     },
                     description = "Plugin panels docked to the left edge",
-                    enabled = settings.enabled,
                 )
                 SettingsToggle(
                     label = "Right sidebar",
@@ -89,7 +87,6 @@ fun FocusModeSettings() {
                         }
                     },
                     description = "Plugin panels docked to the right edge",
-                    enabled = settings.enabled,
                 )
                 SettingsToggle(
                     label = "Bottom status bar",
@@ -99,8 +96,10 @@ fun FocusModeSettings() {
                             FocusModeSettingsManager.updateSettings(settings.copy(hideBottomBar = hide))
                         }
                     },
-                    enabled = settings.enabled,
                 )
+                // Deliberately not gated on settings.enabled: you would have to turn focus
+                // mode on, losing the top bar, before you could choose what it clears.
+                // hides() gates on enabled anyway, so these are inert until it is on.
                 if (settings.enabled && !settings.hidesAnything()) {
                     InfoItem(text = "Focus mode is on but hides nothing - pick at least one edge above.")
                 }

@@ -587,6 +587,10 @@ internal fun BossAppStartupEffects(state: BossAppState) {
                             } catch (e: Exception) {
                                 logger.error(LogCategory.WORKSPACE, "Last Session restore failed - continuing startup", error = e)
                             }
+                        } else {
+                            // No Last Session: this is the layout a fresh install opens on.
+                            // Before markHandlersReady, since applyWorkspace clears panels.
+                            applyDefaultWorkspaceOnFreshStart(splitViewState, windowProjectState)
                         }
 
                         // Mark workspace restoration as complete (for auto-show dialog logic)
@@ -616,7 +620,10 @@ internal fun BossAppStartupEffects(state: BossAppState) {
             // plugin tab types) — let it mark handlers ready itself, otherwise
             // handler-created tabs get destroyed by the restore's clearAllPanels.
             if (!state.workspaceRestorationComplete && workspaceManager.currentWorkspace.value == null) {
-                // Still not complete after timeout - assume fresh install
+                // Still not complete after timeout - assume fresh install. Nothing was
+                // restored and there are no workspaces on disk, so this is the very first
+                // launch: apply the default layout before handlers can create tabs.
+                applyDefaultWorkspaceOnFreshStart(splitViewState, windowProjectState)
                 state.workspaceRestorationComplete = true
                 state.markHandlersReady(isSessionResolved)
             }

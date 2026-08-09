@@ -5,6 +5,8 @@ import ai.rever.boss.utils.SystemUtils
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -42,17 +44,57 @@ class WorkspaceDefaultsTest {
     @Test
     fun `the browser-only workspace is a single browser panel on the boss home page`() {
         val workspace = PredefinedWorkspaces.allWorkspaces.single { it.id == PredefinedWorkspaces.BROWSER_ONLY_ID }
-        val layout = workspace.layout
-        assertTrue(layout is SinglePanel, "browser-only must not split the window: $layout")
+        val layout = assertIs<SinglePanel>(workspace.layout, "browser-only must not split the window")
         val tab = layout.panel.tabs.single()
         assertEquals("browser", tab.type)
-        assertEquals("https://risalabs.ai", tab.url)
+        assertEquals("https://www.risalabs.ai", tab.url)
+    }
+
+    /**
+     * The browser-only workspace must stand without a project, or the fresh-start apply
+     * declines it and a new Windows install comes up on an empty window instead - see
+     * [ai.rever.boss.app.shouldApplyOnFreshStart].
+     */
+    @Test
+    fun `the browser-only workspace needs no project`() {
+        val workspace = PredefinedWorkspaces.allWorkspaces.single { it.id == PredefinedWorkspaces.BROWSER_ONLY_ID }
+        assertFalse(workspace.requiresProject())
+    }
+
+    /** Every other predefined workspace does need one, which is why it is not applied unasked. */
+    @Test
+    fun `every other predefined workspace needs a project`() {
+        PredefinedWorkspaces.allWorkspaces
+            .filterNot { it.id == PredefinedWorkspaces.BROWSER_ONLY_ID }
+            .forEach { assertTrue(it.requiresProject(), it.id) }
     }
 
     @Test
     fun `every predefined workspace id is unique`() {
         val ids = PredefinedWorkspaces.allWorkspaces.map { it.id }
         assertEquals(ids.size, ids.toSet().size, "duplicate workspace ids: $ids")
+    }
+
+    /**
+     * Names, not just ids: `WorkspaceManager.loadAllWorkspaces` drops a saved workspace
+     * whose NAME matches a predefined one, and `WorkspaceButton` decides what is
+     * renameable the same way. A duplicate name here would make one built-in unreachable.
+     */
+    @Test
+    fun `every predefined workspace name is unique`() {
+        val names = PredefinedWorkspaces.allWorkspaces.map { it.name }
+        assertEquals(names.size, names.toSet().size, "duplicate workspace names: $names")
+    }
+
+    /**
+     * Panel ids key the split tree. They used to be `currentTimeMillis()` plus a
+     * 1-in-10000 random draw, all minted inside one initializer - so a collision was a
+     * dice roll on every launch rather than something a test could catch.
+     */
+    @Test
+    fun `every predefined panel id is unique`() {
+        val panelIds = PredefinedWorkspaces.allWorkspaces.flatMap { it.layout.extractPanels().map { p -> p.first } }
+        assertEquals(panelIds.size, panelIds.toSet().size, "duplicate panel ids: $panelIds")
     }
 
     /**
@@ -95,6 +137,33 @@ class WorkspaceDefaultsTest {
 
         val migrated = assertNotNull(WorkspaceSettingsMigrations.migrate(none, isWindows = true))
         assertEquals("none", migrated.defaultWorkspaceId)
+    }
+
+    /**
+     * The one-shot property depends on the version surviving a write. The manager encodes
+     * with `encodeDefaults = true` for exactly this reason - without it a value equal to
+     * the class default (0) is omitted, and the next launch decodes 0 and migrates again.
+     */
+    @Test
+    fun `the stamped version survives a write and read`() {
+        val encoder =
+            Json {
+                prettyPrint = true
+                ignoreUnknownKeys = true
+                encodeDefaults = true
+            }
+        val stamped =
+            WorkspaceSettings(
+                defaultWorkspaceId = PredefinedWorkspaces.BROWSER_ONLY_ID,
+                settingsVersion = WorkspaceSettings.CURRENT_SETTINGS_VERSION,
+            )
+
+        val written = encoder.encodeToString(WorkspaceSettings.serializer(), stamped)
+        assertTrue("settingsVersion" in written, "the version must be written, not omitted: $written")
+        assertNull(
+            WorkspaceSettingsMigrations.migrate(json.decodeFromString<WorkspaceSettings>(written), isWindows = true),
+            "a file written after migration must not migrate again",
+        )
     }
 
     @Test

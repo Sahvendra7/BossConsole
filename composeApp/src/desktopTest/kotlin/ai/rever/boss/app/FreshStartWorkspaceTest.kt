@@ -1,0 +1,86 @@
+package ai.rever.boss.app
+
+import ai.rever.boss.components.workspaces.PredefinedWorkspaces
+import ai.rever.boss.components.workspaces.requiresProject
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/**
+ * The rule that decides whether a window which restored nothing opens on the default
+ * workspace.
+ *
+ * Review of the first version of this PR found the gap this closes: the default workspace
+ * was applied only from `LaunchedEffect(selectedProject.path)`, and a fresh profile has no
+ * project, so a new Windows install never reached `workspace-browser` at all - the very
+ * case the default exists for.
+ *
+ * The predicate is deliberately about the *workspace*, not the platform. Applying a
+ * project-shaped workspace with no project is worse than applying nothing: `{projectPath}`
+ * falls back to the user's home directory, so the Claude Code default would open a
+ * terminal running `claude --dangerously-skip-permissions` in `~` on first launch.
+ */
+class FreshStartWorkspaceTest {
+    private val browserOnly =
+        PredefinedWorkspaces.allWorkspaces.single { it.id == PredefinedWorkspaces.BROWSER_ONLY_ID }
+    private val claudeCode =
+        PredefinedWorkspaces.allWorkspaces.single { it.id == PredefinedWorkspaces.CLAUDE_CODE_ID }
+
+    @Test
+    fun `a fresh window opens on a workspace that needs no project`() {
+        assertTrue(shouldApplyOnFreshStart(browserOnly, hasProject = false))
+    }
+
+    @Test
+    fun `a project-shaped workspace is never applied without a project`() {
+        assertFalse(
+            shouldApplyOnFreshStart(claudeCode, hasProject = false),
+            "would run the Claude CLI in the user's home directory",
+        )
+    }
+
+    /** With a project the reactive apply owns this, so applying here would do it twice. */
+    @Test
+    fun `nothing is applied when a project is already selected`() {
+        assertFalse(shouldApplyOnFreshStart(browserOnly, hasProject = true))
+        assertFalse(shouldApplyOnFreshStart(claudeCode, hasProject = true))
+    }
+
+    /** `getDefaultWorkspace()` returns null for "none", which means "do not auto-apply". */
+    @Test
+    fun `auto-apply disabled applies nothing`() {
+        assertFalse(shouldApplyOnFreshStart(null, hasProject = false))
+        assertFalse(shouldApplyOnFreshStart(null, hasProject = true))
+    }
+
+    /** Each project placeholder is enough on its own to hold a workspace back. */
+    @Test
+    fun `every project placeholder marks a workspace as needing one`() {
+        val placeholders =
+            listOf("{projectPath}", "{gitRemoteUrl}", "{currentFile}", "{claudeContinueFlag}")
+        for (placeholder in placeholders) {
+            val inUrl = browserOnly.copy(layout = singleBrowserLayout(url = placeholder))
+            assertTrue(inUrl.requiresProject(), placeholder)
+            assertFalse(shouldApplyOnFreshStart(inUrl, hasProject = false), placeholder)
+        }
+    }
+
+    /** A placeholder embedded in a longer string still counts. */
+    @Test
+    fun `an embedded placeholder counts`() {
+        val embedded = browserOnly.copy(layout = singleBrowserLayout(url = "https://example.com/{projectPath}/tree"))
+        assertTrue(embedded.requiresProject())
+    }
+
+    private fun singleBrowserLayout(url: String) =
+        ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel(
+            ai.rever.boss.plugin.workspace.PanelConfig(
+                id = "panel-test",
+                tabs =
+                    listOf(
+                        ai.rever.boss.plugin.workspace
+                            .TabConfig(type = "browser", title = "t", url = url),
+                    ),
+            ),
+        )
+}

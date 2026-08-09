@@ -57,13 +57,19 @@ data class WorkspaceSettings(
  */
 object WorkspaceSettingsMigrations {
     /**
-     * Returns the settings to use, migrated if the file predates a platform
-     * default change, or null when nothing needed to change.
+     * Returns the settings to use, or null when the file is already current.
      *
-     * The version 0 -> 1 step only rewrites a Windows install still sitting on
-     * the old universal default. A Windows user who deliberately picked some
-     * other workspace keeps it, and the step runs at most once because the
-     * migrated file records the new version.
+     * A non-null result does not mean the default moved: every pre-v1 file is
+     * returned with the version stamped, whether or not anything else changed.
+     * The caller distinguishes the two (see `DesktopWorkspaceSettingsManager`).
+     *
+     * The version 0 -> 1 step rewrites a Windows install sitting on the old
+     * universal default. It cannot tell that apart from a Windows user who picked
+     * Claude Code deliberately - `encodeDefaults = true` wrote the same value
+     * either way and there was no version field to distinguish them - so such a
+     * user is moved once, deliberately. Every *other* value, including "none", is
+     * preserved, and the step runs at most once because the migrated file records
+     * the new version.
      */
     fun migrate(
         loaded: WorkspaceSettings,
@@ -71,16 +77,14 @@ object WorkspaceSettingsMigrations {
     ): WorkspaceSettings? {
         if (loaded.settingsVersion >= WorkspaceSettings.CURRENT_SETTINGS_VERSION) return null
 
-        val migrated =
-            if (isWindows && loaded.defaultWorkspaceId == PredefinedWorkspaces.CLAUDE_CODE_ID) {
-                loaded.copy(
-                    defaultWorkspaceId = PredefinedWorkspaces.BROWSER_ONLY_ID,
-                    settingsVersion = WorkspaceSettings.CURRENT_SETTINGS_VERSION,
-                )
-            } else {
-                loaded.copy(settingsVersion = WorkspaceSettings.CURRENT_SETTINGS_VERSION)
-            }
-        return migrated
+        return if (isWindows && loaded.defaultWorkspaceId == PredefinedWorkspaces.CLAUDE_CODE_ID) {
+            loaded.copy(
+                defaultWorkspaceId = PredefinedWorkspaces.BROWSER_ONLY_ID,
+                settingsVersion = WorkspaceSettings.CURRENT_SETTINGS_VERSION,
+            )
+        } else {
+            loaded.copy(settingsVersion = WorkspaceSettings.CURRENT_SETTINGS_VERSION)
+        }
     }
 }
 
