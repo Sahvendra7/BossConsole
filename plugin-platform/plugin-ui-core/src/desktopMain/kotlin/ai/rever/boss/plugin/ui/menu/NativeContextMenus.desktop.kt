@@ -75,6 +75,8 @@ internal object OsFamily {
  * safe. Separate from the facade so the AWT mechanics are not mixed into the public surface.
  */
 internal class AwtPopupPresenter {
+    // EDT-only: show() declines off the EDT and hide() posts.
+    @Volatile
     private var attached: Pair<Window, java.awt.PopupMenu>? = null
     private val watcher = DismissWatcher()
 
@@ -83,30 +85,36 @@ internal class AwtPopupPresenter {
      * built for and no-op once ownership has moved on - which is what actually protects against a
      * menu outliving the UI that opened it and then acting on state that has gone away.
      */
+    @Volatile
     private var generation: Long = 0L
 
+    // Guard clauses, each declining for a different reason. Flattening them into one nested
+    // expression would obscure exactly what this function exists to make clear: every path that
+    // cannot produce a menu must say so, so the caller can draw its own.
+    @Suppress("ReturnCount")
     fun show(
         nodes: List<NativeMenuNode>,
         anchor: NativeMenuAnchor,
         onDismiss: () -> Unit,
     ): Boolean {
+        // Decided synchronously, because the caller uses the return value to choose between this
+        // and its own menu. Posting the work would mean reporting success before knowing whether
+        // a menu appears, and a later failure would then leave the right-click doing nothing at
+        // all - the outcome the fallback exists to prevent. Callers are on the EDT (Compose's
+        // main dispatcher); off it, decline.
+        if (!SwingUtilities.isEventDispatchThread()) return false
+
         val planned = planNativeMenu(nodes, OsFamily.isWindows)
         if (planned.isEmpty()) return false
+
+        val at = anchor.resolveScreenPoint()
+        val invoker = resolveInvoker(at) ?: return false
 
         generation += 1
         val shown = generation
         val isCurrent = { generation == shown }
 
-        onEdt {
-            val at = anchor.resolveScreenPoint()
-            val invoker = resolveInvoker(at)
-            if (invoker == null) {
-                // Nothing to hang the popup off. Report dismissal so a caller tracking visibility
-                // cannot stay pinned for a menu that never appeared.
-                onDismiss()
-                return@onEdt
-            }
-
+        run {
             // A PopupMenu must hang off a live Component and AWT keeps it as a child until
             // removed, so detach the previous one rather than accumulating menus on the window.
             detach()
@@ -130,8 +138,17 @@ internal class AwtPopupPresenter {
             // show(), so this is the one window where icons can be applied.
             pendingIcons.forEach { (item, icon) -> MenuItemIcons.apply(item, icon) }
 
-            val local = at.toInvokerCoordinates(invoker)
-            popup.show(invoker, local.x, local.y)
+            val local =
+                at.toInvokerCoordinates(invoker) ?: run {
+                    detach()
+                    return false
+                }
+            // The one call left that can still fail. An escaping exception would leave the caller
+            // believing a menu is up when none is, so decline and let it draw its own.
+            if (runCatching { popup.show(invoker, local.x, local.y) }.isFailure) {
+                detach()
+                return false
+            }
             // Armed after show() (which returns in ~0 ms) so the grace window covers only the gap
             // before the OS takes the input grab, not the invoker resolution before it.
             myWatcher = watcher.install(dismissed)
@@ -143,7 +160,11 @@ internal class AwtPopupPresenter {
     }
 
     fun hide() {
-        generation += 1
+        // Only invalidate while a menu is actually attached. hide() routinely runs from teardown
+        // triggered BY the menu dismissing itself (a DisposableEffect's onDispose), and bumping
+        // unconditionally would fence off the item's own ActionEvent if it is still queued - so
+        // the click the user just made would silently do nothing.
+        if (attached != null) generation += 1
         onEdt {
             watcher.clear()
             // Grey out an orphan before letting go of it. The fence already makes it inert, but
@@ -167,22 +188,28 @@ internal class AwtPopupPresenter {
             }
         }
 
-    /** Falls back to the invoker's own origin when there is no pointer to read. */
-    private fun Point?.toInvokerCoordinates(invoker: Window): Point {
+    /** Null when the origin is unknowable - better to decline than to guess the window corner. */
+    private fun Point?.toInvokerCoordinates(invoker: Window): Point? {
         val origin = runCatching { invoker.locationOnScreen }.getOrNull()
         val screen = this
         return if (origin == null || screen == null) {
-            Point(0, 0)
+            null
         } else {
             Point(screen.x - origin.x, screen.y - origin.y)
         }
     }
 
     private fun resolveInvoker(at: Point?): Window? {
+        // The focused window is only a shortcut if it satisfies what pickInvoker would demand of
+        // it. With several windows open - a main frame, Settings, a detached browser - the
+        // focused one need not contain the click, and using it anyway subtracts the wrong origin
+        // and puts the menu far from the pointer. It must also be a real frame or dialog, since
+        // getWindows() returns the heavyweight windows Swing creates for popups.
         KeyboardFocusManager
             .getCurrentKeyboardFocusManager()
             .focusedWindow
-            ?.takeIf { it.isShowing }
+            ?.takeIf { it is Frame || it is Dialog }
+            ?.takeIf { it.isShowing && (at == null || it.bounds.contains(at)) }
             ?.let { return it }
 
         val candidates =
