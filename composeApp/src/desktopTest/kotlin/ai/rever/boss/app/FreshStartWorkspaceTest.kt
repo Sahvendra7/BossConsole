@@ -3,6 +3,9 @@ package ai.rever.boss.app
 import ai.rever.boss.components.workspaces.PredefinedWorkspaces
 import ai.rever.boss.components.workspaces.requiresProject
 import ai.rever.boss.dashboard.SplitTemplatesManager
+import ai.rever.boss.plugin.workspace.PanelConfig
+import ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel
+import ai.rever.boss.plugin.workspace.TabConfig
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -97,14 +100,10 @@ class FreshStartWorkspaceTest {
     }
 
     private fun singleBrowserLayout(url: String) =
-        ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel(
-            ai.rever.boss.plugin.workspace.PanelConfig(
+        SinglePanel(
+            PanelConfig(
                 id = "panel-test",
-                tabs =
-                    listOf(
-                        ai.rever.boss.plugin.workspace
-                            .TabConfig(type = "browser", title = "t", url = url),
-                    ),
+                tabs = listOf(TabConfig(type = "browser", title = "t", url = url)),
             ),
         )
 }

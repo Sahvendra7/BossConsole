@@ -15,7 +15,7 @@ import ai.rever.boss.utils.SystemUtils
  * sidebar click, menu item, deep link or CLI command away; only the automatic
  * open is suppressed.
  */
-object StartupPanelPolicy {
+internal object StartupPanelPolicy {
     /** Platform-explicit form, so both branches are reachable from a test on any host. */
     fun autoOpensProjectPanelsFor(isWindows: Boolean): Boolean = !isWindows
 

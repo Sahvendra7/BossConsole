@@ -32,9 +32,12 @@ class FocusModeRevealTest {
     val rule = createComposeRule()
 
     /**
-     * Mount the reveal for [settings] and settle it. The grace period before a bar
-     * hides is 2s, so the clock has to pass it or every edge would still read
-     * "shown" and the test would pass for the wrong reason.
+     * Mount the reveal for [settings] and settle it, past the 2s hide grace period.
+     *
+     * Note what this does and does not prove: `shown` starts false, so a hidden edge
+     * reads false whether or not the effects ran. The load-bearing assertions are the
+     * `assertTrue` ones - an edge focus mode does not clear has to be actively turned
+     * back on by [EdgeRevealEffects]. The hover path is covered separately below.
      */
     private fun revealFor(settings: FocusModeSettings): FocusModeRevealState {
         lateinit var state: FocusModeRevealState
@@ -151,6 +154,48 @@ class FocusModeRevealTest {
         }
     }
 
+    /**
+     * The path this refactor actually rewrote: strip hover -> reveal delay -> shown, then
+     * pointer out -> grace period -> hidden again. Four copy-pasted effect pairs became one
+     * parameterised composable, and nothing else here drives that sequence.
+     */
+    @Test
+    fun `hovering a strip reveals its bar and leaving hides it again`() {
+        val settings = FocusModeSettings.defaultsFor("Mac OS X").copy(enabled = true)
+        val state = revealFor(settings)
+        assertFalse(state.showLeftSidebar, "precondition: focus mode cleared it")
+
+        state[FocusModeEdge.LEFT].hoveringStrip = true
+        rule.mainClock.advanceTimeBy(settings.revealDelayMs + FRAME_MS)
+        rule.waitForIdle()
+
+        assertTrue(state.showLeftSidebar, "hovering the strip past the reveal delay must show the bar")
+        assertFalse(state.showRightSidebar, "only the hovered edge reveals")
+
+        state[FocusModeEdge.LEFT].hoveringStrip = false
+        rule.mainClock.advanceTimeBy(GRACE_PERIOD_MS)
+        rule.waitForIdle()
+
+        assertFalse(state.showLeftSidebar, "leaving the strip must hide it again after the grace period")
+    }
+
+    /** The delay is a real wait, not a formality: the bar must not appear before it elapses. */
+    @Test
+    fun `the bar does not appear before the reveal delay elapses`() {
+        val settings = FocusModeSettings.defaultsFor("Mac OS X").copy(enabled = true, revealDelayMs = 500L)
+        val state = revealFor(settings)
+
+        state[FocusModeEdge.TOP].hoveringStrip = true
+        rule.mainClock.advanceTimeBy(settings.revealDelayMs / 2)
+        rule.waitForIdle()
+
+        assertFalse(state.showTopBar, "revealed early, so the delay is not being honoured")
+
+        rule.mainClock.advanceTimeBy(settings.revealDelayMs)
+        rule.waitForIdle()
+        assertTrue(state.showTopBar)
+    }
+
     /** Tags are derived, so a renamed edge cannot silently detach a test from its strip. */
     @Test
     fun `every edge has its own strip tag`() {
@@ -162,5 +207,8 @@ class FocusModeRevealTest {
     private companion object {
         /** Matches the hide delay in `rememberFocusModeReveal`, plus a frame. */
         const val GRACE_PERIOD_MS = 2_500L
+
+        /** One frame past a deadline, so the effect has resumed rather than being mid-delay. */
+        const val FRAME_MS = 100L
     }
 }

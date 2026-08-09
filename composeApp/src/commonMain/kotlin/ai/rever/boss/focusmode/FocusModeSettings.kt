@@ -96,22 +96,48 @@ data class FocusModeSettings(
             )
 
         /**
-         * Decode a stored settings file, filling every key it predates from [defaults].
+         * Keys introduced with the per-edge switches, and the *only* ones an absence may be
+         * resolved from the platform defaults.
          *
-         * A plain decode would fill a missing key from the *class* default, which is the same on
+         * The distinction is not cosmetic. Files written before this build used
+         * `encodeDefaults = false`, so they omit every value that equals the CLASS default -
+         * an absence there means "the user's choice happened to match the class default", not
+         * "never chosen". Resolving those from the platform defaults would silently revert a
+         * real preference: a Windows user who deliberately switched hover-to-reveal ON wrote a
+         * file with `autoRevealEnabled` absent (it equals the class default `true`), and the
+         * Windows platform default is `false`. These four keys are safe precisely because no
+         * file written before this build can contain them.
+         */
+        private val PLATFORM_DEFAULTED_KEYS =
+            setOf("hideTopBar", "hideLeftSidebar", "hideRightSidebar", "hideBottomBar")
+
+        /**
+         * Decode a stored settings file, resolving the keys it predates from [defaults].
+         *
+         * A plain decode fills a missing key from the *class* default, which is the same on
          * every platform - so a Windows install that already had a settings file would come up
          * hiding both sidebars with no way to reveal them, which is exactly what
-         * [defaultHidesSidebars] exists to prevent. Merging against the platform defaults instead
-         * means "absent" reads as "never chosen", and every future field added here inherits the
-         * same treatment. Keys present in the file always win, so a real choice is never
-         * overwritten.
+         * [defaultHidesSidebars] exists to prevent.
+         *
+         * Only the keys in [PLATFORM_DEFAULTED_KEYS] are resolved that way. Every other absent
+         * key keeps the old meaning and falls back to the class default, because an older
+         * writer omitted class-default values and an absence there is a choice, not a gap. Keys
+         * present in the file always win either way.
+         *
+         * A future platform-specific default needs its key added to that set, in the build that
+         * introduces it - which is the same discipline as bumping a schema version, expressed as
+         * the thing it actually protects.
          */
         fun decodeWithDefaults(
             content: String,
             defaults: FocusModeSettings,
         ): FocusModeSettings {
             val stored = storageJson.parseToJsonElement(content).jsonObject
-            val defaulted = storageJson.encodeToJsonElement(serializer(), defaults).jsonObject
+            val defaulted =
+                storageJson
+                    .encodeToJsonElement(serializer(), defaults)
+                    .jsonObject
+                    .filterKeys { it in PLATFORM_DEFAULTED_KEYS }
             return storageJson.decodeFromJsonElement(serializer(), JsonObject(defaulted + stored))
         }
 
@@ -129,7 +155,7 @@ data class FocusModeSettings(
          * user switching a sidebar back on would write nothing and find it off again next
          * launch - on the one platform where that switch is the whole escape hatch.
          */
-        val storageJson =
+        internal val storageJson =
             Json {
                 prettyPrint = true
                 ignoreUnknownKeys = true

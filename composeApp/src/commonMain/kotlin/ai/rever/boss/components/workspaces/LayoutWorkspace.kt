@@ -5,7 +5,6 @@ package ai.rever.boss.components.workspaces
 import ai.rever.boss.plugin.workspace.SplitConfig.HorizontalSplit
 import ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel
 import ai.rever.boss.plugin.workspace.SplitConfig.VerticalSplit
-import java.util.concurrent.atomic.AtomicInteger
 import ai.rever.boss.plugin.workspace.extractPanels as pluginExtractPanels
 
 /**
@@ -35,9 +34,10 @@ object PredefinedWorkspaces {
     // A counter, not a timestamp plus a random draw: this whole list is built in one
     // initializer, so every id would be minted in the same millisecond and collide on
     // a 1-in-10000 draw. Panel ids key the split tree, so a collision is not cosmetic.
-    private val panelIdCounter = AtomicInteger()
+    // A plain var is enough - the only caller is the single-threaded initializer below.
+    private var panelIdCounter = 0
 
-    private fun generatePanelId() = "panel-predefined-${panelIdCounter.incrementAndGet()}"
+    private fun generatePanelId() = "panel-predefined-${++panelIdCounter}"
 
     /** Id of the browser-only workspace, the platform default on Windows. */
     const val BROWSER_ONLY_ID = "workspace-browser"
@@ -56,34 +56,6 @@ object PredefinedWorkspaces {
 
     val allWorkspaces =
         listOf(
-            // Browser only: a single browser panel on the BOSS home page.
-            // The default on Windows, where the terminal-first layouts are a poor
-            // first run (see defaultWorkspaceIdFor in WorkspaceSettingsManager.kt).
-            //
-            // "Browser Only", not "Browser": WorkspaceManager identifies predefined
-            // workspaces by NAME (WorkspaceManager.kt:63 drops a saved workspace whose
-            // name collides, and WorkspaceButton decides renameable/deletable the same
-            // way), so a short generic name would silently swallow a user's own
-            // hand-rolled single-browser layout.
-            LayoutWorkspace(
-                id = BROWSER_ONLY_ID,
-                name = "Browser Only",
-                description = "A single browser panel on $BROWSER_ONLY_URL",
-                layout =
-                    SinglePanel(
-                        PanelConfig(
-                            id = generatePanelId(),
-                            tabs =
-                                listOf(
-                                    TabConfig(
-                                        type = "browser",
-                                        title = "RISA Labs",
-                                        url = BROWSER_ONLY_URL,
-                                    ),
-                                ),
-                        ),
-                    ),
-            ),
             // Claude Code: Terminal + Browser
             LayoutWorkspace(
                 id = CLAUDE_CODE_ID,
@@ -370,6 +342,38 @@ object PredefinedWorkspaces {
                                         ),
                                 ),
                             ),
+                    ),
+            ),
+            // Browser only: a single browser panel on the BOSS home page.
+            // The default on Windows, where the terminal-first layouts are a poor
+            // first run (see defaultWorkspaceIdFor in WorkspaceSettingsManager.kt).
+            //
+            // Appended rather than prepended: this list is the order of the Settings
+            // picker and the workspace menu on every platform, and one platform's
+            // default is not a reason to reshuffle what everyone else sees.
+            //
+            // "Browser Only", not "Browser": WorkspaceManager identifies predefined
+            // workspaces by NAME (WorkspaceManager.kt:63 drops a saved workspace whose
+            // name collides, and WorkspaceButton decides renameable/deletable the same
+            // way), so a short generic name would silently swallow a user's own
+            // hand-rolled single-browser layout.
+            LayoutWorkspace(
+                id = BROWSER_ONLY_ID,
+                name = "Browser Only",
+                description = "A single browser panel on $BROWSER_ONLY_URL",
+                layout =
+                    SinglePanel(
+                        PanelConfig(
+                            id = generatePanelId(),
+                            tabs =
+                                listOf(
+                                    TabConfig(
+                                        type = "browser",
+                                        title = "RISA Labs",
+                                        url = BROWSER_ONLY_URL,
+                                    ),
+                                ),
+                        ),
                     ),
             ),
         )

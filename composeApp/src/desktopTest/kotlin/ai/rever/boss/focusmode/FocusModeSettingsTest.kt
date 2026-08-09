@@ -248,11 +248,42 @@ class FocusModeSettingsTest {
         assertTrue(decoded.hideLeftSidebar)
     }
 
-    /** An empty object is the same situation as a missing file: every value comes from defaults. */
+    /**
+     * An empty object resolves the NEW keys from the platform defaults and everything else
+     * from the class defaults. It is not the same as a missing file: a missing file means
+     * nobody has ever chosen anything (the manager writes the platform defaults straight
+     * out), while `{}` was written by a build that omitted every class-default value.
+     */
     @Test
-    fun `an empty file decodes to the platform defaults`() {
+    fun `an empty file resolves only the new keys from the platform defaults`() {
         val defaults = FocusModeSettings.defaultsFor("Windows 11")
-        assertEquals(defaults, FocusModeSettings.decodeWithDefaults("{}", defaults))
+
+        val decoded = FocusModeSettings.decodeWithDefaults("{}", defaults)
+
+        assertFalse(decoded.hideLeftSidebar, "a new key resolves from the platform default")
+        assertFalse(decoded.hideRightSidebar)
+        assertTrue(decoded.autoRevealEnabled, "an old key keeps the class default, not the platform one")
+    }
+
+    /**
+     * The regression this scoping exists to prevent. Before this build the writer used
+     * `encodeDefaults = false`, so a Windows user who deliberately switched hover-to-reveal
+     * ON produced a file with `autoRevealEnabled` absent - it equals the class default. If
+     * absence were resolved from the platform defaults, their choice would silently flip off
+     * on upgrade, on the platform whose default is the opposite.
+     */
+    @Test
+    fun `a windows user who turned hover-reveal on keeps it across the upgrade`() {
+        // What the old encodeDefaults = false writer produced for that user.
+        val oldFile = """{"enabled":true}"""
+
+        val decoded = FocusModeSettings.decodeWithDefaults(oldFile, FocusModeSettings.defaultsFor("Windows 11"))
+
+        assertTrue(decoded.autoRevealEnabled, "a pre-existing preference must survive the upgrade")
+        assertTrue(decoded.enabled)
+        // The new keys still take the Windows defaults, which is the point of the merge.
+        assertFalse(decoded.hideLeftSidebar)
+        assertFalse(decoded.hideRightSidebar)
     }
 
     /**
