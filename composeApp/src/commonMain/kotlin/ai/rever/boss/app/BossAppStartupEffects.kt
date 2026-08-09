@@ -1,8 +1,6 @@
 package ai.rever.boss.app
 
-import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.registerPanelHostTab
 import ai.rever.boss.components.registery.PanelComponentStoreRegistry
@@ -175,8 +173,7 @@ internal fun BossAppStartupEffects(state: BossAppState) {
         val pendingProject = consumePendingInitialProject(windowId)
         if (pendingProject != null) {
             windowProjectState.selectProject(pendingProject)
-            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = windowId)
-            PanelEventBus.openPanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = windowId)
+            openProjectPanels(windowId)
         }
     }
 
@@ -189,8 +186,7 @@ internal fun BossAppStartupEffects(state: BossAppState) {
     LaunchedEffect(windowProjectState) {
         val initialProject = windowProjectState.selectedProject.value
         if (initialProject.path.isNotEmpty()) {
-            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = windowId)
-            PanelEventBus.openPanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = windowId)
+            openProjectPanels(windowId)
         }
     }
 
@@ -335,8 +331,7 @@ internal fun BossAppStartupEffects(state: BossAppState) {
     // Open CodeBase and RunConfigurations panels when project is selected (reactive architecture)
     LaunchedEffect(selectedProject.path, windowId) {
         if (selectedProject.path.isNotEmpty()) {
-            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = windowId)
-            PanelEventBus.openPanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = windowId)
+            openProjectPanels(windowId)
         }
     }
 
