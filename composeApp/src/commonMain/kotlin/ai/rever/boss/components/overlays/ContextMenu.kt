@@ -159,7 +159,12 @@ internal fun List<ContextMenuItem>.toNativeMenuNodes(icons: MenuIcons = emptyMap
                 NativeMenuNode.Separator
             }
 
-            item.subMenu != null -> {
+            // isNullOrEmpty, matching the drawn renderer. An item with an EMPTY subMenu and a real
+            // onClick is a clickable row there; treating it as a submenu here would make
+            // planNativeMenu drop it as an unopenable dead row, so the item would vanish. Reachable
+            // through the plugin API, which maps `subMenu?.map { ... }` and hands back an empty
+            // non-null list.
+            !item.subMenu.isNullOrEmpty() -> {
                 NativeMenuNode.Submenu(item.text, item.subMenu.toNativeMenuNodes(icons))
             }
 

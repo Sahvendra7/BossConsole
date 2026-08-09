@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin.ui.menu
 
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toAwtImage
 import java.awt.AWTEvent
 import java.awt.Dialog
 import java.awt.Frame
@@ -418,8 +419,15 @@ private fun NativeMenuNode.Item.toAwtItem(
             isEnabled = node.enabled
             node.shortcut?.let { setShortcut(java.awt.MenuShortcut(it.code)) }
             addActionListener {
-                if (isCurrent()) node.action()
-                onDismiss()
+                // finally, because the action is invokeAttributed, which rethrows by design.
+                // Without this the popup stays attached, the watcher stays installed and the
+                // caller never learns the menu closed - so its state says a menu is up while the
+                // OS menu is already gone, and no further right-click can reopen it.
+                try {
+                    if (isCurrent()) node.action()
+                } finally {
+                    runCatching { onDismiss() }
+                }
             }
         }
     node.icon?.let { pendingIcons += item to it }
@@ -466,20 +474,8 @@ private object MenuItemIcons {
             val (accessor, getPeer) = peerAccessor ?: return
             val peer = getPeer.invoke(accessor, item) ?: return
             val setImage = peer.javaClass.getMethod("setImage", java.awt.Image::class.java)
-            setImage.invoke(peer, icon.toBufferedImage().asMenuIcon())
+            setImage.invoke(peer, icon.toAwtImage().asMenuIcon())
         }
-    }
-
-    /**
-     * Compose 1.11.1 has no `toAwtImage`, so copy the pixels out directly. ImageBitmap hands back
-     * packed ARGB, which is exactly `TYPE_INT_ARGB`'s layout.
-     */
-    private fun ImageBitmap.toBufferedImage(): BufferedImage {
-        val pixels = IntArray(width * height)
-        readPixels(pixels, startX = 0, startY = 0, width = width, height = height)
-        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
-        image.setRGB(0, 0, width, height, pixels, 0, width)
-        return image
     }
 
     /**
