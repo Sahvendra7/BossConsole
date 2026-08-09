@@ -1,5 +1,7 @@
 package ai.rever.boss.plugin.ui.menu
 
+import androidx.compose.ui.graphics.ImageBitmap
+
 /**
  * A menu described in terms an operating-system menu can actually render.
  *
@@ -19,6 +21,17 @@ sealed interface NativeMenuNode {
         val label: String,
         val enabled: Boolean = true,
         val shortcut: Char? = null,
+        /**
+         * Already rasterised, because only the caller is in a composition and can resolve density.
+         * Applied through the macOS menu peer, which does support images even though the public
+         * `java.awt.MenuItem` API does not - see the desktop implementation.
+         *
+         * Must be square and rasterised at [NATIVE_MENU_ICON_SCALE] times
+         * [NATIVE_MENU_ICON_POINTS]. AppKit reads a plain bitmap's **pixel** dimensions as its
+         * **point** size, so handing it a Retina-sized bitmap renders an icon twice too large;
+         * the desktop side turns this into a multi-resolution image to state the point size.
+         */
+        val icon: ImageBitmap? = null,
         val action: () -> Unit = {},
     ) : NativeMenuNode {
         init {
@@ -35,6 +48,17 @@ sealed interface NativeMenuNode {
         val children: List<NativeMenuNode>,
     ) : NativeMenuNode
 }
+
+/**
+ * The point size a native menu icon should occupy.
+ *
+ * macOS's own menu-item checkmark is 14x13pt, and 16pt is the common convention for custom menu
+ * icons, so this sits at the top of the system's own range rather than inventing a size.
+ */
+const val NATIVE_MENU_ICON_POINTS: Int = 16
+
+/** Rasterise at 2x so the icon stays crisp on Retina; the base variant states the point size. */
+const val NATIVE_MENU_ICON_SCALE: Int = 2
 
 /** Where the menu should appear. */
 sealed interface NativeMenuAnchor {
@@ -105,10 +129,7 @@ fun planNativeMenu(
             }
 
             is NativeMenuNode.Item -> {
-                planned +=
-                    node.copy(
-                        label = escapeNativeLabel(node.label, isWindows),
-                    )
+                planned += node.copy(label = escapeNativeLabel(node.label, isWindows))
             }
 
             is NativeMenuNode.Submenu -> {

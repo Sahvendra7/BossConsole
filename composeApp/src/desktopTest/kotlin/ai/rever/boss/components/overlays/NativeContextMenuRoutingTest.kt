@@ -3,6 +3,7 @@ package ai.rever.boss.components.overlays
 import ai.rever.boss.plugin.ui.menu.NativeMenuNode
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.ui.graphics.ImageBitmap
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -54,8 +55,39 @@ class NativeContextMenuRoutingTest {
     }
 
     @Test
-    fun `a leading icon disqualifies`() {
-        assertFalse(listOf(ContextMenuItem(text = "Open", icon = Icons.Filled.Delete)).isNativeRepresentable())
+    fun `a leading icon does NOT disqualify`() {
+        // Nearly every menu item in the app has one, so treating icons as blocking would leave
+        // essentially every menu on the drawn path. An icon is decoration; losing it costs
+        // appearance, not function.
+        assertTrue(listOf(ContextMenuItem(text = "Open", icon = Icons.Filled.Delete)).isNativeRepresentable())
+    }
+
+    @Test
+    fun `a realistic tab menu is representable`() {
+        // Mirrors BossMainWindowPanel's tab menu, which is icon-per-item throughout. This is the
+        // menu the feature is most visible on, so pin that it actually qualifies.
+        val items =
+            listOf(
+                ContextMenuItem("Split Right", Icons.Filled.Delete, onClick = {}),
+                ContextMenuItem(isDivider = true),
+                ContextMenuItem("Close Tab", Icons.Filled.Delete, onClick = {}),
+            )
+        assertTrue(items.isNativeRepresentable())
+    }
+
+    @Test
+    fun `a trailing button nested in a submenu still disqualifies`() {
+        val nested =
+            listOf(
+                ContextMenuItem(
+                    text = "Options",
+                    subMenu =
+                        listOf(
+                            ContextMenuItem(text = "Entry", trailingIcon = Icons.Filled.Delete),
+                        ),
+                ),
+            )
+        assertFalse(nested.isNativeRepresentable())
     }
 
     @Test
@@ -68,12 +100,12 @@ class NativeContextMenuRoutingTest {
                         listOf(
                             ContextMenuItem(
                                 text = "More",
-                                subMenu = listOf(ContextMenuItem(text = "Deep", icon = Icons.Filled.Delete)),
+                                subMenu = listOf(ContextMenuItem(text = "Deep", trailingIcon = Icons.Filled.Delete)),
                             ),
                         ),
                 ),
             )
-        assertFalse(nested.isNativeRepresentable(), "a rich item nested two levels down still counts")
+        assertFalse(nested.isNativeRepresentable(), "a trailing button two levels down still counts")
 
         val clean =
             listOf(
@@ -85,6 +117,57 @@ class NativeContextMenuRoutingTest {
     @Test
     fun `an empty menu is trivially representable`() {
         assertTrue(emptyList<ContextMenuItem>().isNativeRepresentable())
+    }
+
+    // ----- icons -----
+
+    @Test
+    fun `distinct icons are collected once, at any depth`() {
+        val a = Icons.Filled.Delete
+        val items =
+            listOf(
+                ContextMenuItem(text = "one", icon = a),
+                ContextMenuItem(text = "two", icon = a),
+                ContextMenuItem(
+                    text = "sub",
+                    subMenu = listOf(ContextMenuItem(text = "deep", icon = a)),
+                ),
+                ContextMenuItem(text = "none"),
+            )
+        // Same ImageVector used three times, rasterised once.
+        assertEquals(listOf(a), items.collectIcons())
+    }
+
+    @Test
+    fun `an item with no icon collects nothing`() {
+        assertTrue(listOf(ContextMenuItem(text = "plain")).collectIcons().isEmpty())
+    }
+
+    @Test
+    fun `a rasterised icon is carried onto the native node, including in submenus`() {
+        val vector = Icons.Filled.Delete
+        val bitmap = ImageBitmap(4, 4)
+        val nodes =
+            listOf(
+                ContextMenuItem(text = "top", icon = vector),
+                ContextMenuItem(
+                    text = "sub",
+                    subMenu = listOf(ContextMenuItem(text = "deep", icon = vector)),
+                ),
+            ).toNativeMenuNodes(mapOf(vector to bitmap))
+
+        assertEquals(bitmap, (nodes[0] as NativeMenuNode.Item).icon)
+        val submenu = nodes[1] as NativeMenuNode.Submenu
+        assertEquals(bitmap, (submenu.children.single() as NativeMenuNode.Item).icon)
+    }
+
+    @Test
+    fun `an unrasterised icon degrades to no icon rather than failing`() {
+        // The map is empty when rasterisation was skipped; the item must still render.
+        val nodes =
+            listOf(ContextMenuItem(text = "top", icon = Icons.Filled.Delete)).toNativeMenuNodes()
+        assertEquals(null, (nodes.single() as NativeMenuNode.Item).icon)
+        assertEquals("top", (nodes.single() as NativeMenuNode.Item).label)
     }
 
     // ----- conversion -----

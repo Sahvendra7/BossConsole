@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin.ui.menu
 
+import androidx.compose.ui.graphics.ImageBitmap
 import java.awt.AWTEvent
 import java.awt.Dialog
 import java.awt.Frame
@@ -11,6 +12,7 @@ import java.awt.Toolkit
 import java.awt.Window
 import java.awt.event.AWTEventListener
 import java.awt.event.MouseEvent
+import java.awt.image.BufferedImage
 import javax.swing.SwingUtilities
 
 /**
@@ -120,9 +122,13 @@ internal class AwtPopupPresenter {
                 watcher.clearIf(myWatcher)
                 onDismiss()
             }
-            materialize(popup, planned, isCurrent, dismissed)
+            val pendingIcons = mutableListOf<Pair<java.awt.MenuItem, ImageBitmap>>()
+            materialize(popup, planned, isCurrent, dismissed, pendingIcons)
             invoker.add(popup)
             attached = invoker to popup
+            // Peers only exist once the menu is realised by add(), and setImage works before
+            // show(), so this is the one window where icons can be applied.
+            pendingIcons.forEach { (item, icon) -> MenuItemIcons.apply(item, icon) }
 
             val local = at.toInvokerCoordinates(invoker)
             popup.show(invoker, local.x, local.y)
@@ -205,6 +211,7 @@ internal class AwtPopupPresenter {
         nodes: List<NativeMenuNode>,
         isCurrent: () -> Boolean,
         onDismiss: () -> Unit,
+        pendingIcons: MutableList<Pair<java.awt.MenuItem, ImageBitmap>>,
     ) {
         nodes.forEach { node ->
             when (node) {
@@ -213,22 +220,13 @@ internal class AwtPopupPresenter {
                 }
 
                 is NativeMenuNode.Item -> {
-                    menu.add(
-                        java.awt.MenuItem(node.label).apply {
-                            isEnabled = node.enabled
-                            node.shortcut?.let { shortcut = java.awt.MenuShortcut(it.code) }
-                            addActionListener {
-                                if (isCurrent()) node.action()
-                                onDismiss()
-                            }
-                        },
-                    )
+                    menu.add(node.toAwtItem(isCurrent, onDismiss, pendingIcons))
                 }
 
                 is NativeMenuNode.Submenu -> {
                     menu.add(
                         java.awt.Menu(node.label).also {
-                            materialize(it, node.children, isCurrent, onDismiss)
+                            materialize(it, node.children, isCurrent, onDismiss, pendingIcons)
                         },
                     )
                 }
@@ -370,3 +368,104 @@ internal fun <T> pickInvoker(
             compareByDescending<InvokerCandidate<T>> { it.isActive }
                 .thenBy { it.bounds.width.toLong() * it.bounds.height.toLong() },
         )
+
+/** Build the AWT item for one node, queueing its icon for after the peer exists. */
+private fun NativeMenuNode.Item.toAwtItem(
+    isCurrent: () -> Boolean,
+    onDismiss: () -> Unit,
+    pendingIcons: MutableList<Pair<java.awt.MenuItem, ImageBitmap>>,
+): java.awt.MenuItem {
+    val node = this
+    val item =
+        java.awt.MenuItem(node.label).apply {
+            isEnabled = node.enabled
+            node.shortcut?.let { setShortcut(java.awt.MenuShortcut(it.code)) }
+            addActionListener {
+                if (isCurrent()) node.action()
+                onDismiss()
+            }
+        }
+    node.icon?.let { pendingIcons += item to it }
+    return item
+}
+
+/**
+ * Puts an icon on a native menu item.
+ *
+ * `java.awt.MenuItem` has no icon API, but its macOS peer does: `sun.lwawt.macosx.CMenuItem`
+ * declares `public void setImage(Image)`, and the JDK's own comment on it says the intended
+ * access is an `instanceof` on the peer, because "we want to support the NSMenuItem image apis".
+ *
+ * The peer is reached through `sun.awt.AWTAccessor$MenuComponentAccessor`, deliberately resolving
+ * the method on the **public interface** rather than on the accessor's implementation class. The
+ * implementation is an anonymous class in `java.awt`, so going through it would need
+ * `--add-opens java.desktop/java.awt`, which this app does not set. Through the interface, the
+ * `sun.awt` and `sun.lwawt.macosx` opens it already has on macOS are enough. Verified both ways.
+ *
+ * Everything is best-effort: this is private JDK API, so a failure drops the icon and keeps the
+ * menu rather than taking the right-click down.
+ */
+private object MenuItemIcons {
+    private val peerAccessor: Pair<Any, java.lang.reflect.Method>? by lazy {
+        runCatching {
+            val accessor =
+                Class
+                    .forName("sun.awt.AWTAccessor")
+                    .getMethod("getMenuComponentAccessor")
+                    .invoke(null)
+            val getPeer =
+                Class
+                    .forName("sun.awt.AWTAccessor\$MenuComponentAccessor")
+                    .getMethod("getPeer", java.awt.MenuComponent::class.java)
+            accessor!! to getPeer
+        }.getOrNull()
+    }
+
+    fun apply(
+        item: java.awt.MenuItem,
+        icon: ImageBitmap,
+    ) {
+        runCatching {
+            val (accessor, getPeer) = peerAccessor ?: return
+            val peer = getPeer.invoke(accessor, item) ?: return
+            val setImage = peer.javaClass.getMethod("setImage", java.awt.Image::class.java)
+            setImage.invoke(peer, icon.toBufferedImage().asMenuIcon())
+        }
+    }
+
+    /**
+     * Compose 1.11.1 has no `toAwtImage`, so copy the pixels out directly. ImageBitmap hands back
+     * packed ARGB, which is exactly `TYPE_INT_ARGB`'s layout.
+     */
+    private fun ImageBitmap.toBufferedImage(): BufferedImage {
+        val pixels = IntArray(width * height)
+        readPixels(pixels, startX = 0, startY = 0, width = width, height = height)
+        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+        image.setRGB(0, 0, width, height, pixels, 0, width)
+        return image
+    }
+
+    /**
+     * State the icon's size in POINTS, not pixels.
+     *
+     * `CImage.createFromImage` branches on `MultiResolutionImage`: given one, it builds an NSImage
+     * from the variants, and the base variant's dimensions become the image's point size. Given a
+     * plain bitmap it instead uses the raw pixel dimensions as the point size, so a 2x bitmap
+     * renders at twice the intended size - which is exactly what a Retina rasterisation produced
+     * before this existed.
+     */
+    private fun BufferedImage.asMenuIcon(): java.awt.Image {
+        val points = NATIVE_MENU_ICON_POINTS
+        if (width == points) return this
+        val base = BufferedImage(points, points, BufferedImage.TYPE_INT_ARGB)
+        base.createGraphics().apply {
+            setRenderingHint(
+                java.awt.RenderingHints.KEY_INTERPOLATION,
+                java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR,
+            )
+            drawImage(this@asMenuIcon, 0, 0, points, points, null)
+            dispose()
+        }
+        return java.awt.image.BaseMultiResolutionImage(base, this)
+    }
+}

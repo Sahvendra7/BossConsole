@@ -277,4 +277,23 @@ class NativeContextMenusTest {
         // makes this false. Either way it must return, not throw, and not leave a menu behind.
         assertFalse(NativeContextMenus.show(emptyList()))
     }
+
+    // ----- icon sizing -----
+
+    @Test
+    fun `the icon contract is a 2x rasterisation of the point size`() {
+        // AppKit reads a plain bitmap's PIXEL dimensions as its POINT size, so a Retina-scale
+        // rasterisation renders an icon twice too large. The point size is stated separately by
+        // the multi-resolution image, and the bitmap is a fixed 2x of it - never the screen scale.
+        assertEquals(16, NATIVE_MENU_ICON_POINTS)
+        assertEquals(2, NATIVE_MENU_ICON_SCALE)
+        assertEquals(32, NATIVE_MENU_ICON_POINTS * NATIVE_MENU_ICON_SCALE)
+    }
+
+    @Test
+    fun `the point size sits in the range macOS uses for menu items`() {
+        // The system checkmark is 14x13pt and 16pt is the common convention for custom menu
+        // icons; anything materially larger is the bug this range exists to catch.
+        assertTrue(NATIVE_MENU_ICON_POINTS in 14..18)
+    }
 }
