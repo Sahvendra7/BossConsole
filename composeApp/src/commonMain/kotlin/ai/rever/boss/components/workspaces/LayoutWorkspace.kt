@@ -33,11 +33,42 @@ fun SplitConfig.extractPanels(prefix: String = ""): List<Pair<String, String>> =
 object PredefinedWorkspaces {
     private fun generatePanelId() = "panel-${System.currentTimeMillis()}-${(Math.random() * 10000).toInt()}"
 
+    /** Id of the browser-only workspace, the platform default on Windows. */
+    const val BROWSER_ONLY_ID = "workspace-browser"
+
+    /** Id of the terminal + browser workspace, the platform default everywhere else. */
+    const val CLAUDE_CODE_ID = "workspace-claude-code"
+
+    /** Home page the browser-only workspace opens with. */
+    const val BROWSER_ONLY_URL = "https://risalabs.ai"
+
     val allWorkspaces =
         listOf(
+            // Browser only: a single browser panel on the BOSS home page.
+            // The default on Windows, where the terminal-first layouts are a poor
+            // first run (see WorkspaceSettings.defaultWorkspaceIdForPlatform).
+            LayoutWorkspace(
+                id = BROWSER_ONLY_ID,
+                name = "Browser",
+                description = "A single browser panel on $BROWSER_ONLY_URL",
+                layout =
+                    SinglePanel(
+                        PanelConfig(
+                            id = generatePanelId(),
+                            tabs =
+                                listOf(
+                                    TabConfig(
+                                        type = "browser",
+                                        title = "RISA Labs",
+                                        url = BROWSER_ONLY_URL,
+                                    ),
+                                ),
+                        ),
+                    ),
+            ),
             // Claude Code: Terminal + Browser
             LayoutWorkspace(
-                id = "workspace-claude-code",
+                id = CLAUDE_CODE_ID,
                 name = "Claude Code",
                 description = "Terminal with Claude CLI + Browser with GitHub",
                 layout =

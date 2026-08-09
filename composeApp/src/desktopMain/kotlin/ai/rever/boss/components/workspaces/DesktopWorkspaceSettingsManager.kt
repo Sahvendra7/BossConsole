@@ -47,9 +47,24 @@ actual object WorkspaceSettingsManager {
                 if (settingsFile.exists()) {
                     val content = settingsFile.readText()
                     val settings = json.decodeFromString<WorkspaceSettings>(content)
-                    _currentSettings.value = settings
-                    logger.debug(LogCategory.SYSTEM, "Loaded settings")
+                    val migrated = WorkspaceSettingsMigrations.migrate(settings)
+                    _currentSettings.value = migrated ?: settings
+                    if (migrated != null) {
+                        logger.info(
+                            LogCategory.SYSTEM,
+                            "Migrated workspace settings",
+                            mapOf(
+                                "fromVersion" to settings.settingsVersion.toString(),
+                                "defaultWorkspaceId" to migrated.defaultWorkspaceId,
+                            ),
+                        )
+                        saveSettings()
+                    } else {
+                        logger.debug(LogCategory.SYSTEM, "Loaded settings")
+                    }
                 } else {
+                    _currentSettings.value =
+                        _currentSettings.value.copy(settingsVersion = WorkspaceSettings.CURRENT_SETTINGS_VERSION)
                     val content = json.encodeToString(WorkspaceSettings.serializer(), _currentSettings.value)
                     settingsFile.writeText(content)
                     logger.debug(LogCategory.SYSTEM, "Created default settings file")
@@ -76,7 +91,14 @@ actual object WorkspaceSettingsManager {
     }
 
     actual suspend fun setDefaultWorkspaceId(workspaceId: String) {
-        updateSettings(_currentSettings.value.copy(defaultWorkspaceId = workspaceId))
+        // Stamp the schema version too: an explicit choice must never be rewritten
+        // by a migration on the next launch.
+        updateSettings(
+            _currentSettings.value.copy(
+                defaultWorkspaceId = workspaceId,
+                settingsVersion = WorkspaceSettings.CURRENT_SETTINGS_VERSION,
+            ),
+        )
     }
 
     actual fun getDefaultWorkspace(): LayoutWorkspace? {
