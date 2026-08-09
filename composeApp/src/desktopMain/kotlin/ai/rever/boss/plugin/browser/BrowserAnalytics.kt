@@ -51,16 +51,32 @@ internal object BrowserAnalytics {
      * A `var` purely so [BrowserAnalyticsTest] can assert the gate actually gates; nothing in
      * the app writes it, and the resolved value is what a deployment gets.
      */
-    internal var telemetryEnabled: Boolean = resolveTelemetryEnabled()
+    @Volatile
+    internal var telemetryEnabled: Boolean =
+        telemetryEnabledFrom(
+            env = System.getenv(TELEMETRY_DISABLED_KEY),
+            property = System.getProperty(TELEMETRY_DISABLED_PROPERTY),
+        )
 
-    /** Reads the kill switch from the environment, then the system property. */
-    private fun resolveTelemetryEnabled(): Boolean {
+    /**
+     * The kill switch's resolution rule, as a function of its two raw inputs so it can be
+     * tested. Reading `System.getenv` inline left every documented behaviour here uncovered,
+     * including a bug already hit once (see `isNotBlank` below).
+     *
+     * Read straight from the environment and system properties rather than through
+     * `ConfigLoader`, deliberately: this is an operator-level control that must hold before
+     * any settings exist, and it is never surfaced as a Settings row. (Note the asymmetry
+     * `FluckEngine` warns about - `getenv` cannot see a system property - is handled here by
+     * consulting both.)
+     */
+    internal fun telemetryEnabledFrom(
+        env: String?,
+        property: String?,
+    ): Boolean {
         // `isNotBlank`, because an env var set to the empty string is still non-null: without
         // it, `BOSS_BROWSER_TELEMETRY_DISABLED=` (a common way to "unset" one in a launcher
         // script) silently shadowed `-Dboss.browser.telemetry.disabled=true`.
-        val raw =
-            System.getenv(TELEMETRY_DISABLED_KEY)?.takeIf { it.isNotBlank() }
-                ?: System.getProperty(TELEMETRY_DISABLED_PROPERTY)
+        val raw = env?.takeIf { it.isNotBlank() } ?: property
         return !FluckEngine.isTruthyFlag(raw)
     }
 
@@ -242,10 +258,13 @@ internal object BrowserAnalytics {
         raw
             ?.trim()
             ?.takeIf { value -> value.none { it.isWhitespace() } }
-            ?.take(MAX_FIELD_NAME_LENGTH)
             ?.filter { c -> c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c in FIELD_NAME_PUNCTUATION }
             ?.takeIf { it.isNotEmpty() }
             ?.let { DIGIT_RUN.replace(it, "#") }
+            // Truncated LAST, so the cap applies to what is emitted rather than to the raw
+            // input. Cutting first also meant a digit run straddling the boundary could leave
+            // a one- or two-digit tail that the redactor no longer recognised as a run.
+            ?.take(MAX_FIELD_NAME_LENGTH)
 
     /**
      * A structural element path: tag names and sibling positions only, e.g.
@@ -336,8 +355,11 @@ internal object BrowserAnalytics {
         val labels = host.split('.').filter { it.isNotEmpty() }
         // Single-label hosts are intranet machine names, not sites.
         if (labels.size < 2) return null
-        // An IPv4 literal is an address, not a site.
-        if (labels.size == 4 && labels.all { l -> l.all { c -> c in '0'..'9' } }) return null
+        // An address is not a site. Any all-numeric host, not only a four-label one: Chromium
+        // canonicalises `127.1` to `127.0.0.1` before this sees it, but this function is
+        // documented as holding under misuse, and a two-label check answered `127.1` with
+        // "the site 127.1" and `10.0.1` with "the site 0.1".
+        if (labels.all { l -> l.all { c -> c in '0'..'9' } }) return null
 
         val lastTwo = labels.takeLast(2).joinToString(".")
         return if (labels.size >= 3 && lastTwo in MULTI_LABEL_SUFFIXES) {

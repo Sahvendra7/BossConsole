@@ -53,13 +53,13 @@ class BrowserVisitTrackerTest {
     @Test
     fun `dwell is wall clock and active time excludes the unfocused stretch`() {
         val t = tracker()
-        t.setFocused(true)
+        t.setVisible(true)
         t.pageViewed("availity.com")
 
         clock = 5_000
-        t.setFocused(false) // user switches to another tab for a minute
+        t.setVisible(false) // user switches to another tab for a minute
         clock = 65_000
-        t.setFocused(true)
+        t.setVisible(true)
         clock = 70_000
         t.closed()
 
@@ -110,7 +110,7 @@ class BrowserVisitTrackerTest {
     @Test
     fun `each navigation closes out the previous page exactly once`() {
         val t = tracker()
-        t.setFocused(true)
+        t.setVisible(true)
         t.pageViewed("availity.com")
         clock = 3_000
         t.pageViewed("bbc.co.uk")
@@ -176,10 +176,10 @@ class BrowserVisitTrackerTest {
         val t = tracker()
         t.opened("availity.com")
         t.pageViewed("availity.com")
-        t.setFocused(true)
-        t.setFocused(true) // already focused — not a switch
-        t.setFocused(false)
-        t.setFocused(true)
+        t.setVisible(true)
+        t.setVisible(false) // fully hidden
+        clock = 30_000 // away long enough to be a real switch, not a tab move
+        t.setVisible(true)
         t.closed()
 
         assertEquals(
@@ -194,12 +194,85 @@ class BrowserVisitTrackerTest {
     }
 
     @Test
+    fun `a tab move in either order leaves the tab active exactly once`() {
+        // The visibility signal is one DisposableEffect per composition, and a cross-window
+        // move builds one and tears down the other in an order this code does not control.
+        // As a plain boolean the compose-then-dispose order was destructive: the enter
+        // no-opped because the tab was already active, the leave then cleared it, and a tab
+        // that was visible and focused accrued NO active time while dwell kept climbing -
+        // reading as "left open, never read", the exact thing this class exists to tell apart.
+        for (composeFirst in listOf(true, false)) {
+            clock = 0
+            recorder.tabEvents.clear()
+            recorder.pageLefts.clear()
+            val t = tracker()
+            t.setVisible(true) // window A shows the tab
+            t.pageViewed("availity.com")
+
+            clock = 10_000
+            if (composeFirst) {
+                t.setVisible(true) // window B composes
+                t.setVisible(false) // window A disposes
+            } else {
+                t.setVisible(false) // window A disposes
+                t.setVisible(true) // window B composes
+            }
+
+            clock = 20_000
+            t.closed()
+
+            val (_, dwell, active) = recorder.pageLefts.single()
+            assertEquals(20_000, dwell, "composeFirst=$composeFirst")
+            assertEquals(
+                20_000,
+                active,
+                "a moved tab is still being looked at; composeFirst=$composeFirst",
+            )
+            assertEquals(
+                1,
+                recorder.tabEvents.count { it.first == BrowserEventType.TAB_ACTIVATED },
+                "a move is not a tab switch; composeFirst=$composeFirst",
+            )
+        }
+    }
+
+    @Test
+    fun `going away and coming back later is still a real tab switch`() {
+        // The grace window that absorbs a move must not swallow the user actually leaving
+        // the tab and returning, which is the signal TAB_ACTIVATED exists for.
+        val t = tracker()
+        t.pageViewed("availity.com")
+        t.setVisible(true)
+        t.setVisible(false)
+        clock = 30_000
+        t.setVisible(true)
+
+        assertEquals(2, recorder.tabEvents.count { it.first == BrowserEventType.TAB_ACTIVATED })
+    }
+
+    @Test
+    fun `the first activation says where the tab is, not that it is blank`() {
+        // opened() and the initial load both run in init; the visibility effect fires at
+        // first composition - all before any NavigationFinished. Reading only the current
+        // page's authority therefore reported nearly every tab's first TAB_ACTIVATED as a
+        // blank tab, which is not joinable with anything.
+        val t = tracker()
+        t.opened("portal.availity.com")
+        t.setVisible(true)
+
+        assertEquals(
+            listOf<String?>("portal.availity.com", "portal.availity.com"),
+            recorder.tabEvents.map { it.second },
+        )
+    }
+
+    @Test
     fun `every emission carries the owning window`() {
         // Dwell, depth and tab counts are all per-window in a multi-window setup; an event
         // that arrives without one cannot be attributed at all, and nothing else notices.
         val t = tracker()
         t.opened("availity.com")
-        t.setFocused(true)
+        t.setVisible(true)
         t.pageViewed("availity.com")
         clock = 1_000
         t.closed()
@@ -273,7 +346,7 @@ class BrowserVisitTrackerTest {
         // dropped downstream, but a negative *active* accumulation would silently corrupt
         // the running total for the rest of the visit.
         val t = tracker()
-        t.setFocused(true)
+        t.setVisible(true)
         t.pageViewed("availity.com")
         clock = -60_000
         t.closed()

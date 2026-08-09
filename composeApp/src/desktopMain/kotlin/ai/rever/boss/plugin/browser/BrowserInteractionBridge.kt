@@ -56,7 +56,14 @@ internal class BrowserInteractionBridge(
         val budget = reservation.count
         if (budget <= 0) return
         val parsed = parseBatch(json)
-        release(reservation, budget - minOf(budget, parsed.size))
+        // Refund what the batch didn't use, but never the whole reservation: one entry per
+        // emit() is non-refundable. Refunding against the *publishable* count let a page
+        // parse for free - 64 KB of `{"type":"KEYSTROKE"}`, or valid JSON that is an object
+        // rather than an array, costs a full parseToJsonElement and yields zero entries, so
+        // windowEntries never advanced and the loop the pre-parse reservation exists to bound
+        // was unbounded again. Charging for the call itself bounds calls; refunding the rest
+        // still means an honest three-event flush is not billed for fifty.
+        release(reservation, budget - minOf(budget, parsed.size).coerceAtLeast(1))
         for (entry in parsed.take(budget)) {
             BrowserAnalytics.interaction(
                 type = entry.type,
@@ -85,9 +92,10 @@ internal class BrowserInteractionBridge(
      * `emit()` could evict `AuthEvent` / `TabEvent` / `FileChangeEvent` deliveries out from
      * under any subscriber that isn't keeping up. A fixed window is enough: the goal is to
      * keep abuse cheap to attempt and useless in effect, not to meter precisely.
+     *
+     * Named for the side effect, since it takes budget rather than merely reporting it.
      */
-    @Synchronized
-    internal fun admissible(requested: Int): Int = reserve(requested).count
+    internal fun tryReserve(requested: Int): Int = reserve(requested).count
 
     /**
      * Take up to [requested] entries out of the current window's budget.
@@ -106,7 +114,14 @@ internal class BrowserInteractionBridge(
             windowStartMs = now
             windowEntries = 0
         }
-        val allowed = (MAX_ENTRIES_PER_WINDOW - windowEntries).coerceIn(0, requested)
+        val perTab = (MAX_ENTRIES_PER_WINDOW - windowEntries).coerceIn(0, requested)
+        // The bus this protects is process-wide, so a per-tab cap alone is not one: the real
+        // ceiling was MAX_ENTRIES_PER_WINDOW x open tabs, and twenty tabs is 5,000/sec into a
+        // 64-slot tryEmit buffer - the eviction of AuthEvent / TabEvent / FileChangeEvent the
+        // cap exists to prevent. Under this class's own threat model (any page can call
+        // emit()) that needs nothing unusual, just a site opening tabs. Per-tab stays as the
+        // fair-share limit so one busy page cannot spend the whole process budget.
+        val allowed = ProcessRateLimit.take(now, perTab)
         windowEntries += allowed
         return Reservation(count = allowed, windowStartMs = windowStartMs)
     }
@@ -125,6 +140,53 @@ internal class BrowserInteractionBridge(
     ) {
         if (unused <= 0 || reservation.windowStartMs != windowStartMs) return
         windowEntries = (windowEntries - unused).coerceAtLeast(0)
+        ProcessRateLimit.giveBack(nowMs(), unused)
+    }
+
+    /**
+     * A window shared by every bridge in the process, because the bus is.
+     *
+     * Deliberately coarse: it exists to keep a hostile page from evicting other subsystems'
+     * events out of a 64-slot buffer, not to meter precisely. Its own window is tracked
+     * separately from any tab's, so a refund arriving after the process window rolled over is
+     * dropped rather than credited to the next one.
+     */
+    internal object ProcessRateLimit {
+        private var windowStartMs: Long = 0
+        private var entries: Int = 0
+
+        @Synchronized
+        fun take(
+            now: Long,
+            requested: Int,
+        ): Int {
+            roll(now)
+            val allowed = (MAX_ENTRIES_PER_PROCESS_WINDOW - entries).coerceIn(0, requested)
+            entries += allowed
+            return allowed
+        }
+
+        @Synchronized
+        fun giveBack(
+            now: Long,
+            unused: Int,
+        ) {
+            if (now - windowStartMs !in 0 until RATE_WINDOW_MS) return
+            entries = (entries - unused).coerceAtLeast(0)
+        }
+
+        private fun roll(now: Long) {
+            if (now - windowStartMs !in 0 until RATE_WINDOW_MS) {
+                windowStartMs = now
+                entries = 0
+            }
+        }
+
+        @Synchronized
+        internal fun resetForTest() {
+            windowStartMs = 0
+            entries = 0
+        }
     }
 
     /** A claim on [count] entries of the rate window that began at [windowStartMs]. */
@@ -240,5 +302,14 @@ internal class BrowserInteractionBridge(
          */
         const val RATE_WINDOW_MS = 1000L
         const val MAX_ENTRIES_PER_WINDOW = 250
+
+        /**
+         * The ceiling across every tab, since the bus is process-wide.
+         *
+         * Four busy tabs' worth. High enough that no realistic mix of real pages meets it -
+         * the collector needs about 25/sec per tab - and far below the rate at which a
+         * 64-slot `tryEmit` buffer starts evicting other subsystems' events.
+         */
+        const val MAX_ENTRIES_PER_PROCESS_WINDOW = 1000
     }
 }

@@ -74,8 +74,16 @@ intellij-platform = "243.21565.199"
 # 1.0.76 is the release cut by risa-labs-inc/boss-plugin-api#25, which adds the
 # browser telemetry events this branch publishes (BrowserEvent's navigation and
 # engagement fields, BrowserInteractionEvent, BrowserNavigationType,
-# BrowserInteractionType). It is released and its jar asset exists - a pin ahead of
-# its release fails CI with a 404, since fetchApiPluginJar has no Maven fallback.
+# BrowserInteractionType).
+#
+# It is a SUPERSET of the 1.0.74 this replaces, verified against the release jar
+# rather than assumed - releases are cut from the api repo's main, so 1.0.76
+# carries #31's AiGatewayAPI and BrokeredCredentialProvider (the reason for the
+# 1.0.74 pin), #32's AiAvailability and AiReadiness, and 1.0.75's
+# LlmApiFormat.OPENAI_RESPONSES. Worth checking rather than trusting the ordering:
+# fetchApiPluginJar has no Maven fallback, so a pin that dropped a type would
+# surface as an unrelated compile error, and this comment is the only record of
+# which api PR a pin corresponds to.
 boss-plugin-api = "1.0.76"
 
 [libraries]

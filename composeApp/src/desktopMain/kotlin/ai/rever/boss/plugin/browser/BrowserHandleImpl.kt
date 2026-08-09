@@ -2004,15 +2004,19 @@ internal class BrowserHandleImpl(
         // Tab visibility drives the active-time counter. Leaving composition means this tab
         // was hidden (the surface is retained; dispose() owns real closure), which is exactly
         // the moment engagement should stop accruing — a portal left open behind three other
-        // tabs is not being read. Kept as its own effect rather than folded into the surface
-        // effect below, which is keyed on the host window and would double-fire on a move.
+        // tabs is not being read.
+        //
+        // The tracker ref-counts these rather than taking them as a boolean, because a tab
+        // moving between windows builds one composition and tears down the other in an order
+        // this effect does not control. Keying on Unit does not help: it only stabilises
+        // across recomposition *within* a composition, and a cross-window move is two.
         //
         // Window-level focus is deliberately not consulted here: a visible tab in a
         // background window still counts as active. WindowFocusEvent is reported separately,
         // so a consumer that cares can intersect the two.
         DisposableEffect(Unit) {
-            visitTracker.setFocused(true)
-            onDispose { visitTracker.setFocused(false) }
+            visitTracker.setVisible(true)
+            onDispose { visitTracker.setVisible(false) }
         }
 
         // Which window telemetry is attributed to, kept current across a tab move. Its own

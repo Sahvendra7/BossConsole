@@ -49,6 +49,42 @@ class BrowserAnalyticsTest {
     }
 
     @Test
+    fun `refuses a short-form address, not only a four-label one`() {
+        // Chromium canonicalises 127.1 to 127.0.0.1 before this ever sees it, but this
+        // function is documented as holding under misuse - and a four-label-only check
+        // answered "127.1" with the site 127.1 and "10.0.1" with the site 0.1.
+        assertNull(BrowserAnalytics.registrableDomain("127.1"))
+        assertNull(BrowserAnalytics.registrableDomain("10.0.1"))
+        assertNull(BrowserAnalytics.registrableDomain("2130706433"))
+        // A domain that merely starts with digits is still a domain.
+        assertEquals("7eleven.com", BrowserAnalytics.registrableDomain("www.7eleven.com"))
+    }
+
+    @Test
+    fun `the kill switch understands more than the exact string true`() {
+        // Every one of these is documented behaviour that reading System.getenv inline left
+        // untested. An operator who writes =1 and still gets full telemetry has no signal
+        // at all, which is the wrong direction for a privacy control to fail in.
+        for (off in listOf("true", "TRUE", " True ", "1", "yes", "on")) {
+            assertEquals(false, BrowserAnalytics.telemetryEnabledFrom(env = off, property = null), off)
+        }
+        for (on in listOf(null, "", "  ", "false", "0", "no", "off", "maybe")) {
+            assertEquals(true, BrowserAnalytics.telemetryEnabledFrom(env = on, property = null), "$on")
+        }
+    }
+
+    @Test
+    fun `the kill switch falls back to the system property`() {
+        assertEquals(false, BrowserAnalytics.telemetryEnabledFrom(env = null, property = "true"))
+        // An env var set to the empty string is non-null, so without the blank check
+        // `BOSS_BROWSER_TELEMETRY_DISABLED=` - a common way to "unset" one in a launcher
+        // script - silently shadowed the property and re-enabled telemetry.
+        assertEquals(false, BrowserAnalytics.telemetryEnabledFrom(env = "", property = "true"))
+        // An env var that says something still wins over the property.
+        assertEquals(true, BrowserAnalytics.telemetryEnabledFrom(env = "false", property = "true"))
+    }
+
+    @Test
     fun `refuses a host containing non-ASCII characters`() {
         // Internationalised names arrive from the browser already punycoded, so a non-ASCII
         // host is not something it resolved. This guard is also what lets the IPv4 check be

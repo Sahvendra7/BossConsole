@@ -125,8 +125,11 @@ internal object BrowserInteractionScript {
                 out.tag = String(el.tagName || '').toLowerCase().slice(0, $MAX_TOKEN_CHARS);
                 var role = el.getAttribute ? el.getAttribute('role') : null;
                 if (role) out.role = String(role).slice(0, $MAX_TOKEN_CHARS);
-                // Restricted to form controls: 'type' is a control kind there. Elsewhere it
-                // is author-defined and could be anything.
+                // Restricted to 'input' and 'button' specifically, a NARROWER set than
+                // FORM_CONTROLS below and deliberately so: those are the two elements whose
+                // 'type' is a control kind drawn from a fixed vocabulary. On 'select',
+                // 'textarea' and 'form' it is either derived (select-one) or an author-set
+                // enctype, neither of which says anything about the interaction.
                 if (out.tag === 'input' || out.tag === 'button') {
                   if (el.type) out.inputType = String(el.type).slice(0, $MAX_TOKEN_CHARS);
                 }
@@ -278,8 +281,9 @@ internal object BrowserInteractionScript {
             };
 
             setInterval(flush, $FLUSH_INTERVAL_MS);
+            // pagehide only: it also fires on bfcache entry, which beforeunload does not, and
+            // registering a beforeunload listener has engine-visible side effects for no gain.
             window.addEventListener('pagehide', flush, true);
-            window.addEventListener('beforeunload', flush, true);
           } catch (_) {
             // Never surface anything into the page.
           }

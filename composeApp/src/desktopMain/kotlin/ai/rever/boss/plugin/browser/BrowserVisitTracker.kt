@@ -35,8 +35,14 @@ internal class BrowserVisitTracker(
     private var visitStartMs: Long = 0
     private var activeAccumMs: Long = 0
 
-    /** Non-null exactly while the tab is focused; the instant the current active run began. */
+    /** Non-null exactly while the tab is visible; the instant the current active run began. */
     private var activeSinceMs: Long? = null
+
+    /** How many compositions currently show this tab. See [setVisible]. */
+    private var visibleSurfaces: Int = 0
+
+    /** When the last surface went away, so an immediate reappearance is not a switch. */
+    private var hiddenAtMs: Long? = null
 
     /** Registrable domain of the last page tracked, kept across visits to detect a run. */
     private var lastDomain: String? = null
@@ -61,6 +67,9 @@ internal class BrowserVisitTracker(
     /** The tab was created. [initialAuthority] is null for a new empty tab. */
     @Synchronized
     fun opened(initialAuthority: String? = null) {
+        // Remembered so the first TAB_ACTIVATED - which fires at first composition, before
+        // any page has finished loading - can say where the tab is rather than "blank".
+        lastAuthority = initialAuthority
         emitTabEvent(BrowserEventType.TAB_OPENED, initialAuthority, windowId())
     }
 
@@ -130,21 +139,51 @@ internal class BrowserVisitTracker(
         emitPageViewed(authority, type, pageIndexInVisit, windowId())
     }
 
-    /** The tab gained or lost focus. Drives the active-time counter and tab-switch signal. */
+    /**
+     * A surface showing this tab appeared ([visible] true) or went away (false). Drives the
+     * active-time counter and the tab-switch signal.
+     *
+     * **Ref-counted, not a boolean.** The caller is a `DisposableEffect` per composition, and
+     * a tab moving between windows tears down one composition while building another - two
+     * independent effects, in either order. As a plain boolean the compose-then-dispose order
+     * was silently destructive: the enter no-opped because the tab was already active, then
+     * the leave cleared it, leaving a tab that is visible and focused marked inactive. It
+     * accrued no active time until the user switched away and back, while dwell kept
+     * climbing, so a moved tab read as "left open, never read" - the exact shape this class
+     * exists to distinguish. Counting makes it order-independent.
+     */
     @Synchronized
-    fun setFocused(focused: Boolean) {
+    fun setVisible(visible: Boolean) {
         if (finished) return
         val now = nowMs()
-        if (focused) {
-            if (activeSinceMs == null) {
-                activeSinceMs = now
-                emitTabEvent(BrowserEventType.TAB_ACTIVATED, currentAuthority, windowId())
-            }
-        } else {
-            activeSinceMs?.let { since ->
-                activeAccumMs += (now - since).coerceAtLeast(0)
-                activeSinceMs = null
-            }
+        if (visible) surfaceShown(now) else surfaceHidden(now)
+    }
+
+    private fun surfaceShown(now: Long) {
+        visibleSurfaces++
+        if (visibleSurfaces > 1 || activeSinceMs != null) return
+        activeSinceMs = now
+        // A move in the other order - old composition torn down, new one built - passes
+        // through zero surfaces, so refcounting alone still reports a switch that never
+        // happened. Those two callbacks land in the same frame, so a reappearance this soon
+        // after vanishing is the same activation continuing, not the user coming back to the
+        // tab. The active counter still stops and starts across the gap; it is a few
+        // milliseconds and correct either way.
+        val samePresence = hiddenAtMs?.let { now - it in 0..MOVE_GRACE_MS } == true
+        if (samePresence) return
+        // Falls back to the authority the tab was opened with: the first activation happens
+        // at first composition, before any NavigationFinished, so reading only
+        // currentAuthority reported nearly every tab's first TAB_ACTIVATED as a blank tab.
+        emitTabEvent(BrowserEventType.TAB_ACTIVATED, currentAuthority ?: lastAuthority, windowId())
+    }
+
+    private fun surfaceHidden(now: Long) {
+        visibleSurfaces = (visibleSurfaces - 1).coerceAtLeast(0)
+        if (visibleSurfaces > 0) return
+        hiddenAtMs = now
+        activeSinceMs?.let { since ->
+            activeAccumMs += (now - since).coerceAtLeast(0)
+            activeSinceMs = null
         }
     }
 
@@ -202,5 +241,14 @@ internal class BrowserVisitTracker(
          * navigation which never happened cannot mislabel a click the user makes afterwards.
          */
         const val PENDING_HINT_TTL_MS = 60_000L
+
+        /**
+         * How quickly a tab must reappear for it to count as never having gone.
+         *
+         * Sized for one frame's worth of composition churn during a tab move, not for a user
+         * glancing at another tab and back - which at any human speed is well past this and
+         * is a real switch.
+         */
+        const val MOVE_GRACE_MS = 250L
     }
 }

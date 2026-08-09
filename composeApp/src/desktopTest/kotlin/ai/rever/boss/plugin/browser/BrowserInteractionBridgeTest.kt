@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.plugin.api.BrowserInteractionType
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -14,6 +15,15 @@ import kotlin.test.assertTrue
  * likes, and the answer must always be "fewer events", never an error or a leak.
  */
 class BrowserInteractionBridgeTest {
+    /**
+     * The process-wide window is shared by every bridge, so it carries between tests - each
+     * of which starts its own fake clock at 0, which is inside the window rather than past it.
+     */
+    @BeforeTest
+    fun resetProcessWindow() {
+        BrowserInteractionBridge.ProcessRateLimit.resetForTest()
+    }
+
     private fun parse(json: String) = BrowserInteractionBridge.parseBatch(json)
 
     /**
@@ -106,7 +116,50 @@ class BrowserInteractionBridgeTest {
         repeat(100) { bridge.emit(small) }
 
         // 100 single-entry batches is 100 of the 250-entry budget, so a full batch still fits.
-        assertEquals(50, bridge.admissible(50), "unused reservation was not released")
+        assertEquals(50, bridge.tryReserve(50), "unused reservation was not released")
+    }
+
+    @Test
+    fun `a batch that parses to nothing still costs the page its call`() {
+        // The refund was computed from the PUBLISHABLE count, so a batch that yielded zero
+        // entries was refunded in full - and 64 KB of {"type":"KEYSTROKE"}, or valid JSON
+        // that is an object rather than an array, costs a whole parseToJsonElement and
+        // publishes nothing. windowEntries never advanced, so the unbounded run of parses
+        // that the pre-parse reservation exists to stop was unbounded again.
+        var clock = 0L
+        val bridge =
+            BrowserInteractionBridge(
+                authorityProvider = { "availity.com" },
+                windowId = { null },
+                nowMs = { clock },
+            )
+        val unpublishable = (1..50).joinToString(",", "[", "]") { """{"type":"KEYSTROKE"}""" }
+        repeat(BrowserInteractionBridge.MAX_ENTRIES_PER_WINDOW) { bridge.emit(unpublishable) }
+
+        assertEquals(0, bridge.tryReserve(1), "an unparseable flood must exhaust the window")
+    }
+
+    @Test
+    fun `the window cap is process-wide, not merely per tab`() {
+        // The bus this protects is one object for the whole process, so a per-tab cap alone
+        // is not a cap: twenty tabs at 250/sec is 5,000/sec into a 64-slot tryEmit buffer,
+        // which is the eviction of auth, tab and file events the limit exists to prevent.
+        var clock = 0L
+        val tabs =
+            (1..20).map {
+                BrowserInteractionBridge(
+                    authorityProvider = { "availity.com" },
+                    windowId = { null },
+                    nowMs = { clock },
+                )
+            }
+        val total = tabs.sumOf { tab -> (1..10).sumOf { tab.tryReserve(50) } }
+
+        assertEquals(
+            BrowserInteractionBridge.MAX_ENTRIES_PER_PROCESS_WINDOW,
+            total,
+            "twenty tabs must not each get their own full budget",
+        )
     }
 
     @Test
@@ -170,7 +223,7 @@ class BrowserInteractionBridgeTest {
             )
 
         // 100 back-to-back full batches inside one window = 5000 entries offered.
-        val admittedFirstWindow = (1..100).sumOf { bridge.admissible(50) }
+        val admittedFirstWindow = (1..100).sumOf { bridge.tryReserve(50) }
         assertEquals(
             BrowserInteractionBridge.MAX_ENTRIES_PER_WINDOW,
             admittedFirstWindow,
@@ -179,11 +232,11 @@ class BrowserInteractionBridgeTest {
 
         // The next window starts fresh, so a legitimately busy page isn't punished forever.
         clock += BrowserInteractionBridge.RATE_WINDOW_MS
-        assertEquals(50, bridge.admissible(50))
+        assertEquals(50, bridge.tryReserve(50))
 
         // A clock jumping backwards resets the window rather than wedging it shut or open.
         clock -= 10 * BrowserInteractionBridge.RATE_WINDOW_MS
-        assertEquals(50, bridge.admissible(50))
+        assertEquals(50, bridge.tryReserve(50))
     }
 
     @Test
@@ -199,7 +252,7 @@ class BrowserInteractionBridgeTest {
             )
         repeat(20) {
             clock += 2000
-            assertEquals(50, bridge.admissible(50), "a normal flush must never be clipped")
+            assertEquals(50, bridge.tryReserve(50), "a normal flush must never be clipped")
         }
     }
 
