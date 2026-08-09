@@ -223,28 +223,38 @@ fun ContextMenu(
     //
     // Falls through whenever the menu carries an icon or an inline trailing button, which a
     // native menu item cannot render - see [isNativeRepresentable].
-    if (useNativeContextMenus() && items.isNativeRepresentable()) {
+    // Tracks a native attempt that could not produce a menu, so this composition falls through to
+    // the drawn paths instead of returning with nothing on screen. Every guard in the engine
+    // exists to make that decline possible; swallowing it here would defeat all of them, and the
+    // reachable causes (no pointer, no showing frame, a throwing `locationOnScreen`) are sticky
+    // rather than transient, so the user would get a right-click that repeatedly does nothing.
+    var nativeUnavailable by remember { mutableStateOf(false) }
+
+    if (useNativeContextMenus() && !nativeUnavailable && items.isNativeRepresentable()) {
         val dismiss by rememberUpdatedState(onDismissRequest)
         // Rasterised here in composition, where density is available; the effect below is not.
         val icons = items.collectIcons().associateWith { it.toNativeMenuIcon() }
-        // Keyed on the menu, not Unit: a second right-click composes a new ContextMenu with new
-        // items and must reopen at the new position rather than reuse the first effect.
-        DisposableEffect(items) {
+        val nodes by rememberUpdatedState(items.toNativeMenuNodes(icons))
+        // Keyed on Unit, NOT on items. This composable exists only while the menu should be up, so
+        // entering composition IS the show and leaving it IS the dismissal. Keying on items would
+        // restart the effect on every recomposition, because the list is rebuilt each time and its
+        // lambdas capture unstable values so equality never holds - and the tab menu is rebuilt on
+        // every tab-bar recomposition, e.g. on each line of terminal output. That would tear down
+        // and reopen the menu under the user's cursor many times a second.
+        DisposableEffect(Unit) {
             val shown =
                 NativeContextMenus.show(
-                    nodes = items.toNativeMenuNodes(icons),
+                    nodes = nodes,
                     // The pointer IS the intended position for a right-click menu, and reading it
                     // from the OS avoids converting node-relative Compose pixels into screen
                     // coordinates - a conversion this codebase has nowhere else.
                     anchor = NativeMenuAnchor.Cursor,
                     onDismiss = { dismiss() },
                 )
-            // Nothing was shown (no invoker, or the plan came out empty), so tell the caller
-            // rather than leaving it believing a menu is up.
-            if (!shown) dismiss()
+            if (!shown) nativeUnavailable = true
             onDispose { NativeContextMenus.hide() }
         }
-        return
+        if (!nativeUnavailable) return
     }
 
     val heavyweight = OverlayConfig.heavyweightPopup

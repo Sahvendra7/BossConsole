@@ -102,10 +102,15 @@ internal class AwtPopupPresenter {
         // a menu appears, and a later failure would then leave the right-click doing nothing at
         // all - the outcome the fallback exists to prevent. Callers are on the EDT (Compose's
         // main dispatcher); off it, decline.
-        if (!SwingUtilities.isEventDispatchThread()) return false
-
         val planned = planNativeMenu(nodes, OsFamily.isWindows)
-        if (planned.isEmpty()) return false
+        if (!canShowNatively(
+                isSupported = true,
+                isEventDispatchThread = SwingUtilities.isEventDispatchThread(),
+                plannedSize = planned.size,
+            )
+        ) {
+            return false
+        }
 
         val at = anchor.resolveScreenPoint()
         val invoker = resolveInvoker(at) ?: return false
@@ -117,6 +122,11 @@ internal class AwtPopupPresenter {
         run {
             // A PopupMenu must hang off a live Component and AWT keeps it as a child until
             // removed, so detach the previous one rather than accumulating menus on the window.
+            // Grey it out first: per measured fact 2 the outgoing NSMenu may still be tracking on
+            // screen, and once detached hide() has no handle left to disable it with. The fence
+            // already makes its items inert, but a menu that looks live and does nothing reads as
+            // a hang. Reachable via the keyboard menu key, which does not consume the grab.
+            attached?.let { (_, menu) -> runCatching { disableAll(menu) } }
             detach()
 
             val popup = java.awt.PopupMenu()

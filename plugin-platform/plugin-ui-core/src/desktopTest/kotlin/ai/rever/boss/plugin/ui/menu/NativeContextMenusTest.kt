@@ -296,4 +296,29 @@ class NativeContextMenusTest {
         // icons; anything materially larger is the bug this range exists to catch.
         assertTrue(NATIVE_MENU_ICON_POINTS in 14..18)
     }
+
+    // ----- the show() decision, testable off macOS -----
+
+    @Test
+    fun `a native menu needs support, the EDT and a non-empty plan`() {
+        assertTrue(canShowNatively(isSupported = true, isEventDispatchThread = true, plannedSize = 1))
+    }
+
+    @Test
+    fun `each precondition alone is enough to decline`() {
+        // Going through show() on a Linux runner only ever re-tests the platform gate, so these
+        // guards need coverage that actually runs everywhere.
+        assertFalse(canShowNatively(isSupported = false, isEventDispatchThread = true, plannedSize = 1))
+        assertFalse(canShowNatively(isSupported = true, isEventDispatchThread = false, plannedSize = 1))
+        assertFalse(canShowNatively(isSupported = true, isEventDispatchThread = true, plannedSize = 0))
+    }
+
+    @Test
+    fun `an empty plan declines even though the menu had items`() {
+        // A menu of only separators plans to nothing; the caller must draw its own instead.
+        val planned = planNativeMenu(List(3) { NativeMenuNode.Separator })
+        assertFalse(
+            canShowNatively(isSupported = true, isEventDispatchThread = true, plannedSize = planned.size),
+        )
+    }
 }

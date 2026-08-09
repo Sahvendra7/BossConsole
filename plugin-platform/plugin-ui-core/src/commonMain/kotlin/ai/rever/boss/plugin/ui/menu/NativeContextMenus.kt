@@ -101,6 +101,20 @@ fun shouldUseNativeMenus(
 ): Boolean = settingEnabled && isMacOs
 
 /**
+ * Whether a native menu can be produced at all.
+ *
+ * Lifted out of [NativeContextMenus.show] because `isSupported()` short-circuits everything on a
+ * non-macOS machine, so a test that goes through `show()` on CI only ever re-tests the platform
+ * gate - it can never reach the EDT or empty-plan guards it claims to cover. The whole design
+ * leans on this answer being honest, so it gets coverage that actually runs everywhere.
+ */
+fun canShowNatively(
+    isSupported: Boolean,
+    isEventDispatchThread: Boolean,
+    plannedSize: Int,
+): Boolean = isSupported && isEventDispatchThread && plannedSize > 0
+
+/**
  * Normalise a menu for native rendering.
  *
  * Two jobs, both of which exist because callers build menus conditionally:
