@@ -204,15 +204,6 @@ internal class BrowserHandleImpl(
     private val visitTracker = BrowserVisitTracker(windowId = ownerWindowId)
 
     /**
-     * Host-side kill switch for browser telemetry. Consent for *sending* analytics lives in
-     * the analytics plugin, which gates egress for every event source alike; this is a
-     * separate, blunter control for deployments that want no telemetry script running in
-     * pages at all, whatever a plugin later decides to do with the events.
-     */
-    private val browserTelemetryEnabled: Boolean =
-        System.getenv("BOSS_BROWSER_TELEMETRY_DISABLED")?.lowercase() != "true"
-
-    /**
      * Authority of the page currently loaded in this tab, as last seen by the navigation
      * handler. Volatile because it is written from a JxBrowser navigation callback and read
      * from the JS thread that delivers interaction batches.
@@ -1030,7 +1021,10 @@ internal class BrowserHandleImpl(
      * later page's interactions to an earlier site.
      */
     private fun injectInteractionCollector(frame: Frame) {
-        if (!browserTelemetryEnabled) return
+        // Belt and braces with the guard in BrowserAnalytics: that one stops any event
+        // reaching the bus, this one stops the collector running in the page at all, which
+        // is the part a deployment can actually observe from inside a site.
+        if (!BrowserAnalytics.telemetryEnabled) return
         try {
             val window = frame.executeJavaScript<JsObject>("window")
             window?.putProperty(BrowserInteractionScript.BRIDGE_PROPERTY, interactionBridge)

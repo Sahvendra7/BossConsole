@@ -46,6 +46,18 @@ internal object BrowserInteractionScript {
     private const val MAX_PATH_DEPTH = 5
 
     /**
+     * Every string read out of the DOM is capped here, including the tag name.
+     *
+     * The tag was the one that wasn't, and it is author-controlled: a custom element's name
+     * is whatever the page registered. One element with a megabyte-long tag name pushes the
+     * batch past [BrowserInteractionBridge.MAX_PAYLOAD_CHARS], which drops the *whole* batch
+     * — so a site could silence its own interaction telemetry with a single hidden element.
+     * Matches [BrowserAnalytics]'s own token cap, above which the host refuses the value.
+     */
+    private const val MAX_TOKEN_CHARS = 32
+    private const val MAX_FIELD_NAME_CHARS = 64
+
+    /**
      * The collector source.
      *
      * `describe()` is the only place the DOM is inspected, deliberately — one function to
@@ -82,15 +94,15 @@ internal object BrowserInteractionScript {
               var out = {};
               if (!el || el.nodeType !== 1) return out;
               try {
-                out.tag = (el.tagName || '').toLowerCase();
+                out.tag = String(el.tagName || '').toLowerCase().slice(0, $MAX_TOKEN_CHARS);
                 var role = el.getAttribute ? el.getAttribute('role') : null;
-                if (role) out.role = String(role).slice(0, 32);
+                if (role) out.role = String(role).slice(0, $MAX_TOKEN_CHARS);
                 // Restricted to form controls: 'type' is a control kind there. Elsewhere it
                 // is author-defined and could be anything.
                 if (out.tag === 'input' || out.tag === 'button') {
-                  if (el.type) out.inputType = String(el.type).slice(0, 32);
+                  if (el.type) out.inputType = String(el.type).slice(0, $MAX_TOKEN_CHARS);
                 }
-                if (el.name) out.fieldName = String(el.name).slice(0, 64);
+                if (el.name) out.fieldName = String(el.name).slice(0, $MAX_FIELD_NAME_CHARS);
                 out.path = pathOf(el);
               } catch (_) {}
               return out;
@@ -103,7 +115,7 @@ internal object BrowserInteractionScript {
               var node = el;
               var depth = 0;
               while (node && node.nodeType === 1 && depth < $MAX_PATH_DEPTH) {
-                var tag = (node.tagName || '').toLowerCase();
+                var tag = String(node.tagName || '').toLowerCase().slice(0, $MAX_TOKEN_CHARS);
                 if (!tag) break;
                 var index = 1;
                 var sib = node.previousElementSibling;

@@ -16,6 +16,18 @@ import kotlin.test.assertTrue
 class BrowserInteractionBridgeTest {
     private fun parse(json: String) = BrowserInteractionBridge.parseBatch(json)
 
+    /**
+     * The collector source with its `//` comments removed.
+     *
+     * The comments name the very properties the script must not read ("no getData, no
+     * selection"), which is exactly the documentation worth keeping - so the structural
+     * checks below read the code and not the prose about it.
+     */
+    private fun collectorCode(): String =
+        BrowserInteractionScript.source
+            .lines()
+            .joinToString("\n") { it.substringBefore("//") }
+
     @Test
     fun `parses a well-formed batch from the collector`() {
         val parsed =
@@ -146,6 +158,69 @@ class BrowserInteractionBridgeTest {
         assertNull(BrowserAnalytics.sanitizePath(parsed.path), "a value selector refused as a path")
         // A field name is cleaned rather than refused — but the identifier inside it goes.
         assertEquals("patient_mrn_#", BrowserAnalytics.sanitizeFieldName(parsed.fieldName))
+    }
+
+    @Test
+    fun `a name pushed through the bridge as a field name is refused`() {
+        // The field-name sanitizer filters rather than refuses, so it is the one place a
+        // hostile emit() could have dressed page content up as a plausible field name.
+        // Whitespace is what separates "a person's name" from "a form-encoding key".
+        val parsed =
+            parse("""[{"type":"FIELD_FOCUSED","tag":"input","fieldName":"John Smith"}]""").single()
+        assertEquals("John Smith", parsed.fieldName, "parsing is faithful")
+        assertNull(BrowserAnalytics.sanitizeFieldName(parsed.fieldName))
+    }
+
+    @Test
+    fun `the collector reads no page content out of the DOM`() {
+        // The privacy design of BrowserInteractionScript is a *reading* restriction: content
+        // cannot leak through a bug in a later sanitizing step because it is never in a
+        // variable. That claim lived only in a KDoc, where nothing stops the next edit from
+        // reaching for a label "just to make clicks easier to read". This is what stops it.
+        val forbidden =
+            listOf(
+                "textContent",
+                "innerText",
+                "innerHTML",
+                "outerHTML",
+                "placeholder",
+                "aria-label",
+                "ariaLabel",
+                "className",
+                "dataset",
+                "clipboardData",
+                "getData",
+                "getSelection",
+                ".value",
+                ".href",
+                ".src",
+                ".alt",
+                ".title",
+                ".id",
+            )
+        for (property in forbidden) {
+            assertTrue(
+                !collectorCode().contains(property),
+                "the collector must never read $property - see BrowserInteractionScript's KDoc",
+            )
+        }
+    }
+
+    @Test
+    fun `every DOM string the collector reports is length-capped`() {
+        // An uncapped read is not just untidy: one element with a megabyte-long custom tag
+        // name pushes the batch past MAX_PAYLOAD_CHARS, which drops the WHOLE batch - so a
+        // site could silence its own interaction telemetry with a single hidden element.
+        // `=[^=]` so `out.tag === 'input'` is read as the comparison it is, not an assignment.
+        val assignments =
+            collectorCode()
+                .lines()
+                .filter { Regex("""out\.(tag|role|inputType|fieldName)\s*=[^=]""").containsMatchIn(it) }
+        assertEquals(4, assignments.size, "a new reported field must be capped too")
+        assertTrue(
+            assignments.all { it.contains(".slice(") },
+            "uncapped DOM read: ${assignments.firstOrNull { !it.contains(".slice(") }?.trim()}",
+        )
     }
 
     @Test

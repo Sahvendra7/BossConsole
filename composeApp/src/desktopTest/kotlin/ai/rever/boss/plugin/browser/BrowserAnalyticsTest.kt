@@ -195,17 +195,25 @@ class BrowserAnalyticsTest {
 
     @Test
     fun `field names drop unexpected characters and empties`() {
-        // ACCEPTED RESIDUAL RISK, not an endorsement. Filtering rather than refusing means a
-        // space is removed, which is what makes "John Smith" come out looking like a valid
-        // field name — and the digit redaction does nothing for alphabetic PHI. A real
-        // `name=` attribute essentially never contains a space, so refusing outright (as
-        // sanitizeToken does) would drop it instead. Knowingly deferred; tracked privately in
-        // boss-plugin-analytics#7. Do not read this assertion as "this output is desirable".
-        assertEquals("JohnSmith", BrowserAnalytics.sanitizeFieldName("John Smith"))
         assertNull(BrowserAnalytics.sanitizeFieldName("   "))
         assertNull(BrowserAnalytics.sanitizeFieldName(null))
         assertNull(BrowserAnalytics.sanitizeFieldName("@@@"))
         assertEquals(64, BrowserAnalytics.sanitizeFieldName("n".repeat(200))?.length)
+    }
+
+    @Test
+    fun `a field name containing whitespace is refused, not compacted`() {
+        // This was the one shape most likely to be a person's name, and the only sanitizer
+        // that let it through: filtering a space out of "John Smith" yields "JohnSmith",
+        // which is indistinguishable from a real camelCase field name, and the digit
+        // redaction does nothing for alphabetic PHI. A `name=` attribute is a form-encoding
+        // key and essentially never contains whitespace, so refusing costs nothing real.
+        assertNull(BrowserAnalytics.sanitizeFieldName("John Smith"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("Patient: John Smith"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("date\tof\tbirth"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("first\nlast"))
+        // Surrounding whitespace is markup formatting, not content, and is still trimmed.
+        assertEquals("dob", BrowserAnalytics.sanitizeFieldName("  dob  "))
     }
 
     @Test

@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.components.plugin.providers.publishSystemEvent
+import ai.rever.boss.plugin.api.ApplicationEvent
 import ai.rever.boss.plugin.api.BrowserEvent
 import ai.rever.boss.plugin.api.BrowserEventType
 import ai.rever.boss.plugin.api.BrowserInteractionEvent
@@ -29,6 +30,29 @@ import ai.rever.boss.plugin.api.BrowserNavigationType
  */
 internal object BrowserAnalytics {
     /**
+     * Host-side kill switch for browser telemetry, read once at startup.
+     *
+     * Consent for *sending* analytics lives in the analytics plugin, which gates egress for
+     * every event source alike; this is a separate, blunter control for deployments that want
+     * no browser telemetry produced at all, whatever a plugin later decides to do with it.
+     *
+     * It is enforced **here**, at the single point where every browser event is published,
+     * rather than at the call sites. An operator who sets a variable named
+     * `BOSS_BROWSER_TELEMETRY_DISABLED` means all of it — not just the in-page collector —
+     * and gating each producer separately is how a later one gets added without the guard.
+     * The page-side script is *additionally* not injected at all when this is off, so a
+     * disabled deployment also runs no telemetry JavaScript in pages.
+     */
+    val telemetryEnabled: Boolean =
+        System.getenv("BOSS_BROWSER_TELEMETRY_DISABLED")?.trim()?.lowercase() != "true"
+
+    /** The one place a browser event reaches the bus, so the kill switch cannot be bypassed. */
+    private fun publish(event: ApplicationEvent) {
+        if (!telemetryEnabled) return
+        publishSystemEvent(event)
+    }
+
+    /**
      * Record a successfully-loaded page view for [authority] (a host, optionally with a
      * port, as produced by `suggestableHost`).
      *
@@ -42,7 +66,7 @@ internal object BrowserAnalytics {
         windowId: String? = null,
     ) {
         val domain = registrableDomain(authority) ?: return
-        publishSystemEvent(
+        publish(
             BrowserEvent(
                 browserEventType = BrowserEventType.PAGE_VIEWED,
                 domain = domain,
@@ -67,7 +91,7 @@ internal object BrowserAnalytics {
     ) {
         val domain = registrableDomain(authority) ?: return
         if (dwellMs < 0 || activeMs < 0 || dwellMs > MAX_REPORTABLE_DWELL_MS) return
-        publishSystemEvent(
+        publish(
             BrowserEvent(
                 browserEventType = BrowserEventType.PAGE_LEFT,
                 domain = domain,
@@ -87,7 +111,7 @@ internal object BrowserAnalytics {
         windowId: String? = null,
     ) {
         val domain = authority?.let { registrableDomain(it) } ?: BLANK_TAB_DOMAIN
-        publishSystemEvent(BrowserEvent(browserEventType = type, domain = domain, windowId = windowId))
+        publish(BrowserEvent(browserEventType = type, domain = domain, windowId = windowId))
     }
 
     /**
@@ -109,7 +133,7 @@ internal object BrowserAnalytics {
         windowId: String? = null,
     ) {
         val domain = registrableDomain(authority) ?: return
-        publishSystemEvent(
+        publish(
             BrowserInteractionEvent(
                 interactionType = type,
                 domain = domain,
@@ -157,10 +181,19 @@ internal object BrowserAnalytics {
      * filtering with the Unicode-aware `isLetterOrDigit()` while redacting with `\d`, which
      * is ASCII-only in Java unless `UNICODE_CHARACTER_CLASS` is set, let `mrn٤٤١٧٨٨٢` pass
      * the filter *and* the redactor untouched. Both halves must agree on an alphabet.
+     *
+     * **An interior space refuses the whole value rather than being filtered out of it.**
+     * Filtering is what made `"John Smith"` come out as the plausible-looking field name
+     * `JohnSmith`, and the digit redaction does nothing for alphabetic PHI — so the one
+     * shape most likely to be a person's name was also the one this let through intact.
+     * A real `name=` attribute essentially never contains whitespace (it is a form-encoding
+     * key), so refusing costs nothing real. Leading and trailing whitespace is still just
+     * trimmed: that is markup formatting, not content.
      */
     internal fun sanitizeFieldName(raw: String?): String? =
         raw
             ?.trim()
+            ?.takeIf { value -> value.none { it.isWhitespace() } }
             ?.take(MAX_FIELD_NAME_LENGTH)
             ?.filter { c -> c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c in FIELD_NAME_PUNCTUATION }
             ?.takeIf { it.isNotEmpty() }
