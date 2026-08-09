@@ -2262,15 +2262,18 @@ internal class BrowserHandleImpl(
 
     override fun dispose() {
         if (!disposed.compareAndSet(false, true)) return
-        // Flush the visit in progress before anything is torn down. This is the only place a
-        // page's dwell time can be closed out when a tab is shut while still on a page —
-        // every other path ends a visit by starting the next one.
-        visitTracker.closed()
-        // Shut the interaction bridge with it. The tracker refuses everything once closed,
-        // but the bridge's only gate is this authority, and the collector flushes on
-        // `pagehide` / `beforeunload` — precisely during teardown. Without this a tab close
-        // emits PAGE_LEFT, TAB_CLOSED, and then clicks on a tab that is already gone.
+        // Shut the interaction bridge FIRST. Its only gate is this authority, and the
+        // collector flushes on `pagehide` — which is precisely when this runs. Closing the
+        // tracker first left a window between the two statements in which a batch arriving on
+        // the JS thread still read a non-null authority, so a tab close emitted PAGE_LEFT,
+        // TAB_CLOSED, and then clicks on a tab that was already gone: the exact race this
+        // pair exists to close. Nulling first cannot lose a visit, since closed() is guarded
+        // by its own `finished` flag and does not consult this.
         currentPageAuthority = null
+        // Then flush the visit in progress. This is the only place a page's dwell time can be
+        // closed out when a tab is shut while still on a page — every other path ends a visit
+        // by starting the next one.
+        visitTracker.closed()
         FullscreenBrowserWindow.exitFullscreen(browser)
 
         // Stop co-browse capture so a disposed tab can never keep streaming.

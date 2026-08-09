@@ -125,6 +125,26 @@ class BrowserAnalyticsTest {
     }
 
     @Test
+    fun `a url smuggled through the query cannot become the reported site`() {
+        // substringAfter("://") took everything after the FIRST occurrence anywhere, so a
+        // schemeless authority carrying a URL in its query resolved to that URL's host - the
+        // exact smuggling this function's KDoc says cannot happen. A scheme is only a scheme
+        // at position zero.
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("availity.com/r?u=https://evil.com"))
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("availity.com?next=http://evil.com"))
+        // The well-formed form still works, which is what made the bug invisible.
+        assertEquals("availity.com", BrowserAnalytics.registrableDomain("https://portal.availity.com/auth"))
+    }
+
+    @Test
+    fun `a suffix absent from the table over-collapses rather than over-reports`() {
+        // The table is deliberately not the full Public Suffix List, and the KDoc calls the
+        // failure direction conservative. Pinning one case stops a later "let me add more
+        // suffixes" edit from quietly inverting that.
+        assertEquals("nhs.uk", BrowserAnalytics.registrableDomain("portal.smallclinic.nhs.uk"))
+    }
+
+    @Test
     fun `strips credentials embedded in an authority`() {
         assertEquals("availity.com", BrowserAnalytics.registrableDomain("user:pw@portal.availity.com"))
     }
@@ -174,6 +194,32 @@ class BrowserAnalyticsTest {
         assertNull(BrowserAnalytics.sanitizeToken("   ", 32))
         assertNull(BrowserAnalytics.sanitizeToken(null, 32))
         assertNull(BrowserAnalytics.sanitizeToken("a".repeat(33), 32))
+    }
+
+    @Test
+    fun `an identifier is redacted whichever field it arrives in`() {
+        // The digit redaction used to apply to fieldName alone, so the same record number
+        // walked straight through a different slot: a custom element <row-4417882> is
+        // lowercase, matches the token charset and is short, so it was emitted verbatim. A
+        // tag and an ARIA role are as author-chosen as a name= attribute.
+        assertEquals("row-#", BrowserAnalytics.sanitizeToken("row-4417882", 32))
+        assertEquals("mrn-#", BrowserAnalytics.sanitizeToken("MRN-4417882", 32))
+        assertEquals("patient_mrn_#", BrowserAnalytics.sanitizeFieldName("patient_mrn_4417882"))
+        // Real structural vocabulary is untouched, including short numeric suffixes.
+        assertEquals("button", BrowserAnalytics.sanitizeToken("button", 32))
+        assertEquals("h2", BrowserAnalytics.sanitizeToken("h2", 32))
+    }
+
+    @Test
+    fun `a path redacts its tag segments but keeps the sibling ordinals`() {
+        // The ordinals after ':' are structure, not identity - a path with them redacted
+        // would stop distinguishing the third row from the fortieth, which is the whole
+        // point of recording a path at all.
+        assertEquals(
+            "table>tbody>tr:12>row-#",
+            BrowserAnalytics.sanitizePath("table>tbody>tr:12>row-4417882"),
+        )
+        assertEquals("form>div:2>button:1", BrowserAnalytics.sanitizePath("form>div:2>button:1"))
     }
 
     @Test

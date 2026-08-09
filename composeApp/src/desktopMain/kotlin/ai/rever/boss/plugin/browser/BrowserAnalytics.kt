@@ -228,6 +228,12 @@ internal object BrowserAnalytics {
             ?.lowercase()
             ?.takeIf { it.isNotEmpty() && it.length <= maxLength }
             ?.takeIf { value -> value.all { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' } }
+            // Redacted like a field name is. A tag and an ARIA role are as author-chosen as a
+            // `name=` attribute, so the identifier this file refuses to emit through one field
+            // was passing untouched through another: `<row-4417882>` is lowercase, matches the
+            // charset and is short, so it was accepted verbatim. A real tag or role never
+            // carries a three-digit run, so this costs no legitimate signal.
+            ?.let { DIGIT_RUN.replace(it, "#") }
 
     /**
      * A form field's `name` attribute. Unlike a tag this is developer-chosen free text, so
@@ -257,10 +263,13 @@ internal object BrowserAnalytics {
      * so this is never asked about a `div`'s author-defined `name` property.
      *
      * **What remains, stated rather than implied.** A single token of alphabetic content
-     * still survives: `patient_johnsmith` and `mrn_smith_j` come through intact, and the
-     * digit redaction does nothing for either. Catching those would mean refusing unfamiliar
-     * names outright, which would cost the signal on every legitimate form. Tracked privately
-     * in boss-plugin-analytics#7.
+     * still survives, and `.` and `-` are inside the alphabet, so all of `patient_johnsmith`,
+     * `John.Smith` and `Smith-Jones` come through intact - the dotted and hyphenated shapes
+     * being rather more plausible as a literal person's name than the concatenated one. The
+     * digit redaction does nothing for any of them. Narrowing the alphabet is not the answer,
+     * since it would cost real names like `address-line`; catching these would mean refusing
+     * unfamiliar names outright, which would cost the signal on every legitimate form.
+     * Tracked privately in boss-plugin-analytics#7.
      */
     internal fun sanitizeFieldName(raw: String?): String? =
         raw
@@ -288,6 +297,18 @@ internal object BrowserAnalytics {
             ?.lowercase()
             ?.takeIf { it.isNotEmpty() && it.length <= MAX_PATH_LENGTH }
             ?.takeIf { PATH_SHAPE.matches(it) }
+            // Redact digit runs inside the tag SEGMENTS, for the same reason [sanitizeToken]
+            // does: a path is built from author-chosen tag names, so `table>tbody>tr>row-4417882`
+            // carried the identifier the field-name sanitizer exists to remove. The sibling
+            // ordinals after `:` are structure rather than identity and are left alone - which
+            // is why this splits on the separator instead of running over the whole string.
+            ?.split('>')
+            ?.joinToString(">") { segment ->
+                val tag = segment.substringBefore(':')
+                val ordinal = segment.substringAfter(':', "")
+                val redacted = DIGIT_RUN.replace(tag, "#")
+                if (ordinal.isEmpty()) redacted else "$redacted:$ordinal"
+            }
 
     /** Longest visit we are willing to call real; beyond this the clock is suspect. */
     private const val MAX_REPORTABLE_DWELL_MS = 12L * 60 * 60 * 1000
@@ -299,7 +320,15 @@ internal object BrowserAnalytics {
     /** Stand-in domain for a tab with no site loaded, so tab counts still balance. */
     internal const val BLANK_TAB_DOMAIN = "about:blank"
 
-    /** Stand-in for a tab on a host [registrableDomain] refuses; distinct from an empty tab. */
+    /**
+     * Stand-in for a tab on a host [registrableDomain] refuses; distinct from an empty tab.
+     *
+     * Narrower than it looks, and worth knowing before counting on the distinction: every
+     * caller passes a `suggestableHost` result, which is already null for any scheme other
+     * than http(s). So a tab on `file://`, `chrome://` or a `boss://` internal page reports
+     * as [BLANK_TAB_DOMAIN], and this sentinel is only ever reached for an http(s) host that
+     * `registrableDomain` itself refuses - loopback, a bare IP, a single-label intranet name.
+     */
     internal const val UNREPORTABLE_TAB_DOMAIN = "unreportable"
 
     /**
@@ -309,6 +338,9 @@ internal object BrowserAnalytics {
      * "simplification" to `UNICODE_CHARACTER_CLASS` would silently widen.
      */
     private val NOT_FIELD_NAME_CHARS = Regex("""[^A-Za-z0-9_.\[\]$-]+""")
+
+    /** A URL scheme, only where a scheme can actually be: at the very start. */
+    private val LEADING_SCHEME = Regex("""^[a-z][a-z0-9+.-]*://""")
 
     /**
      * Three digits, not five.
@@ -346,7 +378,12 @@ internal object BrowserAnalytics {
         // boundary — it must not depend on that. Drop any scheme and cut at the first
         // path/query/fragment delimiter, so handing it a whole URL can never smuggle a
         // path or query string out through the last label.
-        trimmed = trimmed.substringAfter("://")
+        // Anchored at the start, not `substringAfter("://")`. That took everything after the
+        // FIRST occurrence wherever it appeared, so a schemeless authority carrying a URL in
+        // its query - `availity.com/r?u=https://evil.com` - resolved to `evil.com`: the exact
+        // smuggling this function's KDoc says cannot happen, and the case a test already
+        // asserts for the well-formed form. A scheme is only a scheme at position zero.
+        trimmed = trimmed.replaceFirst(LEADING_SCHEME, "")
         // Backslash counts as a path separator, because Chromium treats it as one: without it
         // `evil.com\@good.com` kept going to the credential strip below and reduced to
         // `good.com`. Under-reporting rather than over-reporting, so not a leak - but this
@@ -431,5 +468,16 @@ internal object BrowserAnalytics {
             "com.pk",
             "co.kr",
             "or.kr",
+            "co.il",
+            "com.pl",
+            "co.th",
+            "com.co",
+            // Private suffixes, where the failure mode is the expensive direction: without
+            // them every project on a shared host collapses into one "site".
+            "github.io",
+            "web.app",
+            "firebaseapp.com",
+            "azurewebsites.net",
+            "cloudfront.net",
         )
 }

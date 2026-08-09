@@ -12,7 +12,7 @@ import ai.rever.boss.plugin.api.BrowserNavigationType
  *
  * **Wall-clock time is not engagement.** A tab left open on a portal overnight reports a
  * fourteen-hour dwell and near-zero active time; averaging the former would say that portal
- * is the most-used site in the product. [setFocused] gates the active counter so the two
+ * is the most-used site in the product. [setVisible] gates the active counter so the two
  * numbers can be told apart downstream.
  *
  * Every emission goes through [BrowserAnalytics], which is what reduces an authority to a

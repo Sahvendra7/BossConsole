@@ -84,6 +84,7 @@ function newPage(collectorJs) {
   const listeners = {};
   const emitted = [];
   let siblingReads = 0;
+  let clockMs = 0;
 
   const el = (tag, props = {}) => {
     const node = {
@@ -123,7 +124,9 @@ function newPage(collectorJs) {
     },
     setInterval: () => 0,
     JSON,
-    Date,
+    // A controllable clock: the rage window is a time comparison, and with a real Date every
+    // click in a test lands in the same millisecond, which only ever exercises the burst case.
+    Date: { now: () => clockMs },
     Math,
     String,
   };
@@ -143,6 +146,9 @@ function newPage(collectorJs) {
     fire: (type, target) => (listeners[type] || []).forEach((f) => f({ target })),
     flush: () => (listeners['pagehide'] || []).forEach((f) => f()),
     siblingReads: () => siblingReads,
+    advance: (ms) => {
+      clockMs += ms;
+    },
     resetSiblingReads: () => {
       siblingReads = 0;
     },
@@ -275,6 +281,40 @@ console.log('\nrage clicks');
     'different rows with a truncated path are not rage',
     p.emitted.map((e) => e.type),
     ['CLICK', 'CLICK', 'CLICK'],
+  );
+}
+
+{
+  // The window is anchored to the FIRST click of a run, not the last. Re-anchoring on every
+  // click meant the run only ended at a gap longer than the window, so steady clicking - a
+  // pagination arrow, a stepper, someone working a worklist - produced CLICK, CLICK,
+  // RAGE_CLICK and then silence for as long as it continued. One per second is slow for rage
+  // and entirely normal for the traffic this feature exists to measure.
+  const p = newPage(js);
+  const form = p.el('form');
+  const btn = p.append(form, p.el('button'));
+  for (let i = 0; i < 12; i++) {
+    p.fire('click', btn);
+    p.advance(900);
+  }
+  p.flush();
+  eq('steady clicking keeps reporting CLICK', p.emitted.filter((e) => e.type === 'CLICK').length, 12);
+  eq('and is never mistaken for rage', p.emitted.filter((e) => e.type === 'RAGE_CLICK').length, 0);
+}
+{
+  // Genuine rage still fires: three inside the window, measured from the first.
+  const p = newPage(js);
+  const form = p.el('form');
+  const btn = p.append(form, p.el('button'));
+  for (let i = 0; i < 3; i++) {
+    p.fire('click', btn);
+    p.advance(200);
+  }
+  p.flush();
+  eq(
+    'a fast burst is still rage',
+    p.emitted.map((e) => e.type),
+    ['CLICK', 'CLICK', 'RAGE_CLICK'],
   );
 }
 

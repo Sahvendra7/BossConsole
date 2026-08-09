@@ -107,6 +107,8 @@ internal class BrowserInteractionBridge(
         val budget = reservation.count
         if (budget <= 0) return
         val parsed = parseBatch(json)
+        // Resolved once, as this parameter's KDoc says: it was being called per entry.
+        val window = windowId()
         // Refund what the batch didn't use, but never the whole reservation: one entry per
         // emit() is non-refundable. Refunding against the *publishable* count let a page
         // parse for free - 64 KB of `{"type":"KEYSTROKE"}`, or valid JSON that is an object
@@ -126,7 +128,7 @@ internal class BrowserInteractionBridge(
                 elementPath = entry.path,
                 scrollDepthPercent = entry.scrollDepthPercent,
                 repeatCount = entry.repeatCount,
-                windowId = windowId(),
+                windowId = window,
             )
         }
     }
@@ -283,7 +285,9 @@ internal class BrowserInteractionBridge(
     private var windowEntries: Int = 0
 
     /** When a rejection was last logged, so a looping page cannot flood the log. */
-    private var lastFailureLogMs: Long = Long.MIN_VALUE
+
+    /** 0, not MIN_VALUE: the latter only works because `now - it` overflows to negative. */
+    private var lastFailureLogMs: Long = 0
 
     /** One entry off the wire, still unsanitized — [BrowserAnalytics] is what cleans these. */
     internal data class ParsedInteraction(
@@ -369,7 +373,7 @@ internal class BrowserInteractionBridge(
                 else -> null
             }
 
-        val parser =
+        private val parser =
             Json {
                 ignoreUnknownKeys = true
                 isLenient = true

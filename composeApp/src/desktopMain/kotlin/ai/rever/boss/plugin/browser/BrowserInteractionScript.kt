@@ -110,7 +110,7 @@ internal object BrowserInteractionScript {
           }
           try {
             var queue = [];
-            var lastClick = { path: null, at: 0, count: 0, event: null };
+            var lastClick = { path: null, startedAt: 0, count: 0, event: null };
             var maxScrollBucket = 0;
             // Set by pathOf when it had to drop the sibling ordinal or an outer level, so
             // describe() can mark the path as "shape, not identity".
@@ -118,7 +118,9 @@ internal object BrowserInteractionScript {
             var FORM_CONTROLS = ['input', 'select', 'textarea', 'form', 'button'];
 
             function send(e) {
-              if (queue.length < $MAX_BATCH) queue.push(e);
+              if (queue.length >= $MAX_BATCH) return false;
+              queue.push(e);
+              return true;
             }
 
             function flush() {
@@ -222,16 +224,22 @@ internal object BrowserInteractionScript {
               // actually identifies one element.
               var identifies = d.path && !d.truncated;
               delete d.truncated;
-              if (identifies && d.path === lastClick.path && now - lastClick.at < $RAGE_CLICK_WINDOW_MS) {
+              // The window is measured from the FIRST click of the run, not the last.
+              // Re-anchoring on every click made the run end only at a gap longer than the
+              // window, so a pagination arrow or stepper clicked once every ~900ms produced
+              // CLICK, CLICK, RAGE_CLICK and then nothing at all for as long as it continued.
+              // One click per second is slow for rage and entirely normal for someone working
+              // through a worklist - which is the traffic this feature exists to measure.
+              if (identifies && d.path === lastClick.path && now - lastClick.startedAt < $RAGE_CLICK_WINDOW_MS) {
                 lastClick.count++;
-                lastClick.at = now;
                 // Repeatedly hitting the same control means the page is not responding the
                 // way the user expects — worth reporting as its own signal, once.
                 if (lastClick.count === $RAGE_CLICK_THRESHOLD) {
                   d.type = 'RAGE_CLICK';
                   d.repeatCount = lastClick.count;
-                  lastClick.event = d;
-                  send(d);
+                  // Only track an event that was actually queued: send() drops when the queue
+                  // is full, and updating a dropped object collects counts nobody serializes.
+                  if (send(d)) lastClick.event = d;
                   return;
                 }
                 if (lastClick.count > $RAGE_CLICK_THRESHOLD) {
@@ -243,7 +251,7 @@ internal object BrowserInteractionScript {
                   return;
                 }
               } else {
-                lastClick = { path: identifies ? d.path : null, at: now, count: 1, event: null };
+                lastClick = { path: identifies ? d.path : null, startedAt: now, count: 1, event: null };
               }
               d.type = 'CLICK';
               send(d);
@@ -285,9 +293,17 @@ internal object BrowserInteractionScript {
                 // never moved the page could advance the page's scroll depth.
                 var t = ev && ev.target;
                 if (t && t !== document && t !== doc && t !== document.body && t !== window) return;
+                // scrollHeight forces a style/layout flush, and this runs per scroll
+                // event on pages that mutate the DOM while scrolling - lazy loading,
+                // virtualised lists - which is the normal shape here. The bucket is
+                // monotonic and caps at 100, so once a page has been read to the bottom
+                // there is nothing left to learn and the read can be skipped entirely.
+                if (maxScrollBucket >= 100) return;
                 var scrollable = doc.scrollHeight - window.innerHeight;
                 if (scrollable <= 0) return;
-                var pct = ((window.pageYOffset || doc.scrollTop) / scrollable) * 100;
+                // One pixel of slack: at fractional DPI or a non-100% zoom the offset lands
+                // sub-pixel short of scrollable, so 100% was never reachable.
+                var pct = ((window.pageYOffset || doc.scrollTop) / (scrollable - 1)) * 100;
                 var bucket = Math.min(100, Math.floor(pct / 25) * 25);
                 if (bucket > maxScrollBucket) {
                   maxScrollBucket = bucket;
@@ -301,7 +317,7 @@ internal object BrowserInteractionScript {
             // does not need to - the host already knows a navigation happened.
             window.$RESET_FLAG = function () {
               maxScrollBucket = 0;
-              lastClick = { path: null, at: 0, count: 0, event: null };
+              lastClick = { path: null, startedAt: 0, count: 0, event: null };
             };
 
             setInterval(flush, $FLUSH_INTERVAL_MS);
