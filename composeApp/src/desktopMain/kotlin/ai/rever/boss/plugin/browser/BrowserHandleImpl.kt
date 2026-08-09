@@ -456,6 +456,11 @@ internal class BrowserHandleImpl(
 
         // Load initial URL
         if (config.url.isNotBlank()) {
+            // OTHER, not the LINK the tracker falls back to. Every tab starts here - new
+            // tabs, restored sessions, bookmarks, deep links, a link opened in a new tab -
+            // so leaving it unhinted would file the largest share of all page views under
+            // "clicked through from the previous page", which is the one thing it is not.
+            visitTracker.expect(BrowserNavigationType.OTHER)
             val postData = config.initialPostData
             val contentType = config.initialPostContentType
             if (postData != null && contentType != null) {
@@ -1361,6 +1366,9 @@ internal class BrowserHandleImpl(
             logger.warn(LogCategory.BROWSER, "Cannot load URL - browser invalid", mapOf("handleId" to id))
             return
         }
+        // Same user action as loadUrl, so the same hint. Missing it here filed every
+        // wait-for-load navigation under LINK.
+        visitTracker.expect(BrowserNavigationType.TYPED)
         withContext(Dispatchers.Main) {
             val done = CompletableDeferred<Boolean>()
             val sub = browser.navigation().on(LoadFinished::class.java) { done.complete(true) }
@@ -2212,6 +2220,11 @@ internal class BrowserHandleImpl(
         // page's dwell time can be closed out when a tab is shut while still on a page —
         // every other path ends a visit by starting the next one.
         visitTracker.closed()
+        // Shut the interaction bridge with it. The tracker refuses everything once closed,
+        // but the bridge's only gate is this authority, and the collector flushes on
+        // `pagehide` / `beforeunload` — precisely during teardown. Without this a tab close
+        // emits PAGE_LEFT, TAB_CLOSED, and then clicks on a tab that is already gone.
+        currentPageAuthority = null
         FullscreenBrowserWindow.exitFullscreen(browser)
 
         // Stop co-browse capture so a disposed tab can never keep streaming.

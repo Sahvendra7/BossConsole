@@ -42,13 +42,36 @@ internal object BrowserAnalytics {
      * and gating each producer separately is how a later one gets added without the guard.
      * The page-side script is *additionally* not injected at all when this is off, so a
      * disabled deployment also runs no telemetry JavaScript in pages.
+     *
+     * `1`, `yes` and `on` disable it as surely as `true`, and a system property works as well
+     * as an environment variable. Matching only the exact string `true` would hand an operator
+     * who wrote `=1` a silent full-telemetry deployment, and silence is the wrong direction
+     * for a privacy control to fail in. Same vocabulary as [FluckEngine.isTruthyFlag].
+     *
+     * A `var` purely so [BrowserAnalyticsTest] can assert the gate actually gates; nothing in
+     * the app writes it, and the resolved value is what a deployment gets.
      */
-    val telemetryEnabled: Boolean =
-        System.getenv("BOSS_BROWSER_TELEMETRY_DISABLED")?.trim()?.lowercase() != "true"
+    internal var telemetryEnabled: Boolean = resolveTelemetryEnabled()
+
+    /** Reads the kill switch from the environment, then the system property. */
+    private fun resolveTelemetryEnabled(): Boolean {
+        val raw =
+            System.getenv(TELEMETRY_DISABLED_KEY)
+                ?: System.getProperty(TELEMETRY_DISABLED_PROPERTY)
+        return !FluckEngine.isTruthyFlag(raw)
+    }
+
+    private const val TELEMETRY_DISABLED_KEY = "BOSS_BROWSER_TELEMETRY_DISABLED"
+    private const val TELEMETRY_DISABLED_PROPERTY = "boss.browser.telemetry.disabled"
 
     /** The one place a browser event reaches the bus, so the kill switch cannot be bypassed. */
     private fun publish(event: ApplicationEvent) {
         if (!telemetryEnabled) return
+        // NOTE: a no-op until some plugin first touches PluginContext.applicationEventBus,
+        // which is what lazily creates the bus (DefaultPlugin.applicationEventBus). Tabs
+        // restored at launch therefore report their TAB_OPENED and first PAGE_VIEWED into
+        // nothing, so opens undercount against closes for one session. Buffering pre-bus
+        // events would fix it; until then a consumer must not read tab counts as exact.
         publishSystemEvent(event)
     }
 
@@ -104,13 +127,25 @@ internal object BrowserAnalytics {
         )
     }
 
-    /** Record a browser tab lifecycle change. [authority] may be blank for a new empty tab. */
+    /**
+     * Record a browser tab lifecycle change. [authority] may be null for a new empty tab.
+     *
+     * A tab on a host we refuse to report (loopback, a bare IP, an intranet name) is *not*
+     * the same thing as a tab with nothing loaded, and reporting both as [BLANK_TAB_DOMAIN]
+     * would make "new tabs opened" read high by however much a developer used a dev server.
+     * [UNREPORTABLE_TAB_DOMAIN] keeps them countable and separate, at no privacy cost -
+     * neither sentinel says anything about where the tab actually was.
+     */
     fun tabEvent(
         type: BrowserEventType,
         authority: String?,
         windowId: String? = null,
     ) {
-        val domain = authority?.let { registrableDomain(it) } ?: BLANK_TAB_DOMAIN
+        val domain =
+            when {
+                authority.isNullOrBlank() -> BLANK_TAB_DOMAIN
+                else -> registrableDomain(authority) ?: UNREPORTABLE_TAB_DOMAIN
+            }
         publish(BrowserEvent(browserEventType = type, domain = domain, windowId = windowId))
     }
 
@@ -221,6 +256,9 @@ internal object BrowserAnalytics {
 
     /** Stand-in domain for a tab with no site loaded, so tab counts still balance. */
     internal const val BLANK_TAB_DOMAIN = "about:blank"
+
+    /** Stand-in for a tab on a host [registrableDomain] refuses; distinct from an empty tab. */
+    internal const val UNREPORTABLE_TAB_DOMAIN = "unreportable"
 
     /** Punctuation a form field name may keep — array/object syntax and word separators. */
     private val FIELD_NAME_PUNCTUATION = setOf('_', '-', '.', '[', ']')

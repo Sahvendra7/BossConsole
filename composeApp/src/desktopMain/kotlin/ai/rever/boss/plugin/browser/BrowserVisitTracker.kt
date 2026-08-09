@@ -41,6 +41,9 @@ internal class BrowserVisitTracker(
     /** One-shot hint from an explicit host navigation call, consumed by the next page view. */
     private var pendingNavigationType: BrowserNavigationType? = null
 
+    /** When [pendingNavigationType] was set, so a hint nobody consumed can expire. */
+    private var pendingNavigationAtMs: Long = 0
+
     private var finished = false
 
     /** The tab was created. [initialAuthority] is null for a new empty tab. */
@@ -52,13 +55,30 @@ internal class BrowserVisitTracker(
     /**
      * Record that the *host* initiated the next navigation, and how.
      *
-     * Only the four explicit entry points (`loadUrl`, `goBack`, `goForward`, `reload`) can
-     * say this truthfully. A navigation that arrives without a hint came from the page
-     * itself, which is a link — so that, not `OTHER`, is the fallback in [pageViewed].
+     * Only the explicit entry points (`loadUrl`, `loadUrlAndWait`, `goBack`, `goForward`,
+     * `reload`, and the tab's own initial load) can say this truthfully. A navigation that
+     * arrives without a hint came from the page itself, which is a link — so that, not
+     * `OTHER`, is the fallback in [pageViewed].
+     *
+     * The hint expires. A navigation can be announced and then never land — a blocked
+     * scheme, a `stop()`, a download rather than a page — and the hint would otherwise sit
+     * here until *something* navigated, labelling the user's next link click `TYPED`. An
+     * unconsumed hint is wrong far more often than it is merely late, so after
+     * [PENDING_HINT_TTL_MS] it is discarded and the navigation reports what it looks like.
      */
     @Synchronized
     fun expect(type: BrowserNavigationType) {
+        if (finished) return
         pendingNavigationType = type
+        pendingNavigationAtMs = nowMs()
+    }
+
+    /** The pending hint if it is still fresh, clearing it either way. */
+    private fun consumeNavigationHint(now: Long): BrowserNavigationType? {
+        val pending = pendingNavigationType
+        pendingNavigationType = null
+        // `now - at` is negative if the clock jumped backwards; treat that as expired too.
+        return pending?.takeIf { now - pendingNavigationAtMs in 0..PENDING_HINT_TTL_MS }
     }
 
     /**
@@ -93,8 +113,7 @@ internal class BrowserVisitTracker(
         // counter if this tab already had focus.
         if (activeSinceMs != null) activeSinceMs = visitStartMs
 
-        val type = pendingNavigationType ?: BrowserNavigationType.LINK
-        pendingNavigationType = null
+        val type = consumeNavigationHint(visitStartMs) ?: BrowserNavigationType.LINK
         emitPageViewed(authority, type, pageIndexInVisit, windowId)
     }
 
@@ -150,5 +169,15 @@ internal class BrowserVisitTracker(
         currentAuthority = null
         emitPageLeft(authority, dwellMs, activeAccumMs, windowId)
         activeAccumMs = 0
+    }
+
+    private companion object {
+        /**
+         * How long an announced-but-unlanded navigation may still claim the next page view.
+         *
+         * Long enough to cover a slow first byte on a bad connection, short enough that a
+         * navigation which never happened cannot mislabel a click the user makes afterwards.
+         */
+        const val PENDING_HINT_TTL_MS = 60_000L
     }
 }

@@ -57,6 +57,18 @@ internal object BrowserInteractionScript {
     private const val MAX_TOKEN_CHARS = 32
     private const val MAX_FIELD_NAME_CHARS = 64
 
+    /** How many preceding siblings a sibling-index scan may read. See `pathOf`. */
+    private const val MAX_SIBLING_SCAN = 100
+
+    /**
+     * Total path budget, kept below [BrowserAnalytics]'s `MAX_PATH_LENGTH` of 120.
+     *
+     * The host *refuses* an over-long path rather than truncating it, so the collector has
+     * to be the one that stays inside the limit - otherwise the path vanishes rather than
+     * shortens, and it vanishes exactly on the component-framework apps this targets.
+     */
+    private const val MAX_PATH_CHARS = 110
+
     /**
      * The collector source.
      *
@@ -110,20 +122,42 @@ internal object BrowserInteractionScript {
 
             // Tag names and sibling positions only. No ids or classes, by construction:
             // this builds the string from tagName and an index, never from an attribute.
+            //
+            // Two budgets, both of which exist because this runs synchronously in a
+            // capture-phase handler, ahead of the page's own:
+            //
+            // - The sibling scan stops at MAX_SIBLING_SCAN. Counting an index by walking
+            //   previousElementSibling to the start costs one read per preceding sibling, so
+            //   clicking a cell in a 10,000-row table was ~10,000 property reads before the
+            //   page could respond - and focusin paid it again on every field. Large tables
+            //   are the normal case in the deployments this targets. Past the cap the index
+            //   is omitted rather than guessed: a wrong ordinal is worse than none.
+            // - Total length stops at MAX_PATH_CHARS, dropping OUTER levels first (the
+            //   nearest ancestors are the informative ones). The host refuses a path over
+            //   its own limit outright rather than truncating, so without this a component
+            //   framework with long custom tag names - five levels of `app-patient-card`
+            //   clears it easily - loses elementPath entirely instead of losing depth.
             function pathOf(el) {
               var parts = [];
               var node = el;
               var depth = 0;
+              var used = 0;
               while (node && node.nodeType === 1 && depth < $MAX_PATH_DEPTH) {
                 var tag = String(node.tagName || '').toLowerCase().slice(0, $MAX_TOKEN_CHARS);
                 if (!tag) break;
                 var index = 1;
+                var scanned = 0;
                 var sib = node.previousElementSibling;
-                while (sib) {
+                while (sib && scanned < $MAX_SIBLING_SCAN) {
                   if (sib.tagName === node.tagName) index++;
                   sib = sib.previousElementSibling;
+                  scanned++;
                 }
-                parts.unshift(index > 1 ? tag + ':' + index : tag);
+                var part = (sib || index > $MAX_SIBLING_SCAN) ? tag : (index > 1 ? tag + ':' + index : tag);
+                // +1 for the '>' this part will need once something precedes it.
+                if (used > 0 && used + part.length + 1 > $MAX_PATH_CHARS) break;
+                used += part.length + (used > 0 ? 1 : 0);
+                parts.unshift(part);
                 node = node.parentElement;
                 depth++;
               }

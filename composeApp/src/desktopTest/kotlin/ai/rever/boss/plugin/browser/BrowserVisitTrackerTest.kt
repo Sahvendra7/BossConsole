@@ -18,6 +18,9 @@ class BrowserVisitTrackerTest {
         val pageViews = mutableListOf<Triple<String, BrowserNavigationType?, Int>>()
         val pageLefts = mutableListOf<Triple<String, Long, Long>>()
         val tabEvents = mutableListOf<Pair<BrowserEventType, String?>>()
+
+        /** Every window id seen, so nothing can quietly stop attributing events to a window. */
+        val windowIds = mutableSetOf<String?>()
     }
 
     private var clock = 0L
@@ -27,13 +30,18 @@ class BrowserVisitTrackerTest {
         BrowserVisitTracker(
             windowId = "w1",
             nowMs = { clock },
-            emitPageViewed = { authority, type, index, _ ->
+            emitPageViewed = { authority, type, index, windowId ->
                 recorder.pageViews += Triple(authority, type, index)
+                recorder.windowIds += windowId
             },
-            emitPageLeft = { authority, dwell, active, _ ->
+            emitPageLeft = { authority, dwell, active, windowId ->
                 recorder.pageLefts += Triple(authority, dwell, active)
+                recorder.windowIds += windowId
             },
-            emitTabEvent = { type, authority, _ -> recorder.tabEvents += type to authority },
+            emitTabEvent = { type, authority, windowId ->
+                recorder.tabEvents += type to authority
+                recorder.windowIds += windowId
+            },
         )
 
     @Test
@@ -177,6 +185,43 @@ class BrowserVisitTrackerTest {
             ),
             recorder.tabEvents.map { it.first },
         )
+    }
+
+    @Test
+    fun `every emission carries the owning window`() {
+        // Dwell, depth and tab counts are all per-window in a multi-window setup; an event
+        // that arrives without one cannot be attributed at all, and nothing else notices.
+        val t = tracker()
+        t.opened("availity.com")
+        t.setFocused(true)
+        t.pageViewed("availity.com")
+        clock = 1_000
+        t.closed()
+
+        assertEquals(setOf<String?>("w1"), recorder.windowIds)
+    }
+
+    @Test
+    fun `a hint nobody consumed expires instead of relabelling a later click`() {
+        // A navigation can be announced and never land - a blocked scheme, a stop(), a
+        // download. The hint would otherwise sit there until something navigated, and the
+        // user's next link click would be reported as TYPED.
+        val t = tracker()
+        t.expect(BrowserNavigationType.TYPED)
+        clock = 61_000
+        t.pageViewed("availity.com")
+
+        assertEquals(BrowserNavigationType.LINK, recorder.pageViews.single().second)
+    }
+
+    @Test
+    fun `a hint is still honoured across a slow but real navigation`() {
+        val t = tracker()
+        t.expect(BrowserNavigationType.TYPED)
+        clock = 30_000
+        t.pageViewed("availity.com")
+
+        assertEquals(BrowserNavigationType.TYPED, recorder.pageViews.single().second)
     }
 
     @Test

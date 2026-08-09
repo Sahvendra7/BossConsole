@@ -81,6 +81,35 @@ class BrowserInteractionBridgeTest {
     }
 
     @Test
+    fun `a json null is an absent field, not an element named null`() {
+        // JsonNull.content is the four-letter string "null", which passes sanitizeToken as a
+        // perfectly good tag name - so this arrived in a dashboard as an element called null.
+        val parsed = parse("""[{"type":"CLICK","tag":null,"fieldName":null,"path":null}]""").single()
+        assertNull(parsed.tag)
+        assertNull(parsed.fieldName)
+        assertNull(parsed.path)
+    }
+
+    @Test
+    fun `a batch is charged for what it used, not for its worst case`() {
+        // The window budget is reserved before parsing (parsing is the expensive part and it
+        // runs on the page's JS thread), so an honest page sending three events must not be
+        // billed for fifty - that would throttle real traffic to a fifth of the stated cap.
+        var clock = 0L
+        val bridge =
+            BrowserInteractionBridge(
+                authorityProvider = { "availity.com" },
+                windowId = null,
+                nowMs = { clock },
+            )
+        val small = """[{"type":"CLICK","tag":"a"}]"""
+        repeat(100) { bridge.emit(small) }
+
+        // 100 single-entry batches is 100 of the 250-entry budget, so a full batch still fits.
+        assertEquals(50, bridge.admissible(50), "unused reservation was not released")
+    }
+
+    @Test
     fun `a non-numeric count is dropped instead of poisoning the event`() {
         val parsed = parse("""[{"type":"SCROLL_DEPTH","scrollDepthPercent":"lots","repeatCount":"NaN"}]""")
         assertNull(parsed.single().scrollDepthPercent)
@@ -204,6 +233,25 @@ class BrowserInteractionBridgeTest {
                 "the collector must never read $property - see BrowserInteractionScript's KDoc",
             )
         }
+    }
+
+    @Test
+    fun `the collector reads exactly one attribute, by a literal name`() {
+        // The forbidden-substring test above is a denylist, and a denylist cannot catch
+        // getAttribute('data-patient-id') or el[someVariable]. The KDoc's actual claim is
+        // narrower and checkable: describe() is the only DOM inspection, and the only
+        // attribute it reads is role. Pin that shape rather than a list of known-bad names.
+        val code = collectorCode()
+        val attributeReads =
+            Regex("""getAttribute\(([^)]*)\)""")
+                .findAll(code)
+                .map { it.groupValues[1].trim() }
+                .toList()
+        assertEquals(listOf("'role'"), attributeReads, "the only attribute read may be role")
+
+        // Computed property access is how a read gets past every name-based check.
+        val computedReads = Regex("""\b(el|node|ev|sib)\[""").findAll(code).map { it.value }.toList()
+        assertTrue(computedReads.isEmpty(), "computed DOM property access: $computedReads")
     }
 
     @Test

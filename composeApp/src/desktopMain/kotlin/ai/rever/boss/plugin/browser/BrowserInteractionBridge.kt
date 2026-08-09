@@ -4,6 +4,7 @@ import ai.rever.boss.plugin.api.BrowserInteractionType
 import com.teamdev.jxbrowser.js.JsAccessible
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -44,8 +45,17 @@ internal class BrowserInteractionBridge(
 
     private fun handle(json: String) {
         val authority = authorityProvider() ?: return
+        // Reserved BEFORE parsing, because parsing is the expensive part and it runs on the
+        // page's JS thread. Admitting afterwards bounded what reached the bus but not the
+        // work done to get there: a page looping emit() with 64 KB payloads still bought
+        // itself an unbounded run of JSON parses. A full batch is reserved because the size
+        // isn't known until it is parsed, and whatever the batch didn't use is released
+        // straight back, so an honest page sending three events is not charged for fifty.
+        val budget = admissible(MAX_BATCH_ENTRIES)
+        if (budget <= 0) return
         val parsed = parseBatch(json)
-        for (entry in parsed.take(admissible(parsed.size))) {
+        release(budget - minOf(budget, parsed.size))
+        for (entry in parsed.take(budget)) {
             BrowserAnalytics.interaction(
                 type = entry.type,
                 authority = authority,
@@ -84,11 +94,26 @@ internal class BrowserInteractionBridge(
         }
         val allowed = (MAX_ENTRIES_PER_WINDOW - windowEntries).coerceIn(0, requested)
         windowEntries += allowed
+        reservedAtMs = windowStartMs
         return allowed
+    }
+
+    /**
+     * Give back [count] of a reservation the batch turned out not to need.
+     *
+     * Only into the window it was taken from: if the window rolled over between reserving
+     * and parsing, the reservation is already forgotten and crediting it would hand the new
+     * window free allowance.
+     */
+    @Synchronized
+    private fun release(count: Int) {
+        if (count <= 0 || reservedAtMs != windowStartMs) return
+        windowEntries = (windowEntries - count).coerceAtLeast(0)
     }
 
     private var windowStartMs: Long = 0
     private var windowEntries: Int = 0
+    private var reservedAtMs: Long = Long.MIN_VALUE
 
     /** One entry off the wire, still unsanitized — [BrowserAnalytics] is what cleans these. */
     internal data class ParsedInteraction(
@@ -132,7 +157,12 @@ internal class BrowserInteractionBridge(
 
         private fun JsonObject.text(key: String): String? = runCatching { str(key) }.getOrNull()
 
-        private fun JsonObject.str(key: String): String? = get(key)?.jsonPrimitive?.content
+        /**
+         * `JsonNull.content` is the four-letter string `"null"`, which passes [sanitizeToken]
+         * as a perfectly good tag name — so a JSON null arrived as an element literally named
+         * "null" in a dashboard. Read it as the absent value it is.
+         */
+        private fun JsonObject.str(key: String): String? = get(key)?.takeIf { it !is JsonNull }?.jsonPrimitive?.content
 
         private fun JsonObject.int(key: String): Int? = text(key)?.toIntOrNull()
 
