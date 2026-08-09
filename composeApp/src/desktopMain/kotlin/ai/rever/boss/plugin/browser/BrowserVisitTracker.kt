@@ -117,12 +117,11 @@ internal class BrowserVisitTracker(
 
         val domain = BrowserAnalytics.registrableDomain(authority)
         if (domain == null) {
-            // Not a reportable site (loopback, bare IP, intranet name). Track nothing, and
-            // break the run: the next real page starts a fresh depth count rather than
-            // being counted as one hop deeper into whatever preceded the dev server.
-            lastDomain = null
-            pageIndexInVisit = 0
-            pendingNavigationType = null
+            // Not a reportable site (loopback, bare IP, intranet name). Report nothing, but
+            // the tab still left the page it was on - which is exactly what
+            // leftTrackablePage does, so this is the same case by another route. Re-entering
+            // closeCurrentVisit is harmless: it returns immediately once the visit is closed.
+            leftTrackablePage(authority)
             return
         }
 
@@ -137,6 +136,34 @@ internal class BrowserVisitTracker(
 
         val type = consumeNavigationHint(visitStartMs) ?: BrowserNavigationType.LINK
         emitPageViewed(authority, type, pageIndexInVisit, windowId())
+    }
+
+    /**
+     * The tab navigated somewhere this feature does not report: an error page, `about:blank`,
+     * a `file://` or `data:` URL, a download.
+     *
+     * The tab still **left** the page it was on, and that is the part the host cannot skip.
+     * While these navigations were filtered out before reaching the tracker, the visit in
+     * progress was never closed - so the previous page's dwell and active time kept accruing
+     * for as long as the user sat on the error page and were then reported against that
+     * previous domain, the depth run was never broken so returning to the site counted as one
+     * hop deeper, and the `expect()` hint from the load that failed stayed pending and
+     * relabelled the user's next link click. A mistyped host is common enough to bias both
+     * numbers this feature exists to produce.
+     *
+     * [lastKnownAuthority] is remembered only so `TAB_CLOSED` can still say where the tab was;
+     * nothing is reported as a page view.
+     */
+    @Synchronized
+    fun leftTrackablePage(lastKnownAuthority: String? = null) {
+        if (finished) return
+        closeCurrentVisit()
+        if (lastKnownAuthority != null) lastAuthority = lastKnownAuthority
+        // Forget the site run, so the next real page starts a fresh depth count rather than
+        // being counted as one hop deeper into whatever preceded the detour.
+        lastDomain = null
+        pageIndexInVisit = 0
+        pendingNavigationType = null
     }
 
     /**

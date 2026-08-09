@@ -91,6 +91,10 @@ internal object BrowserAnalytics {
         // restored at launch therefore report their TAB_OPENED and first PAGE_VIEWED into
         // nothing, so opens undercount against closes for one session. Buffering pre-bus
         // events would fix it; until then a consumer must not read tab counts as exact.
+        //
+        // Nor page-view counts: pageLeft() drops a visit longer than MAX_REPORTABLE_DWELL_MS
+        // rather than reporting a suspect number, so a PAGE_VIEWED for a tab left open
+        // overnight has no matching PAGE_LEFT either. Both are deliberate; neither is exact.
         publishSystemEvent(event)
     }
 
@@ -332,7 +336,11 @@ internal object BrowserAnalytics {
         // path/query/fragment delimiter, so handing it a whole URL can never smuggle a
         // path or query string out through the last label.
         trimmed = trimmed.substringAfter("://")
-        trimmed = trimmed.takeWhile { it != '/' && it != '?' && it != '#' }
+        // Backslash counts as a path separator, because Chromium treats it as one: without it
+        // `evil.com\@good.com` kept going to the credential strip below and reduced to
+        // `good.com`. Under-reporting rather than over-reporting, so not a leak - but this
+        // function claims to hold under misuse, and that claim should be true.
+        trimmed = trimmed.takeWhile { it != '/' && it != '\\' && it != '?' && it != '#' }
         // Credentials in an authority ("user:pw@host") are never reportable.
         trimmed = trimmed.substringAfterLast('@')
 

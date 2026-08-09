@@ -243,7 +243,22 @@ console.log('\nrage clicks');
     p.emitted.map((e) => e.type),
     ['CLICK', 'CLICK', 'RAGE_CLICK'],
   );
-  eq('carries the repeat count', p.emitted[2].repeatCount, Number(consts.RAGE_CLICK_THRESHOLD));
+  // The event sits in the queue until the next flush, so later clicks in the same burst
+  // update its count in place. Reporting the threshold forever made three frustrated clicks
+  // and thirty indistinguishable, while the host allows up to 100.
+  eq('reports how many clicks actually happened', p.emitted[2].repeatCount, 5);
+}
+{
+  const p = newPage(js);
+  const form = p.el('form');
+  const btn = p.append(form, p.el('button'));
+  for (let i = 0; i < 3; i++) p.fire('click', btn);
+  p.flush();
+  eq(
+    'a burst that stops at the threshold reports the threshold',
+    p.emitted[2].repeatCount,
+    Number(consts.RAGE_CLICK_THRESHOLD),
+  );
 }
 {
   // The sibling cap collapses every deep row to one path, so path equality alone would
@@ -329,6 +344,34 @@ console.log('\nre-injection is otherwise a no-op');
   p.fire('click', btn);
   p.flush();
   eq('one listener set, so one event per click', p.emitted.length, 1);
+}
+
+console.log('\nfield names are cut above the host cap, not at it');
+{
+  // The host redacts digit runs and THEN truncates, so that a run straddling its 64-char
+  // boundary is not left as a stray one- or two-digit tail. Slicing to the same 64 here
+  // would hand it an already-cut string and defeat that ordering.
+  const analytics = fs.readFileSync(analyticsKt, 'utf8');
+  const hostCap = Number(/MAX_FIELD_NAME_LENGTH = (\d+)/.exec(analytics)[1]);
+  const collectorCap = Number(consts.MAX_FIELD_NAME_CHARS);
+  check(
+    `collector cap ${collectorCap} > host cap ${hostCap}`,
+    collectorCap > hostCap,
+    `${collectorCap} vs ${hostCap}`,
+  );
+
+  const p = newPage(js);
+  const form = p.el('form');
+  const longName = 'a'.repeat(60) + '_encounter_row_4417882';
+  const input = p.append(form, p.el('input', { props: { type: 'text', name: longName } }));
+  p.fire('click', input);
+  p.flush();
+  const sent = p.emitted[0].fieldName;
+  check(
+    'the whole digit run survives the collector, for the host to redact',
+    sent.endsWith('4417882'),
+    sent,
+  );
 }
 
 console.log('\ncopy and paste record occurrence only');

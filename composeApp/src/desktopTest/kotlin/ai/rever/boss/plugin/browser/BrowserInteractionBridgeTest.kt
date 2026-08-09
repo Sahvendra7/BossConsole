@@ -18,6 +18,11 @@ class BrowserInteractionBridgeTest {
     /**
      * The process-wide window is shared by every bridge, so it carries between tests - each
      * of which starts its own fake clock at 0, which is inside the window rather than past it.
+     *
+     * PROCESS-GLOBAL: this suite must not run in parallel with itself or with
+     * [BrowserAnalyticsEmissionTest], which mutates two other process-global fields. Correct
+     * today because desktopTest runs one class at a time; setting maxParallelForks on this
+     * module would break these in a way that reads as a telemetry bug rather than a test one.
      */
     @BeforeTest
     fun resetProcessWindow() {
@@ -159,6 +164,46 @@ class BrowserInteractionBridgeTest {
             BrowserInteractionBridge.MAX_ENTRIES_PER_PROCESS_WINDOW,
             total,
             "twenty tabs must not each get their own full budget",
+        )
+    }
+
+    @Test
+    fun `a refund is credited to the window it was taken from, or not at all`() {
+        // Freshness is not identity. Asking "is the current process window young" says yes
+        // for every window in its first RATE_WINDOW_MS - including one that just rolled - so
+        // a refund landing right after a roll credited the new window with entries bought in
+        // the old one, handing it free allowance. Driven directly because the interleaving
+        // needs two bridges mid-flight, which one emit() cannot express.
+        val limiter = BrowserInteractionBridge.ProcessRateLimit
+        limiter.resetForTest()
+
+        val taken = limiter.take(now = 0, requested = 50)
+        assertEquals(50, taken.count)
+        // A later batch rolls the window; the reservation above belongs to the old one.
+        assertEquals(10, limiter.take(now = BrowserInteractionBridge.RATE_WINDOW_MS + 500, requested = 10).count)
+
+        limiter.giveBack(takenFrom = taken.windowStartMs, unused = 49)
+
+        assertEquals(
+            BrowserInteractionBridge.MAX_ENTRIES_PER_PROCESS_WINDOW - 10,
+            limiter.take(now = BrowserInteractionBridge.RATE_WINDOW_MS + 500, requested = 10_000).count,
+            "the new window was credited with a refund from the old one",
+        )
+    }
+
+    @Test
+    fun `a refund into the current window is honoured`() {
+        // The mirror: a guard that rejected every refund would also pass the test above, and
+        // would silently make every batch cost a full 50.
+        val limiter = BrowserInteractionBridge.ProcessRateLimit
+        limiter.resetForTest()
+
+        val taken = limiter.take(now = 0, requested = 50)
+        limiter.giveBack(takenFrom = taken.windowStartMs, unused = 49)
+
+        assertEquals(
+            BrowserInteractionBridge.MAX_ENTRIES_PER_PROCESS_WINDOW - 1,
+            limiter.take(now = 0, requested = 10_000).count,
         )
     }
 

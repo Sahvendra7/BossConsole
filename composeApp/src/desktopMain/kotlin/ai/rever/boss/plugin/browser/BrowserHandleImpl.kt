@@ -553,10 +553,20 @@ internal class BrowserHandleImpl(
                     // reached. Failing the load clears the authority rather than merely skipping
                     // the page view.
                     val landed = !NavigationOutcomeTracker.didFail(url)
-                    val authority = suggestableHost(url)?.takeIf { landed }
+                    val host = suggestableHost(url)
+                    val authority = host?.takeIf { landed }
                     currentPageAuthority = authority
                     if (authority != null) {
                         visitTracker.pageViewed(authority)
+                    } else {
+                        // The tracker still has to be told, even though there is nothing to
+                        // report. Skipping it left the previous visit open, so its dwell and
+                        // active time kept accruing while the user sat on the error page and
+                        // were then billed to that previous domain, left the depth run
+                        // unbroken, and left the failed load's navigation hint to relabel the
+                        // next link click. The raw host goes with it only so TAB_CLOSED can
+                        // still say where the tab was.
+                        visitTracker.leftTrackablePage(host)
                     }
 
                     // Skip injection for about:blank pages (used for dashboard display)
@@ -1056,10 +1066,13 @@ internal class BrowserHandleImpl(
             window?.putProperty(BrowserInteractionScript.BRIDGE_PROPERTY, interactionBridge)
             frame.executeJavaScript<Any?>(BrowserInteractionScript.source)
         } catch (e: Exception) {
+            // The exception CLASS, not its message. JxBrowser is unlikely to put a URL in
+            // one, but this file's whole premise is that page-level detail never reaches a
+            // log line, and a class name loses nothing diagnostically.
             logger.debug(
                 LogCategory.BROWSER,
                 "Interaction collector injection failed",
-                mapOf("handleId" to id, "error" to e.toString()),
+                mapOf("handleId" to id, "error" to (e::class.simpleName ?: "Exception")),
             )
         }
     }

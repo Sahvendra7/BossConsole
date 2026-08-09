@@ -108,6 +108,55 @@ class BrowserVisitTrackerTest {
     }
 
     @Test
+    fun `an error page closes the visit it interrupted instead of extending it`() {
+        // A mistyped host commits an error page. While that never reached the tracker, the
+        // previous visit stayed open: its dwell and active time kept accruing for as long as
+        // the user sat on the error page and were then billed to the previous domain.
+        val t = tracker()
+        t.setVisible(true)
+        t.pageViewed("availity.com")
+        clock = 5_000
+        t.leftTrackablePage("youtube.como") // navigation landed on an error page
+        clock = 605_000 // ten minutes staring at it
+
+        val (authority, dwell, active) = recorder.pageLefts.single()
+        assertEquals("availity.com", authority)
+        assertEquals(5_000, dwell, "the ten minutes on the error page are not availity's")
+        assertEquals(5_000, active)
+    }
+
+    @Test
+    fun `an error page breaks the run and consumes the hint that produced it`() {
+        val t = tracker()
+        t.pageViewed("availity.com")
+        t.expect(BrowserNavigationType.TYPED)
+        t.leftTrackablePage("youtube.como")
+        t.pageViewed("availity.com") // clicked back through from somewhere
+
+        // Depth restarts rather than counting the error page as one hop deeper...
+        assertEquals(listOf(1, 1), recorder.pageViews.map { it.third })
+        // ...and the TYPED hint died with the navigation that failed, rather than relabelling
+        // this one.
+        assertEquals(
+            listOf(BrowserNavigationType.LINK, BrowserNavigationType.LINK),
+            recorder.pageViews.map { it.second },
+        )
+    }
+
+    @Test
+    fun `a tab closed on an error page still says where it was`() {
+        val t = tracker()
+        t.pageViewed("availity.com")
+        t.leftTrackablePage("portal.availity.com")
+        t.closed()
+
+        assertEquals(
+            "portal.availity.com",
+            recorder.tabEvents.single { it.first == BrowserEventType.TAB_CLOSED }.second,
+        )
+    }
+
+    @Test
     fun `each navigation closes out the previous page exactly once`() {
         val t = tracker()
         t.setVisible(true)

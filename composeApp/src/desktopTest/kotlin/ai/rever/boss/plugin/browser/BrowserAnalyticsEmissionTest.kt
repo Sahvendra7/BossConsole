@@ -40,6 +40,7 @@ class BrowserAnalyticsEmissionTest {
         // machine or CI leg with BOSS_BROWSER_TELEMETRY_DISABLED set they would otherwise
         // fail as confusing empty-list assertions about something they do not test.
         BrowserAnalytics.telemetryEnabled = true
+        BrowserInteractionBridge.ProcessRateLimit.resetForTest()
     }
 
     @AfterTest
@@ -231,5 +232,85 @@ class BrowserAnalyticsEmissionTest {
         BrowserAnalytics.interaction(BrowserInteractionType.CLICK, "localhost:3000", elementTag = "button")
 
         assertTrue(interactions().isEmpty())
+    }
+
+    // ============================================================
+    // All the way through: a JSON batch off the page becomes an event.
+    // ============================================================
+
+    private fun bridge(authority: String? = "portal.availity.com") =
+        BrowserInteractionBridge(
+            authorityProvider = { authority },
+            windowId = { "w1" },
+        )
+
+    @Test
+    fun `a batch off the page becomes an event with every field in its own slot`() {
+        // The tests either side of this one cover parseBatch and BrowserAnalytics.interaction
+        // separately; the eight-field hand-mapping in handle() sits between them and is
+        // covered by neither. Writing `fieldName = entry.path` there passes every other test
+        // in this suite while shipping an element path into whatever a dashboard labels
+        // "field name", so the wire names and the event fields are pinned together here.
+        bridge().emit(
+            """
+            [{"type":"FIELD_FOCUSED","tag":"input","role":"searchbox","inputType":"TEXT",
+              "fieldName":"patient_mrn_4417882","path":"form>div:2>input:1"}]
+            """.trimIndent(),
+        )
+
+        val event = interactions().single()
+        assertEquals(BrowserInteractionType.FIELD_FOCUSED, event.interactionType)
+        assertEquals("availity.com", event.domain, "reduced, not the authority the bridge holds")
+        assertEquals("input", event.elementTag)
+        assertEquals("searchbox", event.elementRole)
+        assertEquals("text", event.inputType)
+        assertEquals("patient_mrn_#", event.fieldName)
+        assertEquals("form>div:2>input:1", event.elementPath)
+        assertEquals("w1", event.windowId)
+    }
+
+    @Test
+    fun `a hostile batch reaches the bus with its content stripped, not with an error`() {
+        bridge().emit(
+            """
+            [{"type":"CLICK","tag":"Patient: John Smith","role":"MRN 4417882",
+              "fieldName":"John Smith","path":"form>input[value='John Smith']"},
+             {"type":"KEYSTROKE","tag":"input"},
+             {"type":"SCROLL_DEPTH","scrollDepthPercent":9999}]
+            """.trimIndent(),
+        )
+
+        assertEquals(2, interactions().size, "the unknown type is dropped, the rest survive")
+        val click = interactions().first()
+        assertEquals("availity.com", click.domain)
+        assertNull(click.elementTag)
+        assertNull(click.elementRole)
+        assertNull(click.fieldName)
+        assertNull(click.elementPath)
+        assertNull(interactions()[1].scrollDepthPercent)
+        assertTrue(
+            captured.none { it.toString().contains("John Smith") },
+            "page content reached the bus: $captured",
+        )
+    }
+
+    @Test
+    fun `a batch arriving with no reportable page emits nothing`() {
+        // This is the mechanism that keeps clicks on an error page - or on a dev server -
+        // off a domain the user never reached: dispose() and a failed navigation both clear
+        // the authority the bridge reads.
+        bridge(authority = null).emit("""[{"type":"CLICK","tag":"button"}]""")
+        bridge(authority = "localhost:3000").emit("""[{"type":"CLICK","tag":"button"}]""")
+
+        assertTrue(interactions().isEmpty(), "emitted: ${interactions()}")
+    }
+
+    @Test
+    fun `the kill switch stops a page batch too, not just the host emitters`() {
+        BrowserAnalytics.telemetryEnabled = false
+
+        bridge().emit("""[{"type":"CLICK","tag":"button"}]""")
+
+        assertTrue(captured.isEmpty())
     }
 }

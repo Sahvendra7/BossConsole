@@ -58,7 +58,18 @@ internal object BrowserInteractionScript {
      * Matches [BrowserAnalytics]'s own token cap, above which the host refuses the value.
      */
     private const val MAX_TOKEN_CHARS = 32
-    private const val MAX_FIELD_NAME_CHARS = 64
+
+    /**
+     * Deliberately ABOVE the host's own 64-char field-name cap, not equal to it.
+     *
+     * [BrowserAnalytics.sanitizeFieldName] truncates last, so that a digit run straddling the
+     * boundary is redacted before it is cut rather than leaving a one- or two-digit tail the
+     * redactor no longer recognises as a run. Slicing to the same 64 here handed the host an
+     * already-cut string and defeated that ordering entirely: `..._encounter_row_4417882`
+     * arrives as `...44` and survives. Cutting higher keeps the host the one that does the
+     * cutting, while still bounding the payload.
+     */
+    private const val MAX_FIELD_NAME_CHARS = 96
 
     /** How many preceding siblings a sibling-index scan may read. See `pathOf`. */
     private const val MAX_SIBLING_SCAN = 100
@@ -91,10 +102,9 @@ internal object BrowserInteractionScript {
             if (window.$RESET_FLAG) window.$RESET_FLAG();
             return;
           }
-          window.$STARTED_FLAG = true;
           try {
             var queue = [];
-            var lastClick = { path: null, at: 0, count: 0 };
+            var lastClick = { path: null, at: 0, count: 0, event: null };
             var maxScrollBucket = 0;
             // Set by pathOf when it had to drop the sibling ordinal or an outer level, so
             // describe() can mark the path as "shape, not identity".
@@ -214,12 +224,20 @@ internal object BrowserInteractionScript {
                 if (lastClick.count === $RAGE_CLICK_THRESHOLD) {
                   d.type = 'RAGE_CLICK';
                   d.repeatCount = lastClick.count;
+                  lastClick.event = d;
                   send(d);
                   return;
                 }
-                if (lastClick.count > $RAGE_CLICK_THRESHOLD) return;
+                if (lastClick.count > $RAGE_CLICK_THRESHOLD) {
+                  // Keep the count honest while the burst continues. The event is still in
+                  // the queue until the next flush, so the common case reports what actually
+                  // happened rather than the threshold - three frustrated clicks and thirty
+                  // were otherwise indistinguishable, and the host allows up to 100.
+                  if (lastClick.event) lastClick.event.repeatCount = lastClick.count;
+                  return;
+                }
               } else {
-                lastClick = { path: identifies ? d.path : null, at: now, count: 1 };
+                lastClick = { path: identifies ? d.path : null, at: now, count: 1, event: null };
               }
               d.type = 'CLICK';
               send(d);
@@ -277,13 +295,21 @@ internal object BrowserInteractionScript {
             // does not need to - the host already knows a navigation happened.
             window.$RESET_FLAG = function () {
               maxScrollBucket = 0;
-              lastClick = { path: null, at: 0, count: 0 };
+              lastClick = { path: null, at: 0, count: 0, event: null };
             };
 
             setInterval(flush, $FLUSH_INTERVAL_MS);
             // pagehide only: it also fires on bfcache entry, which beforeunload does not, and
             // registering a beforeunload listener has engine-visible side effects for no gain.
             window.addEventListener('pagehide', flush, true);
+
+            // Claimed LAST, once everything above actually succeeded. Set at the top, a throw
+            // anywhere in between was swallowed by the catch and left the flag standing with
+            // no listeners and no reset function - so every later re-injection took the
+            // "already collecting" path and the collector was dead for that document with no
+            // signal at all. Setting it here makes a failed injection retryable on the next
+            // navigation instead.
+            window.$STARTED_FLAG = true;
           } catch (_) {
             // Never surface anything into the page.
           }

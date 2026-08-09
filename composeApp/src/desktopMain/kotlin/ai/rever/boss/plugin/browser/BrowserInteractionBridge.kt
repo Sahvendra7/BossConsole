@@ -114,16 +114,22 @@ internal class BrowserInteractionBridge(
             windowStartMs = now
             windowEntries = 0
         }
-        val perTab = (MAX_ENTRIES_PER_WINDOW - windowEntries).coerceIn(0, requested)
+        // coerceAtLeast on the request first: coerceIn(0, requested) THROWS for a negative
+        // requested rather than returning nothing, and tryReserve is internal and reachable.
+        val perTab = (MAX_ENTRIES_PER_WINDOW - windowEntries).coerceIn(0, requested.coerceAtLeast(0))
         // The bus this protects is process-wide, so a per-tab cap alone is not one: the real
         // ceiling was MAX_ENTRIES_PER_WINDOW x open tabs, and twenty tabs is 5,000/sec into a
         // 64-slot tryEmit buffer - the eviction of AuthEvent / TabEvent / FileChangeEvent the
         // cap exists to prevent. Under this class's own threat model (any page can call
         // emit()) that needs nothing unusual, just a site opening tabs. Per-tab stays as the
         // fair-share limit so one busy page cannot spend the whole process budget.
-        val allowed = ProcessRateLimit.take(now, perTab)
-        windowEntries += allowed
-        return Reservation(count = allowed, windowStartMs = windowStartMs)
+        val taken = ProcessRateLimit.take(now, perTab)
+        windowEntries += taken.count
+        return Reservation(
+            count = taken.count,
+            windowStartMs = windowStartMs,
+            processWindowStartMs = taken.windowStartMs,
+        )
     }
 
     /**
@@ -140,7 +146,7 @@ internal class BrowserInteractionBridge(
     ) {
         if (unused <= 0 || reservation.windowStartMs != windowStartMs) return
         windowEntries = (windowEntries - unused).coerceAtLeast(0)
-        ProcessRateLimit.giveBack(nowMs(), unused)
+        ProcessRateLimit.giveBack(reservation.processWindowStartMs, unused)
     }
 
     /**
@@ -155,23 +161,38 @@ internal class BrowserInteractionBridge(
         private var windowStartMs: Long = 0
         private var entries: Int = 0
 
+        /** [count] entries taken from the process window that began at [windowStartMs]. */
+        data class Taken(
+            val count: Int,
+            val windowStartMs: Long,
+        )
+
         @Synchronized
         fun take(
             now: Long,
             requested: Int,
-        ): Int {
+        ): Taken {
             roll(now)
-            val allowed = (MAX_ENTRIES_PER_PROCESS_WINDOW - entries).coerceIn(0, requested)
+            val allowed = (MAX_ENTRIES_PER_PROCESS_WINDOW - entries).coerceIn(0, requested.coerceAtLeast(0))
             entries += allowed
-            return allowed
+            return Taken(count = allowed, windowStartMs = windowStartMs)
         }
 
+        /**
+         * Give back [unused] entries taken from the window that began at [takenFrom].
+         *
+         * Stamped rather than checked for freshness. Asking "is the current window young"
+         * says yes for every window in its first RATE_WINDOW_MS, including a brand-new one -
+         * so a refund landing just after a roll credited the new window with entries bought
+         * in the old one. The per-tab side already carries a token; this makes the two levels
+         * symmetrical rather than only claiming to be.
+         */
         @Synchronized
         fun giveBack(
-            now: Long,
+            takenFrom: Long,
             unused: Int,
         ) {
-            if (now - windowStartMs !in 0 until RATE_WINDOW_MS) return
+            if (takenFrom != windowStartMs) return
             entries = (entries - unused).coerceAtLeast(0)
         }
 
@@ -189,10 +210,16 @@ internal class BrowserInteractionBridge(
         }
     }
 
-    /** A claim on [count] entries of the rate window that began at [windowStartMs]. */
+    /**
+     * A claim on [count] entries, naming **both** windows it came from.
+     *
+     * The process window needs its own stamp for the reason [ProcessRateLimit.giveBack]
+     * explains: freshness is not identity.
+     */
     private data class Reservation(
         val count: Int,
         val windowStartMs: Long,
+        val processWindowStartMs: Long,
     )
 
     private var windowStartMs: Long = 0
@@ -306,10 +333,14 @@ internal class BrowserInteractionBridge(
         /**
          * The ceiling across every tab, since the bus is process-wide.
          *
-         * Four busy tabs' worth. High enough that no realistic mix of real pages meets it -
-         * the collector needs about 25/sec per tab - and far below the rate at which a
-         * 64-slot `tryEmit` buffer starts evicting other subsystems' events.
+         * Sized against the buffer rather than against what looks generous. The bus is a
+         * `MutableSharedFlow` with `extraBufferCapacity = 64` published via non-suspending
+         * `tryEmit`, and `tryEmit` fails for *every* subscriber once the slowest is behind -
+         * so at 1000/sec a subscriber stalling 64ms starts dropping, which is a routine GC
+         * pause. The collector needs about 25/sec per tab, so 300 still leaves a dozen busy
+         * tabs untouched while keeping the residual an order of magnitude below the rate that
+         * evicts `AuthEvent` / `TabEvent` / `FileChangeEvent` out from under a slow consumer.
          */
-        const val MAX_ENTRIES_PER_PROCESS_WINDOW = 1000
+        const val MAX_ENTRIES_PER_PROCESS_WINDOW = 300
     }
 }
