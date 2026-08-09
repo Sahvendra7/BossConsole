@@ -3,16 +3,12 @@ package ai.rever.boss.components.workspaces
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import java.io.File
 
 /**
  * Desktop implementation of WorkspaceSettingsManager.
@@ -87,20 +83,17 @@ actual object WorkspaceSettingsManager {
     private fun writeSettings(settings: WorkspaceSettings) {
         try {
             settingsFile.writeText(json.encodeToString(WorkspaceSettings.serializer(), settings))
+            logger.debug(LogCategory.SYSTEM, "Settings saved")
         } catch (e: Exception) {
             logger.warn(LogCategory.SYSTEM, "Error saving settings", error = e)
         }
     }
 
+    // One write path. The load runs it on whatever thread touched this object first
+    // (see init); every other caller gets it off the IO dispatcher.
     actual suspend fun saveSettings() =
         withContext(Dispatchers.IO) {
-            try {
-                val content = json.encodeToString(WorkspaceSettings.serializer(), _currentSettings.value)
-                settingsFile.writeText(content)
-                logger.debug(LogCategory.SYSTEM, "Settings saved")
-            } catch (e: Exception) {
-                logger.warn(LogCategory.SYSTEM, "Error saving settings", error = e)
-            }
+            writeSettings(_currentSettings.value)
         }
 
     actual suspend fun updateSettings(settings: WorkspaceSettings) {

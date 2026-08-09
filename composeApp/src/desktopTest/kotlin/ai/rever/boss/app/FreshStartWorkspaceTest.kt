@@ -2,6 +2,7 @@ package ai.rever.boss.app
 
 import ai.rever.boss.components.workspaces.PredefinedWorkspaces
 import ai.rever.boss.components.workspaces.requiresProject
+import ai.rever.boss.dashboard.SplitTemplatesManager
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -62,6 +63,29 @@ class FreshStartWorkspaceTest {
             val inUrl = browserOnly.copy(layout = singleBrowserLayout(url = placeholder))
             assertTrue(inUrl.requiresProject(), placeholder)
             assertFalse(shouldApplyOnFreshStart(inUrl, hasProject = false), placeholder)
+        }
+    }
+
+    /**
+     * The placeholder list mirrors `SplitTemplatesManager.processPlaceholders`, and nothing
+     * links the two. A fifth placeholder added there and missed here would not mark a
+     * workspace as project-requiring, and the failure mode is the one the KDoc warns about:
+     * a CLI running in the user's home directory.
+     */
+    @Test
+    fun `every placeholder the substitution handles is treated as project-requiring`() {
+        val handled = listOf("{projectPath}", "{gitRemoteUrl}", "{currentFile}", "{claudeContinueFlag}")
+        for (placeholder in handled) {
+            val substituted =
+                SplitTemplatesManager.processPlaceholders(placeholder, "/tmp/project", currentFile = "/tmp/f.kt")
+            assertFalse(
+                substituted.contains(placeholder),
+                "$placeholder is substituted from the project, so requiresProject must know about it",
+            )
+            assertTrue(
+                browserOnly.copy(layout = singleBrowserLayout(url = placeholder)).requiresProject(),
+                placeholder,
+            )
         }
     }
 

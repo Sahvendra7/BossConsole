@@ -255,5 +255,54 @@ class FocusModeSettingsTest {
         assertEquals(defaults, FocusModeSettings.decodeWithDefaults("{}", defaults))
     }
 
+    /**
+     * The round trip through the manager's own encoder, which is where merging over
+     * *platform* defaults turns a missing `encodeDefaults` into silent data loss.
+     *
+     * Without it, a value equal to the CLASS default is omitted from the file, and the
+     * merge then reads that absence as "never chosen" and substitutes the platform
+     * default. On Windows the two disagree for exactly the fields this feature adds, so a
+     * user switching a sidebar back on would write nothing and find it off next launch -
+     * on the one platform where the escape hatch is the whole point.
+     */
+    @Test
+    fun `a chosen value survives a save and load on windows`() {
+        val platform = FocusModeSettings.defaultsFor("Windows 11")
+        // Every one of these equals the class default and differs from the Windows default.
+        val chosen = platform.copy(hideLeftSidebar = true, hideRightSidebar = true, autoRevealEnabled = true)
+
+        val written = managerJson.encodeToString(FocusModeSettings.serializer(), chosen)
+        val reloaded = FocusModeSettings.decodeWithDefaults(written, platform)
+
+        assertEquals(chosen, reloaded, "a deliberate choice must not revert on restart: $written")
+        assertTrue(reloaded.hideLeftSidebar)
+        assertTrue(reloaded.hideRightSidebar)
+        assertTrue(reloaded.autoRevealEnabled)
+    }
+
+    /** The reverse direction: turning an edge off on a platform whose default is on. */
+    @Test
+    fun `switching an edge off survives a save and load elsewhere`() {
+        val platform = FocusModeSettings.defaultsFor("Mac OS X")
+        val chosen = platform.copy(hideTopBar = false, hideLeftSidebar = false)
+
+        val reloaded =
+            FocusModeSettings.decodeWithDefaults(
+                managerJson.encodeToString(FocusModeSettings.serializer(), chosen),
+                platform,
+            )
+
+        assertEquals(chosen, reloaded)
+    }
+
+    private companion object {
+        /**
+         * The encoder the manager actually writes with, not a copy of its settings. A mirror
+         * here would keep passing after someone dropped `encodeDefaults` from the real one,
+         * which is precisely the bug these two tests exist to catch.
+         */
+        val managerJson = FocusModeSettings.storageJson
+    }
+
     // endregion
 }

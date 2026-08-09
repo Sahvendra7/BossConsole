@@ -14,6 +14,7 @@ import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.asLastSession
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
+import ai.rever.boss.components.workspaces.requiresProject
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.consumePendingInitialProject
 import ai.rever.boss.consumePendingInitialTab
@@ -320,7 +321,17 @@ internal fun BossAppStartupEffects(state: BossAppState) {
     LaunchedEffect(selectedProject.path) {
         if (selectedProject.path.isNotEmpty()) {
             val defaultWorkspace = WorkspaceSettingsManager.getDefaultWorkspace()
-            if (defaultWorkspace != null) {
+            // A workspace that needs no project has nothing to re-derive from a new one, so
+            // re-applying it would only clearAllPanels over whatever the user has open. That
+            // is new since the fresh-start apply: a Windows install now comes up ON the
+            // browser workspace, browses somewhere, and selecting a project would have
+            // discarded the page. Project-shaped workspaces still re-apply, which is the
+            // point of this effect - their tabs are built from {projectPath}.
+            val alreadyApplied =
+                defaultWorkspace != null &&
+                    !defaultWorkspace.requiresProject() &&
+                    workspaceManager.currentWorkspace.value?.id == defaultWorkspace.id
+            if (defaultWorkspace != null && !alreadyApplied) {
                 // Apply the workspace
                 applyWorkspace(defaultWorkspace, splitViewState, windowProjectState)
                 workspaceManager.loadWorkspace(defaultWorkspace)

@@ -96,13 +96,21 @@ class ProjectPanelOpenerTest {
         assertTrue(source.isFile, "source moved: ${source.absolutePath}")
         val text = source.readText()
 
+        // Code lines only: a KDoc or comment naming the call is not a call, and this guard
+        // firing on prose would be a false positive nobody could fix except by rewording.
+        val code =
+            text
+                .lines()
+                .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
+                .joinToString("\n")
+
         assertEquals(
             0,
-            Regex("""PanelEventBus\.openPanel\(""").findAll(text).count(),
+            Regex("""PanelEventBus\.openPanel\(""").findAll(code).count(),
             "BossAppStartupEffects must open project panels via openProjectPanels(), " +
                 "so the Windows suppression cannot be bypassed",
         )
-        assertTrue(text.contains("openProjectPanels("), "the opener seam disappeared from BossAppStartupEffects")
+        assertTrue(code.contains("openProjectPanels("), "the opener seam disappeared from BossAppStartupEffects")
     }
 
     private companion object {

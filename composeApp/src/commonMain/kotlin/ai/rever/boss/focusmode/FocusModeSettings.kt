@@ -110,16 +110,28 @@ data class FocusModeSettings(
             content: String,
             defaults: FocusModeSettings,
         ): FocusModeSettings {
-            val stored = mergeJson.parseToJsonElement(content).jsonObject
-            val defaulted = mergeJson.encodeToJsonElement(serializer(), defaults).jsonObject
-            return mergeJson.decodeFromJsonElement(serializer(), JsonObject(defaulted + stored))
+            val stored = storageJson.parseToJsonElement(content).jsonObject
+            val defaulted = storageJson.encodeToJsonElement(serializer(), defaults).jsonObject
+            return storageJson.decodeFromJsonElement(serializer(), JsonObject(defaulted + stored))
         }
 
         private fun isWindows(osName: String) = osName.lowercase().startsWith("win")
 
-        /** Needs `encodeDefaults` so the merge sees every key, including ones left at a default. */
-        private val mergeJson =
+        /**
+         * The one encoder for the settings file - used by `FocusModeSettingsManager` to write
+         * it and by [decodeWithDefaults] to merge it.
+         *
+         * `encodeDefaults` is load-bearing, and the two halves have to agree about it, which
+         * is why they share an instance rather than each configuring their own. Without it a
+         * value equal to the CLASS default is omitted on write, and the merge reads that
+         * absence as "never chosen" and substitutes the PLATFORM default. On Windows those
+         * disagree for `autoRevealEnabled`, `hideLeftSidebar` and `hideRightSidebar`, so a
+         * user switching a sidebar back on would write nothing and find it off again next
+         * launch - on the one platform where that switch is the whole escape hatch.
+         */
+        val storageJson =
             Json {
+                prettyPrint = true
                 ignoreUnknownKeys = true
                 encodeDefaults = true
             }

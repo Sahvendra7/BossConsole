@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import java.io.File
 
 /**
@@ -23,11 +22,10 @@ import java.io.File
 actual object FocusModeSettingsManager {
     private val logger = BossLogger.forComponent("FocusModeSettingsManager")
     private val settingsFile = BossDirectories.resolve("focus-mode-settings.json")
-    private val json =
-        Json {
-            prettyPrint = true
-            ignoreUnknownKeys = true
-        }
+
+    // The encoder lives with decodeWithDefaults, because the two have to agree about
+    // encodeDefaults: see FocusModeSettings.storageJson for what breaks when they do not.
+    private val json = FocusModeSettings.storageJson
 
     /**
      * Fresh settings for this platform. Hover-to-reveal and sidebar hiding both start OFF on
