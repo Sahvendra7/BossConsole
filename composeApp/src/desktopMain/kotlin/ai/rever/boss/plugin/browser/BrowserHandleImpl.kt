@@ -201,7 +201,20 @@ internal class BrowserHandleImpl(
      * only meaningful per tab, and this is the one object with that identity plus the full
      * navigation lifecycle. Publishes nothing itself — see [BrowserAnalytics].
      */
-    private val visitTracker = BrowserVisitTracker(windowId = ownerWindowId)
+    private val visitTracker = BrowserVisitTracker(windowId = { currentWindowId })
+
+    /**
+     * The window this tab is currently in, as opposed to the one it was created in.
+     *
+     * A tab moves between windows — `Content()` resolves `LocalWindowId.current` and the
+     * surface effect below exists precisely because "the window the tab came from" and the
+     * window it is composing in can differ. Stamping telemetry with [ownerWindowId] therefore
+     * kept attributing a moved tab's dwell, depth and tab counts to the window it left, and
+     * `BrowserVisitTrackerTest` asserts that per-window attribution is load-bearing. Read at
+     * emit time for the same reason [currentPageAuthority] is: the value at construction is
+     * not the value when the event happens.
+     */
+    @Volatile private var currentWindowId: String = ownerWindowId
 
     /**
      * Authority of the page currently loaded in this tab, as last seen by the navigation
@@ -221,7 +234,7 @@ internal class BrowserHandleImpl(
     private val interactionBridge =
         BrowserInteractionBridge(
             authorityProvider = { currentPageAuthority },
-            windowId = ownerWindowId,
+            windowId = { currentWindowId },
         )
 
     private val disposed = AtomicBoolean(false)
@@ -532,9 +545,17 @@ internal class BrowserHandleImpl(
                     // Set unconditionally, including to null: an interaction arriving after a
                     // navigation to something unreportable (a dev server, an IP) must not be
                     // attributed to whatever site preceded it.
-                    val authority = suggestableHost(url)
+                    //
+                    // BOTH gates apply to the interaction path too, not just to the page view.
+                    // Chromium commits an error page as a real document, so the collector runs
+                    // inside it and finds an authority — and clicking "Reload" on the error page
+                    // for a mistyped host then reported a CLICK on a domain the user never
+                    // reached. Failing the load clears the authority rather than merely skipping
+                    // the page view.
+                    val landed = !NavigationOutcomeTracker.didFail(url)
+                    val authority = suggestableHost(url)?.takeIf { landed }
                     currentPageAuthority = authority
-                    if (authority != null && !NavigationOutcomeTracker.didFail(url)) {
+                    if (authority != null) {
                         visitTracker.pageViewed(authority)
                     }
 
@@ -1992,6 +2013,14 @@ internal class BrowserHandleImpl(
         DisposableEffect(Unit) {
             visitTracker.setFocused(true)
             onDispose { visitTracker.setFocused(false) }
+        }
+
+        // Which window telemetry is attributed to, kept current across a tab move. Its own
+        // effect because the focus effect above must stay keyed on Unit - keying that one on
+        // the window would fire a spurious TAB_ACTIVATED every time a tab moved.
+        DisposableEffect(hostWindowId) {
+            hostWindowId?.let { currentWindowId = it }
+            onDispose {}
         }
 
         // Track last navigation time for debouncing mouse button navigation

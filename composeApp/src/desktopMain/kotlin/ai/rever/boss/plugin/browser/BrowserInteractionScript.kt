@@ -39,6 +39,9 @@ internal object BrowserInteractionScript {
     /** Guard so re-injection into the same document is a no-op. */
     private const val STARTED_FLAG = "__bossInteractionStarted"
 
+    /** Per-route reset, called when re-injection finds the collector already running. */
+    private const val RESET_FLAG = "__bossInteractionReset"
+
     private const val FLUSH_INTERVAL_MS = 2000
     private const val MAX_BATCH = 50
     private const val RAGE_CLICK_WINDOW_MS = 1000
@@ -78,12 +81,25 @@ internal object BrowserInteractionScript {
     val source: String =
         """
         (function () {
-          if (window.$STARTED_FLAG) return;
+          if (window.$STARTED_FLAG) {
+            // Already collecting in this document. The host re-runs this script on every
+            // main-frame NavigationFinished, and for a single-page app that is a ROUTE
+            // change within one document — so this is the only signal the collector gets
+            // that the user is on a different page. Without it maxScrollBucket stayed at
+            // its high-water mark and every route after the first reported no scroll depth
+            // at all, and a click on the old route could pair with one on the new.
+            if (window.$RESET_FLAG) window.$RESET_FLAG();
+            return;
+          }
           window.$STARTED_FLAG = true;
           try {
             var queue = [];
             var lastClick = { path: null, at: 0, count: 0 };
             var maxScrollBucket = 0;
+            // Set by pathOf when it had to drop the sibling ordinal or an outer level, so
+            // describe() can mark the path as "shape, not identity".
+            var pathTruncated = false;
+            var FORM_CONTROLS = ['input', 'select', 'textarea', 'form', 'button'];
 
             function send(e) {
               if (queue.length < $MAX_BATCH) queue.push(e);
@@ -114,8 +130,18 @@ internal object BrowserInteractionScript {
                 if (out.tag === 'input' || out.tag === 'button') {
                   if (el.type) out.inputType = String(el.type).slice(0, $MAX_TOKEN_CHARS);
                 }
-                if (el.name) out.fieldName = String(el.name).slice(0, $MAX_FIELD_NAME_CHARS);
+                // 'name' gets the SAME restriction, for the same reason. It is a real IDL
+                // attribute on img, a, iframe, object, param, meta and map, and on a custom
+                // element it is whatever getter the page defined - so read off anything else
+                // it is author-controlled free text, not a form-encoding key. That is also
+                // what the host's field-name sanitizer assumes when it cleans rather than
+                // refuses, so reading it here from a div would undercut the sanitizer's own
+                // justification.
+                if (FORM_CONTROLS.indexOf(out.tag) !== -1 && el.name) {
+                  out.fieldName = String(el.name).slice(0, $MAX_FIELD_NAME_CHARS);
+                }
                 out.path = pathOf(el);
+                out.truncated = pathTruncated;
               } catch (_) {}
               return out;
             }
@@ -142,6 +168,7 @@ internal object BrowserInteractionScript {
               var node = el;
               var depth = 0;
               var used = 0;
+              pathTruncated = false;
               while (node && node.nodeType === 1 && depth < $MAX_PATH_DEPTH) {
                 var tag = String(node.tagName || '').toLowerCase().slice(0, $MAX_TOKEN_CHARS);
                 if (!tag) break;
@@ -153,9 +180,11 @@ internal object BrowserInteractionScript {
                   sib = sib.previousElementSibling;
                   scanned++;
                 }
-                var part = (sib || index > $MAX_SIBLING_SCAN) ? tag : (index > 1 ? tag + ':' + index : tag);
+                var capped = sib || index > $MAX_SIBLING_SCAN;
+                if (capped) pathTruncated = true;
+                var part = capped ? tag : (index > 1 ? tag + ':' + index : tag);
                 // +1 for the '>' this part will need once something precedes it.
-                if (used > 0 && used + part.length + 1 > $MAX_PATH_CHARS) break;
+                if (used > 0 && used + part.length + 1 > $MAX_PATH_CHARS) { pathTruncated = true; break; }
                 used += part.length + (used > 0 ? 1 : 0);
                 parts.unshift(part);
                 node = node.parentElement;
@@ -167,7 +196,14 @@ internal object BrowserInteractionScript {
             document.addEventListener('click', function (ev) {
               var d = describe(ev.target);
               var now = Date.now();
-              if (d.path && d.path === lastClick.path && now - lastClick.at < $RAGE_CLICK_WINDOW_MS) {
+              // A truncated path is a shape, not an identity: past the sibling cap every cell
+              // in a large table reduces to the same `tbody>tr`, so keying rage detection on
+              // path equality would report three clicks on three different rows as rage - and
+              // large tables are exactly what the cap exists for. Rage needs a path that
+              // actually identifies one element.
+              var identifies = d.path && !d.truncated;
+              delete d.truncated;
+              if (identifies && d.path === lastClick.path && now - lastClick.at < $RAGE_CLICK_WINDOW_MS) {
                 lastClick.count++;
                 lastClick.at = now;
                 // Repeatedly hitting the same control means the page is not responding the
@@ -180,24 +216,27 @@ internal object BrowserInteractionScript {
                 }
                 if (lastClick.count > $RAGE_CLICK_THRESHOLD) return;
               } else {
-                lastClick = { path: d.path, at: now, count: 1 };
+                lastClick = { path: identifies ? d.path : null, at: now, count: 1 };
               }
               d.type = 'CLICK';
               send(d);
             }, true);
 
+            function report(el, type) {
+              var d = describe(el);
+              delete d.truncated;
+              d.type = type;
+              send(d);
+            }
+
             document.addEventListener('focusin', function (ev) {
               var el = ev.target;
               if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'SELECT' && el.tagName !== 'TEXTAREA')) return;
-              var d = describe(el);
-              d.type = 'FIELD_FOCUSED';
-              send(d);
+              report(el, 'FIELD_FOCUSED');
             }, true);
 
             document.addEventListener('submit', function (ev) {
-              var d = describe(ev.target);
-              d.type = 'FORM_SUBMITTED';
-              send(d);
+              report(ev.target, 'FORM_SUBMITTED');
             }, true);
 
             // Occurrence only. The clipboard is never read: no getData, no selection.
@@ -205,17 +244,20 @@ internal object BrowserInteractionScript {
               send({ type: 'COPY' });
             }, true);
             document.addEventListener('paste', function (ev) {
-              var d = describe(ev.target);
-              d.type = 'PASTE';
               // A paste target's field name is useful ("they paste into the MRN box"); the
               // pasted data is not read.
-              send(d);
+              report(ev.target, 'PASTE');
             }, true);
 
             // Quantised to quarters so a long page is a handful of events, not hundreds.
-            window.addEventListener('scroll', function () {
+            window.addEventListener('scroll', function (ev) {
               try {
                 var doc = document.documentElement;
+                // Capture-phase on window also sees inner scrollable elements, which would
+                // then be measured against the document's own height - an inner scroll that
+                // never moved the page could advance the page's scroll depth.
+                var t = ev && ev.target;
+                if (t && t !== document && t !== doc && t !== document.body && t !== window) return;
                 var scrollable = doc.scrollHeight - window.innerHeight;
                 if (scrollable <= 0) return;
                 var pct = ((window.pageYOffset || doc.scrollTop) / scrollable) * 100;
@@ -226,6 +268,14 @@ internal object BrowserInteractionScript {
                 }
               } catch (_) {}
             }, { capture: true, passive: true });
+
+            // Per-route state, reset when the host re-runs this script in the same document.
+            // Deliberately does NOT read location: the collector never touches a URL, and it
+            // does not need to - the host already knows a navigation happened.
+            window.$RESET_FLAG = function () {
+              maxScrollBucket = 0;
+              lastClick = { path: null, at: 0, count: 0 };
+            };
 
             setInterval(flush, $FLUSH_INTERVAL_MS);
             window.addEventListener('pagehide', flush, true);

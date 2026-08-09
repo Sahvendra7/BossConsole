@@ -71,13 +71,11 @@ intellij-platform = "243.21565.199"
 # releases ONLY: plugin-platform/plugin-api-core downloads this release's jar and
 # filters the api package locally (no Maven registry involved).
 #
-# NOTE: 1.0.76 is not released yet. It is cut by merging
-# risa-labs-inc/boss-plugin-api#25, which adds the browser telemetry events this
-# branch publishes (BrowserEvent's navigation/engagement fields,
-# BrowserInteractionEvent, BrowserNavigationType, BrowserInteractionType). This pin
-# must not land before that release exists - fetchApiPluginJar has no Maven
-# fallback, so CI fails with a 404 on the release asset. For local work, build the
-# jar into a sibling boss_plugins/boss-plugin-api checkout at exactly this version.
+# 1.0.76 is the release cut by risa-labs-inc/boss-plugin-api#25, which adds the
+# browser telemetry events this branch publishes (BrowserEvent's navigation and
+# engagement fields, BrowserInteractionEvent, BrowserNavigationType,
+# BrowserInteractionType). It is released and its jar asset exists - a pin ahead of
+# its release fails CI with a 404, since fetchApiPluginJar has no Maven fallback.
 boss-plugin-api = "1.0.76"
 
 [libraries]

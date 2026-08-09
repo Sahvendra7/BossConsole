@@ -55,8 +55,11 @@ internal object BrowserAnalytics {
 
     /** Reads the kill switch from the environment, then the system property. */
     private fun resolveTelemetryEnabled(): Boolean {
+        // `isNotBlank`, because an env var set to the empty string is still non-null: without
+        // it, `BOSS_BROWSER_TELEMETRY_DISABLED=` (a common way to "unset" one in a launcher
+        // script) silently shadowed `-Dboss.browser.telemetry.disabled=true`.
         val raw =
-            System.getenv(TELEMETRY_DISABLED_KEY)
+            System.getenv(TELEMETRY_DISABLED_KEY)?.takeIf { it.isNotBlank() }
                 ?: System.getProperty(TELEMETRY_DISABLED_PROPERTY)
         return !FluckEngine.isTruthyFlag(raw)
     }
@@ -223,7 +226,17 @@ internal object BrowserAnalytics {
      * shape most likely to be a person's name was also the one this let through intact.
      * A real `name=` attribute essentially never contains whitespace (it is a form-encoding
      * key), so refusing costs nothing real. Leading and trailing whitespace is still just
-     * trimmed: that is markup formatting, not content.
+     * trimmed: that is markup formatting, not content. The collector also only reads `name`
+     * off actual form controls, so this function is not asked about a `div`'s author-defined
+     * `name` property in the first place.
+     *
+     * **What remains, stated rather than implied.** This still cleans instead of refusing,
+     * so single-token alphabetic content survives: `patient_johnsmith` and `mrn_smith_j` come
+     * through intact, and the digit redaction does nothing for either. Whitespace was the
+     * shape that made free text *look* like a field name; a developer writing a name that
+     * embeds a person is a narrower case that only refusing unknown names outright would
+     * catch, and that would cost the signal on every legitimate form. Tracked privately in
+     * boss-plugin-analytics#7.
      */
     internal fun sanitizeFieldName(raw: String?): String? =
         raw

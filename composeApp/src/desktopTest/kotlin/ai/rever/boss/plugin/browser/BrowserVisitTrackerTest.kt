@@ -19,16 +19,22 @@ class BrowserVisitTrackerTest {
         val pageLefts = mutableListOf<Triple<String, Long, Long>>()
         val tabEvents = mutableListOf<Pair<BrowserEventType, String?>>()
 
-        /** Every window id seen, so nothing can quietly stop attributing events to a window. */
-        val windowIds = mutableSetOf<String?>()
+        /**
+         * The window id on every emission, in order, so nothing can quietly stop attributing
+         * events to a window and so a move can be checked as a change rather than a set.
+         */
+        val windowIds = mutableListOf<String?>()
     }
 
     private var clock = 0L
+
+    /** Mutable, because a tab moves between windows and the id is resolved per emission. */
+    private var currentWindowId: String? = "w1"
     private val recorder = Recorder()
 
     private fun tracker() =
         BrowserVisitTracker(
-            windowId = "w1",
+            windowId = { currentWindowId },
             nowMs = { clock },
             emitPageViewed = { authority, type, index, windowId ->
                 recorder.pageViews += Triple(authority, type, index)
@@ -198,7 +204,44 @@ class BrowserVisitTrackerTest {
         clock = 1_000
         t.closed()
 
-        assertEquals(setOf<String?>("w1"), recorder.windowIds)
+        assertTrue(recorder.windowIds.isNotEmpty())
+        assertEquals(setOf<String?>("w1"), recorder.windowIds.toSet())
+    }
+
+    @Test
+    fun `a tab moved to another window is attributed to the window it is in now`() {
+        // The id used to be captured at construction, so a moved tab reported its dwell,
+        // depth and close against the window it left - and nothing downstream could tell.
+        val t = tracker()
+        t.opened("availity.com")
+        t.pageViewed("availity.com")
+        val beforeMove = recorder.windowIds.toList()
+
+        currentWindowId = "w2"
+        clock = 1_000
+        t.pageViewed("bbc.co.uk") // closes the first visit and opens a second
+        t.closed()
+        val afterMove = recorder.windowIds.drop(beforeMove.size)
+
+        assertEquals(setOf<String?>("w1"), beforeMove.toSet(), "before the move")
+        assertTrue(afterMove.isNotEmpty())
+        assertEquals(setOf<String?>("w2"), afterMove.toSet(), "after the move")
+    }
+
+    @Test
+    fun `a tab closed on an unreportable host is not reported as an empty tab`() {
+        // lastDomain is deliberately null for a dev server so the depth run breaks, but
+        // reporting the CLOSE with it collapsed "was on localhost" into "never loaded
+        // anything" - the same conflation the open side goes out of its way to avoid.
+        val t = tracker()
+        t.opened("localhost:3000")
+        t.pageViewed("localhost:3000")
+        t.closed()
+
+        assertEquals(
+            listOf<String?>("localhost:3000", "localhost:3000"),
+            recorder.tabEvents.filter { it.first != BrowserEventType.TAB_ACTIVATED }.map { it.second },
+        )
     }
 
     @Test

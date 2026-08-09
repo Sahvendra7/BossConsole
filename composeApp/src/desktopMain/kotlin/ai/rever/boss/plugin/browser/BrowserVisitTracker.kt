@@ -20,7 +20,11 @@ import ai.rever.boss.plugin.api.BrowserNavigationType
  * callbacks are injectable so the accounting can be tested without an event bus.
  */
 internal class BrowserVisitTracker(
-    private val windowId: String?,
+    /**
+     * Resolved per emission, not captured: a tab moves between windows, and a fixed id kept
+     * attributing a moved tab's engagement to the window it left.
+     */
+    private val windowId: () -> String?,
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val emitPageViewed: (String, BrowserNavigationType?, Int, String?) -> Unit =
         BrowserAnalytics::pageViewed,
@@ -36,6 +40,14 @@ internal class BrowserVisitTracker(
 
     /** Registrable domain of the last page tracked, kept across visits to detect a run. */
     private var lastDomain: String? = null
+
+    /**
+     * Authority of the last page this tab was on, reportable or not.
+     *
+     * Distinct from [lastDomain], which is deliberately null for an unreportable host so the
+     * depth run breaks. `TAB_CLOSED` needs to know the tab was *somewhere*.
+     */
+    private var lastAuthority: String? = null
     private var pageIndexInVisit: Int = 0
 
     /** One-shot hint from an explicit host navigation call, consumed by the next page view. */
@@ -49,7 +61,7 @@ internal class BrowserVisitTracker(
     /** The tab was created. [initialAuthority] is null for a new empty tab. */
     @Synchronized
     fun opened(initialAuthority: String? = null) {
-        emitTabEvent(BrowserEventType.TAB_OPENED, initialAuthority, windowId)
+        emitTabEvent(BrowserEventType.TAB_OPENED, initialAuthority, windowId())
     }
 
     /**
@@ -92,6 +104,7 @@ internal class BrowserVisitTracker(
     fun pageViewed(authority: String) {
         if (finished) return
         closeCurrentVisit()
+        lastAuthority = authority
 
         val domain = BrowserAnalytics.registrableDomain(authority)
         if (domain == null) {
@@ -114,7 +127,7 @@ internal class BrowserVisitTracker(
         if (activeSinceMs != null) activeSinceMs = visitStartMs
 
         val type = consumeNavigationHint(visitStartMs) ?: BrowserNavigationType.LINK
-        emitPageViewed(authority, type, pageIndexInVisit, windowId)
+        emitPageViewed(authority, type, pageIndexInVisit, windowId())
     }
 
     /** The tab gained or lost focus. Drives the active-time counter and tab-switch signal. */
@@ -125,7 +138,7 @@ internal class BrowserVisitTracker(
         if (focused) {
             if (activeSinceMs == null) {
                 activeSinceMs = now
-                emitTabEvent(BrowserEventType.TAB_ACTIVATED, currentAuthority, windowId)
+                emitTabEvent(BrowserEventType.TAB_ACTIVATED, currentAuthority, windowId())
             }
         } else {
             activeSinceMs?.let { since ->
@@ -135,13 +148,23 @@ internal class BrowserVisitTracker(
         }
     }
 
-    /** The tab was closed or disposed. Flushes the visit in progress, then reports the close. */
+    /**
+     * The tab was closed or disposed. Flushes the visit in progress, then reports the close.
+     *
+     * Reports [lastAuthority], not [lastDomain]: the latter is null for a host we refuse to
+     * report, which `tabEvent` would then map to "blank tab" - collapsing a tab closed on a
+     * dev server into a tab that never loaded anything, which is exactly the conflation the
+     * open side goes out of its way to avoid, and it would leave opens and closes unbalanced
+     * per sentinel. Passing the authority also makes both ends symmetrical: `tabEvent`
+     * receives an authority and does its own reduction, rather than one caller handing it
+     * something already reduced and relying on that being idempotent.
+     */
     @Synchronized
     fun closed() {
         if (finished) return
         closeCurrentVisit()
         finished = true
-        emitTabEvent(BrowserEventType.TAB_CLOSED, lastDomain, windowId)
+        emitTabEvent(BrowserEventType.TAB_CLOSED, lastAuthority, windowId())
     }
 
     /**
@@ -167,7 +190,7 @@ internal class BrowserVisitTracker(
         }
         val dwellMs = (now - visitStartMs).coerceAtLeast(0)
         currentAuthority = null
-        emitPageLeft(authority, dwellMs, activeAccumMs, windowId)
+        emitPageLeft(authority, dwellMs, activeAccumMs, windowId())
         activeAccumMs = 0
     }
 

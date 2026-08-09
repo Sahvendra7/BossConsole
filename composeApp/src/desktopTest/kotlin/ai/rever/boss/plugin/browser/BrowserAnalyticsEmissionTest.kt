@@ -36,6 +36,10 @@ class BrowserAnalyticsEmissionTest {
         previousPublisher = ApplicationEventBusRegistry.systemPublisher
         previousEnabled = BrowserAnalytics.telemetryEnabled
         ApplicationEventBusRegistry.systemPublisher = { captured += it }
+        // Explicit, not ambient. Most of these assert events DID reach the bus, so on a
+        // machine or CI leg with BOSS_BROWSER_TELEMETRY_DISABLED set they would otherwise
+        // fail as confusing empty-list assertions about something they do not test.
+        BrowserAnalytics.telemetryEnabled = true
     }
 
     @AfterTest

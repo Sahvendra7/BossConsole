@@ -99,7 +99,7 @@ class BrowserInteractionBridgeTest {
         val bridge =
             BrowserInteractionBridge(
                 authorityProvider = { "availity.com" },
-                windowId = null,
+                windowId = { null },
                 nowMs = { clock },
             )
         val small = """[{"type":"CLICK","tag":"a"}]"""
@@ -107,6 +107,44 @@ class BrowserInteractionBridgeTest {
 
         // 100 single-entry batches is 100 of the 250-entry budget, so a full batch still fits.
         assertEquals(50, bridge.admissible(50), "unused reservation was not released")
+    }
+
+    @Test
+    fun `a whole number written as a decimal is still a count`() {
+        // Reading through `content` then toIntOrNull made 50.0 absent. Unreachable from the
+        // collector, which emits integers - but "hostile input costs the page events" should
+        // be a decision, not an accident of how the value was encoded.
+        val parsed = parse("""[{"type":"SCROLL_DEPTH","scrollDepthPercent":50.0,"repeatCount":3.0}]""").single()
+        assertEquals(50, parsed.scrollDepthPercent)
+        assertEquals(3, parsed.repeatCount)
+    }
+
+    @Test
+    fun `a count too large for an Int is absent rather than wrapped`() {
+        val parsed = parse("""[{"type":"SCROLL_DEPTH","scrollDepthPercent":1e30}]""").single()
+        assertNull(parsed.scrollDepthPercent)
+    }
+
+    @Test
+    fun `the collector reads a field name only off form controls`() {
+        // `name` is a real IDL attribute on img, a, iframe, object, param, meta and map, and
+        // on a custom element it is whatever getter the page defined - so off anything but a
+        // form control it is author-controlled free text. That is also what the host's
+        // field-name sanitizer assumes when it cleans rather than refuses, so reading it from
+        // a div would undercut the sanitizer's own justification.
+        val code = collectorCode()
+        assertTrue(
+            Regex("""FORM_CONTROLS\.indexOf\(out\.tag\) !== -1 && el\.name""").containsMatchIn(code),
+            "el.name must be gated on the element being a form control",
+        )
+        // Two occurrences are expected - the guard tests it, the next line reads it - so what
+        // matters is that neither sits outside the guarded block.
+        val unguarded =
+            code
+                .lines()
+                .filter { it.contains("el.name") }
+                .filterNot { it.contains("FORM_CONTROLS") || it.contains("out.fieldName") }
+        assertTrue(unguarded.isEmpty(), "ungated name read: ${unguarded.map { it.trim() }}")
     }
 
     @Test
@@ -127,7 +165,7 @@ class BrowserInteractionBridgeTest {
         val bridge =
             BrowserInteractionBridge(
                 authorityProvider = { "availity.com" },
-                windowId = null,
+                windowId = { null },
                 nowMs = { clock },
             )
 
@@ -156,7 +194,7 @@ class BrowserInteractionBridgeTest {
         val bridge =
             BrowserInteractionBridge(
                 authorityProvider = { "availity.com" },
-                windowId = null,
+                windowId = { null },
                 nowMs = { clock },
             )
         repeat(20) {

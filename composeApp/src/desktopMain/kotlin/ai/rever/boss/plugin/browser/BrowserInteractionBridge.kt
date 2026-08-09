@@ -28,7 +28,8 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 internal class BrowserInteractionBridge(
     private val authorityProvider: () -> String?,
-    private val windowId: String?,
+    /** Resolved per batch, not captured: a tab moves between windows. */
+    private val windowId: () -> String?,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     @JsAccessible
@@ -51,10 +52,11 @@ internal class BrowserInteractionBridge(
         // itself an unbounded run of JSON parses. A full batch is reserved because the size
         // isn't known until it is parsed, and whatever the batch didn't use is released
         // straight back, so an honest page sending three events is not charged for fifty.
-        val budget = admissible(MAX_BATCH_ENTRIES)
+        val reservation = reserve(MAX_BATCH_ENTRIES)
+        val budget = reservation.count
         if (budget <= 0) return
         val parsed = parseBatch(json)
-        release(budget - minOf(budget, parsed.size))
+        release(reservation, budget - minOf(budget, parsed.size))
         for (entry in parsed.take(budget)) {
             BrowserAnalytics.interaction(
                 type = entry.type,
@@ -66,7 +68,7 @@ internal class BrowserInteractionBridge(
                 elementPath = entry.path,
                 scrollDepthPercent = entry.scrollDepthPercent,
                 repeatCount = entry.repeatCount,
-                windowId = windowId,
+                windowId = windowId(),
             )
         }
     }
@@ -85,7 +87,19 @@ internal class BrowserInteractionBridge(
      * keep abuse cheap to attempt and useless in effect, not to meter precisely.
      */
     @Synchronized
-    internal fun admissible(requested: Int): Int {
+    internal fun admissible(requested: Int): Int = reserve(requested).count
+
+    /**
+     * Take up to [requested] entries out of the current window's budget.
+     *
+     * Returns a token rather than a bare count so [release] can name the window it is giving
+     * back to. A shared "last reservation" field would be exact single-threaded and wrong the
+     * moment two `emit()` calls overlap: a reservation taken in one window could be credited
+     * into the next, handing it free allowance. Nothing documents JxBrowser as delivering one
+     * batch at a time per handle, so the bookkeeping does not assume it.
+     */
+    @Synchronized
+    private fun reserve(requested: Int): Reservation {
         val now = nowMs()
         // Also resets when the clock jumps backwards, which costs at most one window.
         if (now - windowStartMs !in 0 until RATE_WINDOW_MS) {
@@ -94,26 +108,33 @@ internal class BrowserInteractionBridge(
         }
         val allowed = (MAX_ENTRIES_PER_WINDOW - windowEntries).coerceIn(0, requested)
         windowEntries += allowed
-        reservedAtMs = windowStartMs
-        return allowed
+        return Reservation(count = allowed, windowStartMs = windowStartMs)
     }
 
     /**
-     * Give back [count] of a reservation the batch turned out not to need.
+     * Give back [unused] of [reservation] that the batch turned out not to need.
      *
      * Only into the window it was taken from: if the window rolled over between reserving
      * and parsing, the reservation is already forgotten and crediting it would hand the new
      * window free allowance.
      */
     @Synchronized
-    private fun release(count: Int) {
-        if (count <= 0 || reservedAtMs != windowStartMs) return
-        windowEntries = (windowEntries - count).coerceAtLeast(0)
+    private fun release(
+        reservation: Reservation,
+        unused: Int,
+    ) {
+        if (unused <= 0 || reservation.windowStartMs != windowStartMs) return
+        windowEntries = (windowEntries - unused).coerceAtLeast(0)
     }
+
+    /** A claim on [count] entries of the rate window that began at [windowStartMs]. */
+    private data class Reservation(
+        val count: Int,
+        val windowStartMs: Long,
+    )
 
     private var windowStartMs: Long = 0
     private var windowEntries: Int = 0
-    private var reservedAtMs: Long = Long.MIN_VALUE
 
     /** One entry off the wire, still unsanitized — [BrowserAnalytics] is what cleans these. */
     internal data class ParsedInteraction(
@@ -164,7 +185,20 @@ internal class BrowserInteractionBridge(
          */
         private fun JsonObject.str(key: String): String? = get(key)?.takeIf { it !is JsonNull }?.jsonPrimitive?.content
 
-        private fun JsonObject.int(key: String): Int? = text(key)?.toIntOrNull()
+        /**
+         * A count off the wire.
+         *
+         * Falls back to parsing as a double so `50.0` is fifty rather than absent. The
+         * collector only ever emits integers, but this class's contract is that hostile input
+         * costs the page events and nothing else — a silent drop on a value any JSON encoder
+         * might produce is an accident, not a decision. Non-finite values (`NaN`, `Infinity`,
+         * which `isLenient` accepts) have no integer meaning and stay absent.
+         */
+        private fun JsonObject.int(key: String): Int? {
+            val raw = text(key) ?: return null
+            return raw.toIntOrNull()
+                ?: raw.toDoubleOrNull()?.takeIf { it.isFinite() && it in INT_RANGE }?.toInt()
+        }
 
         /**
          * Resolve a wire name to a known interaction type, or null.
@@ -191,6 +225,9 @@ internal class BrowserInteractionBridge(
                 ignoreUnknownKeys = true
                 isLenient = true
             }
+
+        /** Bounds the double fallback in [int], so a huge literal cannot wrap on `toInt()`. */
+        private val INT_RANGE = Int.MIN_VALUE.toDouble()..Int.MAX_VALUE.toDouble()
 
         /** A well-behaved batch is a few KB; beyond this the caller is not the collector. */
         const val MAX_PAYLOAD_CHARS = 64 * 1024
