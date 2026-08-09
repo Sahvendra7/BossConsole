@@ -1,6 +1,7 @@
 package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.plugin.ui.BossDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.Project
@@ -23,7 +24,6 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 /**
@@ -50,7 +50,7 @@ fun ProjectSelectionDialog(
         return
     }
 
-    Dialog(
+    BossDialog(
         onDismissRequest = onDismiss,
         properties =
             DialogProperties(
@@ -184,7 +184,7 @@ private fun ProjectListItem(
             Icon(
                 imageVector = Icons.Outlined.Folder,
                 contentDescription = "Project",
-                tint = BossTheme.colors.signal,
+                tint = BossTheme.colors.signalText,
                 modifier = Modifier.size(20.dp),
             )
             Spacer(modifier = Modifier.width(12.dp))

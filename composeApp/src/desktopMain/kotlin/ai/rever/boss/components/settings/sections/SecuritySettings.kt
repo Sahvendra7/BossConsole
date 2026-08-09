@@ -1,6 +1,7 @@
 package ai.rever.boss.components.settings.sections
 
 import ai.rever.boss.components.settings.shared.SettingsSection
+import ai.rever.boss.plugin.ui.BossAlertDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.services.passkey.PasskeyInfo
 import ai.rever.boss.services.passkey.PasskeyState
@@ -434,7 +435,7 @@ fun SecuritySettings() {
                                     Icon(
                                         Icons.Outlined.Security,
                                         contentDescription = "WebAuthn",
-                                        tint = BossTheme.colors.signal,
+                                        tint = BossTheme.colors.signalText,
                                         modifier = Modifier.size(24.dp),
                                     )
                                     Spacer(modifier = Modifier.width(16.dp))
@@ -506,7 +507,7 @@ fun SecuritySettings() {
                                             else -> Icons.Outlined.Security
                                         },
                                         contentDescription = passkey.displayName,
-                                        tint = BossTheme.colors.signal,
+                                        tint = BossTheme.colors.signalText,
                                         modifier = Modifier.size(20.dp),
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
@@ -555,7 +556,7 @@ fun SecuritySettings() {
                             colors =
                                 ButtonDefaults.buttonColors(
                                     backgroundColor = BossTheme.colors.ink,
-                                    contentColor = BossTheme.colors.signal,
+                                    contentColor = BossTheme.colors.signalText,
                                 ),
                             border = BorderStroke(1.dp, BossTheme.colors.line),
                             modifier = Modifier.fillMaxWidth(),
@@ -644,7 +645,7 @@ fun SecuritySettings() {
 
     // Show remove passkey confirmation dialog
     showRemovePasskeyDialog?.let { passkey ->
-        AlertDialog(
+        BossAlertDialog(
             onDismissRequest = { showRemovePasskeyDialog = null },
             title = {
                 Text(
@@ -679,7 +680,7 @@ fun SecuritySettings() {
                                     else -> Icons.Outlined.Security
                                 },
                                 contentDescription = passkey.displayName,
-                                tint = BossTheme.colors.signal,
+                                tint = BossTheme.colors.signalText,
                                 modifier = Modifier.size(20.dp),
                             )
                             Spacer(modifier = Modifier.width(12.dp))
@@ -775,7 +776,7 @@ private fun PasskeyEnrollmentDialog(
     var isEnrolling by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    AlertDialog(
+    BossAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
@@ -887,7 +888,7 @@ private fun SecurityTip(
         Icon(
             icon,
             contentDescription = null,
-            tint = BossTheme.colors.signal,
+            tint = BossTheme.colors.signalText,
             modifier = Modifier.size(20.dp),
         )
         Spacer(modifier = Modifier.width(12.dp))

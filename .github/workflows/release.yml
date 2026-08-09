@@ -204,8 +204,8 @@ jobs:
           set -euo pipefail
 
           # Configure git
-          git config user.name "Shivang"
-          git config user.email "shivang.iitk@gmail.com"
+          git config user.name "Risa Labs"
+          git config user.email "enterprise@risalabs.ai"
 
           # Check if there are changes to commit
           if git diff --quiet version.properties; then
@@ -460,6 +460,13 @@ jobs:
           # Extract JxBrowser version from libs.versions.toml for Chromium URL
           JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
           echo "JxBrowser version: $JXBROWSER_VERSION"
+          if [[ -z "$JXBROWSER_VERSION" ]]; then
+            echo "::error::Could not extract jxbrowser version from gradle/libs.versions.toml"
+            echo "  A silent miss here writes an EMPTY version.txt into the bundled engine,"
+            echo "  which the app reads as 'no stamp' and lets through unchecked - reverting"
+            echo "  to the state BossConsole#123 fixed, on a fully green release build."
+            exit 1
+          fi
           echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
 
       - name: 📥 Download Branded Chromium (macOS)
@@ -519,6 +526,14 @@ jobs:
             # Copy branded Chromium files (excluding the zip)
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
 
             echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
             ls -la "$CHROMIUM_DIR"
@@ -691,6 +706,13 @@ jobs:
           # Extract JxBrowser version from libs.versions.toml for Chromium URL
           JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
           echo "JxBrowser version: $JXBROWSER_VERSION"
+          if [[ -z "$JXBROWSER_VERSION" ]]; then
+            echo "::error::Could not extract jxbrowser version from gradle/libs.versions.toml"
+            echo "  A silent miss here writes an EMPTY version.txt into the bundled engine,"
+            echo "  which the app reads as 'no stamp' and lets through unchecked - reverting"
+            echo "  to the state BossConsole#123 fixed, on a fully green release build."
+            exit 1
+          fi
           echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
 
       - name: 📥 Download Branded Chromium (Linux)
@@ -727,6 +749,14 @@ jobs:
             mkdir -p "$CHROMIUM_DIR"
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
 
             echo "✅ Chromium bundled into app structure"
             ls -la "$CHROMIUM_DIR"
@@ -877,6 +907,13 @@ jobs:
           # Extract JxBrowser version from libs.versions.toml for Chromium URL
           JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
           echo "JxBrowser version: $JXBROWSER_VERSION"
+          if [[ -z "$JXBROWSER_VERSION" ]]; then
+            echo "::error::Could not extract jxbrowser version from gradle/libs.versions.toml"
+            echo "  A silent miss here writes an EMPTY version.txt into the bundled engine,"
+            echo "  which the app reads as 'no stamp' and lets through unchecked - reverting"
+            echo "  to the state BossConsole#123 fixed, on a fully green release build."
+            exit 1
+          fi
           echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
 
       - name: 📥 Download Branded Chromium (Linux ARM64)
@@ -913,6 +950,14 @@ jobs:
             mkdir -p "$CHROMIUM_DIR"
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
 
             echo "✅ Chromium bundled into app structure"
             ls -la "$CHROMIUM_DIR"
@@ -1048,6 +1093,13 @@ jobs:
           # Extract JxBrowser version from libs.versions.toml for Chromium URL
           JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
           echo "JxBrowser version: $JXBROWSER_VERSION"
+          if [[ -z "$JXBROWSER_VERSION" ]]; then
+            echo "::error::Could not extract jxbrowser version from gradle/libs.versions.toml"
+            echo "  A silent miss here writes an EMPTY version.txt into the bundled engine,"
+            echo "  which the app reads as 'no stamp' and lets through unchecked - reverting"
+            echo "  to the state BossConsole#123 fixed, on a fully green release build."
+            exit 1
+          fi
           echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
 
       - name: 📥 Download Branded Chromium (Windows)
@@ -1092,6 +1144,14 @@ jobs:
             # Copy branded Chromium files
             cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
             rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            # Stamp the version the app expects. version.txt is otherwise written
+            # only by ChromiumAutoDownloader, so a bundled engine carried none and
+            # got no version check at all off macOS, where the framework-layout
+            # probe makes no claim (BossConsole#123). Without it a mis-built
+            # release ships a stale bundled engine that wins first priority and
+            # cannot be repaired by a download.
+            echo -n "$JXBROWSER_VERSION" > "$CHROMIUM_DIR/version.txt"
 
             echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
             ls -la "$CHROMIUM_DIR"
@@ -1317,6 +1377,9 @@ jobs:
             $JXBROWSER_VERSION = $matches[1]
             Write-Host "JxBrowser version: $JXBROWSER_VERSION"
             "JXBROWSER_VERSION=$JXBROWSER_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            Write-Error "Could not extract jxbrowser version from gradle/libs.versions.toml - an empty stamp would silently disable the bundled-engine version check (BossConsole#123)"
+            exit 1
           }
 
       - name: 📥 Download Branded Chromium (Windows ARM64)
@@ -1354,6 +1417,10 @@ jobs:
             New-Item -ItemType Directory -Force -Path $CHROMIUM_DIR | Out-Null
             Copy-Item -Path 'branded-chromium/*' -Destination $CHROMIUM_DIR -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$CHROMIUM_DIR/*.zip" -Force -ErrorAction SilentlyContinue
+            # Stamp the version the app expects — see the POSIX bundling steps.
+            # No BOM and no trailing newline: the reader trims, but Set-Content
+            # would prepend a UTF-8 BOM that a plain string compare would fail on.
+            [System.IO.File]::WriteAllText("$CHROMIUM_DIR/version.txt", $env:JXBROWSER_VERSION)
             Write-Host "Branded Chromium bundled at: $CHROMIUM_DIR"
             Get-ChildItem $CHROMIUM_DIR
           } else {
@@ -1538,23 +1605,103 @@ jobs:
             PRERELEASE_WARNING=""
           fi
 
+          # The table listed bare filenames with no links at all, so a reader
+          # had to scroll to the assets list and match names by eye. Generate
+          # it instead, from the same script release-notes.yml uses, so the
+          # placeholder body and the curated notes cannot drift apart.
+          #
+          # --assets matters: Windows ARM64 and Linux ARM64 are optional builds
+          # (see this job's `if:`), so hardcoding nine rows would publish live
+          # 404s whenever one of them failed. --prerelease keeps a pre-release
+          # page's "always latest" links from resolving to an older stable.
+          #
+          # The AMD64 install section below is deliberately NOT gated on its
+          # assets: build-linux-amd64 is a required job for this one, so those
+          # packages always exist. Only the optional builds need checking.
+          TABLE_ARGS=(--version "$VERSION" --repo "$GITHUB_REPOSITORY" --assets ./release-assets)
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            TABLE_ARGS+=(--prerelease)
+          fi
+          DOWNLOAD_TABLE=$(bash scripts/release-download-table.sh "${TABLE_ARGS[@]}")
+
+          # Same reason the table is filtered: a wget for a package that was
+          # never built is a 404. Each Linux ARM64 asset is copied by its own
+          # best-effort `find ... || true` above, so the deb being present does
+          # NOT imply the rpm or the jar is — gate each block on its own file,
+          # exactly as the table does per row.
+          have_arm64() { [[ -f "./release-assets/BOSS-${VERSION}-arm64.$1" ]]; }
+
+          # Windows ARM64 is the other optional build. Its instructions name a
+          # file rather than linking one, so a missing build is not a 404 — but
+          # telling a reader to download something that was never published is
+          # the same defect, so it gets the same treatment.
+          if have_arm64 msi; then
+            WINDOWS_ARM64_SECTION=$(cat << WINARM64
+
+          ### Windows (ARM64)
+          1. Download \`BOSS-${VERSION}-arm64.msi\`
+          2. Run the installer as Administrator
+          3. Launch from Start Menu or Desktop
+          WINARM64
+          )
+          else
+            echo "::warning::No Windows ARM64 msi in release assets; omitting its install section"
+            WINDOWS_ARM64_SECTION=""
+          fi
+
+          ARM64_FILE=$(mktemp)
+          if have_arm64 deb || have_arm64 rpm || have_arm64 jar; then
+            printf '### Linux (ARM64 / aarch64)\n' >> "$ARM64_FILE"
+          else
+            echo "::warning::No Linux ARM64 packages in release assets; omitting its install section"
+          fi
+
+          if have_arm64 deb; then
+            cat >> "$ARM64_FILE" << ARM64DEB
+
+          **Ubuntu/Debian:**
+          \`\`\`bash
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.deb
+          sudo apt-get install ./BOSS-${VERSION}-arm64.deb  # resolves dependencies + recommends
+          \`\`\`
+
+          > \`sudo dpkg -i\` works too and no longer requires \`xdg-utils\` to be present
+          > (headless installs used to fail during dependency resolution). But \`dpkg\`
+          > ignores \`Recommends:\`, so on a desktop without \`xdg-utils\` installed it
+          > skips the menu entry and icon silently — use apt to get them.
+          ARM64DEB
+          fi
+
+          if have_arm64 rpm; then
+            cat >> "$ARM64_FILE" << ARM64RPM
+
+          **RHEL/Fedora/openSUSE:**
+          \`\`\`bash
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.rpm
+          sudo rpm -i BOSS-${VERSION}-arm64.rpm
+          \`\`\`
+          ARM64RPM
+          fi
+
+          if have_arm64 jar; then
+            cat >> "$ARM64_FILE" << ARM64JAR
+
+          **JAR (requires Java 17+):**
+          \`\`\`bash
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.jar
+          java -jar BOSS-${VERSION}-arm64.jar
+          \`\`\`
+          ARM64JAR
+          fi
+
+          LINUX_ARM64_SECTION=$(cat "$ARM64_FILE")
+          rm -f "$ARM64_FILE"
+
           cat > release-notes.md << EOF
           # $RELEASE_TITLE
           $PRERELEASE_WARNING
 
-          ## 📦 Downloads
-
-          | Platform | Architecture | Package |
-          |----------|--------------|---------|
-          | **macOS** | Universal (Apple Silicon + Intel via Rosetta) | \`BOSS-${VERSION}-Universal.dmg\` |
-          | **Windows** | x64 | \`BOSS-${VERSION}.msi\` |
-          | **Windows** | ARM64 | \`BOSS-${VERSION}-arm64.msi\` |
-          | **Linux DEB** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.deb\` |
-          | **Linux DEB** | ARM64 (aarch64) | \`BOSS-${VERSION}-arm64.deb\` |
-          | **Linux RPM** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.rpm\` |
-          | **Linux RPM** | ARM64 (aarch64) | \`BOSS-${VERSION}-arm64.rpm\` |
-          | **Linux JAR** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.jar\` |
-          | **Linux JAR** | ARM64 (aarch64) | \`BOSS-${VERSION}-arm64.jar\` |
+          ${DOWNLOAD_TABLE}
 
           ## ✨ What's New
 
@@ -1565,8 +1712,8 @@ jobs:
 
           ## 🔧 System Requirements
 
-          - **macOS**: macOS 12.0+ (Monterey) — matches the bundle's LSMinimumSystemVersion
-            and the browser engine's own 12.0 floor
+          - **macOS**: macOS 13.0+ (Ventura) — matches the bundle's LSMinimumSystemVersion
+            and the browser engine's own 13.0 floor
           - **Windows**: Windows 10+ (64-bit)
           - **Linux**: Any modern distribution (AMD64 or ARM64)
 
@@ -1584,10 +1731,7 @@ jobs:
           2. Run the installer as Administrator
           3. Launch from Start Menu or Desktop
 
-          ### Windows (ARM64)
-          1. Download \`BOSS-${VERSION}-arm64.msi\`
-          2. Run the installer as Administrator
-          3. Launch from Start Menu or Desktop
+          ${WINDOWS_ARM64_SECTION}
 
           ### Linux (AMD64 / x86_64)
 
@@ -1614,30 +1758,7 @@ jobs:
           java -jar BOSS-${VERSION}-amd64.jar
           \`\`\`
 
-          ### Linux (ARM64 / aarch64)
-
-          **Ubuntu/Debian:**
-          \`\`\`bash
-          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.deb
-          sudo apt-get install ./BOSS-${VERSION}-arm64.deb  # resolves dependencies + recommends
-          \`\`\`
-
-          > \`sudo dpkg -i\` works too and no longer requires \`xdg-utils\` to be present
-          > (headless installs used to fail during dependency resolution). But \`dpkg\`
-          > ignores \`Recommends:\`, so on a desktop without \`xdg-utils\` installed it
-          > skips the menu entry and icon silently — use apt to get them.
-
-          **RHEL/Fedora/openSUSE:**
-          \`\`\`bash
-          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.rpm
-          sudo rpm -i BOSS-${VERSION}-arm64.rpm
-          \`\`\`
-
-          **JAR (requires Java 17+):**
-          \`\`\`bash
-          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.jar
-          java -jar BOSS-${VERSION}-arm64.jar
-          \`\`\`
+          ${LINUX_ARM64_SECTION}
 
           ---
 

@@ -82,15 +82,18 @@ private fun containRenderFault(
 ) {
     logger.error(
         LogCategory.UI,
-        "Unattributed render exception — contained, window kept alive",
+        "Unattributed render exception - contained, window kept alive",
         mapOf(
             "errorType" to throwable.javaClass.simpleName,
             "recentFailures" to policy.recentFailureCount().toString(),
         ),
         throwable,
     )
-    // Reported, but not through CrashHandler.handleCrash: that dialog is terminal
-    // on every exit, so a recovered fault would end the session on Escape.
+    // Reported, but not through CrashHandler.handleCrash: a fault the render path
+    // has already contained and recovered from must not interrupt the user to ask
+    // about it. (That dialog was also terminal on every exit; a plugin-attributed
+    // crash now recovers instead, but a contained fault still has no business
+    // opening it.)
     // recordContained writes the report to disk instead, so a host-side render bug
     // stays visible rather than costing one log line and a toast.
     ai.rever.boss.crash.CrashHandler
@@ -125,13 +128,55 @@ private fun containRenderFault(
 private val startupScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
 fun main(args: Array<String>) {
+    // Codex invokes this headless credential helper. Handle it before AWT,
+    // plugins, logging, or the single-instance lock so stdout stays token-only.
+    if (ai.rever.boss.llm.RisaLlmTokenCommand
+            .isRequested(args)
+    ) {
+        exitProcess(
+            ai.rever.boss.llm.RisaLlmTokenCommand
+                .execute(),
+        )
+    }
+
     val startupBeganMs = System.currentTimeMillis()
+
+    // Logging FIRST, before anything that can log. Everything below this line does:
+    // setLinuxWMClass and setupNativeLibraryPaths both log, applyToSystemProperties emits the
+    // audit trail of which Chromium flags this session runs with, ChromiumFlagsSettingsManager's
+    // init warns about a corrupt settings file, and the Skiko block warns about an unrecognised
+    // backend. Configuring the level afterwards meant none of them respected BOSS_LOG_LEVEL - and
+    // the flag audit is the line most worth being able to turn up.
+    //
+    // Safe this early, checked rather than assumed: configureFromEnvironment only reads env and
+    // system properties, and initialize() only registers a shutdown hook. Neither resolves a path,
+    // so setupNativeLibraryPaths reassigning java.io.tmpdir below cannot affect them - file
+    // logging is opt-in through configure() with an explicit path.
+    BossLogger.configureFromEnvironment()
+    BossLogger.initialize() // Register shutdown hook for log flushing
+
+    // Serve credential brokers to plugins. Registered from here rather than from
+    // BossAppStartupEffects because the implementation exchanges a Supabase session over
+    // HTTP and so lives in desktopMain, while the PluginContext that exposes it is
+    // commonMain. Safe this early: the object holds no state and touches nothing until a
+    // plugin actually asks for a broker.
+    ai.rever.boss.services.llm.BrokeredCredentialAccess
+        .initialize(ai.rever.boss.llm.BrokeredCredentialProviderImpl)
 
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
     setLinuxWMClass()
 
     // Set up proper temp directories for native libraries
     setupNativeLibraryPaths()
+
+    // Publish the Chromium flags chosen in Settings > Browser Engine as system properties, so
+    // every existing ConfigLoader read site picks them up without knowing settings exist.
+    // Position is load-bearing and this is as early as it can go: the Skiko block immediately
+    // below reads BOSS_SKIKO_RENDER_API before AWT initialises, and JxBrowserConfig.renderingMode
+    // is a `by lazy` that caches the first answer for the life of the process. An environment
+    // variable still outranks anything published here - see applyToSystemProperties.
+    ai.rever.boss.config.ChromiumFlagsSettingsManager
+        .applyToSystemProperties()
 
     // Opt-in override for the Compose UI's own rendering backend (Skiko) - separate from the
     // BROWSER's rendering mode in JxBrowserConfig. Lets a backend be A/B'd on a real machine
@@ -149,7 +194,8 @@ fun main(args: Array<String>) {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { requested ->
-            val known = setOf("DIRECT3D", "OPENGL", "METAL", "SOFTWARE_FAST", "SOFTWARE")
+            // Shared with the Settings dropdown, so it can never offer a value rejected here.
+            val known = ai.rever.boss.config.ChromiumFlagKeys.SKIKO_RENDER_APIS
             val normalized = requested.uppercase()
             if (normalized in known) {
                 System.setProperty("skiko.renderApi", normalized)
@@ -165,10 +211,6 @@ fun main(args: Array<String>) {
     // Disable lightweight popups for HARDWARE_ACCELERATED rendering mode (#258)
     // This ensures Swing popup menus (context menus) appear above the browser view
     JPopupMenu.setDefaultLightWeightPopupEnabled(false)
-
-    // Initialize logging framework early
-    BossLogger.configureFromEnvironment()
-    BossLogger.initialize() // Register shutdown hook for log flushing
 
     // Uninstall hook (Windows): `BOSS.exe --unregister-protocol` removes the boss://
     // handler that WindowsProtocolHandler registers at runtime, so uninstalling does not
@@ -186,13 +228,32 @@ fun main(args: Array<String>) {
     ai.rever.boss.plugin.sandbox.ui
         .installCrashInterceptor()
 
+    // Teach the attribution boundary how to identify a plugin classloader for real.
+    // Without this it falls back to asking the loader for its own id, which a plugin
+    // that defines classes through a nested loader of its own could answer with
+    // somebody else's - and attribution now decides which plugin gets disabled and
+    // written out of installed.json. A type check against a class only the host
+    // constructs cannot be forged. Installed before any plugin loads.
+    ai.rever.boss.plugin.sandbox.PluginExecutionBoundary
+        .installPluginIdResolver(
+            ai.rever.boss.crash
+                .hostPluginIdResolver(),
+        )
+
     // Register notification callback for plugin crashes.
     // Tab closing is handled directly by PluginCrashRegistry via the closeAction
     // registered in BossMainPanelContent. This callback only shows the status message.
     ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry.onCrashNotify = { pluginId, error ->
-        val errorMsg = error.message?.take(60) ?: error.javaClass.simpleName
+        // Both halves are plugin-controlled and share one status-bar slot: the id
+        // comes from a manifest, and the message from plugin code. A newline or a
+        // few hundred characters in either pushes the rest of the line out of view.
+        val errorMsg =
+            (error.message ?: error.javaClass.simpleName)
+                .map { if (it.isISOControl()) ' ' else it }
+                .joinToString("")
+                .take(60)
         ai.rever.boss.components.bars.horizontal.StatusMessageManager.showMessage(
-            "Plugin '$pluginId' crashed: $errorMsg",
+            "Plugin '${ai.rever.boss.crash.displayPluginId(pluginId)}' crashed: $errorMsg",
             durationMs = 8000,
         )
     }
@@ -394,13 +455,13 @@ fun main(args: Array<String>) {
     // unchanged platforms cannot regress. See JxBrowserConfig.renderingMode and
     // benchmarks/speedometer/win/WINDOWS.md.
     ai.rever.boss.components.overlays.OverlayConfig.heavyweightPopup =
-        { onDismiss, popupOffset, focusable, popupContent ->
+        { onDismiss, anchorInWindow, anchoring, popupOffset, focusable, popupContent ->
             ai.rever.boss.components.overlays
-                .HeavyweightPopup(onDismiss, popupOffset, focusable, popupContent)
+                .HeavyweightPopup(onDismiss, anchorInWindow, anchoring, popupOffset, focusable, popupContent)
         }
-    ai.rever.boss.components.overlays.OverlayConfig.heavyweightModal = { onDismiss, modalContent ->
+    ai.rever.boss.components.overlays.OverlayConfig.heavyweightModal = { properties, onDismiss, modalContent ->
         ai.rever.boss.components.overlays
-            .HeavyweightModal(onDismiss, modalContent)
+            .HeavyweightModal(properties, onDismiss, modalContent)
     }
     ai.rever.boss.components.overlays.OverlayConfig.heavyweightTooltip = { text ->
         ai.rever.boss.components.overlays.SwingTooltip
@@ -409,6 +470,29 @@ fun main(args: Array<String>) {
     ai.rever.boss.components.overlays.OverlayConfig.hideHeavyweightTooltip = {
         ai.rever.boss.components.overlays.SwingTooltip
             .hide()
+    }
+    ai.rever.boss.components.overlays.OverlayConfig.heavyweightHud = { alignment, hudContent ->
+        ai.rever.boss.components.overlays
+            .HeavyweightHud(alignment, hudContent)
+    }
+    ai.rever.boss.components.overlays.OverlayConfig.heavyweightGhost = { size, ghostContent ->
+        ai.rever.boss.components.overlays
+            .HeavyweightGhost(size, ghostContent)
+    }
+    ai.rever.boss.components.overlays.OverlayConfig.heavyweightCorner = {
+        alignment,
+        initialSize,
+        cornerContent,
+        ->
+        ai.rever.boss.components.overlays
+            .HeavyweightCorner(alignment, initialSize, cornerContent)
+    }
+    // plugin-ui-core owns the modal registry (plugins draw dialogs too) and depends on nothing but
+    // Compose, so it cannot log. Give it this logger instead: the condition it reports is a dialog
+    // that silently fell back to lightweight and is now hidden behind the page, which is invisible
+    // on screen and would otherwise have to be diagnosed from a screenshot.
+    ai.rever.boss.plugin.ui.BossOverlayHost.diagnostics = { message ->
+        logger.warn(LogCategory.UI, message)
     }
     ai.rever.boss.components.overlays.OverlayConfig.useHeavyweightPopups =
         ai.rever.boss.config.JxBrowserConfig.renderingMode ==
@@ -423,14 +507,92 @@ fun main(args: Array<String>) {
         logger.warn(LogCategory.SYSTEM, "Proactive browser lock cleanup failed", error = e)
     }
 
+    // Decide whether the installed engine is usable BEFORE anything boots it.
+    //
+    // This has to precede every engine-creating call below, and the ordering is
+    // load-bearing rather than cosmetic. JxBrowser resolves its native toolkit
+    // under Versions/<VersionInfo.chromiumVersion()>, baked into the jar, so an
+    // engine directory left over from an older app version fails the native load
+    // with an UnsatisfiedLinkError. That is recoverable — isChromiumInstalled
+    // spots the mismatch and the download UI below repairs it — but only if the
+    // check runs first. With the check downstream of the pre-warm and of
+    // PasskeyPlatformInit, both booted against the stale engine and threw before
+    // the repair path was ever reached, so shipping a JxBrowser bump broke the
+    // browser for every existing install instead of prompting a download.
+    //
+    // promotePendingInstall must also stay ahead of any engine creation: it
+    // renames the engine directory, which cannot be done safely once a running
+    // engine holds files inside it.
+    ChromiumAutoDownloader.promotePendingInstall()
+
+    // Ask the question we are about to act on: will an engine actually boot?
+    //
+    // isChromiumInstalled() answers a narrower one — "does the *cache* hold the
+    // right engine?" — which is the right input for deciding whether to download,
+    // but wrong for deciding whether to boot. FluckEngine prefers a bundled engine
+    // from the app image and only falls back to the cache, so a release that
+    // bundles one could pass the cache check and still boot something else, or fail
+    // it and skip the pre-warm despite a perfectly good bundled engine
+    // (BossConsole#121). resolveEngineDir applies the same priority order and the
+    // same version check the boot will.
+    // One read of the cache's health, shared by the resolver and the decision so
+    // the two can never disagree about it.
+    val cacheHealthy = ChromiumAutoDownloader.isChromiumInstalled()
+    val hasUsableEngine =
+        ai.rever.boss.plugin.browser.FluckEngine
+            .hasUsableEngine(cacheHealthy)
+    val engineAction =
+        ai.rever.boss.plugin.browser.FluckEngine
+            .engineStartupAction(hasUsableEngine, cacheHealthy)
+
+    // Named in the download dialog: it blocks the whole app for a several-hundred-MB
+    // fetch, and which engine it is turns out to be the first thing anyone asks when
+    // it appears unexpectedly — an engine mismatch is exactly what triggers it.
+    val engineLabel = "BOSS Browser Engine ${ChromiumAutoDownloader.effectiveVersion}"
+
+    val chromiumNeedsDownload =
+        engineAction == ai.rever.boss.plugin.browser.FluckEngine.EngineStartupAction.Download
+    when (engineAction) {
+        ai.rever.boss.plugin.browser.FluckEngine.EngineStartupAction.BootAndReport -> {
+            logger.error(
+                LogCategory.SYSTEM,
+                "Installed engine is healthy and stamped with the required version but is still " +
+                    "unusable - the published archive does not match this build; not re-downloading",
+                mapOf("required" to ChromiumAutoDownloader.effectiveVersion),
+            )
+        }
+
+        ai.rever.boss.plugin.browser.FluckEngine.EngineStartupAction.Download -> {
+            logger.info(
+                LogCategory.SYSTEM,
+                "No usable browser engine - will prompt for download",
+                mapOf("required" to ChromiumAutoDownloader.effectiveVersion),
+            )
+        }
+
+        ai.rever.boss.plugin.browser.FluckEngine.EngineStartupAction.Boot -> {
+            Unit
+        }
+    }
+
     // Pre-warm the browser engine off the UI thread so the first browser tab
     // opens against an already-running Chromium instead of paying the full
     // engine boot inside its composition. Opt out with BOSS_BROWSER_PREWARM=false.
-    try {
-        ai.rever.boss.plugin.browser.FluckEngine
-            .prewarmInBackground()
-    } catch (e: Exception) {
-        logger.warn(LogCategory.SYSTEM, "Browser engine pre-warm failed to start", error = e)
+    //
+    // Skipped when the engine needs downloading: pre-warming against a mismatched
+    // directory cannot succeed, and its only effect is to raise the very error
+    // the download is about to fix.
+    // Gated on hasUsableEngine, not on !chromiumNeedsDownload: in the
+    // BootAndReport case there is no usable engine AND no download, so the latter
+    // would fire a guaranteed-futile boot that burns an attempt and sets an error
+    // — exactly what the comment above says pre-warming must not do.
+    if (hasUsableEngine) {
+        try {
+            ai.rever.boss.plugin.browser.FluckEngine
+                .prewarmInBackground()
+        } catch (e: Exception) {
+            logger.warn(LogCategory.SYSTEM, "Browser engine pre-warm failed to start", error = e)
+        }
     }
 
     // Parse CLI arguments if provided
@@ -466,7 +628,7 @@ fun main(args: Array<String>) {
     AWTKeyboardInterceptor.install()
 
     // Apply the persisted app theme before any UI composes, so the app opens
-    // in the user's chosen look (Operator / Daylight / Clean).
+    // in the user's chosen look rather than flashing the default first.
     ai.rever.boss.theme.AppThemeSettingsManager
         .ensureInitialized()
 
@@ -504,9 +666,28 @@ fun main(args: Array<String>) {
     // Start global log capture from app startup
     GlobalLogCapture.start()
 
-    // Start performance monitoring from app startup
-    ai.rever.boss.performance.PerformanceMonitor
-        .start()
+    // Hand the tier's browser settings to plugins, which cannot see host classes. Before any
+    // plugin loads, so fluck-browser sees it when it first builds a tab.
+    ai.rever.boss.config.ResourceModeConfig
+        .publishToPlugins()
+
+    // Start performance monitoring from app startup — unless the resource tier says the
+    // sampler's own overhead is not worth paying on this machine.
+    if (ai.rever.boss.config.ResourceModeConfig.mode.backgroundSamplingEnabled) {
+        ai.rever.boss.performance.PerformanceMonitor
+            .start()
+    } else {
+        logger.info(
+            LogCategory.SYSTEM,
+            "Performance sampling disabled by the resource mode",
+            mapOf("mode" to ai.rever.boss.config.ResourceModeConfig.mode.name),
+        )
+    }
+
+    // Watch for the case the startup decision cannot see: a machine with plenty of installed
+    // RAM that is nonetheless out of it, because of everything else the user is running.
+    ai.rever.boss.performance.MemoryPressureWatchdog
+        .start(startupScope)
 
     // Debug: Log environment info
     logger.debug(
@@ -519,24 +700,16 @@ fun main(args: Array<String>) {
         ),
     )
 
-    // Log API key availability (without exposing values)
-    val apiKeyStatus =
-        mapOf(
-            "ANTHROPIC_API_KEY" to (System.getenv("ANTHROPIC_API_KEY") != null),
-            "OPENAI_API_KEY" to (System.getenv("OPENAI_API_KEY") != null),
-            "TOGETHER_API_KEY" to (System.getenv("TOGETHER_API_KEY") != null),
-            "CUSTOM_LLM_API_KEY" to (System.getenv("CUSTOM_LLM_API_KEY") != null),
-        )
-    logger.debug(LogCategory.SYSTEM, "API key availability", apiKeyStatus.mapValues { if (it.value) "set" else "not set" })
+    // NOTE: there used to be an "API key availability" probe here, logging whether four LLM
+    // provider environment variables were set. It is gone because the host no longer owns any
+    // provider list — the secret-manager plugin does, and it knows seven providers plus custom,
+    // resolving each from `-D` properties, `launchctl getenv` and `~/.boss/env_vars` as well as
+    // the environment. A hardcoded four-name probe here could only ever disagree with it. The
+    // one credential the host itself still resolves is the AI-repair key, and
+    // SelfHealingSettings reports its own readiness.
 
-    // Apply any engine install staged from Settings before validating/creating the engine
-    ChromiumAutoDownloader.promotePendingInstall()
-
-    // Check if Chromium needs to be downloaded (for debug/dev builds)
-    val chromiumNeedsDownload = !ChromiumAutoDownloader.isChromiumInstalled()
-    if (chromiumNeedsDownload) {
-        logger.info(LogCategory.SYSTEM, "BOSS-branded Chromium not found - will prompt for download")
-    }
+    // chromiumNeedsDownload was resolved far earlier, above the first engine boot
+    // — see the comment there for why that ordering matters.
 
     // Create initial window BEFORE application{} to prevent auto-recreation
     // This runs once on startup, not during recomposition
@@ -598,7 +771,7 @@ fun main(args: Array<String>) {
                                 WindowExceptionRoute.Escalate -> {
                                     logger.error(
                                         LogCategory.UI,
-                                        "Render exception is not containable — escalating to the default handler",
+                                        "Render exception is not containable - escalating to the default handler",
                                         mapOf(
                                             "errorType" to throwable.javaClass.simpleName,
                                             "recentFailures" to renderCrashPolicy.recentFailureCount().toString(),
@@ -654,6 +827,13 @@ fun main(args: Array<String>) {
                             if (progress.isComplete) {
                                 // Download complete - create window and proceed
                                 WindowManager.createNewWindow()
+                                // The pre-warm was skipped at startup because the engine
+                                // was missing; now that it is installed, warm it so the
+                                // first tab does not pay the full boot.
+                                runCatching {
+                                    ai.rever.boss.plugin.browser.FluckEngine
+                                        .prewarmInBackground()
+                                }
                                 isDownloadingChromium = false
                             }
                         }
@@ -670,12 +850,17 @@ fun main(args: Array<String>) {
                                 progress = downloadProgress.progressFraction,
                                 downloadedMB = downloadProgress.downloadedMB,
                                 totalMB = downloadProgress.totalMB,
+                                // Name the version being fetched. This dialog blocks
+                                // the whole app for a several-hundred-MB download, and
+                                // which engine it is turns out to be the first thing
+                                // anyone asks when it appears unexpectedly — an engine
+                                // mismatch is exactly what triggers it.
                                 status =
-                                    when {
-                                        downloadProgress.isExtracting -> "Extracting files..."
-                                        downloadProgress.totalBytes > 0 -> "Installing BOSS Browser Engine..."
-                                        else -> "Connecting to download server..."
-                                    },
+                                    ai.rever.boss.components.dialogs.engineDownloadStatus(
+                                        engineLabel = engineLabel,
+                                        isExtracting = downloadProgress.isExtracting,
+                                        totalBytes = downloadProgress.totalBytes,
+                                    ),
                                 error = downloadProgress.error,
                                 onCancel = { exitApplication() },
                                 onRetry = {
@@ -686,6 +871,13 @@ fun main(args: Array<String>) {
                                             downloadProgress = progress
                                             if (progress.isComplete) {
                                                 WindowManager.createNewWindow()
+                                                // The pre-warm was skipped at startup because the engine
+                                                // was missing; now that it is installed, warm it so the
+                                                // first tab does not pay the full boot.
+                                                runCatching {
+                                                    ai.rever.boss.plugin.browser.FluckEngine
+                                                        .prewarmInBackground()
+                                                }
                                                 isDownloadingChromium = false
                                             }
                                         }

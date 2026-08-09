@@ -8,12 +8,8 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.rememberWindowState
 
 /**
  * Heavyweight modal host for HARDWARE_ACCELERATED browser mode.
@@ -45,30 +41,13 @@ import androidx.compose.ui.window.rememberWindowState
  */
 @Composable
 fun HeavyweightModal(
+    properties: DialogProperties,
     onDismissRequest: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     val parent = LocalAwtWindow.current
-    val bounds =
-        remember {
-            runCatching {
-                if (parent != null && parent.isShowing) {
-                    val loc = parent.locationOnScreen
-                    intArrayOf(loc.x, loc.y, parent.width, parent.height)
-                } else {
-                    null
-                }
-            }.getOrNull()
-        }
-    val state =
-        if (bounds != null) {
-            rememberWindowState(
-                position = WindowPosition(bounds[0].dp, bounds[1].dp),
-                size = DpSize(bounds[2].dp, bounds[3].dp),
-            )
-        } else {
-            rememberWindowState(placement = WindowPlacement.Maximized)
-        }
+    val bounds = rememberOverlayParentBounds(parent)
+    val state = rememberOverlayWindowState(bounds)
 
     Window(
         onCloseRequest = onDismissRequest,
@@ -79,7 +58,11 @@ fun HeavyweightModal(
         focusable = true,
         resizable = false,
         onKeyEvent = { event ->
-            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+            // dismissOnBackPress is what Compose maps Escape to, and only this window can honour it:
+            // Escape is handled here, not by anything inside the content. A caller that passed
+            // dismissOnBackPress = false used to get an Escape-proof dialog on the lightweight path
+            // and an Escape-dismissable one here.
+            if (properties.dismissOnBackPress && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
                 onDismissRequest()
                 true
             } else {
@@ -87,6 +70,8 @@ fun HeavyweightModal(
             }
         },
     ) {
+        EnsureOverlayWindowTransparent(window)
+
         // Dismiss when the modal loses focus (clicked elsewhere), matching modal expectations —
         // but NOT when one of our own heavyweight popups took the focus.
         //

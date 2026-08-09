@@ -2,6 +2,8 @@ package ai.rever.boss.crash
 
 import ai.rever.boss.plugin.loader.PluginClassLoader
 import ai.rever.boss.plugin.pathutils.BossDirectories
+import ai.rever.boss.plugin.sandbox.PluginExecutionBoundary
+import ai.rever.boss.plugin.sandbox.ui.PluginRecoveryQuarantine
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -17,6 +19,7 @@ import java.io.StringWriter
 import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
 import javax.swing.WindowConstants
@@ -39,10 +42,38 @@ import javax.swing.WindowConstants
  * - Collects system information (memory, OS, Java version)
  * - Sanitizes sensitive data from stack traces
  * - Exposes pending crash report via StateFlow for UI
- * - Chains to original handler for proper JVM termination
+ * - Recovers from a crash attributable to a dynamic plugin by disabling it,
+ *   and terminates only for a fatal host crash (see [CrashDisposition])
  */
 object CrashHandler {
     private val logger = BossLogger.forComponent("CrashHandler")
+
+    /**
+     * Preferred size of the space [CrashReportDialog] is laid out in — the **content pane**, in
+     * AWT user-space units. Applied to the `ComposePanel`, so `pack()` derives the frame from it
+     * and the dialog gets these dimensions rather than these dimensions minus a title bar.
+     *
+     * Deliberately *not* used to derive the frame minimum below. Doing that needs decoration
+     * insets, which are not reliably known until the window manager has reparented the window —
+     * and reading them at any point in this method is a race on X11. Rather than chase that with
+     * deferred re-packs inside the one code path that runs when the app is already broken, the
+     * minimum stays in frame terms: a content pane a title bar short of [FRAME_MIN_HEIGHT] is
+     * something this dialog now handles by scrolling, which is the entire point of the layout.
+     */
+    internal const val CONTENT_PREFERRED_WIDTH = 550
+
+    /** Height companion to [CONTENT_PREFERRED_WIDTH]. */
+    internal const val CONTENT_PREFERRED_HEIGHT = 700
+
+    /**
+     * Smallest the crash **window** may be resized to, decorations included. The content pane is
+     * therefore this minus the decorations; `CrashReportDialogLayoutTest` derives a deliberately
+     * conservative content box from these rather than assuming the two are equal.
+     */
+    internal const val FRAME_MIN_WIDTH = 450
+
+    /** Height companion to [FRAME_MIN_WIDTH]. */
+    internal const val FRAME_MIN_HEIGHT = 500
 
     /** Where contained (non-fatal, recovered) reports are written, under the BOSS data dir. */
     private const val CONTAINED_REPORT_DIR = "crash-reports"
@@ -98,13 +129,48 @@ object CrashHandler {
     private val _pendingCrashReport = MutableStateFlow<CrashReport?>(null)
 
     /**
-     * Pending crash report to display in the UI.
-     * Observe this in BossApp to show the crash dialog.
+     * The crash currently being reported, for the submit path to attach notes to.
+     *
+     * Single-valued and NOT a UI trigger: the dialog is shown directly, in its own
+     * JFrame, by [showCrashDialogWindow] - nothing observes this to decide whether
+     * to render. That matters because [recordContained] deliberately does not write
+     * here: a contained fault landing mid-typing would replace the report and
+     * Submit would send the wrong crash.
      */
     val pendingCrashReport: StateFlow<CrashReport?> = _pendingCrashReport.asStateFlow()
 
-    private var originalHandler: Thread.UncaughtExceptionHandler? = null
     private var isInstalled = false
+
+    /**
+     * How the process is ended. Injectable because everything interesting about
+     * this class is *whether* it terminates, and a test that answers that by
+     * actually calling [System.exit] takes the suite with it.
+     */
+    @Volatile
+    internal var processExit: (Int) -> Unit = { code -> System.exit(code) }
+
+    /**
+     * True while a crash window is on screen.
+     *
+     * Crashes repeat. A plugin that throws from a paint or a timer produces one
+     * per frame, and now that dismissing is survivable the app no longer dies
+     * after the first — without this, the second crash opens a second dialog on
+     * top of the first and the user cannot reach either. Repeats are recorded to
+     * disk through [recordContained] (deduped by signature) instead.
+     */
+    private val dialogVisible = AtomicBoolean(false)
+
+    /**
+     * Give the dialog slot back, once the crash window is gone.
+     *
+     * Called from [CrashDialogController.finish] on every exit rather than from the
+     * one branch of [resolveCrash] that returns - the slot describes the window,
+     * and a route that returned without exiting would otherwise silence every later
+     * crash dialog for the life of the process.
+     */
+    internal fun releaseDialogSlot() {
+        dialogVisible.set(false)
+    }
 
     /**
      * Install the global crash handler.
@@ -112,9 +178,6 @@ object CrashHandler {
      */
     fun install() {
         if (isInstalled) return
-
-        // Store original handler to chain to it later
-        originalHandler = Thread.getDefaultUncaughtExceptionHandler()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             handleCrash(thread, throwable)
@@ -135,10 +198,8 @@ object CrashHandler {
      * Matched by class-name suffix + message so we don't need a compile
      * dependency on ktor/coroutines here.
      */
-    internal fun isIgnorable(throwable: Throwable): Boolean {
-        var t: Throwable? = throwable
-        var depth = 0
-        while (t != null && depth < 12) {
+    internal fun isIgnorable(throwable: Throwable): Boolean =
+        throwable.chainOfCauses().any { t ->
             val name = t.javaClass.name
             val msg = t.message ?: ""
             val benign =
@@ -156,20 +217,17 @@ object CrashHandler {
                                 msg.contains("Connection refused", ignoreCase = true)
                         )
                     )
-            if (benign) return true
-            t = t.cause
-            depth++
+            benign
         }
-        return false
-    }
 
     /**
      * Record a crash report for something already contained and recovered from.
      *
-     * The window exception handler cannot use [handleCrash]: that shows a dialog
-     * whose every exit terminates — dismiss, submit and Escape all reach
-     * [terminateAfterCrash], and clean-and-restart deletes the data directory
-     * first — so a recovered fault would end the session on Escape.
+     * The window exception handler cannot use [handleCrash]: that shows a dialog,
+     * and a fault the render path has already contained and recovered from must
+     * not interrupt the user to ask about it. (Every exit from that dialog used to
+     * terminate as well; a plugin-attributed crash now recovers instead - see
+     * [CrashDisposition] - but a *contained* fault should still never reach it.)
      *
      * It must not skip reporting either. That handler sees *all* unattributed
      * Compose exceptions, so a host-side layout bug would otherwise produce a log
@@ -184,7 +242,10 @@ object CrashHandler {
      * would replace the report and Submit would send the wrong crash, losing the
      * fatal one.
      */
-    fun recordContained(throwable: Throwable) {
+    fun recordContained(
+        throwable: Throwable,
+        writeInline: Boolean = false,
+    ) {
         if (isIgnorable(throwable)) return
         try {
             // Signature first, report second. createCrashReport sanitizes the whole
@@ -222,7 +283,16 @@ object CrashHandler {
             // ~/.boss/crash-reports and sweepOldReports would delete the developer's
             // actual reports — the exact hazard the override exists to prevent.
             val dir = containedReportDir()
-            containedWriter.execute { writeContainedReport(dir, signature, throwable) }
+            // Inline when the caller is about to end the process. The writer is a
+            // daemon thread with nothing draining it at shutdown, so a queued task
+            // is dropped or killed mid-write by the exit that follows - and the one
+            // caller that passes true does so precisely because the record is the
+            // justification for that branch existing.
+            if (writeInline) {
+                writeContainedReport(dir, signature, throwable)
+            } else {
+                containedWriter.execute { writeContainedReport(dir, signature, throwable) }
+            }
         } catch (e: Exception) {
             // Reporting a contained fault must never itself become a fault.
             logger.warn(
@@ -412,12 +482,16 @@ object CrashHandler {
     /**
      * Handle an uncaught exception.
      *
-     * Terminal by design, even though this function does not call
-     * [terminateAfterCrash] itself: every exit from the dialog it shows does —
-     * dismiss, submit, and Escape all end the process, and clean-and-restart
-     * deletes the data directory first. Anything that has already been contained
-     * and recovered from must go to [recordContained] instead.
+     * Not terminal any more, and that is the point. A crash the dialog can
+     * attribute to a dynamic plugin ends with that plugin disabled and the app
+     * still running (see [CrashDisposition] and [resolveCrash]); only a fatal
+     * host crash still ends the process. Anything already contained and recovered
+     * from by the render path goes to [recordContained] instead of here.
      */
+    // Throwable, not Exception: this function claims the dialog slot and only the
+    // controller gives it back, so an Error escaping between the two would leave
+    // the slot held for the life of the process - see the catch below.
+    @Suppress("TooGenericExceptionCaught")
     private fun handleCrash(
         thread: Thread,
         throwable: Throwable,
@@ -441,27 +515,206 @@ object CrashHandler {
                 error = throwable,
             )
 
+            // Resolved once and threaded through. Attribution's slow path walks
+            // twelve causes and asks the plugin classloaders about every frame of
+            // each, on the crashing thread; doing it here and again inside
+            // createCrashReport made a repeat crash pay for it twice.
+            val attributedPluginId = attributePluginId(throwable)
+            // Classified BEFORE the suppression checks, because those checks used to
+            // run first and could swallow a fatal crash: with a plugin dialog on
+            // screen, a host OutOfMemoryError on another thread was written to disk
+            // and the process carried on under heap exhaustion with nothing shown.
+            // The uncontainable carve-outs exist so that can never be treated as
+            // survivable, and this path routed around both.
+            val disposition = dispositionFor(throwable, attributedPluginId)
+
+            if (!claimDialogOrRecord(throwable, disposition, attributedPluginId)) return
+
             // Create crash report
-            val report = createCrashReport(throwable)
+            val report = createCrashReport(throwable, attributedPluginId)
             _pendingCrashReport.value = report
 
             // Show dialog in a separate window (works even if main UI is broken)
             // If already on EDT, show directly; otherwise use invokeAndWait to ensure
             // the dialog is shown before the app can exit
             if (SwingUtilities.isEventDispatchThread()) {
-                showCrashDialogWindow(report)
+                showCrashDialogWindow(report, throwable, disposition)
             } else {
                 SwingUtilities.invokeAndWait {
-                    showCrashDialogWindow(report)
+                    showCrashDialogWindow(report, throwable, disposition)
                 }
             }
-        } catch (e: Exception) {
+            // Throwable, not Exception. This block claims the dialog slot and the
+            // only thing that gives it back is the controller; an Error escaping
+            // between the two - NoClassDefFoundError or ExceptionInInitializerError
+            // out of Compose or Skiko, UnsatisfiedLinkError, an OOM while the stack
+            // is sanitised - left the process running with the slot held forever,
+            // so every later crash including a fatal one went silently to disk with
+            // no dialog and no exit. Before recovery existed the same throw escaped
+            // too, but there was no slot to leak and the next crash still prompted.
+        } catch (e: Throwable) {
             // If crash handling itself fails, log to stderr and chain
             System.err.println("CrashHandler failed: ${e.message}")
             e.printStackTrace()
+            releaseDialogSlot()
             // Still try to exit cleanly
-            System.exit(1)
+            processExit(1)
         }
+    }
+
+    /**
+     * Take the dialog slot, or record the crash and explain why we are not prompting.
+     *
+     * Two reasons not to prompt, both about not asking the user the same question
+     * twice - and neither applies to a fatal crash, which must always be acted on:
+     *
+     * 1. **The plugin is already quarantined.** One recovery disabled does not
+     *    necessarily stop; a thread or timer of its own keeps throwing, and each
+     *    throw would otherwise open a fresh dialog for something already dealt with.
+     * 2. **A dialog is already up.** Stacking a second hides the first and neither
+     *    can be reached.
+     *
+     * Either way the crash still reaches [recordContained], which dedupes by
+     * signature, so a fault repeating every frame costs one file and a log line on
+     * a curve.
+     *
+     * @return true when the caller now owns the dialog slot and must release it
+     *   (through [CrashDialogController.finish]).
+     */
+    private fun claimDialogOrRecord(
+        throwable: Throwable,
+        disposition: CrashDisposition,
+        attributedPluginId: String?,
+    ): Boolean {
+        val fatal = disposition is CrashDisposition.FatalHost
+        // A fatal crash is never suppressed by a quarantine: the plugin may be gone,
+        // but heap exhaustion is not survivable whoever is blamed for it.
+        val quarantined = !fatal && isSuppressedByQuarantine(attributedPluginId)
+        val claimed = !quarantined && tryClaimDialogSlot()
+        if (!claimed) {
+            // Written inline for a fatal crash: terminateAfterCrash follows
+            // immediately and would otherwise kill the queued write.
+            recordContained(throwable, writeInline = fatal)
+            // A fatal crash cannot queue behind another dialog: the exit is the
+            // point, not the prompt. (Not reached when `quarantined`, which is
+            // false for every fatal crash.)
+            if (fatal) {
+                logger.error(
+                    LogCategory.SYSTEM,
+                    "Fatal crash while a crash dialog is open - terminating without a second dialog",
+                    mapOf("errorType" to throwable.javaClass.simpleName),
+                )
+                terminateAfterCrash()
+            }
+        }
+        return claimed
+    }
+
+    /**
+     * Whether this plugin has already been taken out by crash recovery.
+     *
+     * A plugin recovery disabled does not necessarily stop - a thread or timer of
+     * its own keeps throwing - and each throw would otherwise open a fresh dialog
+     * for something the user has already dealt with.
+     *
+     * `isRecoveryQuarantined`, NOT `hasCrashed`: the latter is also set by the
+     * ordinary contained-render-fault path, and gating on it silenced the dialog
+     * for any plugin whose panel had ever shown a fallback - still enabled and
+     * still running - which is worse than the behaviour this feature replaced.
+     */
+    internal fun isSuppressedByQuarantine(attributedPluginId: String?): Boolean {
+        val quarantined = attributedPluginId?.let { PluginRecoveryQuarantine.isQuarantined(it) } == true
+        if (quarantined) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Crash from an already-quarantined plugin - recording instead of prompting again",
+                mapOf("pluginId" to attributedPluginId.orEmpty()),
+            )
+        }
+        return quarantined
+    }
+
+    /**
+     * Claim the right to put a crash window on screen, or report that one is up.
+     *
+     * Named for its effect rather than hidden inside a `should…` predicate: every
+     * caller that claims the slot owes a release, and two review rounds found bugs
+     * that were exactly a missing release on a path that did not look like it had
+     * claimed anything. [CrashDialogController.finish] is the release.
+     */
+    internal fun tryClaimDialogSlot(): Boolean {
+        val claimed = dialogVisible.compareAndSet(false, true)
+        if (!claimed) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Crash while the crash dialog is open - recording instead of stacking a second dialog",
+            )
+        }
+        return claimed
+    }
+
+    /**
+     * Decide what a crash *is*, from a report - a convenience for tests, which have
+     * one in hand. Production classifies once in [handleCrash] and threads the
+     * disposition onward, so the dialog cannot be built from a different answer
+     * than the one the dialog-slot decision used.
+     */
+    internal fun dispositionFor(
+        throwable: Throwable,
+        report: CrashReport,
+    ): CrashDisposition = dispositionFor(throwable, report.pluginId)
+
+    /**
+     * [recoveryAvailable] is `canRecover`, not "a handler exists".
+     *
+     * Whether the plugin can actually be acted on used to be discovered much later,
+     * inside the coordinator, long after the dialog had already told the user their
+     * session was safe. A crash attributed to a plugin no live manager knows about
+     * therefore rendered "BOSS keeps running" and then terminated on the very next
+     * click. Classification asks the same question the recovery does, so what the
+     * dialog says and what its exits do cannot disagree.
+     */
+    internal fun dispositionFor(
+        throwable: Throwable,
+        attributedPluginId: String?,
+    ): CrashDisposition =
+        classifyCrash(
+            throwable = throwable,
+            pluginId = attributedPluginId,
+            recoveryAvailable = PluginCrashRecovery.canRecover(attributedPluginId),
+        )
+
+    /**
+     * Carry out what the disposition promised, once the dialog is gone.
+     *
+     * A recoverable crash whose recovery does not take effect falls back to
+     * terminating, **not** to clean-and-restart: wiping the data directory is a
+     * user-initiated last resort, and reaching for it automatically would delete
+     * every plugin, workspace and setting over one plugin's bug.
+     */
+    internal fun resolveCrash(
+        disposition: CrashDisposition,
+        error: Throwable,
+    ): CrashOutcome {
+        if (disposition is CrashDisposition.RecoverablePlugin) {
+            val recovered = PluginCrashRecovery.recover(disposition.pluginId, error)
+            if (recovered) {
+                clearPendingReport()
+                logger.info(
+                    LogCategory.SYSTEM,
+                    "Continued without the crashed plugin - app left running",
+                    mapOf("pluginId" to disposition.pluginId),
+                )
+                return CrashOutcome.Recovered(disposition.pluginId)
+            }
+            logger.error(
+                LogCategory.SYSTEM,
+                "Plugin crash recovery did not take effect - terminating",
+                mapOf("pluginId" to disposition.pluginId),
+            )
+        }
+        terminateAfterCrash()
+        return CrashOutcome.Terminated
     }
 
     /**
@@ -469,63 +722,119 @@ object CrashHandler {
      * This window is independent of the main Compose UI, so it will display
      * even when the main UI thread has crashed.
      */
-    private fun showCrashDialogWindow(report: CrashReport) {
+    @Suppress("TooGenericExceptionCaught")
+    private fun showCrashDialogWindow(
+        report: CrashReport,
+        throwable: Throwable,
+        // Passed in rather than recomputed. Both computations call canRecover,
+        // which asks the live managers, so a concurrent unload landing between them
+        // could build the dialog with a different disposition than the one the slot
+        // decision used. Attribution is already threaded through for exactly this
+        // reason. (The failure direction was safe - recoverable to fatal - but
+        // "safe" is not the same as "agrees with itself".)
+        disposition: CrashDisposition,
+    ) {
+        // frame and controller are built OUTSIDE the try so the failure path can
+        // reach them. Declared inside, the catch could only call resolveCrash
+        // directly - and a throw landing after `isVisible = true` (toFront and
+        // requestFocus both run after it, and both fail on a hostile window
+        // manager) then recovered the crash while leaving a live dialog on screen,
+        // whose every exit resolved it a *second* time. By then the background
+        // unload can have made the plugin unknown, so that second pass fails and
+        // terminates a session which had already been recovered - the exact
+        // sequence CrashDialogController.finished exists to prevent, reintroduced
+        // through the one route that skipped the controller.
+        val frame = JFrame(crashWindowTitle(disposition))
+        val controller =
+            CrashDialogController(
+                disposition = disposition,
+                error = throwable,
+                disposeWindow = { frame.dispose() },
+            )
         try {
-            val frame = JFrame("BOSS - Crash Report")
-            frame.defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
-            frame.preferredSize = Dimension(550, 700)
-            frame.minimumSize = Dimension(450, 500)
+            // DO_NOTHING, not DISPOSE: the close box has to run the same action the
+            // visible button does. Left on DISPOSE it silently dropped the report and
+            // recovered nothing, which is how the three exits came to disagree.
+            frame.defaultCloseOperation = WindowConstants.DO_NOTHING_ON_CLOSE
+            frame.addWindowListener(controller.windowClosingAdapter())
 
             val composePanel = ComposePanel()
+            // Sized here rather than on the frame so the dialog gets these dimensions exactly;
+            // pack() then derives the frame by adding the decoration insets.
+            composePanel.preferredSize = Dimension(CONTENT_PREFERRED_WIDTH, CONTENT_PREFERRED_HEIGHT)
             composePanel.setContent {
                 CrashReportDialog(
                     crashReport = report,
-                    onDismiss = {
-                        logger.info(LogCategory.SYSTEM, "User dismissed crash report without submitting")
-                        frame.dispose()
-                        terminateAfterCrash()
-                    },
-                    onSubmit = { userNotes, includeLogs ->
-                        logger.info(
-                            LogCategory.SYSTEM,
-                            "Crash report submitted",
-                            mapOf(
-                                "hasNotes" to (userNotes != null),
-                                "includedLogs" to includeLogs,
-                            ),
-                        )
-                        frame.dispose()
-                        terminateAfterCrash()
-                    },
-                    onCleanAndRestart = {
-                        logger.info(LogCategory.SYSTEM, "User requested clean data and restart")
-                        frame.dispose()
-                        cleanDataAndRestart()
-                    },
+                    recoverablePluginId = (disposition as? CrashDisposition.RecoverablePlugin)?.pluginId,
+                    onDismiss = { controller.dismiss() },
+                    onSubmit = { userNotes, includeLogs -> controller.submit(userNotes, includeLogs) },
+                    onSubmittingChanged = { controller.isSubmitting = it },
+                    // Null for a recoverable plugin crash: deleting every plugin,
+                    // workspace and setting is not a proportionate answer to one
+                    // plugin misbehaving, and offering it beside "Continue Without
+                    // Plugin" invites exactly that.
+                    onCleanAndRestart =
+                        if (disposition is CrashDisposition.RecoverablePlugin) {
+                            null
+                        } else {
+                            // Through the controller, so it shares the once-only
+                            // guard with the other three exits instead of keeping
+                            // its own copy of dispose-then-act.
+                            { controller.cleanAndRestart { cleanDataAndRestart() } }
+                        },
                 )
             }
 
+            frame.minimumSize = Dimension(FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT)
             frame.contentPane.add(composePanel)
             frame.pack()
             frame.setLocationRelativeTo(null) // Center on screen
             frame.isVisible = true
 
+            // Nothing sizing-related runs past this point on purpose: this is the path that runs
+            // when the app is already broken, and it shares a catch that terminates. Cosmetic
+            // sizing must never be able to take the crash report down with it.
+
             // Bring to front
             frame.toFront()
             frame.requestFocus()
-        } catch (e: Exception) {
+            // Throwable for the same reason as handleCrash's net: this is the path
+            // that runs when the app is already broken, so an Error out of
+            // ComposePanel() or pack() is realistic, and it must still reach the
+            // controller that releases the dialog slot.
+        } catch (e: Throwable) {
             logger.error(LogCategory.SYSTEM, "Failed to show crash dialog window", error = e)
             System.err.println("Failed to show crash dialog: ${e.message}")
             e.printStackTrace()
-            // If we can't show the dialog, just exit
-            terminateAfterCrash()
+            // Through the controller, exactly like the three visible exits: it
+            // disposes the window (which may be half-built, or fully shown), gives
+            // the dialog slot back, and resolves once. A dialog left on screen here
+            // would otherwise be able to resolve the same crash a second time.
+            runCatching { controller.dismiss() }
+                .onFailure { secondary ->
+                    logger.error(LogCategory.SYSTEM, "Crash dialog teardown failed", error = secondary)
+                    terminateAfterCrash()
+                }
         }
     }
 
     /**
+     * The crash window's title bar. "BOSS Has Crashed" is a lie for a fault we are
+     * about to walk away from, and the title is the first thing the user reads.
+     */
+    private fun crashWindowTitle(disposition: CrashDisposition): String =
+        when (disposition) {
+            is CrashDisposition.RecoverablePlugin -> "BOSS - Plugin Crashed"
+            CrashDisposition.FatalHost -> "BOSS - Crash Report"
+        }
+
+    /**
      * Create a crash report from an exception.
      */
-    private fun createCrashReport(throwable: Throwable): CrashReport {
+    private fun createCrashReport(
+        throwable: Throwable,
+        attributedPluginId: String? = attributePluginId(throwable),
+    ): CrashReport {
         val signature = CrashSignature.generate(throwable)
         val stackTrace = getStackTraceString(throwable)
         val sanitizedStackTrace = LogSanitizer.sanitizeStackTrace(stackTrace)
@@ -539,26 +848,34 @@ object CrashHandler {
             systemInfo = collectSystemInfo(),
             appInfo = collectAppInfo(),
             timestamp = System.currentTimeMillis(),
-            pluginId = attributePluginId(throwable),
+            pluginId = attributedPluginId,
         )
     }
 
     /**
-     * Attribute a crash to a dynamically loaded plugin: the first stack frame
-     * (root cause first, so the crash origin wins over wrapping layers) whose
-     * class was defined by a [PluginClassLoader] names the culprit. Host
-     * crashes return null. Best-effort — attribution must never make crash
+     * Attribute a crash to a dynamically loaded plugin.
+     *
+     * Three sources, weakest last:
+     *
+     * 1. **A tag left at the execution boundary** ([PluginExecutionBoundary]).
+     *    The host recorded who it was calling *before* anything threw, so this
+     *    survives the plugin's frames being gone by the time we look — which is
+     *    the normal case for a registered callback like a context-menu action.
+     * 2. **The thread's current plugin scope**, for a crash observed while still
+     *    inside a plugin call.
+     * 3. **The stack**: the first frame (root cause first, so the crash origin
+     *    wins over wrapping layers) whose class was defined by a
+     *    [PluginClassLoader].
+     *
+     * Host crashes return null. Best-effort — attribution must never make crash
      * handling itself fail.
      */
     internal fun attributePluginId(throwable: Throwable): String? {
+        PluginExecutionBoundary.attributionFor(throwable)?.let { return it }
+        PluginExecutionBoundary.currentPluginId()?.let { return it }
         return try {
-            val chain = mutableListOf<Throwable>()
-            var t: Throwable? = throwable
-            while (t != null && chain.size < 12 && t !in chain) {
-                chain.add(t)
-                t = t.cause
-            }
-            for (cause in chain.asReversed()) {
+            // Root cause first: the crash origin outranks the layers that wrapped it.
+            for (cause in throwable.chainOfCauses().asReversed()) {
                 (cause.javaClass.classLoader as? PluginClassLoader)?.let { return it.pluginId }
                 for (frame in cause.stackTrace) {
                     PluginClassLoader.findPluginForClass(frame.className)?.let { return it }
@@ -633,6 +950,18 @@ object CrashHandler {
     }
 
     /**
+     * Seed the pending-report slot.
+     *
+     * Only `handleCrash` fills it in production, and that path needs a real
+     * uncaught exception and a window - so without this seam "recovering clears
+     * the pending report" can only be asserted against a slot that was already
+     * null, which passes whether or not the clearing happens.
+     */
+    internal fun setPendingReportForTest(report: CrashReport?) {
+        _pendingCrashReport.value = report
+    }
+
+    /**
      * Get recent logs for inclusion in crash report (with user consent).
      *
      * @param limit Maximum number of log entries to include
@@ -664,11 +993,15 @@ object CrashHandler {
 
     /**
      * Terminate the JVM after crash handling is complete.
+     *
+     * Reached for a fatal host crash, and as the fallback when a plugin crash
+     * could not be recovered from. Never as a *default* for a plugin crash: see
+     * [resolveCrash].
      */
     fun terminateAfterCrash() {
         clearPendingReport()
         logger.info(LogCategory.SYSTEM, "Terminating application after crash")
-        System.exit(1)
+        processExit(1)
     }
 
     /**
@@ -715,7 +1048,7 @@ object CrashHandler {
         }
 
         clearPendingReport()
-        System.exit(0)
+        processExit(0)
     }
 
     /**

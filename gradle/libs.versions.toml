@@ -11,7 +11,7 @@ compose-icons = "1.1.1"
 decompose = "3.5.0"
 detekt = "1.23.8"
 essenty = "2.5.0"
-junit-jupiter = "6.1.0"
+junit-jupiter = "6.1.2"
 clikt = "5.1.0"
 kotlin = "2.4.0"
 kotlinx-coroutines = "1.11.0"
@@ -27,20 +27,30 @@ kotlinx-datetime = "0.8.0-0.6.x-compat"
 kotlinx-serialization = "1.11.0"
 # ktor is NOT shared with plugins (no io.ktor prefix in defaultSharedPackages),
 # so a plugin's bundled ktor is unaffected by this pin; it constrains the host's
-# own client stack only.
+# own client stack only. The one mechanism that could change that is a plugin
+# opting in via manifest sharedPackages — checked across boss_plugins, and the
+# only manifest declaring any is boss-plugin-api, for its own package. If a
+# plugin ever declares io.ktor, this pin becomes a cross-repo change.
 #
-# 3.5.0 arrived as an automated bump (#736) and was reverted. The reason on
-# record was plugin compatibility, which cannot be right — the host's ktor never
-# reaches a plugin. NO host-side diagnosis was ever recorded, so there is no
-# known reason this cannot move: treat the next 3.5.x bump as worth trying, and
-# if it fails, write down what broke here.
-ktor = "3.4.3"
-logback = "1.5.38"
+# 3.5.0 arrived as an automated bump (#736) and was reverted, citing plugin
+# compatibility with no host-side diagnosis recorded — which the isolation above
+# says cannot have been the reason. 3.5.1 was retried in #113 and landed clean
+# (build-test green on all three OSes); nothing broke, so that revert should not
+# be read as a standing objection to 3.5.x.
+#
+# This pin is COUPLED to `supabase`: supabase-kt depends on ktor directly
+# (3.6.0 -> 3.4.3, 3.7.0 -> 3.5.1). Bump the two together. Taking a supabase
+# bump alone leaves the host's direct ktor deps on the old version while
+# ktor-server-core/cio resolve forward transitively, which is how you end up
+# with mixed ktor artifacts on one classpath. Check what the supabase Gradle
+# module metadata requires before moving either line.
+ktor = "3.5.1"
+logback = "1.6.1"
 precompose = "1.6.2"
 slf4j = "2.0.18"
-supabase = "3.6.0"
+supabase = "3.7.0"
 zxing = "3.5.4"
-jxbrowser = "9.3.0"
+jxbrowser = "9.4.0"
 jxbrowser-gradle-plugin = "2.1.0"
 maven-publish = "0.37.0"
 jna = "5.19.1"
@@ -48,7 +58,7 @@ jna = "5.19.1"
 # (Chromium "Login Data", Firefox places.sqlite / key4.db). Desktop-only.
 sqlite-jdbc = "3.50.3.0"
 # gRPC + Protobuf for IPC
-grpc = "1.83.0"
+grpc = "1.83.1"
 grpc-kotlin = "1.5.0"
 protobuf = "4.35.1"
 protobuf-gradle-plugin = "0.10.0"
@@ -60,7 +70,7 @@ intellij-platform = "243.21565.199"
 # bump it when consuming a new SDK release. Distribution is store/GitHub-
 # releases ONLY: plugin-platform/plugin-api-core downloads this release's jar and
 # filters the api package locally (no Maven registry involved).
-boss-plugin-api = "1.0.72"
+boss-plugin-api = "1.0.74"
 
 [libraries]
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }

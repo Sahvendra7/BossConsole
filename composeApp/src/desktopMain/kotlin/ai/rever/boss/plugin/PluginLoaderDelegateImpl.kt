@@ -1,7 +1,10 @@
 package ai.rever.boss.plugin
 
+import ai.rever.boss.components.plugin.DynamicPluginInfo
 import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MicrokernelRuntime
+import ai.rever.boss.components.plugin.findRelocatedPluginJar
+import ai.rever.boss.components.plugin.resolveReloadJarPath
 import ai.rever.boss.components.registery.PanelComponentStoreRegistry
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
@@ -10,6 +13,7 @@ import ai.rever.boss.plugin.api.LoadedPluginInfo
 import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.plugin.api.PluginLoaderDelegate
 import ai.rever.boss.plugin.api.PluginState
+import ai.rever.boss.plugin.loader.PluginSignatureSidecar
 import ai.rever.boss.plugin.repository.remote.PluginStoreConfig
 import ai.rever.boss.plugin.sandbox.TabSandboxRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
@@ -20,6 +24,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.swing.SwingUtilities
 
@@ -51,7 +56,68 @@ class PluginLoaderDelegateImpl(
      */
     private val detachedReloads = KeyedDetachedJobs<String, LoadedPluginInfo?>(reloadScope)
 
-    override suspend fun loadPlugin(jarPath: String): LoadedPluginInfo? {
+    /**
+     * Raises the install-time dependency prompt. See [MissingDependencyReporter] for which
+     * paths report and, more importantly, which must not.
+     */
+    private val dependencyReporter = MissingDependencyReporter.forManager(dynamicPluginManager)
+
+    /**
+     * Report the plugin's unmet dependencies (unless this is a reload) and describe it for the
+     * caller.
+     *
+     * A function rather than an inline block only because the two together sit four levels deep
+     * inside [loadPlugin]'s try / isSuccess / let.
+     */
+    private fun describe(
+        info: DynamicPluginInfo,
+        reportDependencies: Boolean,
+    ): LoadedPluginInfo {
+        // Only for a plugin that actually registered. `installPlugin` returns success with
+        // `state = DISABLED` when registration failed as binary-incompatible or the plugin is
+        // hidden for lack of access - reporting there would say "Flow needs the AI Gateway" for
+        // something that is not running and will not run, and taking Install would download a
+        // second plugin to support a dead one.
+        if (reportDependencies && info.state == PluginState.LOADED) {
+            dependencyReporter.report(info.manifest)
+        }
+        return LoadedPluginInfo(
+            pluginId = info.manifest.pluginId,
+            displayName = info.manifest.displayName,
+            version = info.manifest.version,
+            description = info.manifest.description,
+            author = info.manifest.author,
+            url = info.manifest.url,
+            type =
+                info.manifest.type.name
+                    .lowercase(),
+            apiVersion = info.manifest.apiVersion,
+            minBossVersion = info.manifest.minBossVersion,
+            isSystemPlugin = info.manifest.systemPlugin,
+            canUnload = info.manifest.canUnload,
+            loadPriority = info.manifest.loadPriority,
+            isEnabled = info.enabled,
+            healthy = info.state == PluginState.LOADED,
+            jarPath = info.jarPath,
+            installedAt = System.currentTimeMillis(),
+            requiresAdmin = info.manifest.requiresAdmin,
+        )
+    }
+
+    override suspend fun loadPlugin(jarPath: String): LoadedPluginInfo? = loadPlugin(jarPath, reportDependencies = true)
+
+    /**
+     * @param reportDependencies whether an unmet dependency should prompt.
+     *
+     * False for reloads. `doReloadPlugin` finishes by calling this, and reload is reached by
+     * `resetPluginInstances`, the Toolbox's update flow and the evolver's hot reload - none of
+     * which is a user asking to install anything. Without the distinction, an optional
+     * dependency someone declined with "Not now" would be re-offered on every reload.
+     */
+    private suspend fun loadPlugin(
+        jarPath: String,
+        reportDependencies: Boolean,
+    ): LoadedPluginInfo? {
         // Never try to load the microkernel runtime via the plugin-install
         // path — it's a classpath dependency for OOP child JVMs, not a
         // loadable plugin. DefaultPlugin.loadExternalPlugins already skips
@@ -67,8 +133,12 @@ class PluginLoaderDelegateImpl(
         // to be rejected.
         if (isMicrokernelRuntimeJar(jarPath)) {
             // Clean up the JAR that the installer just downloaded so it doesn't
-            // linger in the plugins directory and confuse a future scan.
+            // linger in the plugins directory and confuse a future scan. The
+            // sidecar goes with it: an uninstall→reinstall of the same version
+            // reuses the filename, so a surviving `.sig` would meet fresh bytes
+            // and hard-fail at load — worse than being unsigned.
             runCatching { File(jarPath).delete() }
+            runCatching { PluginSignatureSidecar.delete(jarPath) }
             logger.info(
                 LogCategory.SYSTEM,
                 "Refusing to install microkernel runtime as a plugin",
@@ -78,7 +148,7 @@ class PluginLoaderDelegateImpl(
             )
             throw IllegalArgumentException(
                 "The Microkernel Runtime is a system component, not a user-installable plugin. " +
-                    "It is managed automatically when Microkernel Mode is enabled — no manual install needed.",
+                    "It is managed automatically when Microkernel Mode is enabled - no manual install needed.",
             )
         }
         return try {
@@ -86,29 +156,7 @@ class PluginLoaderDelegateImpl(
             val result = dynamicPluginManager.installPlugin(jarPath, enabled = true)
             if (result.isSuccess) {
                 val loadedPlugin = result.getOrNull()
-                loadedPlugin?.let { info ->
-                    LoadedPluginInfo(
-                        pluginId = info.manifest.pluginId,
-                        displayName = info.manifest.displayName,
-                        version = info.manifest.version,
-                        description = info.manifest.description,
-                        author = info.manifest.author,
-                        url = info.manifest.url,
-                        type =
-                            info.manifest.type.name
-                                .lowercase(),
-                        apiVersion = info.manifest.apiVersion,
-                        minBossVersion = info.manifest.minBossVersion,
-                        isSystemPlugin = info.manifest.systemPlugin,
-                        canUnload = info.manifest.canUnload,
-                        loadPriority = info.manifest.loadPriority,
-                        isEnabled = info.enabled,
-                        healthy = info.state == PluginState.LOADED,
-                        jarPath = info.jarPath,
-                        installedAt = System.currentTimeMillis(),
-                        requiresAdmin = info.manifest.requiresAdmin,
-                    )
-                }
+                loadedPlugin?.let { info -> describe(info, reportDependencies) }
             } else {
                 logger.error(LogCategory.SYSTEM, "Failed to load plugin", error = result.exceptionOrNull())
                 null
@@ -154,13 +202,47 @@ class PluginLoaderDelegateImpl(
         return try {
             logger.info(LogCategory.SYSTEM, "Reloading plugin via delegate", mapOf("pluginId" to pluginId))
 
-            // Get the JAR path before unloading
-            val pluginInfo = dynamicPluginManager.getPluginInfo(pluginId)
-            val jarPath = pluginInfo?.jarPath
+            // Resolve the JAR before unloading, and resolve it against the DISK rather than
+            // trusting the loaded record. Reloads are most often triggered BY an update that
+            // just replaced the jar: the updater writes a version-named file and deletes the
+            // old one, so the path this plugin was loaded from is exactly the path that no
+            // longer exists. Taking it on trust unloaded the plugin and then failed to load
+            // it, leaving it gone until the next restart.
+            //
+            // Checking existence up front also means a reload that cannot succeed no longer
+            // tears the running plugin down first.
+            val loadedJarPath = dynamicPluginManager.getPluginInfo(pluginId)?.jarPath
+            // Disk IO, and this runs on reloadScope (Dispatchers.Default): reading the record
+            // parses installed.json and, on a cold cache, opens every plugin jar's manifest.
+            val jarPath =
+                withContext(Dispatchers.IO) {
+                    val persistedJarPath =
+                        PluginPersistence.getInstalledPlugins().firstOrNull { it.pluginId == pluginId }?.jarPath
+                    resolveReloadJarPath(
+                        loadedJarPath = loadedJarPath,
+                        persistedJarPath = persistedJarPath,
+                        exists = { File(it).isFile },
+                        relocated = {
+                            val dir = (loadedJarPath ?: persistedJarPath)?.let { File(it).parentFile }
+                            findRelocatedPluginJar(dir, pluginId)?.absolutePath
+                        },
+                    )
+                }
 
             if (jarPath == null) {
-                logger.warn(LogCategory.SYSTEM, "Cannot reload - JAR path not found", mapOf("pluginId" to pluginId))
+                logger.warn(
+                    LogCategory.SYSTEM,
+                    "Cannot reload - no existing JAR for plugin",
+                    mapOf("pluginId" to pluginId, "loadedJarPath" to (loadedJarPath ?: "none")),
+                )
                 return null
+            }
+            if (jarPath != loadedJarPath) {
+                logger.info(
+                    LogCategory.SYSTEM,
+                    "Reloading from the installed record - the loaded JAR is gone, most likely replaced by an update",
+                    mapOf("pluginId" to pluginId, "loadedJarPath" to (loadedJarPath ?: "none"), "jarPath" to jarPath),
+                )
             }
 
             // Unload
@@ -171,7 +253,7 @@ class PluginLoaderDelegateImpl(
             }
 
             // Reload
-            loadPlugin(jarPath)
+            loadPlugin(jarPath, reportDependencies = false)
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Exception reloading plugin", error = e)
             null

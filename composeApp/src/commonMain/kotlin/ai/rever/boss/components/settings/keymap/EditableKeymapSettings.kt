@@ -74,7 +74,7 @@ fun EditableKeymapSettings() {
                         context = ai.rever.boss.keymap.model.ShortcutContext.GLOBAL,
                         enabled = spec.defaultBinding != null,
                         category = "Plugins",
-                        description = spec.displayName + (spec.description.takeIf { it.isNotBlank() }?.let { " — $it" } ?: ""),
+                        description = spec.displayName + (spec.description.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""),
                     )
                 }
         }
@@ -183,7 +183,7 @@ fun EditableKeymapSettings() {
                 }
                 TextButton(
                     onClick = { showTestDialog = true },
-                    colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signal),
+                    colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signalText),
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -505,7 +505,7 @@ private fun CategoryHeader(
             text = category,
             style = MaterialTheme.typography.subtitle1,
             fontWeight = FontWeight.Bold,
-            color = BossTheme.colors.signal,
+            color = BossTheme.colors.signalText,
         )
         Text(
             text = "$count shortcut${if (count != 1) "s" else ""}",
@@ -601,7 +601,7 @@ private fun ShortcutItem(
                     text = binding.displayString(),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = BossTheme.colors.signal,
+                    color = BossTheme.colors.signalText,
                 )
             }
 

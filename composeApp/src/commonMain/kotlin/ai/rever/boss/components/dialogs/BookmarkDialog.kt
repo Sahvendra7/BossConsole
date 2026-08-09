@@ -2,6 +2,7 @@ package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.bookmarks.BookmarkCollection
 import ai.rever.boss.components.workspaces.extractPanels
+import ai.rever.boss.plugin.ui.BossDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +28,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlin.math.min
 
@@ -59,7 +59,7 @@ fun BookmarkDialog(
     // Workspace section expand/collapse state
     var workspacesSectionExpanded by remember { mutableStateOf(false) }
 
-    Dialog(
+    BossDialog(
         onDismissRequest = onDismiss,
         properties =
             DialogProperties(
@@ -86,7 +86,7 @@ fun BookmarkDialog(
                     Icon(
                         imageVector = Icons.Outlined.Star,
                         contentDescription = "Bookmark",
-                        tint = BossTheme.colors.signal,
+                        tint = BossTheme.colors.signalText,
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(12.dp))

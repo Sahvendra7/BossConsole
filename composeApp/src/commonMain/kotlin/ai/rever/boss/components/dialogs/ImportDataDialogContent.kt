@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.dp
 // state machine stays readable next to its own logic.
 //
 // Every size, colour and weight here comes from BossTheme so the dialog
-// re-skins with the active theme (Operator / Daylight / Clean) rather than
-// pinning itself to one palette.
+// re-skins with whichever theme is active rather than pinning itself to one
+// palette.
 
 @Composable
 internal fun ChooseSourceContent(
@@ -79,7 +79,7 @@ internal fun ChooseSourceContent(
         Spacer(Modifier.height(BossTheme.space.lg))
         SectionLabel("FROM A FILE")
         Text(
-            "Passwords from CSV, bookmarks from HTML — Chrome ⋮ ▸ Passwords ▸ Export, " +
+            "Passwords from CSV, bookmarks from HTML - Chrome ⋮ ▸ Passwords ▸ Export, " +
                 "Safari File ▸ Export, Firefox Passwords ▸ Export Logins.",
             style = BossTheme.type.body,
             color = BossTheme.colors.textSecondary,

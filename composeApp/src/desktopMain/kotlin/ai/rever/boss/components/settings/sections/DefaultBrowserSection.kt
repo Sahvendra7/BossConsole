@@ -1,6 +1,7 @@
 package ai.rever.boss.components.settings.sections
 
 import ai.rever.boss.components.settings.shared.SettingsSection
+import ai.rever.boss.plugin.ui.BossAlertDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.utils.DefaultBrowserManager
 import androidx.compose.foundation.BorderStroke
@@ -217,7 +218,7 @@ fun DefaultBrowserSection() {
                             enabled = !isLoading && isDefault != true,
                             colors =
                                 ButtonDefaults.textButtonColors(
-                                    contentColor = BossTheme.colors.signal,
+                                    contentColor = BossTheme.colors.signalText,
                                     disabledContentColor = BossTheme.colors.textSecondary,
                                 ),
                         ) {
@@ -270,7 +271,7 @@ fun DefaultBrowserSection() {
                 Icon(
                     Icons.Outlined.Info,
                     contentDescription = "Info",
-                    tint = BossTheme.colors.signal,
+                    tint = BossTheme.colors.signalText,
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -299,7 +300,7 @@ fun DefaultBrowserSection() {
 
     // Success Dialog
     if (showSuccessDialog) {
-        AlertDialog(
+        BossAlertDialog(
             onDismissRequest = { showSuccessDialog = false },
             title = {
                 Text(
@@ -318,7 +319,7 @@ fun DefaultBrowserSection() {
             },
             confirmButton = {
                 TextButton(onClick = { showSuccessDialog = false }) {
-                    Text("OK", color = BossTheme.colors.signal, fontSize = 13.sp)
+                    Text("OK", color = BossTheme.colors.signalText, fontSize = 13.sp)
                 }
             },
             backgroundColor = BossTheme.colors.panel,
@@ -328,7 +329,7 @@ fun DefaultBrowserSection() {
 
     // Instructions Dialog (platform-aware)
     if (showInstructionsDialog) {
-        AlertDialog(
+        BossAlertDialog(
             onDismissRequest = { showInstructionsDialog = false },
             title = {
                 Text(
@@ -390,7 +391,7 @@ fun DefaultBrowserSection() {
             },
             confirmButton = {
                 TextButton(onClick = { showInstructionsDialog = false }) {
-                    Text("Got it", color = BossTheme.colors.signal, fontSize = 13.sp)
+                    Text("Got it", color = BossTheme.colors.signalText, fontSize = 13.sp)
                 }
             },
             backgroundColor = BossTheme.colors.panel,

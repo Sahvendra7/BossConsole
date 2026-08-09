@@ -74,8 +74,19 @@ object ChromiumAutoDownloader {
     fun getPendingChromiumDir(): Path = BossDirectories.resolve("boss-chromium.pending").toPath()
 
     /** The version of the currently installed engine, or null if none/unknown. */
-    fun installedVersion(): String? {
-        val versionFile = getChromiumDir().resolve(VERSION_FILE).toFile()
+    fun installedVersion(): String? = installedVersionAt(getChromiumDir())
+
+    /**
+     * The version stamp in [dir], or null when there isn't one.
+     *
+     * Generalised from the cache-only reader so the bundled engine can be checked
+     * with the same rule. The stamp is the only version signal that works on every
+     * platform — the framework-layout probe FluckEngine uses is macOS-specific — so
+     * without it a bundled engine gets no version check at all off macOS
+     * (BossConsole#123).
+     */
+    fun installedVersionAt(dir: Path): String? {
+        val versionFile = dir.resolve(VERSION_FILE).toFile()
         return try {
             if (versionFile.exists()) versionFile.readText().trim().takeIf { it.isNotEmpty() } else null
         } catch (e: Exception) {
@@ -200,7 +211,11 @@ object ChromiumAutoDownloader {
         // This catches cached Chromium from older versions that didn't set execute bit correctly
         if (System.getProperty("os.name").lowercase().contains("mac")) {
             val executableName = executableNameFile.readText().trim()
-            val executablePath = dir.resolve("$executableName/Contents/MacOS/BOSS").toFile()
+            // executable.name holds the bundle name without its suffix (the branding
+            // workflow writes `basename "$APP_BUNDLE" .app`), so the directory on
+            // disk is "<name>.app". Without it this resolved to a path that never
+            // exists and the permission check below silently never ran.
+            val executablePath = dir.resolve("$executableName.app/Contents/MacOS/$executableName").toFile()
             if (executablePath.exists() && !executablePath.canExecute()) {
                 logger.info(LogCategory.BROWSER, "Chromium executable missing execute permission, will re-download")
                 return false

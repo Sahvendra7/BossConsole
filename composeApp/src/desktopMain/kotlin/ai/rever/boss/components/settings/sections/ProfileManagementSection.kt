@@ -3,6 +3,7 @@ package ai.rever.boss.components.settings.sections
 import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.boss.plugin.browser.BrowserSettings
 import ai.rever.boss.plugin.browser.BrowserSettingsManager
+import ai.rever.boss.plugin.ui.BossAlertDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -84,7 +85,7 @@ fun ProfileManagementSection(
                         Box {
                             TextButton(
                                 onClick = { showSwitchProfileMenu = true },
-                                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signal),
+                                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signalText),
                             ) {
                                 Icon(
                                     Icons.Outlined.SwapHoriz,
@@ -129,7 +130,7 @@ fun ProfileManagementSection(
                                                 Icon(
                                                     Icons.Outlined.Check,
                                                     contentDescription = "Selected",
-                                                    tint = BossTheme.colors.signal,
+                                                    tint = BossTheme.colors.signalText,
                                                     modifier = Modifier.size(16.dp),
                                                 )
                                             }
@@ -141,7 +142,7 @@ fun ProfileManagementSection(
 
                         TextButton(
                             onClick = { showNewProfileDialog = true },
-                            colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signal),
+                            colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signalText),
                         ) {
                             Icon(
                                 Icons.Outlined.Add,
@@ -159,7 +160,7 @@ fun ProfileManagementSection(
 
     // New Profile Dialog
     if (showNewProfileDialog) {
-        AlertDialog(
+        BossAlertDialog(
             onDismissRequest = {
                 showNewProfileDialog = false
                 newProfileName = ""
@@ -192,7 +193,7 @@ fun ProfileManagementSection(
                                 textColor = BossTheme.colors.textPrimary,
                                 focusedBorderColor = BossTheme.colors.signal,
                                 unfocusedBorderColor = BossTheme.colors.line,
-                                focusedLabelColor = BossTheme.colors.signal,
+                                focusedLabelColor = BossTheme.colors.signalText,
                                 unfocusedLabelColor = BossTheme.colors.textSecondary,
                                 placeholderColor = BossTheme.colors.textSecondary.copy(alpha = 0.5f),
                             ),

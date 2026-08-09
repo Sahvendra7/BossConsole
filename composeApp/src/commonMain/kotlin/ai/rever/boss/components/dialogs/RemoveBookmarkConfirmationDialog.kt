@@ -1,5 +1,6 @@
 package ai.rever.boss.components.dialogs
 
+import ai.rever.boss.plugin.ui.BossDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 @Composable
@@ -21,7 +21,7 @@ fun RemoveBookmarkConfirmationDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    Dialog(
+    BossDialog(
         onDismissRequest = onDismiss,
         properties =
             DialogProperties(
@@ -48,7 +48,7 @@ fun RemoveBookmarkConfirmationDialog(
                     Icon(
                         imageVector = Icons.Outlined.Star,
                         contentDescription = "Remove Bookmark",
-                        tint = BossTheme.colors.signal,
+                        tint = BossTheme.colors.signalText,
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(12.dp))

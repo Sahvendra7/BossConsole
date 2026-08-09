@@ -273,55 +273,46 @@ class DefaultPlugin(
                         }
                 logger.info(LogCategory.SYSTEM, "OOP spawner: BOSS_MODE resolved", mapOf("bossMode" to (bossMode ?: "null")))
                 if (bossMode == "KERNEL") {
-                    // Get kernel IPC address from KernelBootstrap.instance (not env var,
-                    // since BOSS_KERNEL_IPC_ADDR is only set for child processes)
-                    val kernelAddr =
-                        System.getenv("BOSS_KERNEL_IPC_ADDR")
-                            ?: try {
-                                val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
-                                val companion = bootstrapCls.getDeclaredField("Companion").get(null)
-                                val getInstance = companionCls.getMethod("getInstance")
-                                val kernelInstance = getInstance.invoke(companion)
-                                logger.info(
-                                    LogCategory.SYSTEM,
-                                    "OOP spawner: KernelBootstrap.instance",
-                                    mapOf("isNull" to (kernelInstance == null)),
-                                )
-                                if (kernelInstance != null) {
-                                    bootstrapCls.getMethod("getKernelAddress").invoke(kernelInstance) as? String
-                                } else {
-                                    null
-                                }
-                            } catch (e: Exception) {
-                                logger.warn(LogCategory.SYSTEM, "OOP spawner: kernel addr failed", mapOf("error" to e.toString()))
-                                null
-                            }
-                            ?: ""
-                    logger.info(LogCategory.SYSTEM, "OOP spawner: kernelAddr resolved", mapOf("addr" to kernelAddr))
-                    if (kernelAddr.isNotEmpty()) {
-                        val processSpawner =
-                            processSpawnerCls
-                                .getConstructor(String::class.java, java.io.File::class.java)
-                                .newInstance(
-                                    kernelAddr,
-                                    java.io.File(
-                                        try {
-                                            val dirsCls2 = Class.forName("ai.rever.boss.plugin.pathutils.BossDirectories")
-                                            val dirsInst2 = dirsCls2.getDeclaredField("INSTANCE").get(null)
-                                            (dirsCls2.getMethod("getRootDir").invoke(dirsInst2) as java.io.File).absolutePath
-                                        } catch (_: Exception) {
-                                            "${System.getProperty("user.home")}/.boss"
-                                        },
-                                        "logs",
-                                    ),
-                                )
+                    // Reuse the kernel's own ProcessSpawner rather than building a second one.
+                    //
+                    // ProcessSpawner registers everything it spawns, and only the instance
+                    // KernelBootstrap built is wired to the ProcessRegistry that the JVM shutdown
+                    // hook reaps. A second spawner here would have no registry, so its plugin
+                    // children stayed invisible to that hook - which is how a whole cohort of
+                    // child JVMs leaked on every host exit. One spawner owns registration
+                    // process-wide, or the invariant is only true for one of two instances.
+                    val kernelSpawner =
+                        try {
+                            val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
+                            val companion = bootstrapCls.getDeclaredField("Companion").get(null)
+                            val kernelInstance = companionCls.getMethod("getInstance").invoke(companion)
+                            logger.info(
+                                LogCategory.SYSTEM,
+                                "OOP spawner: KernelBootstrap.instance",
+                                mapOf("isNull" to (kernelInstance == null)),
+                            )
+                            kernelInstance?.let { bootstrapCls.getMethod("getProcessSpawner").invoke(it) }
+                        } catch (e: Exception) {
+                            logger.warn(
+                                LogCategory.SYSTEM,
+                                "OOP spawner: kernel spawner lookup failed",
+                                mapOf("error" to e.toString()),
+                            )
+                            null
+                        }
+                    logger.info(
+                        LogCategory.SYSTEM,
+                        "OOP spawner: kernel spawner resolved",
+                        mapOf("isNull" to (kernelSpawner == null)),
+                    )
+                    if (kernelSpawner != null) {
                         spawnerCls
                             .getConstructor(
                                 processSpawnerCls,
                                 String::class.java,
                                 String::class.java,
                             ).newInstance(
-                                processSpawner,
+                                kernelSpawner,
                                 windowId ?: "",
                                 windowProjectState?.selectedProject?.value?.path ?: "",
                             ) as OutOfProcessPluginSpawner
@@ -345,7 +336,7 @@ class DefaultPlugin(
         if (oopSpawner != null) {
             logger.info(LogCategory.SYSTEM, "OutOfProcessPluginSpawner created successfully")
         } else {
-            logger.warn(LogCategory.SYSTEM, "OutOfProcessPluginSpawner is null — OOP plugins will run in-process")
+            logger.warn(LogCategory.SYSTEM, "OutOfProcessPluginSpawner is null - OOP plugins will run in-process")
         }
 
         val manager =
@@ -651,6 +642,18 @@ class DefaultPlugin(
      */
     override val llmProvider: ai.rever.boss.plugin.api.LlmProvider?
         get() = getPluginAPI(ai.rever.boss.plugin.api.LlmProviderSettingsAPI::class.java)
+
+    /**
+     * Credential brokers, for a provider whose credential nobody types in.
+     *
+     * Read through a holder because the implementation exchanges a Supabase session over
+     * HTTP and so lives in desktopMain, while this class is commonMain. Null until desktop
+     * startup registers one.
+     */
+    override val brokeredCredentialProvider: ai.rever.boss.plugin.api.BrokeredCredentialProvider?
+        get() =
+            ai.rever.boss.services.llm.BrokeredCredentialAccess
+                .current()
 
     // Panel event provider for plugins that need to trigger panel events
     override val panelEventProvider: ai.rever.boss.plugin.api.PanelEventProvider by lazy {
@@ -1135,7 +1138,7 @@ class DefaultPlugin(
             val getInstance = companionCls.getMethod("getInstance")
             val kernelBootstrap =
                 getInstance.invoke(companion) ?: run {
-                    logger.info(LogCategory.SYSTEM, "KernelBootstrap not yet initialized — skipping service registration")
+                    logger.info(LogCategory.SYSTEM, "KernelBootstrap not yet initialized - skipping service registration")
                     return
                 }
 
@@ -1187,7 +1190,7 @@ class DefaultPlugin(
             // registered, so every OOP plugin loses its providers. Loud on purpose.
             logger.error(
                 LogCategory.SYSTEM,
-                "KernelBootstrap.registerPluginServices signature drifted — no out-of-process " +
+                "KernelBootstrap.registerPluginServices signature drifted - no out-of-process " +
                     "plugin gRPC services were registered; fix the reflective lookup in DefaultPlugin",
                 error = e,
             )
@@ -1651,6 +1654,11 @@ private class DefaultContextMenuProvider : ContextMenuProvider {
                 text = label,
                 icon = icon,
                 subMenu = subMenu?.map { it.toContextMenuItem() },
+                // Passed through unwrapped, deliberately. Attribution happens where
+                // ContextMenu actually invokes it (PluginExecutionBoundary.invokeAttributed),
+                // which costs no allocation - wrapping here handed back a fresh closure per
+                // item per recomposition, so the items compared unequal every time and Compose
+                // could never skip the menu subtree.
                 onClick = onClick,
             )
         }

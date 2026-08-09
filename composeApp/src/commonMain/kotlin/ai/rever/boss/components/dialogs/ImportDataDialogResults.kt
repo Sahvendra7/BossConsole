@@ -106,7 +106,7 @@ private fun SkippedRows(preview: ImportPreview) {
         // to show enough for the user to recognise the pattern.
         preview.skipped.take(MAX_LISTED).forEach { row ->
             Text(
-                "Row ${row.rowNumber}: ${row.reason.describe()} — ${row.label}",
+                "Row ${row.rowNumber}: ${row.reason.describe()} - ${row.label}",
                 style = BossTheme.type.micro,
                 color = BossTheme.colors.textMuted,
             )
@@ -197,7 +197,7 @@ internal fun FinishedContent(
 
         Spacer(Modifier.height(BossTheme.space.lg))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onClose) { Text("Done", color = BossTheme.colors.signal) }
+            TextButton(onClick = onClose) { Text("Done", color = BossTheme.colors.signalText) }
         }
     }
 }

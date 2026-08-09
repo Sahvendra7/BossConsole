@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.remote
 
+import ai.rever.boss.components.overlays.ContextMenu
+import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.plugin.ui.BossColorScheme
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.ui.sdk.*
@@ -225,15 +227,22 @@ private fun RenderNode(
                     text = selected,
                     modifier = Modifier.clickable { expanded = true },
                 )
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    options.forEachIndexed { index, option ->
-                        DropdownMenuItem(onClick = {
-                            expanded = false
-                            onEvent(node.id, WidgetEvent.Selection(option, index))
-                        }) {
-                            Text(option)
-                        }
-                    }
+                // ContextMenu, not Material's DropdownMenu: this renders in the main window, where
+                // under HARDWARE the browser's native surface paints over the Compose scene. A
+                // DropdownMenu is a lightweight Popup and opened behind the page; ContextMenu
+                // routes through the heavyweight popup window. Material gives no injection point,
+                // so the widget has to change rather than the menu.
+                if (expanded) {
+                    ContextMenu(
+                        items =
+                            options.mapIndexed { index, option ->
+                                ContextMenuItem(
+                                    text = option,
+                                    onClick = { onEvent(node.id, WidgetEvent.Selection(option, index)) },
+                                )
+                            },
+                        onDismissRequest = { expanded = false },
+                    )
                 }
             }
         }
@@ -368,6 +377,7 @@ internal val themeTokenColors: Map<ThemeToken, BossColorScheme.() -> Color> =
         ThemeToken.SIGNAL to { signal },
         ThemeToken.SIGNAL_DIM to { signalDim },
         ThemeToken.SIGNAL_WASH to { signalWash },
+        ThemeToken.SIGNAL_TEXT to { signalText },
         ThemeToken.DATA to { data },
         ThemeToken.OK to { ok },
         ThemeToken.WARN to { warn },

@@ -1,6 +1,7 @@
 package ai.rever.boss.components.settings.keymap
 
 import ai.rever.boss.keymap.KeymapSettingsManager
+import ai.rever.boss.plugin.ui.BossDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,7 +19,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
 
 /**
@@ -61,7 +61,7 @@ fun KeymapImportExport(
             }
             TextButton(
                 onClick = { showExportDialog = true },
-                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signal),
+                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signalText),
             ) {
                 Icon(
                     imageVector = Icons.Default.FileDownload,
@@ -99,7 +99,7 @@ fun KeymapImportExport(
             }
             TextButton(
                 onClick = { showImportDialog = true },
-                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signal),
+                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.signalText),
             ) {
                 Icon(
                     imageVector = Icons.Default.FileUpload,
@@ -158,7 +158,7 @@ private fun ExportDialog(onDismiss: () -> Unit) {
     val exportedJson = KeymapSettingsManager.exportToJson()
     var copied by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    BossDialog(onDismissRequest = onDismiss) {
         Surface(
             modifier =
                 Modifier
@@ -234,7 +234,7 @@ private fun ExportDialog(onDismiss: () -> Unit) {
                     Text(
                         text = "💡 Tip: Save this JSON to a file for backup",
                         fontSize = 11.sp,
-                        color = BossTheme.colors.signal,
+                        color = BossTheme.colors.signalText,
                     )
                 }
             }
@@ -253,7 +253,7 @@ private fun ImportDialog(
     var jsonInput by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    BossDialog(onDismissRequest = onDismiss) {
         Surface(
             modifier =
                 Modifier
