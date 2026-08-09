@@ -30,9 +30,9 @@ actual object FocusModeSettingsManager {
         }
 
     /**
-     * Fresh settings for this platform. Hover-to-reveal starts OFF on Windows, where the
-     * HARDWARE browser surface swallows the pointer events the reveal depends on - see
-     * [FocusModeSettings.defaultAutoReveal].
+     * Fresh settings for this platform. Hover-to-reveal and sidebar hiding both start OFF on
+     * Windows, where the HARDWARE browser surface swallows the pointer events the reveal depends
+     * on - see [FocusModeSettings.defaultAutoReveal] and [FocusModeSettings.defaultHidesSidebars].
      */
     private val platformDefaults: FocusModeSettings
         get() = FocusModeSettings.defaultsFor(System.getProperty("os.name").orEmpty())
@@ -56,7 +56,10 @@ actual object FocusModeSettingsManager {
         try {
             if (settingsFile.exists()) {
                 val content = settingsFile.readText()
-                val settings = json.decodeFromString<FocusModeSettings>(content)
+                // Merge against the platform defaults rather than plain-decoding: a file written
+                // before the per-edge switches existed has no opinion about them, and the class
+                // defaults would hide both sidebars on Windows with no way to reveal them.
+                val settings = FocusModeSettings.decodeWithDefaults(content, platformDefaults)
                 _currentSettings.value = settings
                 logger.debug(LogCategory.SYSTEM, "Loaded settings", mapOf("path" to settingsFile.absolutePath))
             } else {

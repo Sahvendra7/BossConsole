@@ -1,6 +1,19 @@
 package ai.rever.boss.focusmode
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+
+/**
+ * The four window edges focus mode can clear, each independently switchable.
+ */
+enum class FocusModeEdge {
+    TOP,
+    LEFT,
+    RIGHT,
+    BOTTOM,
+}
 
 /**
  * Configuration for Focus Mode feature.
@@ -11,6 +24,10 @@ import kotlinx.serialization.Serializable
  * @property autoRevealEnabled Whether to auto-reveal hidden bars on mouse hover at edges
  * @property revealOffsetPx Distance in pixels from window edge to trigger auto-reveal
  * @property revealDelayMs Delay in milliseconds before reveal triggers after hovering at edge
+ * @property hideTopBar Whether focus mode clears the top action bar
+ * @property hideLeftSidebar Whether focus mode clears the left sidebar
+ * @property hideRightSidebar Whether focus mode clears the right sidebar
+ * @property hideBottomBar Whether focus mode clears the bottom status bar
  */
 @Serializable
 data class FocusModeSettings(
@@ -18,7 +35,24 @@ data class FocusModeSettings(
     val autoRevealEnabled: Boolean = true,
     val revealOffsetPx: Float = 30f,
     val revealDelayMs: Long = 500L,
+    val hideTopBar: Boolean = true,
+    val hideLeftSidebar: Boolean = true,
+    val hideRightSidebar: Boolean = true,
+    val hideBottomBar: Boolean = true,
 ) {
+    /** Whether [edge] is cleared right now: focus mode is on and that edge opted in. */
+    fun hides(edge: FocusModeEdge): Boolean =
+        enabled &&
+            when (edge) {
+                FocusModeEdge.TOP -> hideTopBar
+                FocusModeEdge.LEFT -> hideLeftSidebar
+                FocusModeEdge.RIGHT -> hideRightSidebar
+                FocusModeEdge.BOTTOM -> hideBottomBar
+            }
+
+    /** Whether any edge is cleared - focus mode with all four off changes nothing. */
+    fun hidesAnything(): Boolean = FocusModeEdge.entries.any { hides(it) }
+
     companion object {
         /**
          * Whether edge hover-to-reveal should be on out of the box, for [osName].
@@ -38,9 +72,56 @@ data class FocusModeSettings(
          * Windows branch here would silently disable a feature that works perfectly well there.
          * The same trap is pinned in `ResourceModeTest` and `JxBrowserRenderingModeTest`.
          */
-        fun defaultAutoReveal(osName: String): Boolean = !osName.lowercase().startsWith("win")
+        fun defaultAutoReveal(osName: String): Boolean = !isWindows(osName)
+
+        /**
+         * Whether focus mode clears the two sidebars out of the box, for [osName].
+         *
+         * **Off on Windows**, for the same reason [defaultAutoReveal] is: with hover-reveal
+         * unable to fire there, hiding a sidebar is a one-way door. The top and bottom bars are
+         * still cleared, so focus mode does something on Windows; the sidebars stay, because they
+         * are what a user reaches for mid-task and what they could not get back.
+         *
+         * This is only the starting point. All four edges are individually switchable in
+         * Settings, so a Windows user who wants the full sweep can have it.
+         */
+        fun defaultHidesSidebars(osName: String): Boolean = !isWindows(osName)
 
         /** Fresh settings for [osName], used on first run and by "Reset to defaults". */
-        fun defaultsFor(osName: String) = FocusModeSettings(autoRevealEnabled = defaultAutoReveal(osName))
+        fun defaultsFor(osName: String) =
+            FocusModeSettings(
+                autoRevealEnabled = defaultAutoReveal(osName),
+                hideLeftSidebar = defaultHidesSidebars(osName),
+                hideRightSidebar = defaultHidesSidebars(osName),
+            )
+
+        /**
+         * Decode a stored settings file, filling every key it predates from [defaults].
+         *
+         * A plain decode would fill a missing key from the *class* default, which is the same on
+         * every platform - so a Windows install that already had a settings file would come up
+         * hiding both sidebars with no way to reveal them, which is exactly what
+         * [defaultHidesSidebars] exists to prevent. Merging against the platform defaults instead
+         * means "absent" reads as "never chosen", and every future field added here inherits the
+         * same treatment. Keys present in the file always win, so a real choice is never
+         * overwritten.
+         */
+        fun decodeWithDefaults(
+            content: String,
+            defaults: FocusModeSettings,
+        ): FocusModeSettings {
+            val stored = mergeJson.parseToJsonElement(content).jsonObject
+            val defaulted = mergeJson.encodeToJsonElement(serializer(), defaults).jsonObject
+            return mergeJson.decodeFromJsonElement(serializer(), JsonObject(defaulted + stored))
+        }
+
+        private fun isWindows(osName: String) = osName.lowercase().startsWith("win")
+
+        /** Needs `encodeDefaults` so the merge sees every key, including ones left at a default. */
+        private val mergeJson =
+            Json {
+                ignoreUnknownKeys = true
+                encodeDefaults = true
+            }
     }
 }

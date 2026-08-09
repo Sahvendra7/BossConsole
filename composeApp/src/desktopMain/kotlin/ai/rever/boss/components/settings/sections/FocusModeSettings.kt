@@ -42,7 +42,7 @@ fun FocusModeSettings() {
                         )
                     }
                 },
-                description = "Hide top bar, sidebars, and bottom bar to maximize content area",
+                description = "Clear the window chrome you pick below to maximize content area",
             )
         }
 
@@ -55,13 +55,55 @@ fun FocusModeSettings() {
             }
         }
 
-        // What gets hidden
+        // What gets hidden - one switch per window edge
         SettingsSection(title = "What Gets Hidden") {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                InfoItem(text = "× Top action bar - project selector, settings, etc.")
-                InfoItem(text = "× Left sidebar - plugin panels")
-                InfoItem(text = "× Right sidebar - plugin panels")
-                InfoItem(text = "× Bottom status bar")
+                SettingsToggle(
+                    label = "Top action bar",
+                    checked = settings.hideTopBar,
+                    onCheckedChange = { hide ->
+                        coroutineScope.launch {
+                            FocusModeSettingsManager.updateSettings(settings.copy(hideTopBar = hide))
+                        }
+                    },
+                    description = "Project selector, settings, etc.",
+                    enabled = settings.enabled,
+                )
+                SettingsToggle(
+                    label = "Left sidebar",
+                    checked = settings.hideLeftSidebar,
+                    onCheckedChange = { hide ->
+                        coroutineScope.launch {
+                            FocusModeSettingsManager.updateSettings(settings.copy(hideLeftSidebar = hide))
+                        }
+                    },
+                    description = "Plugin panels docked to the left edge",
+                    enabled = settings.enabled,
+                )
+                SettingsToggle(
+                    label = "Right sidebar",
+                    checked = settings.hideRightSidebar,
+                    onCheckedChange = { hide ->
+                        coroutineScope.launch {
+                            FocusModeSettingsManager.updateSettings(settings.copy(hideRightSidebar = hide))
+                        }
+                    },
+                    description = "Plugin panels docked to the right edge",
+                    enabled = settings.enabled,
+                )
+                SettingsToggle(
+                    label = "Bottom status bar",
+                    checked = settings.hideBottomBar,
+                    onCheckedChange = { hide ->
+                        coroutineScope.launch {
+                            FocusModeSettingsManager.updateSettings(settings.copy(hideBottomBar = hide))
+                        }
+                    },
+                    enabled = settings.enabled,
+                )
+                if (settings.enabled && !settings.hidesAnything()) {
+                    InfoItem(text = "Focus mode is on but hides nothing - pick at least one edge above.")
+                }
             }
         }
 
