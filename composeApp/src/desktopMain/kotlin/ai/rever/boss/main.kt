@@ -155,14 +155,6 @@ fun main(args: Array<String>) {
     BossLogger.configureFromEnvironment()
     BossLogger.initialize() // Register shutdown hook for log flushing
 
-    // Serve credential brokers to plugins. Registered from here rather than from
-    // BossAppStartupEffects because the implementation exchanges a Supabase session over
-    // HTTP and so lives in desktopMain, while the PluginContext that exposes it is
-    // commonMain. Safe this early: the object holds no state and touches nothing until a
-    // plugin actually asks for a broker.
-    ai.rever.boss.services.llm.BrokeredCredentialAccess
-        .initialize(ai.rever.boss.llm.BrokeredCredentialProviderImpl)
-
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
     setLinuxWMClass()
 

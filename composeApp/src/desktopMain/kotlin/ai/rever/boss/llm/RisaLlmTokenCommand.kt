@@ -1,19 +1,45 @@
 package ai.rever.boss.llm
 
+import ai.rever.boss.services.auth.CoreAuthService
+import ai.rever.boss.services.supabase.SupabaseConfig
 import ai.rever.boss.utils.SingleInstanceManager
+import io.github.jan.supabase.auth.auth
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import kotlinx.coroutines.delay
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 /**
  * Headless credential-helper entrypoint invoked by Codex.
  *
- * stdout contains only the short-lived credential. The BOSS/Supabase session and the
- * CoreWeave credential are never printed or returned.
- *
- * The exchange itself is not here: it lives in [CredentialBrokerClient], shared with the
- * plugin-facing `BrokeredCredentialProvider`, so the endpoint and the session handling
- * exist once rather than twice.
+ * stdout contains only the short-lived LiteLLM virtual key. The BOSS/Supabase
+ * session and the CoreWeave credential are never printed or returned.
  */
+@OptIn(ExperimentalTime::class)
 object RisaLlmTokenCommand {
     private const val COMMAND = "llm-token"
+    private const val DEFAULT_TOKEN_URL = "https://llm.risa.inc/auth/token"
+    private const val TOKEN_REQUEST_TIMEOUT_MS = 90_000L
+    private const val SESSION_WAIT_ATTEMPTS = 100
+    private const val SESSION_WAIT_DELAY_MS = 100L
+    private val responseJson = Json { ignoreUnknownKeys = true }
+
+    @Serializable
+    private data class TokenResponse(
+        @SerialName("access_token")
+        val accessToken: String,
+    )
 
     fun isRequested(args: Array<String>): Boolean = args.size == 1 && args[0] == COMMAND
 
@@ -41,23 +67,121 @@ object RisaLlmTokenCommand {
         }
     }
 
-    /**
-     * The RISA GLM credential, from the shared broker registry.
-     *
-     * A thin adapter now: the exchange, the session handling and the endpoint all live in
-     * [CredentialBrokerClient], so this path and the plugin-facing
-     * `BrokeredCredentialProvider` cannot drift apart or hold two copies of the URL. Called
-     * in the **running** BOSS process, over the single-instance channel, never in the helper.
-     */
-    internal suspend fun fetchTokenForRunningBoss(): String =
-        CredentialBrokerClient
-            .exchange(CredentialBrokers.RISA_GLM)
-            .getOrElse { error -> error(error.message ?: "Could not obtain a RISA LLM token.") }
-            .token
+    internal suspend fun fetchTokenForRunningBoss(): String {
+        if (!SupabaseConfig.isInitialized.value) {
+            SupabaseConfig.initializeFromEnvironment()
+        }
+
+        var session =
+            waitForSession()
+                ?: error("Open BOSS and sign in with your risalabs.ai account, then retry.")
+
+        val tokenUrl =
+            System
+                .getenv("RISA_LLM_TOKEN_URL")
+                ?.takeIf { it.isNotBlank() }
+                ?: DEFAULT_TOKEN_URL
+
+        val client =
+            HttpClient(CIO) {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = TOKEN_REQUEST_TIMEOUT_MS
+                    connectTimeoutMillis = 30_000L
+                    socketTimeoutMillis = TOKEN_REQUEST_TIMEOUT_MS
+                }
+            }
+        return try {
+            var response =
+                client.post(tokenUrl) {
+                    header(HttpHeaders.Authorization, "Bearer ${session.accessToken}")
+                    header(HttpHeaders.Accept, "application/json")
+                }
+            var body = response.bodyAsText()
+
+            // A locally unexpired access token can still be rejected after a
+            // server-side revocation or session migration. Refresh once and
+            // retry; never loop or mask authorization/entitlement failures.
+            if (response.status.value == 401) {
+                session = refreshSession()
+                response =
+                    client.post(tokenUrl) {
+                        header(HttpHeaders.Authorization, "Bearer ${session.accessToken}")
+                        header(HttpHeaders.Accept, "application/json")
+                    }
+                body = response.bodyAsText()
+            }
+
+            if (response.status.value != 200) {
+                val message = parseGatewayError(body)
+                error(message)
+            }
+
+            val parsed: TokenResponse = responseJson.decodeFromString(body)
+            parsed.accessToken.takeIf { it.isNotBlank() }
+                ?: error("RISA LLM gateway returned an empty token.")
+        } finally {
+            client.close()
+        }
+    }
 
     /**
-     * Kept as the tested entry point for the broker's error shape, delegating so there is
-     * one parser rather than two that can disagree about what a gateway error looks like.
+     * Refreshes through [CoreAuthService] rather than calling supabase-kt
+     * directly. Supabase rotates the refresh token, so a second refresh
+     * overlapping the app's own presents an already-used token, and a rejected
+     * refresh token is what drops the user to the login screen. That service
+     * owns the single-flight lock the recovery loop also holds.
      */
-    internal fun parseGatewayError(body: String): String = CredentialBrokerClient.parseBrokerError(body)
+    private suspend fun refreshSession(): io.github.jan.supabase.auth.user.UserSession {
+        try {
+            CoreAuthService.refreshSession()
+        } catch (_: Exception) {
+            error(
+                "Your BOSS session expired. Open BOSS, sign in again, and retry.",
+            )
+        }
+
+        return SupabaseConfig.client.auth
+            .currentSessionOrNull()
+            ?: error(
+                "Your BOSS session expired. Open BOSS, sign in again, and retry.",
+            )
+    }
+
+    private suspend fun waitForSession(): io.github.jan.supabase.auth.user.UserSession? {
+        var attempts = 0
+        while (attempts < SESSION_WAIT_ATTEMPTS) {
+            val auth = SupabaseConfig.client.auth
+            val session = auth.currentSessionOrNull()
+            if (session != null) {
+                return ensureFreshSession(session)
+            }
+            delay(SESSION_WAIT_DELAY_MS)
+            attempts += 1
+        }
+        return null
+    }
+
+    private suspend fun ensureFreshSession(
+        session: io.github.jan.supabase.auth.user.UserSession,
+    ): io.github.jan.supabase.auth.user.UserSession {
+        if (session.expiresAt > Clock.System.now()) {
+            return session
+        }
+
+        val refreshed = refreshSession()
+        check(refreshed.expiresAt > Clock.System.now()) {
+            "Your BOSS session expired. Open BOSS, sign in again, and retry."
+        }
+        return refreshed
+    }
+
+    internal fun parseGatewayError(body: String): String =
+        try {
+            val root = Json.parseToJsonElement(body).jsonObject
+            val error = root["error"]?.jsonObject
+            error?.get("message")?.jsonPrimitive?.content
+                ?: "RISA LLM gateway rejected the token request."
+        } catch (_: Exception) {
+            "RISA LLM gateway rejected the token request."
+        }
 }
