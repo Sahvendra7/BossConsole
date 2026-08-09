@@ -238,6 +238,31 @@ class BrowserAnalyticsTest {
     }
 
     @Test
+    fun `any separator refuses a two-token field name, not just whitespace`() {
+        // Refusing only on whitespace was too narrow: deleting the stray character welds the
+        // tokens together exactly the same way, so "Smith,John" became "SmithJohn" while
+        // "John Smith" was refused - the same disclosure, two answers. The bridge is reachable
+        // from any page script by design, so this is not only about well-formed name=.
+        assertNull(BrowserAnalytics.sanitizeFieldName("Smith,John"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("John+Smith"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("John/Smith"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("John(Smith)"))
+        assertNull(BrowserAnalytics.sanitizeFieldName("John:Smith"))
+        // U+200B is not Char.isWhitespace, so the whitespace-only rule never saw it.
+        assertNull(BrowserAnalytics.sanitizeFieldName("John​Smith"))
+    }
+
+    @Test
+    fun `ASP dot NET WebForms names survive the separator rule`() {
+        // `$` is in the alphabet on purpose: WebForms builds every name with it, so a flat
+        // refusal would drop a whole platform's field names rather than a leak.
+        assertEquals(
+            "ctl00${'$'}ContentPlaceHolder1${'$'}txtPatient",
+            BrowserAnalytics.sanitizeFieldName("ctl00${'$'}ContentPlaceHolder1${'$'}txtPatient"),
+        )
+    }
+
+    @Test
     fun `a field name containing whitespace is refused, not compacted`() {
         // This was the one shape most likely to be a person's name, and the only sanitizer
         // that let it through: filtering a space out of "John Smith" yields "JohnSmith",

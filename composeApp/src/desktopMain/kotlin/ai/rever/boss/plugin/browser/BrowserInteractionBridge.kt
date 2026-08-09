@@ -1,6 +1,8 @@
 package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.plugin.api.BrowserInteractionType
+import ai.rever.boss.plugin.logging.BossLogger
+import ai.rever.boss.plugin.logging.LogCategory
 import com.teamdev.jxbrowser.js.JsAccessible
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -32,20 +34,69 @@ internal class BrowserInteractionBridge(
     private val windowId: () -> String?,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
+    private val logger = BossLogger.forComponent("BrowserInteractionBridge")
+
     @JsAccessible
     fun emit(json: String) {
         try {
             handle(json)
-        } catch (_: Throwable) {
-            // Never propagate into the page's JS thread. Deliberately silent rather than
-            // logged: a hostile page can call emit() in a loop, and a log line per failure
-            // would hand it a way to flood the log. A malformed batch costs nothing but
-            // itself — parseBatch already returns empty for anything it cannot read.
+        } catch (e: LinkageError) {
+            // A wiring break rather than bad input: the bridge or the api jar is not what
+            // this was compiled against. Enumerated rather than caught as Throwable, matching
+            // BrowserHandleImpl.deliverContextMenu - an OutOfMemoryError or StackOverflowError
+            // is not this boundary's to swallow, and swallowing it silently here would turn a
+            // fatal process condition into a page that quietly reports nothing.
+            reportFailure(e)
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            // Never propagate into the page's JS thread: a throw here surfaces in the site's
+            // own console and can break its JS. Genuinely any Exception, because the input is
+            // a hostile page and the failure modes are not enumerable - what matters is that
+            // Error is NOT included, so a fatal process condition still escapes.
+            reportFailure(e)
         }
     }
 
+    /**
+     * Log at most one failure per rate window.
+     *
+     * Total silence was the wrong trade in the other direction: a page nobody touches and a
+     * bridge that was never published look identical, and `flush()` swallows on the page side
+     * too, so a wiring break had no signal anywhere along the path. The flood argument against
+     * logging is real - a hostile page can call `emit()` in a loop - but the rate limiter
+     * already exists, so one line per window costs nothing and makes the failure findable.
+     * The exception class only, never its message: page detail must not reach a log line.
+     */
+    private fun reportFailure(error: Throwable) {
+        val now = nowMs()
+        val shouldLog =
+            synchronized(this) {
+                (now - lastFailureLogMs !in 0 until RATE_WINDOW_MS).also { if (it) lastFailureLogMs = now }
+            }
+        if (!shouldLog) return
+        logger.debug(
+            LogCategory.BROWSER,
+            "Interaction batch rejected",
+            mapOf("error" to (error::class.simpleName ?: "Throwable")),
+        )
+    }
+
+    // Each return is a distinct reason a batch costs the page nothing further: no page, no
+    // reportable host, no budget. Folding them into one condition would hide which is which.
+    @Suppress("ReturnCount")
     private fun handle(json: String) {
         val authority = authorityProvider() ?: return
+        // Drop a batch for an unreportable host before parsing it, not after: the reduction
+        // is the same answer for all fifty entries, and paying a 64 KB parse to then discard
+        // every entry is work done on the page's JS thread for nothing.
+        //
+        // Only a gate. interaction() still reduces the authority itself, and deliberately:
+        // an overload taking an already-reduced domain would let some later caller hand the
+        // privacy boundary a raw URL under the name `domain` and bypass the one reduction
+        // everything depends on. Repeating a short-string trim/split fifty times per two-
+        // second flush is not worth trading that for.
+        if (BrowserAnalytics.registrableDomain(authority) == null) return
         // Reserved BEFORE parsing, because parsing is the expensive part and it runs on the
         // page's JS thread. Admitting afterwards bounded what reached the bus but not the
         // work done to get there: a page looping emit() with 64 KB payloads still bought
@@ -144,8 +195,14 @@ internal class BrowserInteractionBridge(
         reservation: Reservation,
         unused: Int,
     ) {
-        if (unused <= 0 || reservation.windowStartMs != windowStartMs) return
-        windowEntries = (windowEntries - unused).coerceAtLeast(0)
+        if (unused <= 0) return
+        // The two levels are refunded independently, each against its own window stamp. An
+        // early return on the per-tab check would also skip the process refund, so a per-tab
+        // window rolling between reserve and release left the process budget over-charged
+        // while the process window itself was still perfectly valid.
+        if (reservation.windowStartMs == windowStartMs) {
+            windowEntries = (windowEntries - unused).coerceAtLeast(0)
+        }
         ProcessRateLimit.giveBack(reservation.processWindowStartMs, unused)
     }
 
@@ -224,6 +281,9 @@ internal class BrowserInteractionBridge(
 
     private var windowStartMs: Long = 0
     private var windowEntries: Int = 0
+
+    /** When a rejection was last logged, so a looping page cannot flood the log. */
+    private var lastFailureLogMs: Long = Long.MIN_VALUE
 
     /** One entry off the wire, still unsanitized — [BrowserAnalytics] is what cleans these. */
     internal data class ParsedInteraction(

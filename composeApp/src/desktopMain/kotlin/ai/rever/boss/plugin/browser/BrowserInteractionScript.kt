@@ -49,15 +49,21 @@ internal object BrowserInteractionScript {
     private const val MAX_PATH_DEPTH = 5
 
     /**
-     * Every string read out of the DOM is capped here, including the tag name.
+     * Every string read out of the DOM is capped here, including the tag name - which is
+     * author-controlled, since a custom element's name is whatever the page registered. One
+     * element with a megabyte-long tag name pushes the batch past
+     * [BrowserInteractionBridge.MAX_PAYLOAD_CHARS], which drops the *whole* batch, so a site
+     * could otherwise silence its own interaction telemetry with a single hidden element.
      *
-     * The tag was the one that wasn't, and it is author-controlled: a custom element's name
-     * is whatever the page registered. One element with a megabyte-long tag name pushes the
-     * batch past [BrowserInteractionBridge.MAX_PAYLOAD_CHARS], which drops the *whole* batch
-     * — so a site could silence its own interaction telemetry with a single hidden element.
-     * Matches [BrowserAnalytics]'s own token cap, above which the host refuses the value.
+     * Deliberately ABOVE [BrowserAnalytics]'s own 32-char token cap, for the same reason
+     * [MAX_FIELD_NAME_CHARS] is above its counterpart. `sanitizeToken` *refuses* a value over
+     * its cap, so cutting to exactly 32 here made that refusal unreachable: a 40-character
+     * `<app-patient-encounter-summary-card>` - not exotic in the frameworks this targets -
+     * arrived as a valid-looking 32-character prefix, so the host reported a tag that does
+     * not exist and two long elements sharing a prefix collapsed into one. Cutting higher
+     * keeps the host the one that decides.
      */
-    private const val MAX_TOKEN_CHARS = 32
+    private const val MAX_TOKEN_CHARS = 40
 
     /**
      * Deliberately ABOVE the host's own 64-char field-name cap, not equal to it.

@@ -346,6 +346,33 @@ console.log('\nre-injection is otherwise a no-op');
   eq('one listener set, so one event per click', p.emitted.length, 1);
 }
 
+console.log('\nstructural tokens are cut above the host cap, not at it');
+{
+  // sanitizeToken REFUSES a value over its cap. Cutting to exactly that cap here made the
+  // refusal unreachable: a 40-char <app-patient-encounter-summary-card> arrived as a
+  // valid-looking 32-char prefix, so the host reported a tag that does not exist and two
+  // long elements sharing a prefix collapsed into one. Same trap as the field-name cap
+  // below, one constant apart, and nothing caught the equality.
+  const analytics = fs.readFileSync(analyticsKt, 'utf8');
+  const hostCap = Number(/MAX_TAG_LENGTH = (\d+)/.exec(analytics)[1]);
+  const collectorCap = Number(consts.MAX_TOKEN_CHARS);
+  check(
+    `collector cap ${collectorCap} > host cap ${hostCap}`,
+    collectorCap > hostCap,
+    `${collectorCap} vs ${hostCap}`,
+  );
+
+  const p = newPage(js);
+  const longTag = 'app-patient-encounter-summary-card'; // 34 chars, over the host cap
+  p.fire('click', p.el(longTag));
+  p.flush();
+  check(
+    'a long custom element reaches the host over its cap, to be refused there',
+    p.emitted[0].tag.length > hostCap,
+    `${p.emitted[0].tag} (${p.emitted[0].tag.length})`,
+  );
+}
+
 console.log('\nfield names are cut above the host cap, not at it');
 {
   // The host redacts digit runs and THEN truncates, so that a run straddling its 64-char

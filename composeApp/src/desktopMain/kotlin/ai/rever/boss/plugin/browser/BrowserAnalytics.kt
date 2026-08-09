@@ -240,35 +240,41 @@ internal object BrowserAnalytics {
      * is ASCII-only in Java unless `UNICODE_CHARACTER_CLASS` is set, let `mrn٤٤١٧٨٨٢` pass
      * the filter *and* the redactor untouched. Both halves must agree on an alphabet.
      *
-     * **An interior space refuses the whole value rather than being filtered out of it.**
-     * Filtering is what made `"John Smith"` come out as the plausible-looking field name
-     * `JohnSmith`, and the digit redaction does nothing for alphabetic PHI — so the one
-     * shape most likely to be a person's name was also the one this let through intact.
-     * A real `name=` attribute essentially never contains whitespace (it is a form-encoding
-     * key), so refusing costs nothing real. Leading and trailing whitespace is still just
-     * trimmed: that is markup formatting, not content. The collector also only reads `name`
-     * off actual form controls, so this function is not asked about a `div`'s author-defined
-     * `name` property in the first place.
+     * **Anything outside the alphabet is a SEPARATOR, and more than one token refuses the
+     * whole value.** Deleting stray characters is what made `"John Smith"` come out as the
+     * plausible-looking field name `JohnSmith`, and the digit redaction does nothing for
+     * alphabetic PHI — so the shape most likely to be a person's name was the one that
+     * survived. Refusing only on whitespace was too narrow to fix that: deletion welds
+     * `Smith,John`, `John+Smith`, `John/Smith` and a zero-width space (which is not
+     * `Char.isWhitespace`) together exactly the same way, and they are the same disclosure.
+     * Splitting on the complement of the alphabet catches the class rather than one member
+     * of it, and a real `name=` attribute is a single form-encoding key.
      *
-     * **What remains, stated rather than implied.** This still cleans instead of refusing,
-     * so single-token alphabetic content survives: `patient_johnsmith` and `mrn_smith_j` come
-     * through intact, and the digit redaction does nothing for either. Whitespace was the
-     * shape that made free text *look* like a field name; a developer writing a name that
-     * embeds a person is a narrower case that only refusing unknown names outright would
-     * catch, and that would cost the signal on every legitimate form. Tracked privately in
-     * boss-plugin-analytics#7.
+     * `$` is in the alphabet because ASP.NET WebForms builds names with it
+     * (`ctl00${'$'}ContentPlaceHolder1${'$'}txtPatient`); a flat refusal would drop a whole
+     * platform's field names. Leading and trailing whitespace is still just trimmed - markup
+     * formatting, not content. The collector also only reads `name` off actual form controls,
+     * so this is never asked about a `div`'s author-defined `name` property.
+     *
+     * **What remains, stated rather than implied.** A single token of alphabetic content
+     * still survives: `patient_johnsmith` and `mrn_smith_j` come through intact, and the
+     * digit redaction does nothing for either. Catching those would mean refusing unfamiliar
+     * names outright, which would cost the signal on every legitimate form. Tracked privately
+     * in boss-plugin-analytics#7.
      */
     internal fun sanitizeFieldName(raw: String?): String? =
         raw
             ?.trim()
-            ?.takeIf { value -> value.none { it.isWhitespace() } }
-            ?.filter { c -> c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c in FIELD_NAME_PUNCTUATION }
-            ?.takeIf { it.isNotEmpty() }
+            ?.split(NOT_FIELD_NAME_CHARS)
+            ?.filter { it.isNotEmpty() }
+            // Exactly one token, or this was never a form-encoding key.
+            ?.singleOrNull()
             ?.let { DIGIT_RUN.replace(it, "#") }
             // Truncated LAST, so the cap applies to what is emitted rather than to the raw
             // input. Cutting first also meant a digit run straddling the boundary could leave
             // a one- or two-digit tail that the redactor no longer recognised as a run.
             ?.take(MAX_FIELD_NAME_LENGTH)
+            ?.takeIf { it.isNotEmpty() }
 
     /**
      * A structural element path: tag names and sibling positions only, e.g.
@@ -296,8 +302,13 @@ internal object BrowserAnalytics {
     /** Stand-in for a tab on a host [registrableDomain] refuses; distinct from an empty tab. */
     internal const val UNREPORTABLE_TAB_DOMAIN = "unreportable"
 
-    /** Punctuation a form field name may keep — array/object syntax and word separators. */
-    private val FIELD_NAME_PUNCTUATION = setOf('_', '-', '.', '[', ']')
+    /**
+     * The complement of a field name's alphabet: letters, digits, array/object syntax and
+     * word separators, plus `$` for ASP.NET WebForms. ASCII ranges spelled out rather than
+     * `\w`, which is ASCII-only in Java today but is exactly the kind of thing a later
+     * "simplification" to `UNICODE_CHARACTER_CLASS` would silently widen.
+     */
+    private val NOT_FIELD_NAME_CHARS = Regex("""[^A-Za-z0-9_.\[\]$-]+""")
 
     /**
      * Three digits, not five.
