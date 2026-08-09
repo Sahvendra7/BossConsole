@@ -7,6 +7,11 @@ import ai.rever.boss.platform.ContextMenuHandler
 import ai.rever.boss.plugin.sandbox.PluginExecutionBoundary
 import ai.rever.boss.plugin.ui.BossPopupAnchoring
 import ai.rever.boss.plugin.ui.BossTheme
+import ai.rever.boss.plugin.ui.menu.NativeContextMenus
+import ai.rever.boss.plugin.ui.menu.NativeMenuAnchor
+import ai.rever.boss.plugin.ui.menu.NativeMenuNode
+import ai.rever.boss.plugin.ui.menu.shouldUseNativeMenus
+import ai.rever.boss.window.WindowAppearanceSettingsManager
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -65,6 +70,77 @@ data class ContextMenuItem(
 )
 
 /**
+ * Whether this menu can be rendered by an operating-system menu without losing anything.
+ *
+ * A native menu item is a label, an enabled flag and an optional shortcut. An icon or an inline
+ * trailing action button has no native equivalent, and silently dropping one would remove an
+ * affordance the user relies on (the sidebar, workspace and run-history menus use trailing
+ * buttons for inline edit and delete). Those menus keep the drawn path until they are reshaped
+ * to express the same actions as structure.
+ */
+internal fun List<ContextMenuItem>.isNativeRepresentable(): Boolean =
+    all { item ->
+        item.icon == null &&
+            item.trailingIcon == null &&
+            item.secondaryTrailingIcon == null &&
+            item.subMenu?.isNativeRepresentable() != false
+    }
+
+/**
+ * Convert to the toolkit-neutral model the native engine speaks.
+ *
+ * The action is wrapped in [PluginExecutionBoundary.invokeAttributed] for the same reason the
+ * drawn rows are: a plugin-supplied callback must run inside its own attribution scope, or the
+ * next crash on that thread is blamed on nobody and takes the app down instead of the plugin.
+ * This is the one seam plugin crash recovery rests on, and it fails silently.
+ */
+internal fun List<ContextMenuItem>.toNativeMenuNodes(): List<NativeMenuNode> =
+    map { item ->
+        when {
+            item.isDivider -> {
+                NativeMenuNode.Separator
+            }
+
+            item.subMenu != null -> {
+                NativeMenuNode.Submenu(item.text, item.subMenu.toNativeMenuNodes())
+            }
+
+            else -> {
+                NativeMenuNode.Item(
+                    label = item.text,
+                    action = { PluginExecutionBoundary.invokeAttributed(item.onClick) },
+                )
+            }
+        }
+    }
+
+/**
+ * Forces the menu path in tests.
+ *
+ * The drawn menu is a Compose tree a UI test can find nodes in; a native menu is an OS window
+ * that has none. Without this, every existing menu UI test would pass on CI and fail on a macOS
+ * developer machine purely because of which renderer ran.
+ */
+internal object NativeContextMenuTestOverride {
+    @Volatile
+    internal var enabled: Boolean? = null
+}
+
+/**
+ * Read per show, so toggling the preference takes effect on the next right-click without a
+ * restart. Falls back to enabled if the settings file cannot be read.
+ */
+@Composable
+private fun useNativeContextMenus(): Boolean {
+    NativeContextMenuTestOverride.enabled?.let { return it }
+    val settings by WindowAppearanceSettingsManager.currentSettings.collectAsState()
+    return shouldUseNativeMenus(
+        settingEnabled = settings.useNativeContextMenus,
+        isMacOs = NativeContextMenus.isSupported(),
+    )
+}
+
+/**
  * A custom context menu that can be shown on right-click or long press
  * depending on the platform.
  *
@@ -80,6 +156,36 @@ fun ContextMenu(
     modifier: Modifier = Modifier,
     onDismissRequest: () -> Unit,
 ) {
+    // A real OS menu, where the platform and the menu's shape both allow it.
+    //
+    // This is checked before the heavyweight branch below because it subsumes it: an NSMenu is an
+    // OS-owned window, so it is never occluded by the browser's native surface and needs none of
+    // the heavyweight-window machinery to say so.
+    //
+    // Falls through whenever the menu carries an icon or an inline trailing button, which a
+    // native menu item cannot render - see [isNativeRepresentable].
+    if (useNativeContextMenus() && items.isNativeRepresentable()) {
+        val dismiss by rememberUpdatedState(onDismissRequest)
+        // Keyed on the menu, not Unit: a second right-click composes a new ContextMenu with new
+        // items and must reopen at the new position rather than reuse the first effect.
+        DisposableEffect(items) {
+            val shown =
+                NativeContextMenus.show(
+                    nodes = items.toNativeMenuNodes(),
+                    // The pointer IS the intended position for a right-click menu, and reading it
+                    // from the OS avoids converting node-relative Compose pixels into screen
+                    // coordinates - a conversion this codebase has nowhere else.
+                    anchor = NativeMenuAnchor.Cursor,
+                    onDismiss = { dismiss() },
+                )
+            // Nothing was shown (no invoker, or the plan came out empty), so tell the caller
+            // rather than leaving it believing a menu is up.
+            if (!shown) dismiss()
+            onDispose { NativeContextMenus.hide() }
+        }
+        return
+    }
+
     val heavyweight = OverlayConfig.heavyweightPopup
     if (routeOverlayHeavyweight(heavyweight != null) && heavyweight != null) {
         // HARDWARE_ACCELERATED browser: a lightweight Compose Popup renders BEHIND the
