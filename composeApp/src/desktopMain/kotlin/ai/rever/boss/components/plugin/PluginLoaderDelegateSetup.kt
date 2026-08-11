@@ -5,6 +5,8 @@ import ai.rever.boss.crash.PluginCrashRecovery
 import ai.rever.boss.crash.PluginCrashRecoveryCoordinator
 import ai.rever.boss.crash.PluginRecoverySteps
 import ai.rever.boss.crash.displayPluginId
+import ai.rever.boss.plugin.PluginArtifactCleanup
+import ai.rever.boss.plugin.PluginBuildProbe
 import ai.rever.boss.plugin.PluginLoaderDelegateImpl
 import ai.rever.boss.plugin.PluginPersistence
 import ai.rever.boss.plugin.api.PluginContext
@@ -57,6 +59,18 @@ actual object PluginLoaderDelegateSetup {
         // the pre-reload component (#856).
         if (DynamicPluginManager.pluginPanelsRefresh == null) {
             DynamicPluginManager.pluginPanelsRefresh = { id, panelIds -> delegate.refreshPluginPanels(id, panelIds) }
+        }
+        // Which build each plugin is running. The signals (signature sidecar, jar mtime) are on
+        // disk, so the answer comes from here rather than from commonMain.
+        if (DynamicPluginManager.pluginBuildProbe == null) {
+            DynamicPluginManager.pluginBuildProbe = { id, displayName, version, jarPath ->
+                PluginBuildProbe.probe(id, displayName, version, jarPath)
+            }
+        }
+        // Deleting an uninstalled plugin's jar, sidecar and installed.json row. Invoked only by the
+        // deliberate "Uninstall Plugin" flow, never by the shared unload path.
+        if (DynamicPluginManager.pluginArtifactCleanup == null) {
+            DynamicPluginManager.pluginArtifactCleanup = { id, jarPath -> PluginArtifactCleanup.remove(id, jarPath) }
         }
         // Lets the crash handler take a crashed plugin out instead of taking the
         // app down. Until this is wired, a plugin crash classifies as fatal and

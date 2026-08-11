@@ -14,11 +14,15 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MissingDependencyDialog
 import ai.rever.boss.components.plugin.PluginDependencyEventBus
+import ai.rever.boss.components.plugin.PluginStoreVersionBridge
 import ai.rever.boss.components.plugin.PluginUpdateBridge
 import ai.rever.boss.components.plugin.providers.GenericDialogHostContent
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.components.registery.PanelComponentStoreRegistry
 import ai.rever.boss.components.registery.TabTypeId
 import ai.rever.boss.components.windows.SettingsWindow
 import ai.rever.boss.components.wizard.plugin.PluginWizardIntegration
@@ -39,6 +43,7 @@ import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
+import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.services.auth.UserDataStorage
@@ -94,6 +99,94 @@ internal fun BossAppDialogs(state: BossAppState) {
                             StatusMessageManager.showMessage("Updated ${prompt.displayName} to v${r.getOrNull()}")
                         } else {
                             StatusMessageManager.showMessage("Update failed: ${r.exceptionOrNull()?.message}")
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    // "You are not running the released build" - from a panel's build tag or its version menu row.
+    state.storeVersionPrompt?.let { prompt ->
+        val storeVersion = prompt.storeVersion
+        if (storeVersion == null) {
+            // Nothing to install. Still worth a dialog rather than a status message: the user asked
+            // a question about which build they are on, and this answers it.
+            ConfirmationDialog(
+                title = "No Store Version",
+                message =
+                    "\"${prompt.displayName}\" is running ${prompt.runningVersion}. " +
+                        "${prompt.note ?: "There is no store version to install."}",
+                confirmText = "Close",
+                confirmColor = BossTheme.colors.signal,
+                onDismiss = { state.storeVersionPrompt = null },
+                onConfirm = {},
+            )
+        } else {
+            ConfirmationDialog(
+                title = "Install Store Version",
+                message =
+                    "\"${prompt.displayName}\" is running ${prompt.runningVersion}, which the plugin store " +
+                        "did not publish. Replace it with the store version v$storeVersion?",
+                confirmText = "Install",
+                // Not the default alert red: this installs a released build, it does not destroy
+                // anything. The local jar is left on disk.
+                confirmColor = BossTheme.colors.signal,
+                onDismiss = { state.storeVersionPrompt = null },
+                onConfirm = {
+                    val mgr = state.currentDefaultPlugin?.dynamicPluginManager
+                    if (mgr != null) {
+                        coroutineScope.launch {
+                            StatusMessageManager.showMessage("Installing ${prompt.displayName} v$storeVersion…")
+                            val r = PluginStoreVersionBridge.installStoreVersion(prompt.pluginId, storeVersion, mgr)
+                            if (r.isSuccess) {
+                                StatusMessageManager.showMessage(
+                                    "${prompt.displayName} is now on the store version v${r.getOrNull()}",
+                                )
+                            } else {
+                                StatusMessageManager.showMessage(
+                                    "Could not install the store version: ${r.exceptionOrNull()?.message}",
+                                )
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    // "Remove this plugin?" - from a panel's overflow menu.
+    state.pluginUninstallPrompt?.let { prompt ->
+        ConfirmationDialog(
+            title = "Uninstall Plugin",
+            message =
+                "Uninstall \"${prompt.displayName}\" v${prompt.version}? Its panels close and its jar is " +
+                    "deleted. This cannot be undone.",
+            confirmText = "Uninstall",
+            onDismiss = { state.pluginUninstallPrompt = null },
+            onConfirm = {
+                val mgr = state.currentDefaultPlugin?.dynamicPluginManager
+                if (mgr != null) {
+                    coroutineScope.launch {
+                        val result = mgr.uninstallPlugin(prompt.pluginId, force = false)
+                        if (result.isSuccess) {
+                            // Only now that the plugin is unloaded: delete the jar, its signature
+                            // sidecar and its installed.json row, or a directory scan brings it
+                            // straight back on the next launch.
+                            DynamicPluginManager.pluginArtifactCleanup?.invoke(prompt.pluginId, prompt.jarPath)
+                            // Close this window's slots properly (hides the slot AND drops the
+                            // component), then evict any component the other windows still cache -
+                            // its factory is gone, so left alone it would keep rendering against a
+                            // closed classloader.
+                            prompt.panelIds.forEach { panelId ->
+                                PanelEventBus.closePanel(panelId, windowId)
+                            }
+                            PanelComponentStoreRegistry.resetPanels(prompt.panelIds)
+                            StatusMessageManager.showMessage("Uninstalled ${prompt.displayName}")
+                        } else {
+                            StatusMessageManager.showMessage(
+                                "Could not uninstall ${prompt.displayName}: ${result.exceptionOrNull()?.message}",
+                            )
                         }
                     }
                 }

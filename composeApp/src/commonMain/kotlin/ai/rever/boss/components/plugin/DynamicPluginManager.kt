@@ -260,6 +260,33 @@ class DynamicPluginManager(
         var pluginPanelsRefresh: ((pluginId: String, panelIds: Set<PanelId>) -> Unit)? = null
 
         /**
+         * Decides which build of a plugin just loaded (store, local, hot reloaded) - invoked by
+         * [installPlugin] after its mutex releases, for every path that ends in a load. The answer
+         * feeds [PluginBuildRegistry], which panel headers observe to tag a panel that is not
+         * running the released build. Lives behind a hook because the signals are on disk (the
+         * signature sidecar and the jar's mtime) and only the desktop layer can read them. Set once
+         * by the desktop layer; null in headless/test contexts, where nothing is tagged.
+         */
+        @Volatile
+        var pluginBuildProbe: (
+            (pluginId: String, displayName: String, version: String, jarPath: String) -> PluginBuildInfo?
+        )? = null
+
+        /**
+         * Deletes a plugin's files and forgets it: the jar, its `.sig` sidecar and its
+         * `installed.json` row.
+         *
+         * **Deliberately NOT called by [uninstallPlugin].** That function is the shared unload path
+         * - `reloadPlugin`, the api hot swap, `disposeWindow` and the update bridge all call it with
+         * `force = true` - and deleting the jar there would destroy the plugin every one of them is
+         * about to load again. Only a user asking to remove a plugin invokes this, straight after a
+         * successful uninstall. Set once by the desktop layer, which is the only place that can
+         * touch the filesystem.
+         */
+        @Volatile
+        var pluginArtifactCleanup: ((pluginId: String, jarPath: String) -> Unit)? = null
+
+        /**
          * Runs swaps decoupled from the caller. The trigger usually fires
          * from a PLUGIN's own coroutine (Toolbox update runs on
          * plugin-manager's scope, evolver hot-reload on terminal-tab's) and
@@ -1101,6 +1128,27 @@ class DynamicPluginManager(
         result.getOrNull()?.takeIf { it.state == PluginState.LOADED }?.let { info ->
             notifyPanelsRefresh(info.manifest.pluginId)
         }
+        // Which build is now running. Every install path lands here (cold start, update, reload,
+        // evolver hot reload), which is why the probe hangs off this one point rather than each
+        // caller. Recorded for DISABLED results too: the plugin list shows them, even though a
+        // disabled plugin has no panel to tag. Never allowed to fail an install.
+        result.getOrNull()?.let { info ->
+            runCatching {
+                pluginBuildProbe
+                    ?.invoke(
+                        info.manifest.pluginId,
+                        info.manifest.displayName,
+                        info.manifest.version,
+                        info.jarPath,
+                    )?.let { PluginBuildRegistry.put(it) }
+            }.onFailure { t ->
+                logger.warn(
+                    LogCategory.SYSTEM,
+                    "Could not determine which plugin build loaded",
+                    mapOf("pluginId" to info.manifest.pluginId, "error" to t.toString()),
+                )
+            }
+        }
         return result
     }
 
@@ -1649,7 +1697,7 @@ class DynamicPluginManager(
         // Resolve against the DISK before unloading, never straight from the loaded record. A
         // reload is usually triggered by an update that already replaced the jar under a new
         // versioned name, so info.jarPath is precisely the file that no longer exists - and this
-        // path is what the "Reload Plugin" and "Reload All Plugins" menu actions call, so trusting
+        // path is what the "Reload Panel" and "Reload All Tools" menu actions call, so trusting
         // it meant one click could force-unload several plugins and fail to bring them back.
         // Resolving first also keeps a plugin running when no reload is possible.
         val jarPath =
@@ -2175,6 +2223,9 @@ class DynamicPluginManager(
         _pluginStates.value = _pluginStates.value - pluginId
         PluginRecoveryQuarantine.clear(pluginId)
         PluginCrashRegistry.clearCrash(pluginId)
+        // The build verdict describes a loaded plugin, so it goes with it. A reload re-probes on the
+        // way back in, so dropping it here does not make a reloaded panel lose its tag.
+        PluginBuildRegistry.clear(pluginId)
     }
 
     private fun <T> cleanupDeadReferences(list: CopyOnWriteArrayList<WeakReference<T>>) {
