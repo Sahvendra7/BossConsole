@@ -33,12 +33,10 @@ class PluginBuildProbeTest {
         storeVetted: Boolean,
         mtime: Long?,
         previous: RecordedBuild?,
+        systemPlugin: Boolean = false,
     ): PluginBuildInfo =
         PluginBuildProbe.probe(
-            pluginId = PLUGIN,
-            displayName = "Probe",
-            version = VERSION,
-            jarPath = JAR,
+            plugin = ProbedPlugin(PLUGIN, "Probe", VERSION, JAR, systemPlugin),
             hooks =
                 BuildProbeHooks(
                     mtimeOf = { mtime },
@@ -119,7 +117,7 @@ class PluginBuildProbeTest {
         // settle it, and it does: a locally rebuilt jar cannot carry a valid one.
         assertNull(
             PluginBuildProbe.resolveReloadStamp(
-                storeVetted = true,
+                signedBytes = true,
                 jarMtime = REBUILT,
                 recordedStamp = FIRST_LOAD,
                 recordedTag = PluginBuildProbe.TAG_DEBUG,
@@ -139,6 +137,49 @@ class PluginBuildProbeTest {
         assertEquals("DEBUG", info.tagLabel)
         // The previously recorded stamp is kept rather than being nulled out by an unreadable file.
         assertEquals(listOf(Recorded(JAR, FIRST_LOAD, PluginBuildProbe.TAG_DEBUG)), recorded)
+    }
+
+    @Test
+    fun `an unsigned jar that the store installed is not a local build`() {
+        // The signature rollout is still open: PluginSignatureEnforcement defaults to off, an
+        // unsigned store row warns-and-allows, and persist(null) DELETES the sidecar - so a genuine
+        // store install can arrive with no sidecar at all. Reading that as "local build" put a DEBUG
+        // tag on released plugins, which is the failure that teaches a user to ignore the tag.
+        val info =
+            probe(
+                storeVetted = false,
+                mtime = FIRST_LOAD,
+                previous = RecordedBuild(JAR, null, null, sourceUrl = "https://store.example/probe.jar"),
+            )
+
+        assertNull(info.tagLabel)
+        assertEquals(VERSION, info.displayVersion)
+    }
+
+    @Test
+    fun `a system plugin is never tagged`() {
+        // Its sidecar is backfilled from the store row asynchronously, so on the launch where that
+        // backfill happens it would otherwise be tagged DEBUG and have "debug" persisted.
+        val info = probe(storeVetted = false, mtime = FIRST_LOAD, previous = null, systemPlugin = true)
+
+        assertNull(info.tagLabel)
+    }
+
+    @Test
+    fun `a store-installed plugin whose bytes were replaced is still reported as hot`() {
+        // The store origin says where the plugin came from; it must not vouch for what is in the file
+        // now, or overwriting a store jar in place would be the one hot reload that goes unreported.
+        val info =
+            probe(
+                storeVetted = false,
+                mtime = REBUILT,
+                previous =
+                    RecordedBuild(JAR, FIRST_LOAD, null, sourceUrl = "https://store.example/probe.jar"),
+            )
+
+        assertEquals("HOT", info.tagLabel)
+        // Not "-debug": nothing suggests this plugin was never published, only that it was replaced.
+        assertEquals("$VERSION+$REBUILT", info.displayVersion)
     }
 
     @Test

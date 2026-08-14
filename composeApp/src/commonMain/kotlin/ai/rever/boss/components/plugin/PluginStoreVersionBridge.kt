@@ -5,6 +5,12 @@ sealed class StoreVersionLookup {
     data class Available(
         val displayName: String,
         val version: String,
+        /**
+         * The store's download URL, recorded on install. Not decoration: it is the evidence that
+         * survives on the `installed.json` row and stops an unsigned store download from later
+         * reading as a local build.
+         */
+        val sourceUrl: String?,
     ) : StoreVersionLookup()
 
     /** The store has no row for this plugin - a locally built plugin that was never published. */
@@ -32,10 +38,14 @@ expect object PluginStoreVersionBridge {
     /**
      * Download the store's [version] of [pluginId] and swap it in for whatever is running,
      * reusing [manager] to unload and load. Returns the version actually installed.
+     *
+     * Runs detached from the caller: a swap cancelled between the unload and the load would leave
+     * the plugin gone with nothing in its place, and the caller here is a window's scope.
      */
     suspend fun installStoreVersion(
         pluginId: String,
         version: String,
+        sourceUrl: String?,
         manager: DynamicPluginManager,
     ): Result<String>
 }

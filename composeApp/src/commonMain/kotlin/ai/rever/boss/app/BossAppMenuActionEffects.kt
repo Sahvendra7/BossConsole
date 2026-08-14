@@ -3,6 +3,7 @@ package ai.rever.boss.app
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.plugin.AvailablePluginUpdate
+import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.InstalledPluginRef
 import ai.rever.boss.components.plugin.PluginBuildRegistry
 import ai.rever.boss.components.plugin.PluginStoreVersionBridge
@@ -551,6 +552,9 @@ internal fun BossAppMenuActionEffects(
                     val info = manager.getPluginInfo(pluginId) ?: return@onEach
                     val running =
                         PluginBuildRegistry.get(pluginId)?.displayVersion ?: info.manifest.version
+                    // The lookup is a network call, so say something before making one: without this a
+                    // click on the tag looks ignored until the store answers.
+                    StatusMessageManager.showMessage("Checking the store for ${info.manifest.displayName}…")
                     state.storeVersionPrompt =
                         when (val lookup = PluginStoreVersionBridge.lookup(pluginId)) {
                             is StoreVersionLookup.Available -> {
@@ -559,6 +563,7 @@ internal fun BossAppMenuActionEffects(
                                     displayName = info.manifest.displayName,
                                     runningVersion = running,
                                     storeVersion = lookup.version,
+                                    storeSourceUrl = lookup.sourceUrl,
                                 )
                             }
 
@@ -602,6 +607,13 @@ internal fun BossAppMenuActionEffects(
                         StatusMessageManager.showMessage(
                             "${info.manifest.displayName} is a system plugin and cannot be uninstalled",
                         )
+                        return@onEach
+                    }
+                    // A bundled plugin passes the manifest gate but is copied back into the plugins
+                    // directory at the next launch, so removing it would quietly undo itself.
+                    val veto = DynamicPluginManager.pluginRemovalVeto?.invoke(pluginId)
+                    if (veto != null) {
+                        StatusMessageManager.showMessage("${info.manifest.displayName} $veto")
                         return@onEach
                     }
                     // Panel ids and jar path captured NOW: the uninstall clears the tracker and the

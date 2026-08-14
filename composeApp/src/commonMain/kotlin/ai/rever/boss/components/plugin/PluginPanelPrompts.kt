@@ -16,6 +16,8 @@ data class StoreVersionPrompt(
     /** What is running now, suffixed - e.g. `1.0.3-debug+1754890231447`. */
     val runningVersion: String,
     val storeVersion: String?,
+    /** The store's download URL, carried through so the install can record where the jar came from. */
+    val storeSourceUrl: String? = null,
     val note: String? = null,
 )
 

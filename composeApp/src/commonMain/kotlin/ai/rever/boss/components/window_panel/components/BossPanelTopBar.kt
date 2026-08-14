@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -151,8 +152,14 @@ fun BossPanelTopBar(
             color = BossThemeColors.TextPrimary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier =
                 Modifier
+                    // Give way rather than grow: an unbounded title in a narrow side panel would push
+                    // the build tag - the entire signal - off the end of the row. fill = false so a
+                    // short title still hugs its text and the tag sits next to it, not at the edge.
+                    .weight(1f, fill = false)
                     .align(Alignment.CenterVertically),
         )
 

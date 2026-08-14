@@ -322,9 +322,26 @@ object PluginPersistence {
                         ),
                     now = now,
                 )
+            // Nothing to write for the steady state. This runs on every plugin load, and for an
+            // unchanged store plugin the merged row is byte-identical to the one already there
+            // (installedAt preserved, buildStamp the same mtime), so without this a launch with N
+            // plugins is N serialize-and-atomic-write cycles that change nothing.
+            if (merged == existing) return
             if (existing != null) {
                 cfg.plugins[cfg.plugins.indexOf(existing)] = merged
             } else {
+                // A row pointing at a file that is gone would be retried by the persisted-load pass
+                // on every launch. `installPlugin` reports success with state = DISABLED for a
+                // binary-incompatible plugin whose jar the installer has already deleted, and the
+                // probe deliberately records DISABLED results too, so this is reachable.
+                if (!File(jarPath).isFile) {
+                    logger.debug(
+                        LogCategory.SYSTEM,
+                        "Not recording a build for a plugin whose jar is gone",
+                        mapOf("pluginId" to pluginId, "jarPath" to jarPath),
+                    )
+                    return
+                }
                 cfg.plugins.add(merged)
             }
             saveConfigInternal()

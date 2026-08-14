@@ -5,10 +5,11 @@ import ai.rever.boss.crash.PluginCrashRecovery
 import ai.rever.boss.crash.PluginCrashRecoveryCoordinator
 import ai.rever.boss.crash.PluginRecoverySteps
 import ai.rever.boss.crash.displayPluginId
-import ai.rever.boss.plugin.PluginArtifactCleanup
 import ai.rever.boss.plugin.PluginBuildProbe
 import ai.rever.boss.plugin.PluginLoaderDelegateImpl
 import ai.rever.boss.plugin.PluginPersistence
+import ai.rever.boss.plugin.PluginRemoval
+import ai.rever.boss.plugin.ProbedPlugin
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.utils.logging.BossLogger
@@ -63,14 +64,19 @@ actual object PluginLoaderDelegateSetup {
         // Which build each plugin is running. The signals (signature sidecar, jar mtime) are on
         // disk, so the answer comes from here rather than from commonMain.
         if (DynamicPluginManager.pluginBuildProbe == null) {
-            DynamicPluginManager.pluginBuildProbe = { id, displayName, version, jarPath ->
-                PluginBuildProbe.probe(id, displayName, version, jarPath)
+            DynamicPluginManager.pluginBuildProbe = { id, displayName, version, jarPath, systemPlugin ->
+                PluginBuildProbe.probe(ProbedPlugin(id, displayName, version, jarPath, systemPlugin))
             }
         }
-        // Deleting an uninstalled plugin's jar, sidecar and installed.json row. Invoked only by the
-        // deliberate "Uninstall Plugin" flow, never by the shared unload path.
-        if (DynamicPluginManager.pluginArtifactCleanup == null) {
-            DynamicPluginManager.pluginArtifactCleanup = { id, jarPath -> PluginArtifactCleanup.remove(id, jarPath) }
+        // Unloading a plugin and deleting its jar, sidecar and installed.json row. Invoked only by
+        // the deliberate "Uninstall Plugin" flow, never by the shared unload path.
+        if (DynamicPluginManager.pluginRemoval == null) {
+            DynamicPluginManager.pluginRemoval = { id, jarPath, mgr -> PluginRemoval.remove(id, jarPath, mgr) }
+        }
+        if (DynamicPluginManager.pluginRemovalVeto == null) {
+            DynamicPluginManager.pluginRemovalVeto = { id ->
+                PluginRemoval.removalVeto(id, dynamicPluginManager.getBundledPluginsDirectory())
+            }
         }
         // Lets the crash handler take a crashed plugin out instead of taking the
         // app down. Until this is wired, a plugin crash classifies as fatal and

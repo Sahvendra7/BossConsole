@@ -36,10 +36,7 @@ class PluginBuildProbeFilesystemTest {
     /** Only the persistence is stubbed; mtime and sidecar reading are the production defaults. */
     private fun probe(previous: RecordedBuild?) =
         PluginBuildProbe.probe(
-            pluginId = PLUGIN,
-            displayName = "Probe",
-            version = VERSION,
-            jarPath = jar.absolutePath,
+            plugin = ProbedPlugin(PLUGIN, "Probe", VERSION, jar.absolutePath),
             hooks =
                 BuildProbeHooks(
                     recordedBuild = { previous },
@@ -112,10 +109,7 @@ class PluginBuildProbeFilesystemTest {
     fun `a jar that is not there degrades instead of throwing`() {
         val info =
             PluginBuildProbe.probe(
-                pluginId = PLUGIN,
-                displayName = "Probe",
-                version = VERSION,
-                jarPath = File(temp, "absent.jar").absolutePath,
+                plugin = ProbedPlugin(PLUGIN, "Probe", VERSION, File(temp, "absent.jar").absolutePath),
                 hooks = BuildProbeHooks(recordedBuild = { null }, record = { _, _, _, _, _ -> }),
             )
 

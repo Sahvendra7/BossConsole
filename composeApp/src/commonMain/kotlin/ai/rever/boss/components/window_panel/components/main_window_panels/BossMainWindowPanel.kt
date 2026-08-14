@@ -178,12 +178,12 @@ private fun BossTabButtonWithFavicon(
         titleBadge =
             buildInfo?.let { info ->
                 // panelHost is non-null here by construction: buildInfo was resolved from it.
-                val hostedPanelId = panelHost?.panelId
+                val hostedPanelId = panelHost.panelId
                 {
                     PluginBuildTag(
                         info = info,
                         onClick =
-                            if (hostedPanelId != null && tabWindowId != null) {
+                            if (tabWindowId != null) {
                                 { MenuActionsHandler.triggerInstallStoreVersion(tabWindowId, hostedPanelId) }
                             } else {
                                 null

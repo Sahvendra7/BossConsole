@@ -56,7 +56,8 @@ class BossPanelTopBarMenuTest {
         pluginId = "ai.rever.boss.plugin.dynamic.probe",
         displayName = "Probe",
         version = version,
-        storeVetted = false,
+        signedBytes = false,
+        storeSourced = false,
         reloadStamp = reloadStamp,
     )
 
@@ -124,7 +125,8 @@ class BossPanelTopBarMenuTest {
                     pluginId = "p",
                     displayName = "Probe",
                     version = "1.0.3",
-                    storeVetted = true,
+                    signedBytes = true,
+                    storeSourced = true,
                     reloadStamp = null,
                 ),
         )

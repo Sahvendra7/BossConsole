@@ -1109,8 +1109,6 @@
     <ID>ReturnCount:PluginStoreSetup.kt$PluginStoreSetup$internal fun isNewerVersion( version1: String, version2: String, ): Boolean</ID>
     <ID>ReturnCount:PluginStoreSetup.kt$PluginStoreSetup$private fun copyBundledPluginsToPluginDir(dynamicPluginManager: ai.rever.boss.components.plugin.DynamicPluginManager)</ID>
     <ID>ReturnCount:PluginStoreVersionBridge.kt$PluginStoreVersionBridge$actual suspend fun lookup(pluginId: String): StoreVersionLookup</ID>
-    <ID>ReturnCount:PluginStoreVersionBridge.kt$PluginStoreVersionBridge$private suspend fun download( store: ai.rever.boss.plugin.repository.PluginRepository, pluginId: String, version: String, target: File, ): Result&lt;Unit&gt;</ID>
-    <ID>ReturnCount:PluginStoreVersionBridge.kt$PluginStoreVersionBridge$private suspend fun swapIn( pluginId: String, version: String, target: File, manager: DynamicPluginManager, ): Result&lt;String&gt;</ID>
     <ID>ReturnCount:PluginUpdateBridge.kt$PluginUpdateBridge$actual suspend fun performUpdate( pluginId: String, manager: DynamicPluginManager, ): Result&lt;String&gt;</ID>
     <ID>ReturnCount:PluginUpdateBridge.kt$PluginUpdateBridge$actual suspend fun refreshAll(installed: List&lt;InstalledPluginRef&gt;)</ID>
     <ID>ReturnCount:RoleService.kt$RoleService$suspend fun canPerformAction( userId: String, permissionName: String, ): Result&lt;Boolean&gt;</ID>
@@ -1125,6 +1123,8 @@
     <ID>ReturnCount:SplitTemplatesManager.kt$SplitTemplatesManager$private fun getGitRemoteUrl(projectPath: String): String</ID>
     <ID>ReturnCount:SplitView.kt$SplitViewState$fun openUrlInActivePanel( url: String, title: String, forceNewTab: Boolean = false, )</ID>
     <ID>ReturnCount:SplitView.kt$SplitViewState$fun setActivePanel(panelId: String)</ID>
+    <ID>ReturnCount:StoreVersionInstaller.kt$StoreVersionInstaller$private suspend fun activate( request: StoreVersionRequest, target: File, unload: suspend (String) -&gt; Result&lt;Unit&gt;, load: suspend (String) -&gt; Result&lt;Boolean&gt;, ): Result&lt;String&gt;</ID>
+    <ID>ReturnCount:StoreVersionInstaller.kt$StoreVersionInstaller$suspend fun install( store: PluginRepository, request: StoreVersionRequest, unload: suspend (String) -&gt; Result&lt;Unit&gt;, load: suspend (String) -&gt; Result&lt;Boolean&gt;, ): Result&lt;String&gt;</ID>
     <ID>ReturnCount:SupabasePasskeyService.kt$SupabasePasskeyService$suspend fun getUserPasskeys(userId: String): Result&lt;List&lt;PasskeyCredential&gt;&gt;</ID>
     <ID>ReturnCount:SupabasePasskeyService.kt$SupabasePasskeyService$suspend fun requestRegistrationChallenge( userId: String, displayName: String, authenticatorSelection: AuthenticatorSelectionCriteria?, ): Result&lt;PasskeyChallenge&gt;</ID>
     <ID>ReturnCount:TabDraggableComponent.kt$TabDraggableComponent$private fun calculateReorderIndex( panelId: String, position: Offset, ): Int</ID>

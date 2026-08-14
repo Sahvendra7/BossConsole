@@ -269,22 +269,39 @@ class DynamicPluginManager(
          */
         @Volatile
         var pluginBuildProbe: (
-            (pluginId: String, displayName: String, version: String, jarPath: String) -> PluginBuildInfo?
+            (
+                pluginId: String,
+                displayName: String,
+                version: String,
+                jarPath: String,
+                systemPlugin: Boolean,
+            ) -> PluginBuildInfo?
         )? = null
 
         /**
-         * Deletes a plugin's files and forgets it: the jar, its `.sig` sidecar and its
+         * Removes a plugin outright: unload it, then delete the jar, its `.sig` sidecar and its
          * `installed.json` row.
          *
-         * **Deliberately NOT called by [uninstallPlugin].** That function is the shared unload path
+         * **Deliberately separate from [uninstallPlugin].** That function is the shared unload path
          * - `reloadPlugin`, the api hot swap, `disposeWindow` and the update bridge all call it with
          * `force = true` - and deleting the jar there would destroy the plugin every one of them is
-         * about to load again. Only a user asking to remove a plugin invokes this, straight after a
-         * successful uninstall. Set once by the desktop layer, which is the only place that can
-         * touch the filesystem.
+         * about to load again. Only a user asking to remove a plugin reaches this hook.
+         *
+         * Runs detached from its caller, so a window closing mid-removal cannot leave the plugin
+         * unloaded with its jar still on disk. Set once by the desktop layer, which is the only place
+         * that can touch the filesystem.
          */
         @Volatile
-        var pluginArtifactCleanup: ((pluginId: String, jarPath: String) -> Unit)? = null
+        var pluginRemoval: (
+            suspend (pluginId: String, jarPath: String, manager: DynamicPluginManager) -> Result<Unit>
+        )? = null
+
+        /**
+         * Why a plugin cannot usefully be removed, or null when it can. Covers what the manifest gate
+         * cannot: a bundled plugin that would be copied back at the next launch.
+         */
+        @Volatile
+        var pluginRemovalVeto: ((pluginId: String) -> String?)? = null
 
         /**
          * Runs swaps decoupled from the caller. The trigger usually fires
@@ -1140,6 +1157,7 @@ class DynamicPluginManager(
                         info.manifest.displayName,
                         info.manifest.version,
                         info.jarPath,
+                        info.manifest.systemPlugin,
                     )?.let { PluginBuildRegistry.put(it) }
             }.onFailure { t ->
                 logger.warn(

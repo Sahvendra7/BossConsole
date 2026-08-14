@@ -14,24 +14,36 @@ import kotlinx.coroutines.flow.update
  * was never published looks identical to the store build, and successive reload iterations look
  * identical to each other.
  *
- * Two independent facts, because a jar can be both:
+ * Three independent facts, because one jar can be several of them:
  *
- * - [storeVetted] - a store signature covers these exact bytes. Note this means "the store agreed
- *   about this jar", not "downloaded from the store": system plugins come from GitHub releases and
- *   have their sidecar backfilled from the store row, which is deliberate - they are released
- *   builds and should carry no tag.
+ * - [signedBytes] - a store signature covers these exact bytes. A locally rebuilt jar cannot carry a
+ *   valid one, so this is the only signal that can rule a hot reload OUT.
+ * - [storeSourced] - the install record says this plugin came from the store or is a system plugin.
+ *   Weaker than [signedBytes] and deliberately so: it describes where the plugin came from, not what
+ *   is in the file now, so it survives someone overwriting the jar.
  * - [reloadStamp] - the bytes on disk were replaced after the install was recorded, i.e. this is a
  *   hot reload. Carries the jar's modification time, which is what makes one reload iteration
  *   distinguishable from the next.
+ *
+ * **Why two store signals rather than one.** Signature enforcement is still rolling out
+ * (`PluginSignatureEnforcement.DEFAULT` is false), and a store row that has not been signed yet
+ * downloads with a null signature - which `PluginSignatureSidecar.persist` writes as *no sidecar at
+ * all*. Reading "no sidecar" as "local build" would therefore label a genuine store install DEBUG.
+ * So absence of a signature no longer implies a local build on its own; it takes absence of any
+ * store origin too. The sidecar signal is only ever as good as the backfill behind it.
  */
 data class PluginBuildInfo(
     val pluginId: String,
     val displayName: String,
     /** The canonical manifest version, never suffixed - update checks and signing anchors use it. */
     val version: String,
-    val storeVetted: Boolean,
+    val signedBytes: Boolean,
+    val storeSourced: Boolean,
     val reloadStamp: Long?,
 ) {
+    /** Nothing says these bytes were ever published. */
+    val isLocalBuild: Boolean get() = !signedBytes && !storeSourced
+
     /**
      * The version as a person should read it: `1.0.3`, `1.0.3-debug`, `1.0.3-debug+1754890231447`.
      *
@@ -43,7 +55,7 @@ data class PluginBuildInfo(
         get() =
             buildString {
                 append(version)
-                if (!storeVetted) append("-debug")
+                if (isLocalBuild) append("-debug")
                 reloadStamp?.let {
                     append('+')
                     append(it)
@@ -55,7 +67,7 @@ data class PluginBuildInfo(
         get() =
             when {
                 reloadStamp != null -> "HOT"
-                !storeVetted -> "DEBUG"
+                isLocalBuild -> "DEBUG"
                 else -> null
             }
 
@@ -67,7 +79,7 @@ data class PluginBuildInfo(
         get() =
             when {
                 reloadStamp != null -> "Hot reloaded build, not the store version"
-                !storeVetted -> "Local build, not the store version"
+                isLocalBuild -> "Local build, not the store version"
                 else -> "Store version"
             }
 }

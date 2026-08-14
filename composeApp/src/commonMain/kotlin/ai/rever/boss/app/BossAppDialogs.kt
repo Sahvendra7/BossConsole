@@ -43,6 +43,7 @@ import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
+import ai.rever.boss.plugin.ui.BossAlertDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
@@ -55,6 +56,8 @@ import ai.rever.boss.window.MenuActionsHandler
 import ai.rever.boss.window.Project
 import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.window.selectProjectInWindow
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -110,17 +113,24 @@ internal fun BossAppDialogs(state: BossAppState) {
     state.storeVersionPrompt?.let { prompt ->
         val storeVersion = prompt.storeVersion
         if (storeVersion == null) {
-            // Nothing to install. Still worth a dialog rather than a status message: the user asked
-            // a question about which build they are on, and this answers it.
-            ConfirmationDialog(
-                title = "No Store Version",
-                message =
-                    "\"${prompt.displayName}\" is running ${prompt.runningVersion}. " +
-                        "${prompt.note ?: "There is no store version to install."}",
-                confirmText = "Close",
-                confirmColor = BossTheme.colors.signal,
-                onDismiss = { state.storeVersionPrompt = null },
-                onConfirm = {},
+            // Nothing to install, so this is a notice, not a choice. BossAlertDialog rather than
+            // ConfirmationDialog: that one always renders its own Cancel, which would put "Cancel"
+            // and "Close" side by side, both doing the same thing.
+            BossAlertDialog(
+                onDismissRequest = { state.storeVersionPrompt = null },
+                title = { Text("No Store Version", color = BossTheme.colors.textPrimary) },
+                text = {
+                    Text(
+                        "\"${prompt.displayName}\" is running ${prompt.runningVersion}. " +
+                            (prompt.note ?: "There is no store version to install."),
+                        color = BossTheme.colors.textSecondary,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { state.storeVersionPrompt = null }) {
+                        Text("Close", color = BossTheme.colors.signalText)
+                    }
+                },
             )
         } else {
             ConfirmationDialog(
@@ -138,7 +148,15 @@ internal fun BossAppDialogs(state: BossAppState) {
                     if (mgr != null) {
                         coroutineScope.launch {
                             StatusMessageManager.showMessage("Installing ${prompt.displayName} v$storeVersion…")
-                            val r = PluginStoreVersionBridge.installStoreVersion(prompt.pluginId, storeVersion, mgr)
+                            // The swap itself is detached inside the bridge, so closing this window
+                            // only stops us reporting the result, never the swap mid-flight.
+                            val r =
+                                PluginStoreVersionBridge.installStoreVersion(
+                                    prompt.pluginId,
+                                    storeVersion,
+                                    prompt.storeSourceUrl,
+                                    mgr,
+                                )
                             if (r.isSuccess) {
                                 StatusMessageManager.showMessage(
                                     "${prompt.displayName} is now on the store version v${r.getOrNull()}",
@@ -168,12 +186,13 @@ internal fun BossAppDialogs(state: BossAppState) {
                 val mgr = state.currentDefaultPlugin?.dynamicPluginManager
                 if (mgr != null) {
                     coroutineScope.launch {
-                        val result = mgr.uninstallPlugin(prompt.pluginId, force = false)
+                        // Unload plus jar, sidecar and installed.json row, all detached inside the
+                        // hook: a window closing mid-removal must not leave the plugin unloaded with
+                        // its files still on disk, which would bring it back at the next launch.
+                        val result =
+                            DynamicPluginManager.pluginRemoval?.invoke(prompt.pluginId, prompt.jarPath, mgr)
+                                ?: mgr.uninstallPlugin(prompt.pluginId, force = false)
                         if (result.isSuccess) {
-                            // Only now that the plugin is unloaded: delete the jar, its signature
-                            // sidecar and its installed.json row, or a directory scan brings it
-                            // straight back on the next launch.
-                            DynamicPluginManager.pluginArtifactCleanup?.invoke(prompt.pluginId, prompt.jarPath)
                             // Close this window's slots properly (hides the slot AND drops the
                             // component), then evict any component the other windows still cache -
                             // its factory is gone, so left alone it would keep rendering against a

@@ -6,11 +6,18 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 
-/** What a previous load recorded about a plugin's bytes, or null when nothing has. */
+/**
+ * The `installed.json` row a previous load left behind, or null when nothing has.
+ *
+ * [sourceUrl] rides along because it comes from the same row read and answers a different question
+ * from the rest: the stamps describe the bytes at [jarPath], while the source describes where the
+ * plugin came from and stays true even after someone overwrites that file.
+ */
 data class RecordedBuild(
     val jarPath: String,
     val buildStamp: Long?,
     val buildTag: String?,
+    val sourceUrl: String? = null,
 )
 
 /**
@@ -28,7 +35,9 @@ class BuildProbeHooks(
         runCatching { PluginSignatureSidecar.read(path) != null }.getOrDefault(false)
     },
     val recordedBuild: (pluginId: String) -> RecordedBuild? = { id ->
-        PluginPersistence.getInstalledPlugin(id)?.let { RecordedBuild(it.jarPath, it.buildStamp, it.buildTag) }
+        PluginPersistence.getInstalledPlugin(id)?.let {
+            RecordedBuild(it.jarPath, it.buildStamp, it.buildTag, it.sourceUrl)
+        }
     },
     val record: (pluginId: String, jarPath: String, buildStamp: Long?, buildTag: String?, version: String) -> Unit =
         { id, jarPath, buildStamp, buildTag, version ->
@@ -40,6 +49,15 @@ class BuildProbeHooks(
                 installedVersion = version,
             )
         },
+)
+
+/** The plugin a probe is about. Grouped so the call stays one argument as the signals grow. */
+data class ProbedPlugin(
+    val pluginId: String,
+    val displayName: String,
+    val version: String,
+    val jarPath: String,
+    val systemPlugin: Boolean = false,
 )
 
 /**
@@ -65,21 +83,26 @@ object PluginBuildProbe {
     const val TAG_HOT = "hot"
 
     fun probe(
-        pluginId: String,
-        displayName: String,
-        version: String,
-        jarPath: String,
+        plugin: ProbedPlugin,
         hooks: BuildProbeHooks = BuildProbeHooks(),
     ): PluginBuildInfo {
+        val pluginId = plugin.pluginId
+        val jarPath = plugin.jarPath
         val mtime = hooks.mtimeOf(jarPath)
-        val storeVetted = hooks.sidecarPresent(jarPath)
+        val signedBytes = hooks.sidecarPresent(jarPath)
+        val row = hooks.recordedBuild(pluginId)
         // Only a row for the SAME file can say anything about these bytes; a different jar is a
-        // different install.
-        val previous = hooks.recordedBuild(pluginId)?.takeIf { it.jarPath == jarPath }
+        // different install. The row's source is read separately, below, because it outlives the file.
+        val previous = row?.takeIf { it.jarPath == jarPath }
+
+        // A system plugin is a released build by definition - it ships with the app or comes from a
+        // GitHub release, cannot be uninstalled, and its sidecar is backfilled from the store row
+        // asynchronously, so on the launch where that backfill happens it would otherwise be tagged.
+        val storeSourced = plugin.systemPlugin || !row?.sourceUrl.isNullOrBlank()
 
         val reloadStamp =
             resolveReloadStamp(
-                storeVetted = storeVetted,
+                signedBytes = signedBytes,
                 jarMtime = mtime,
                 recordedStamp = previous?.buildStamp,
                 recordedTag = previous?.buildTag,
@@ -88,13 +111,14 @@ object PluginBuildProbe {
         val info =
             PluginBuildInfo(
                 pluginId = pluginId,
-                displayName = displayName,
-                version = version,
-                storeVetted = storeVetted,
+                displayName = plugin.displayName,
+                version = plugin.version,
+                signedBytes = signedBytes,
+                storeSourced = storeSourced,
                 reloadStamp = reloadStamp,
             )
 
-        hooks.record(pluginId, jarPath, mtime ?: previous?.buildStamp, tagFor(info), version)
+        hooks.record(pluginId, jarPath, mtime ?: previous?.buildStamp, tagFor(info), plugin.version)
 
         if (info.isTagged) {
             logger.info(
@@ -114,7 +138,7 @@ object PluginBuildProbe {
     fun tagFor(info: PluginBuildInfo): String? =
         when {
             info.reloadStamp != null -> TAG_HOT
-            !info.storeVetted -> TAG_DEBUG
+            info.isLocalBuild -> TAG_DEBUG
             else -> null
         }
 
@@ -123,9 +147,13 @@ object PluginBuildProbe {
      *
      * Pure, so the verdict is testable without a filesystem or an `installed.json` - the same shape
      * as `resolveReloadJarPath`.
+     *
+     * Gated on [signedBytes] alone, never on the weaker "came from the store" signal: that one
+     * describes the plugin's origin and survives someone overwriting the jar, so using it here would
+     * make a store-installed plugin the one case where a hot reload goes unreported.
      */
     fun resolveReloadStamp(
-        storeVetted: Boolean,
+        signedBytes: Boolean,
         jarMtime: Long?,
         recordedStamp: Long?,
         recordedTag: String?,
@@ -135,7 +163,7 @@ object PluginBuildProbe {
             // hash, and a locally rebuilt jar cannot carry a valid one (a stale sidecar hard-fails
             // the load instead). So it can never be a hot reload - which is also what makes
             // installing the store version clear the tag.
-            storeVetted -> null
+            signedBytes -> null
 
             jarMtime == null || recordedStamp == null -> null
 
