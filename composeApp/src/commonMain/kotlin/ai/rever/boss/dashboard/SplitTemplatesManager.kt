@@ -70,6 +70,9 @@ data class CustomTemplatesData(
  */
 object SplitTemplatesManager {
     private val logger = BossLogger.forComponent("SplitTemplatesManager")
+
+    /** Also the guard in [processPlaceholders], so the two cannot drift apart. */
+    private const val PROJECT_PATH_PLACEHOLDER = "{projectPath}"
     private val settingsFile = BossDirectories.resolve("split-templates.json")
     private val json =
         Json {
@@ -366,7 +369,7 @@ object SplitTemplatesManager {
         pathValue: String,
         quote: Boolean,
     ): String {
-        if (!quote) return content.replace("{projectPath}", pathValue)
+        if (!quote) return content.replace(PROJECT_PATH_PLACEHOLDER, pathValue)
         val quoted = CommandProcessor.quotePath(pathValue)
         // Quote only occurrences NOT already adjacent to a quote char. The
         // lambda form does literal replacement (no $-group interpretation),
@@ -427,8 +430,15 @@ object SplitTemplatesManager {
 
         // Replace project path (shell-quoted when used inside a command). With no project the
         // fallback is ~/BossProjects, not the home directory - see DefaultWorkingDirectory.
-        val pathValue = selectedProject ?: DefaultWorkingDirectory.path()
-        result = substituteProjectPath(result, pathValue, quoteProjectPath)
+        //
+        // Guarded on the placeholder being present, which substituteProjectPath would handle
+        // by itself: the point is that DefaultWorkingDirectory.path() *creates a directory*,
+        // and evaluating it for content with no {projectPath} in it - "{gitRemoteUrl}", a
+        // plain string - makes a mkdir a side effect of a function called processPlaceholders.
+        if (result.contains(PROJECT_PATH_PLACEHOLDER)) {
+            val pathValue = selectedProject ?: DefaultWorkingDirectory.path()
+            result = substituteProjectPath(result, pathValue, quoteProjectPath)
+        }
 
         // Replace git remote URL. Deliberately not resolved to the default: the projects
         // folder is not a repository, so "no project" means there is no remote to link to.
