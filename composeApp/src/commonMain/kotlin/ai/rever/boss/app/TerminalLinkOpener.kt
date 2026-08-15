@@ -12,6 +12,7 @@ import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.platform.openFileWithSystemDefault
 import ai.rever.boss.plugin.events.FileValidationResult
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.terminal.ExistingSplitTargetMode
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
@@ -35,7 +36,11 @@ internal fun openRunnerInMainPanel(
             typeId = TabTypeId("terminal"),
             title = "Run: ${event.configName}",
             initialCommand = event.command,
-            workingDirectory = event.workingDirectory,
+            // A CUSTOM run configuration saved with an empty working directory reaches here
+            // as null - DesktopRunnerTerminalService builds the event with
+            // `resolveWorkingDirectory(config).ifBlank { null }` - and a null one lands the
+            // shell in the home directory via TerminalServiceImpl's own fallback.
+            workingDirectory = DefaultWorkingDirectory.resolve(event.workingDirectory),
         )
 
     // Find existing tab or create new one

@@ -127,7 +127,10 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                             windowId = windowId,
                             configId = event.configId,
                             command = event.command,
-                            workingDirectory = event.workingDirectory,
+                            // Same reason as openRunnerInMainPanel: an unset run-configuration
+                            // working directory arrives null and would start the shell in the
+                            // home directory.
+                            workingDirectory = DefaultWorkingDirectory.resolve(event.workingDirectory),
                             tabTitle = "Run: ${event.configName}",
                             isRerun = event.isRerun,
                         )
