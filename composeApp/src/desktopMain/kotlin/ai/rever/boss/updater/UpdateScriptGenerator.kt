@@ -42,6 +42,114 @@ internal fun resolveUpdaterLogFile(
 internal fun updaterTempDir(): File = createRestrictedDir(resolveUpdaterTempDir())
 
 /**
+ * The body of the Windows helper script: wait for BOSS to quit, install, relaunch.
+ *
+ * File-level rather than a member of [UpdateScriptGenerator] because it is pure text
+ * assembly with no escaping of its own - both paths arrive already escaped - and
+ * because the object is at detekt's function-count ceiling.
+ *
+ * Every wait is a `ping`, not the obvious `timeout`: [UpdateScriptGenerator.launchScript]
+ * starts this with ProcessBuilder, so stdin is a pipe, and `timeout` refuses to run at
+ * all under redirected input ("ERROR: Input redirection is not supported"). It failed
+ * instantly rather than waiting, which turned the quit poll into a hot loop hammering
+ * tasklist and wrote three errors into the one log anybody diagnosing a failed update
+ * would read.
+ *
+ * @param escapedMsiPath The MSI path, already through the Windows batch escaper.
+ * @param escapedExePath The launcher to relaunch, already escaped, or null for none.
+ */
+internal fun windowsUpdateScript(
+    escapedMsiPath: String,
+    appPid: Long,
+    escapedExePath: String?,
+): String {
+    val install =
+        """
+        @echo off
+        REM BOSS Update Helper Script
+
+        echo BOSS Update Helper started
+        echo Waiting for BOSS to quit (PID: $appPid)...
+
+        REM Wait for process to terminate (ping, not timeout - see the KDoc)
+        :waitloop
+        tasklist /FI "PID eq $appPid" 2>NUL | find /I /N "$appPid">NUL
+        if "%ERRORLEVEL%"=="0" (
+            ping -n 2 127.0.0.1 >NUL
+            goto waitloop
+        )
+
+        echo BOSS has quit. Starting installation...
+        ping -n 3 127.0.0.1 >NUL
+
+        REM Launch MSI installer (using escaped path for security)
+        echo Installing update...
+        msiexec /i $escapedMsiPath /quiet /norestart
+
+        REM Capture the code before anything else overwrites ERRORLEVEL, and treat the
+        REM two "installed, wants a reboot" codes as success: /norestart makes msiexec
+        REM report 3010 rather than 0 whenever a file was in use, so branching on NEQ 0
+        REM would call a completed install a failure and hand the user an installer
+        REM they do not need.
+        set MSI_RESULT=%ERRORLEVEL%
+        if %MSI_RESULT% EQU 3010 set MSI_RESULT=0
+        if %MSI_RESULT% EQU 1641 set MSI_RESULT=0
+
+        REM No relaunch on this branch, deliberately: the interactive installer is now
+        REM driving, and a running BOSS holding its own files open is what it needs
+        REM least.
+        if not %MSI_RESULT% EQU 0 (
+            echo Installation failed with exit code %MSI_RESULT%. Opening installer manually...
+            start "" $escapedMsiPath
+            goto cleanup
+        )
+
+        echo Installation successful!
+        """.trimIndent()
+
+    val cleanup =
+        """
+        :cleanup
+        REM Clean up
+        ping -n 3 127.0.0.1 >NUL
+        del "%~f0"
+        """.trimIndent()
+
+    // Joined rather than interpolated into one template: `trimIndent` runs after
+    // interpolation, so a multi-line block spliced into an indented template leaves
+    // its own continuation lines at column 0, which makes the common indent 0 and
+    // emits every other line still indented. Batch tolerates that for commands but it
+    // is not worth relying on for the `:labels` `goto` depends on.
+    return listOf(install, windowsRelaunchBlock(escapedExePath), cleanup).joinToString("\n\n")
+}
+
+/**
+ * The relaunch, the step macOS and Linux always had and Windows never did: the MSI leg
+ * installed and then simply ended, so clicking "Install update" quit BOSS and nothing
+ * came back.
+ *
+ * `if exist` because a major upgrade is only *usually* into the same INSTALLDIR - a
+ * per-user install replaced by a per-machine one lands elsewhere - and `start` on a
+ * missing path raises a Windows error dialog rather than failing quietly. When the
+ * launcher could not be resolved at all the block is a message instead, so the updater
+ * log says which of the two happened.
+ */
+private fun windowsRelaunchBlock(escapedExePath: String?): String {
+    if (escapedExePath == null) {
+        return "echo Could not determine the BOSS install path - please start BOSS manually"
+    }
+
+    return """
+        echo Relaunching BOSS...
+        if exist $escapedExePath (
+            start "" $escapedExePath
+        ) else (
+            echo BOSS was not found at $escapedExePath - please start BOSS manually
+        )
+        """.trimIndent()
+}
+
+/**
  * Generates platform-specific update helper scripts
  *
  * These scripts run AFTER the main app quits and handle:
@@ -315,14 +423,19 @@ object UpdateScriptGenerator {
      *
      * @param msiPath Path to the downloaded MSI file
      * @param appPid Process ID of the running app to wait for
+     * @param targetExePath Path of the installed launcher to relaunch (e.g.
+     *   `%LOCALAPPDATA%\BOSS\BOSS.exe`), or null when it could not be resolved -
+     *   the update is still installed, just without the relaunch.
      * @return File object pointing to the generated script
      */
     fun generateWindowsUpdateScript(
         msiPath: String,
         appPid: Long,
+        targetExePath: String? = null,
     ): File {
         // Validate input for security
         validatePath(msiPath, "MSI path")
+        targetExePath?.let { validatePath(it, "Target exe path") }
 
         // Escape path for Windows batch file (handles quotes, percent signs, etc.)
         val escapedMsiPath = escapeWindowsArg(msiPath)
@@ -333,44 +446,26 @@ object UpdateScriptGenerator {
 
         val scriptFile = File(tempDir, "update_boss_${System.currentTimeMillis()}.bat")
 
+        // CRLF, not the LF `writeText` would otherwise leave: cmd.exe parses an
+        // LF-only batch file by seeking byte offsets that assume CRLF, so `goto` into
+        // a label - which the failure branch now needs - is the case that misbehaves,
+        // and it misbehaves by jumping to the wrong place rather than by failing.
         val script =
-            """
-            @echo off
-            REM BOSS Update Helper Script
-
-            echo BOSS Update Helper started
-            echo Waiting for BOSS to quit (PID: $appPid)...
-
-            REM Wait for process to terminate
-            :waitloop
-            tasklist /FI "PID eq $appPid" 2>NUL | find /I /N "$appPid">NUL
-            if "%ERRORLEVEL%"=="0" (
-                timeout /t 1 /nobreak >NUL
-                goto waitloop
+            windowsUpdateScript(
+                escapedMsiPath = escapedMsiPath,
+                appPid = appPid,
+                escapedExePath = targetExePath?.let(::escapeWindowsArg),
             )
+        scriptFile.writeText(script.replace("\n", "\r\n"))
 
-            echo BOSS has quit. Starting installation...
-            timeout /t 2 /nobreak >NUL
-
-            REM Launch MSI installer (using escaped path for security)
-            echo Installing update...
-            msiexec /i $escapedMsiPath /quiet /norestart
-
-            if %ERRORLEVEL% NEQ 0 (
-                echo Installation failed. Opening installer manually...
-                start "" $escapedMsiPath
-            ) else (
-                echo Installation successful!
-            )
-
-            REM Clean up
-            timeout /t 2 /nobreak >NUL
-            del "%~f0"
-            """.trimIndent()
-
-        scriptFile.writeText(script)
-
-        logger.debug(LogCategory.SYSTEM, "Generated Windows update script", mapOf("path" to scriptFile.absolutePath))
+        logger.debug(
+            LogCategory.SYSTEM,
+            "Generated Windows update script",
+            mapOf(
+                "path" to scriptFile.absolutePath,
+                "relaunches" to (targetExePath != null).toString(),
+            ),
+        )
         return scriptFile
     }
 
