@@ -387,7 +387,11 @@ object SplitTemplatesManager {
      * - {currentFile}: Currently open file path
      *
      * @param content The content string with placeholders
-     * @param projectPath The current project path
+     * @param projectPath The current project path, or null/blank for no project. **This
+     *   function owns the no-project fallback** (`DefaultWorkingDirectory`), so a caller may
+     *   pass a raw project path straight from window state. Callers that resolve first - they
+     *   need the same directory for something other than a placeholder - are passing a
+     *   non-blank path, which makes the second resolve a no-op rather than a second answer.
      * @param currentFile The currently open file (optional)
      * @param quoteProjectPath When true, {projectPath} is substituted as a
      *   shell-quoted argument. Pass true ONLY for shell command content

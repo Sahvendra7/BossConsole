@@ -316,10 +316,13 @@ private fun createTabFromWorkspaceConfig(
 
         TerminalTabType.typeId -> {
             // Process working directory placeholder
+            // No stored working directory means "wherever the project is", which is what
+            // resolvedProjectPath already holds - it is never empty, so there is no null case
+            // left for a terminal to fall into.
             val workingDir =
                 tabConfig.workingDirectory?.let {
                     SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
-                } ?: resolvedProjectPath.ifEmpty { null }
+                } ?: resolvedProjectPath
 
             // Process initial command placeholder (shell command → quote {projectPath})
             val initialCmd =

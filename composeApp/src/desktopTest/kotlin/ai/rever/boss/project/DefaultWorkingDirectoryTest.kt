@@ -54,6 +54,24 @@ class DefaultWorkingDirectoryTest {
     }
 
     /**
+     * The reason this is `Files.createDirectories` and not `mkdirs()`, which returns false when
+     * someone else created the directory first. Three callers race on a cold first launch - the
+     * startup warm-up, the first window resolving a terminal's working directory, and
+     * `validateProjectLocation` - and a loser falling back to the home directory would put the
+     * TCC prompts back on exactly the launch this exists to fix.
+     */
+    @Test
+    fun `losing the creation race still yields the directory`() {
+        val target = File(tempRoot, "BossProjects")
+
+        val first = DefaultWorkingDirectory.ensureDirectory(target)
+        val second = DefaultWorkingDirectory.ensureDirectory(target)
+
+        assertEquals(target.path, first)
+        assertEquals(target.path, second, "the second caller gets the path, not the fallback")
+    }
+
+    /**
      * A *file* named BossProjects. mkdirs() fails, and reporting the path usable would hand a
      * terminal a working directory it cannot start in - worse than the home directory this
      * replaces.
@@ -77,6 +95,32 @@ class DefaultWorkingDirectoryTest {
         assertNull(DefaultWorkingDirectory.selectedOrNull(""))
         assertNull(DefaultWorkingDirectory.selectedOrNull("   "))
         assertNull(DefaultWorkingDirectory.selectedOrNull(null))
+
+        val default = { "/tmp/default" }
+        assertEquals("/tmp/default", DefaultWorkingDirectory.resolve("", default))
+        assertEquals("/tmp/default", DefaultWorkingDirectory.resolve("   ", default))
+        assertEquals("/tmp/default", DefaultWorkingDirectory.resolve(null, default))
+        assertEquals("/tmp/project", DefaultWorkingDirectory.resolve("/tmp/project", default))
+    }
+
+    /**
+     * A terminal sitting in the default directory is saved as null so restore re-resolves it.
+     * Persisting the resolved path would freeze the no-project answer into the workspace, and
+     * re-applying that layout *with* a project selected would open the projects folder instead
+     * of the project - the behaviour null carried before anything resolved eagerly.
+     */
+    @Test
+    fun `the default working directory is not persisted into a workspace`() {
+        val default = "/Users/someone/BossProjects"
+
+        assertNull(DefaultWorkingDirectory.persisted(default, default))
+        assertNull(DefaultWorkingDirectory.persisted(null, default))
+        assertEquals("/work/repo", DefaultWorkingDirectory.persisted("/work/repo", default))
+        assertEquals(
+            "{projectPath}",
+            DefaultWorkingDirectory.persisted("{projectPath}", default),
+            "a template placeholder is not a resolved path and must survive a round trip",
+        )
     }
 
     /**
