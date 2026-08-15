@@ -25,6 +25,7 @@ import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.run.RunnerSettingsManager
@@ -528,7 +529,7 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                         typeId = TerminalTabType.typeId,
                         title = "Terminal",
                         icon = TerminalTabType.icon,
-                        workingDirectory = projectPath.ifEmpty { null },
+                        workingDirectory = DefaultWorkingDirectory.resolve(projectPath),
                     )
                 splitViewState.getActiveTabsComponent()?.addTab(terminalTab)
             }.launchIn(this)
@@ -565,9 +566,7 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                 if (activeComponent != null) {
                     val activePanelId = splitViewState.activePanelId
                     val projectPath =
-                        windowProjectState.selectedProject.value.path.ifEmpty {
-                            System.getProperty("user.home")
-                        }
+                        DefaultWorkingDirectory.resolve(windowProjectState.selectedProject.value.path)
                     // Create tabs from template panels
                     val leftPanelConfig = event.template.panels.find { it.position == "left" }
                     val rightPanelConfig = event.template.panels.find { it.position == "right" }

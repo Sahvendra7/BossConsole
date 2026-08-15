@@ -2,6 +2,7 @@ package ai.rever.boss.dashboard
 
 import ai.rever.boss.components.workspaces.CommandProcessor
 import ai.rever.boss.plugin.pathutils.BossDirectories
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
@@ -406,8 +407,9 @@ object SplitTemplatesManager {
     ): String {
         var result = content
 
-        // Replace project path (shell-quoted when used inside a command)
-        val pathValue = projectPath ?: System.getProperty("user.home")
+        // Replace project path (shell-quoted when used inside a command). With no project the
+        // fallback is ~/BossProjects, not the home directory - see DefaultWorkingDirectory.
+        val pathValue = DefaultWorkingDirectory.resolve(projectPath)
         result = substituteProjectPath(result, pathValue, quoteProjectPath)
 
         // Replace git remote URL

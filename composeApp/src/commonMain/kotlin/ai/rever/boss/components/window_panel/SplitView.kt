@@ -21,6 +21,7 @@ import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.ui.BossTheme
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.topofmind.ActiveTab
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -467,7 +468,7 @@ class SplitViewState(
                 ?.selectedProject
                 ?.value
                 ?.path ?: ""
-        val terminalWorkingDir = workingDirectory ?: projectPath.ifEmpty { null }
+        val terminalWorkingDir = workingDirectory ?: DefaultWorkingDirectory.resolve(projectPath)
 
         // If no active component, this is likely the first terminal on app startup
         // Find any available panel to add the tab to

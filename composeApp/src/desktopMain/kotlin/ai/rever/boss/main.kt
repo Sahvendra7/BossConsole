@@ -179,6 +179,16 @@ fun main(args: Array<String>) {
         ai.rever.boss.focusmode.FocusModeSettingsManager.currentSettings
     }
 
+    // Create ~/BossProjects before a window asks for it. Every no-project path now resolves
+    // there instead of to the home directory (see DefaultWorkingDirectory), and the first of
+    // them is a window opening a terminal - creating it on demand would put the mkdirs on the
+    // thread doing that. Best-effort and idempotent: path() creates the directory itself if
+    // this has not finished, or did not work.
+    startupScope.launch(Dispatchers.IO) {
+        ai.rever.boss.project.DefaultWorkingDirectory
+            .path()
+    }
+
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
     setLinuxWMClass()
 

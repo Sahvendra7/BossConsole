@@ -19,6 +19,7 @@ import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.plugin.workspace.SplitConfig.HorizontalSplit
 import ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel
 import ai.rever.boss.plugin.workspace.SplitConfig.VerticalSplit
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.utils.awaitRegistryCondition
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.utils.logging.BossLogger
@@ -285,11 +286,9 @@ private fun createTabFromWorkspaceConfig(
     projectPath: String,
     splitViewState: SplitViewState,
 ): TabInfo? {
-    // Resolve project path for placeholder resolution
-    val resolvedProjectPath =
-        projectPath.ifEmpty {
-            System.getProperty("user.home") ?: ""
-        }
+    // Resolve project path for placeholder resolution. With no project this is
+    // ~/BossProjects rather than the home directory - see DefaultWorkingDirectory.
+    val resolvedProjectPath = DefaultWorkingDirectory.resolve(projectPath)
 
     // Dispatch on the resolved type id (see tabTypeIdFor) so the mapping that
     // decides what restore waits for and the mapping that constructs tabs
