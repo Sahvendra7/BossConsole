@@ -40,13 +40,13 @@ object DefaultWorkingDirectory {
      * Deliberately not cached. It is called when a tab is created, never in a loop, and a
      * cached path would go on being handed out after the user moved or deleted the directory.
      */
-    fun path(): String = path(::ensureDirectory)
+    fun ensureDefaultDirectory(): String = ensureDefaultDirectory(::ensureDirectory)
 
     /**
-     * [path] against a supplied creator, so the fallback composition is testable without a
+     * [ensureDefaultDirectory] against a supplied creator, so the fallback composition is testable without a
      * machine on which creating `~/BossProjects` actually fails.
      */
-    internal fun path(ensure: (File) -> String?): String {
+    internal fun ensureDefaultDirectory(ensure: (File) -> String?): String {
         val target = File(nominalPath())
         return ensure(target) ?: homeDirectory(target)
     }
@@ -56,14 +56,14 @@ object DefaultWorkingDirectory {
      * filesystem at all.
      *
      * For callers that only need the string to compare against - [persisted], through
-     * `WorkspaceExtractor`. Two reasons they must not use [path] instead:
+     * `WorkspaceExtractor`. Two reasons they must not use [ensureDefaultDirectory] instead:
      *
      * - **Cost and position.** Extraction runs from the auto-save `snapshotFlow`, whose
      *   producer re-runs on the composition thread whenever any tab's title, url or working
      *   directory changes, and from the Last Session teardown, which can be the shutdown-hook
      *   thread. A `createDirectories` syscall per browser-title update is the kind of blocking
      *   I/O `docs/THREADING.md` rules out, and its warn-on-failure would repeat just as often.
-     * - **Stability.** [path] answers with the *home* directory when creation fails. A
+     * - **Stability.** [ensureDefaultDirectory] answers with the *home* directory when creation fails. A
      *   transient failure at extract time would make [persisted] compare a terminal's real
      *   `~/BossProjects` against `~`, find them different, and freeze the resolved default
      *   into the saved layout - precisely what [persisted] exists to prevent. This cannot
@@ -82,17 +82,17 @@ object DefaultWorkingDirectory {
     fun nominalPath(): String = File(ProjectCreationService.getDefaultProjectsDirectory()).path
 
     /**
-     * [projectPath] when a project is selected, [path] otherwise.
+     * [projectPath] when a project is selected, [ensureDefaultDirectory] otherwise.
      *
      * **Touches the filesystem on the no-project branch** - a `stat`, and a create the first
-     * time. Free when a project is selected, since [path] is never reached. Call it off the
+     * time. Free when a project is selected, since [ensureDefaultDirectory] is never reached. Call it off the
      * main thread where that is possible: `applyWorkspace` does. The tab-creation handlers do
      * not, because they are not suspending and the cost is one `stat` in the steady state
      * (the startup warm-up in `main` has normally done the create already) - but on a network
      * home directory, a Windows roaming profile or a macOS network account, an unresponsive
-     * volume stalls the frame. That is the known cost of this being uncached; see [path].
+     * volume stalls the frame. That is the known cost of this being uncached; see [ensureDefaultDirectory].
      */
-    fun resolve(projectPath: String?): String = resolve(projectPath, ::path)
+    fun resolve(projectPath: String?): String = resolve(projectPath, ::ensureDefaultDirectory)
 
     /**
      * [projectPath] if it names a selected project, null if it stands for "no project".
@@ -104,7 +104,7 @@ object DefaultWorkingDirectory {
 
     /**
      * [resolve] against a supplied default, so tests can exercise the fallback without calling
-     * [path] - which creates a directory under the real home directory of whatever machine
+     * [ensureDefaultDirectory] - which creates a directory under the real home directory of whatever machine
      * runs them.
      */
     internal fun resolve(
@@ -115,7 +115,7 @@ object DefaultWorkingDirectory {
     /**
      * What to write to a saved workspace for a terminal whose working directory is
      * [workingDirectory], given [default] - the default directory's name, from [nominalPath] or
-     * equivalently [path].
+     * equivalently [ensureDefaultDirectory].
      *
      * Null means "re-resolve on restore", and that is the answer for a terminal sitting in the
      * default directory. Before this class, a terminal opened with no project carried a null
@@ -126,7 +126,7 @@ object DefaultWorkingDirectory {
      *
      * Two consequences of keying on the path rather than on "was this resolved from no
      * project". Both sides of the comparison must have gone through `File` - [nominalPath] and
-     * [path] both have, and [resolve] is what put the tab's value there; a [default] reaching
+     * [ensureDefaultDirectory] both have, and [resolve] is what put the tab's value there; a [default] reaching
      * this by some route that skips that normalization never matches on Windows. And a terminal the user
      * deliberately pointed at `~/BossProjects` is indistinguishable from a default one: with
      * no project selected restore lands back in the projects folder, which is where it was
@@ -206,19 +206,29 @@ object DefaultWorkingDirectory {
         val failure =
             try {
                 // isDirectory first: that is the steady state and the only branch the UI
-                // thread normally takes, and it is one stat with no create and no exception.
-                // Short-circuiting the *success* case is race-free - a true answer means the
-                // directory is there.
+                // thread normally takes, and it costs two stats with no create and no
+                // exception. Short-circuiting the *create* on a true answer is race-free - the
+                // directory being there is the outcome the create was for.
                 //
-                // Otherwise createDirectories, not mkdirs(). Three callers create this same
-                // path - the startup warm-up in main(), the first window's resolve() and
+                // createDirectories, not mkdirs(). Three callers create this same path - the
+                // startup warm-up in main(), the first window's resolve() and
                 // validateProjectLocation - and mkdirs() returns false when another of them
                 // won the race, which would send this caller to the home-directory fallback
                 // on exactly the cold first launch this exists to fix. createDirectories
                 // succeeds when the directory is already there, so losing the race between
                 // the check above and this line is not a failure either.
                 if (!target.isDirectory) Files.createDirectories(target.toPath())
-                null
+
+                // Writability is checked, not assumed, and after the create rather than
+                // instead of it: createDirectories *succeeds* on a directory that already
+                // exists, so an unwritable BossProjects - wrong ownership after a restore
+                // from backup, a mount with different perms - would otherwise be reported
+                // usable. Every terminal would then start somewhere the shell cannot create
+                // a file, and the home-directory fallback, which exists to guarantee "a path
+                // a terminal can start in", would never fire. The old behaviour was `~`,
+                // writable by construction, so that would be a failure mode this change
+                // introduced rather than inherited.
+                if (target.canWrite()) null else IOException("Projects directory is not writable")
             } catch (e: IOException) {
                 // Includes FileAlreadyExistsException, which createDirectories raises only for
                 // a non-directory at the path - a *file* named BossProjects.

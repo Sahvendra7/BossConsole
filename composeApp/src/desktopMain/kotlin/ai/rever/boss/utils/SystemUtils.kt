@@ -9,7 +9,7 @@ actual object SystemUtils {
 
     // getDefaultProjectPath() was here and had no callers. It answered with the process
     // working directory - "/" for a packaged .app - and the one thing that would want it,
-    // "where does BOSS work with no project selected", is DefaultWorkingDirectory.path().
+    // "where does BOSS work with no project selected", is DefaultWorkingDirectory.ensureDefaultDirectory().
 
     actual val isMacOS: Boolean = osName.contains("mac")
 

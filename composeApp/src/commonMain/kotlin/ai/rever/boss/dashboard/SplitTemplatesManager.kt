@@ -432,11 +432,11 @@ object SplitTemplatesManager {
         // fallback is ~/BossProjects, not the home directory - see DefaultWorkingDirectory.
         //
         // Guarded on the placeholder being present, which substituteProjectPath would handle
-        // by itself: the point is that DefaultWorkingDirectory.path() *creates a directory*,
+        // by itself: the point is that DefaultWorkingDirectory.ensureDefaultDirectory() *creates a directory*,
         // and evaluating it for content with no {projectPath} in it - "{gitRemoteUrl}", a
         // plain string - makes a mkdir a side effect of a function called processPlaceholders.
         if (result.contains(PROJECT_PATH_PLACEHOLDER)) {
-            val pathValue = selectedProject ?: DefaultWorkingDirectory.path()
+            val pathValue = selectedProject ?: DefaultWorkingDirectory.ensureDefaultDirectory()
             result = substituteProjectPath(result, pathValue, quoteProjectPath)
         }
 

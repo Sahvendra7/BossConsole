@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
  * in - holds nothing macOS guards.
  *
  * Everything here goes through [DefaultWorkingDirectory.ensureDirectory] against a temporary
- * directory. [DefaultWorkingDirectory.path] itself resolves under the real home directory, and
+ * directory. [DefaultWorkingDirectory.ensureDefaultDirectory] itself resolves under the real home directory, and
  * a test that called it would create `~/BossProjects` on whatever machine ran it.
  */
 class DefaultWorkingDirectoryTest {
@@ -83,6 +83,23 @@ class DefaultWorkingDirectoryTest {
         assertNull(DefaultWorkingDirectory.ensureDirectory(target))
     }
 
+    /**
+     * An existing but unwritable directory is not usable. `createDirectories` succeeds on a
+     * directory that already exists, so without the writability check this would be reported
+     * fine and every terminal would start somewhere the shell cannot create a file - with the
+     * home-directory fallback, which exists to guarantee a usable path, never firing.
+     */
+    @Test
+    fun `an unwritable directory is not usable`() {
+        val target = File(tempRoot, "BossProjects").also { it.mkdirs() }
+        check(target.setWritable(false)) { "test needs to be able to drop the write bit" }
+        try {
+            assertNull(DefaultWorkingDirectory.ensureDirectory(target))
+        } finally {
+            target.setWritable(true)
+        }
+    }
+
     @Test
     fun `a selected project always wins`() {
         assertEquals("/tmp/some-project", DefaultWorkingDirectory.selectedOrNull("/tmp/some-project"))
@@ -141,14 +158,14 @@ class DefaultWorkingDirectoryTest {
      */
     @Test
     fun `an uncreatable directory falls back to the home directory`() {
-        assertEquals(System.getProperty("user.home"), DefaultWorkingDirectory.path { null })
+        assertEquals(System.getProperty("user.home"), DefaultWorkingDirectory.ensureDefaultDirectory { null })
     }
 
     @Test
     fun `a creatable directory is what path answers with`() {
         assertEquals(
             DefaultWorkingDirectory.nominalPath(),
-            DefaultWorkingDirectory.path { it.path },
+            DefaultWorkingDirectory.ensureDefaultDirectory { it.path },
         )
     }
 

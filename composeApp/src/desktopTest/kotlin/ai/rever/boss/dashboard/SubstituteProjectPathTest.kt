@@ -74,7 +74,7 @@ class SubstituteProjectPathTest {
      * path was empty - landing on `~/.claude/projects/` itself.
      *
      * Asserted through `{gitRemoteUrl}` and `{claudeContinueFlag}` only. `{projectPath}` is
-     * left out on purpose: its no-project answer is `DefaultWorkingDirectory.path()`, which
+     * left out on purpose: its no-project answer is `DefaultWorkingDirectory.ensureDefaultDirectory()`, which
      * would create `~/BossProjects` on the machine running this.
      *
      * This is the direct-caller path. Every production caller resolves before calling, so with

@@ -43,9 +43,11 @@ import kotlin.test.assertTrue
  * Note: neither SplitNode nor SplitConfig carries a split ratio, so there is no
  * ratio to preserve — structure, panel ids, and tab mapping are the contract.
  *
- * Everything goes through [extract] rather than calling [extractCurrentWorkspace] directly:
- * its `defaultWorkingDirectory` defaults to `DefaultWorkingDirectory.path()`, which would
- * create `~/BossProjects` on every machine that runs this suite.
+ * Everything goes through [extract] rather than calling [extractCurrentWorkspace] directly, so
+ * the assertions do not depend on the real home directory of the machine running them. The
+ * default argument is `DefaultWorkingDirectory.nominalPath()`, which creates nothing - an
+ * earlier revision defaulted to the creating `ensureDefaultDirectory()`, and this wrapper was
+ * added when that was making `~/BossProjects` on every dev machine.
  */
 class WorkspaceExtractorTest {
     private object JupyterStubType : TabTypeInfo {
@@ -327,7 +329,7 @@ class WorkspaceExtractorTest {
     )
 
     private companion object {
-        /** Stands in for `DefaultWorkingDirectory.path()`; nothing here touches the filesystem. */
+        /** Stands in for `DefaultWorkingDirectory.nominalPath()`, and is not a real path. */
         const val DEFAULT_WORKING_DIRECTORY = "/nowhere/BossProjects"
     }
 }

@@ -407,7 +407,7 @@ fun main(args: Array<String>) {
     // on all three platforms, so the directory gets created on first use anyway - while
     // giving the two platforms different startup states to reason about.
     startupScope.launch(Dispatchers.IO) {
-        DefaultWorkingDirectory.path()
+        DefaultWorkingDirectory.ensureDefaultDirectory()
     }
 
     // Register shutdown hook to release the single-instance lock AND close browser engine

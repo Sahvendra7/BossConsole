@@ -185,7 +185,7 @@ actual object ProjectCreationService {
     actual fun getDefaultProjectsDirectory(): String {
         val userHome = System.getProperty("user.home")
         // Through File, not "$userHome/BossProjects": File normalizes the separator, so this
-        // and DefaultWorkingDirectory.path() - which returns File(...).path - are the same
+        // and DefaultWorkingDirectory.ensureDefaultDirectory() - which returns File(...).path - are the same
         // string on Windows too. They are compared for equality (see
         // DefaultWorkingDirectory.persisted, and validateProjectLocation below), and a
         // literal forward slash made that comparison silently never match there.
