@@ -47,12 +47,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
-import boss_kotlin.composeapp.generated.resources.Res
-import boss_kotlin.composeapp.generated.resources.boss_icon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jetbrains.compose.resources.painterResource
 import java.awt.Color
 import java.awt.Frame
 
@@ -145,7 +142,7 @@ fun ApplicationScope.BossWindow(
         onCloseRequest = onCloseRequest,
         title = windowState.title,
         state = composeWindowState,
-        icon = painterResource(Res.drawable.boss_icon),
+        icon = bossWindowIcon(),
     ) {
         // Apply programmatic resize requests (BossTerm "Fit host to my screen").
         // Lives inside Window {} so it can read this window's `window` (AWT

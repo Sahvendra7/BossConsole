@@ -2,6 +2,7 @@ package ai.rever.boss.components.overlays
 
 import ai.rever.boss.plugin.browser.LocalAwtWindow
 import ai.rever.boss.plugin.ui.BossPopupAnchoring
+import ai.rever.boss.window.bossWindowIcon
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -114,6 +115,7 @@ fun HeavyweightPopup(
         alwaysOnTop = true,
         focusable = focusable,
         resizable = false,
+        icon = bossWindowIcon(),
         onKeyEvent = { event ->
             if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
                 onDismissRequest()

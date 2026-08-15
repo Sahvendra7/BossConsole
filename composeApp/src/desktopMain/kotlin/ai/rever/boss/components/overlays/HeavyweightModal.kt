@@ -1,6 +1,7 @@
 package ai.rever.boss.components.overlays
 
 import ai.rever.boss.plugin.browser.LocalAwtWindow
+import ai.rever.boss.window.bossWindowIcon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -57,6 +58,7 @@ fun HeavyweightModal(
         alwaysOnTop = true,
         focusable = true,
         resizable = false,
+        icon = bossWindowIcon(),
         onKeyEvent = { event ->
             // dismissOnBackPress is what Compose maps Escape to, and only this window can honour it:
             // Escape is handled here, not by anything inside the content. A caller that passed
