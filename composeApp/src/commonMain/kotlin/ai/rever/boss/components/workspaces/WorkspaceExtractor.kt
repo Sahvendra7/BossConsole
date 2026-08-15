@@ -46,7 +46,8 @@ fun extractCurrentWorkspace(
 
 /**
  * @param defaultWorkingDirectory the no-project working directory, from
- *   `DefaultWorkingDirectory.path()`. A terminal sitting in it is persisted with a null
+ *   `DefaultWorkingDirectory.nominalPath()` - see [extractCurrentWorkspace] for why not
+ *   `path()`. A terminal sitting in it is persisted with a null
  *   working directory so restore re-resolves against whatever project is selected then - see
  *   `DefaultWorkingDirectory.persisted`.
  */

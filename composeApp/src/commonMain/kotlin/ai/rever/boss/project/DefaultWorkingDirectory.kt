@@ -114,7 +114,8 @@ object DefaultWorkingDirectory {
 
     /**
      * What to write to a saved workspace for a terminal whose working directory is
-     * [workingDirectory], given [default] from [path].
+     * [workingDirectory], given [default] - the default directory's name, from [nominalPath] or
+     * equivalently [path].
      *
      * Null means "re-resolve on restore", and that is the answer for a terminal sitting in the
      * default directory. Before this class, a terminal opened with no project carried a null
@@ -124,9 +125,9 @@ object DefaultWorkingDirectory {
      * the terminal in the projects folder instead of the project.
      *
      * Two consequences of keying on the path rather than on "was this resolved from no
-     * project". [default] must come from [path], not from
-     * `ProjectCreationService.getDefaultProjectsDirectory()` by a route that skips `File`
-     * normalization, or the comparison never matches on Windows. And a terminal the user
+     * project". Both sides of the comparison must have gone through `File` - [nominalPath] and
+     * [path] both have, and [resolve] is what put the tab's value there; a [default] reaching
+     * this by some route that skips that normalization never matches on Windows. And a terminal the user
      * deliberately pointed at `~/BossProjects` is indistinguishable from a default one: with
      * no project selected restore lands back in the projects folder, which is where it was
      * pointed, but *with* a project selected the null re-resolves to the project instead. That
@@ -158,12 +159,32 @@ object DefaultWorkingDirectory {
      *
      * The cost is a terminal someone deliberately parked in their home directory, which
      * re-resolves to the projects folder once. That is the trade this whole change is: the
-     * home directory is the place BOSS should not be working in.
+     * home directory is the place BOSS should not be working in. Note the predicate is "the
+     * stored value is the home directory", whoever wrote it - a plugin that called
+     * `addTerminalTab(workingDirectory = <home>)` and had that layout saved is relocated by the
+     * same rule. So this is not *only* a migration, though that is what it is for.
+     *
+     * Best effort, and exact-match by design: a stored path differing by a trailing separator,
+     * or a home reached through a symlink (`/Users/x` against a resolved
+     * `/System/Volumes/Data/Users/x`), is not recognised and goes on restoring into `~`.
+     * Canonicalising would put filesystem I/O on the restore path for every terminal tab.
+     *
+     * Logged when it fires, so a terminal that moved once is explainable from a bug report
+     * rather than looking like the tab losing its directory.
      */
     internal fun restored(
         workingDirectory: String?,
         home: String? = System.getProperty("user.home"),
-    ): String? = workingDirectory?.takeIf { it != home }
+    ): String? {
+        if (workingDirectory == null || workingDirectory != home) return workingDirectory
+
+        logger.info(
+            LogCategory.WORKSPACE,
+            "Restoring a saved home-directory terminal into the default projects directory",
+            mapOf("path" to workingDirectory),
+        )
+        return null
+    }
 
     /**
      * [target]'s path once it is known to be a directory, or null if it cannot be made one.
