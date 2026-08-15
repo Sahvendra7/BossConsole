@@ -158,9 +158,9 @@ private fun logOverlayTransparency(
                 "showing" to window.isShowing.toString(),
                 "layerFound" to (layer != null).toString(),
                 "transparency" to transparency.toString(),
-                "layerBackground" to describeColor(layerBackground),
+                "layerBackground" to OverlayStateFormat.describeColor(layerBackground),
                 "renderApi" to (layer?.let { skiaLayerRenderApi(it) } ?: "unknown"),
-                "windowBackground" to describeColor(window.background),
+                "windowBackground" to OverlayStateFormat.describeColor(window.background),
                 "translucencyCapable" to
                     (
                         runCatching {
@@ -171,6 +171,14 @@ private fun logOverlayTransparency(
                     ),
                 "willPaintOpaque" to
                     overlayWillPaintOpaque(transparency, layerBackground?.alpha).toString(),
+                // The Swing layers ABOVE the Skia surface, because a correct Skia layer is not
+                // sufficient. Anything between the layer and the window that is `opaque` fills its
+                // own background before Skia draws, and Skia then draws fully transparent pixels
+                // over it - which composites to that fill and to nothing else. Compose sets
+                // ComposeWindowPanel.isOpaque = false for exactly this reason, so an ancestor found
+                // opaque here is the whole answer, and one found opaque with a WHITE background is
+                // the measured #FFFFFF itself.
+                "ancestors" to (layer?.let { OverlayStateFormat.describeOpacityChain(it) } ?: "unknown"),
             ),
         )
         if (layer == null) {
@@ -180,7 +188,7 @@ private fun logOverlayTransparency(
                 mapOf(
                     "kind" to kind,
                     "phase" to phase,
-                    "tree" to describeComponentTree(window).joinToString(" | "),
+                    "tree" to OverlayStateFormat.describeComponentTree(window).joinToString(" | "),
                 ),
             )
         }
@@ -194,10 +202,6 @@ private fun logOverlayTransparency(
         )
     }
 }
-
-/** `Color` with its alpha spelled out, since the alpha is the whole point of every reading here. */
-private fun describeColor(color: java.awt.Color?): String =
-    color?.let { "#%02x%02x%02x alpha=%d".format(it.red, it.green, it.blue, it.alpha) } ?: "null"
 
 /**
  * Whether the Skia surface will be cleared to an OPAQUE colour, mirroring skiko's own rule.
@@ -255,24 +259,53 @@ private fun findSkiaLayer(root: java.awt.Component): javax.swing.JComponent? =
     }
 
 /**
- * The class names on the path from [root] down the AWT tree, for when [findSkiaLayer] finds
- * nothing.
+ * Rendering of the observed state into log fields.
  *
- * Logged only in that case, and bounded. A `layerFound=false` line is otherwise an unreadable
- * result rather than a reading - it says the diagnostic failed without saying what it saw, which is
- * exactly how the first run of this instrumentation burned a whole app launch.
+ * Grouped into an object purely so the reporting vocabulary sits together and apart from the
+ * reading of it - the file is otherwise a flat list where a formatter and a probe look alike.
  */
-private fun describeComponentTree(
-    root: java.awt.Component,
-    depth: Int = 0,
-): List<String> =
-    if (depth > TREE_DUMP_MAX_DEPTH) {
-        emptyList()
-    } else {
-        listOf("  ".repeat(depth) + root.javaClass.name) +
-            ((root as? java.awt.Container)?.components.orEmpty())
-                .flatMap { describeComponentTree(it, depth + 1) }
-    }
+private object OverlayStateFormat {
+    /**
+     * Every component from [from] up to its window, as `ClassName(opaque=…, bg=…)`.
+     *
+     * The chain, not just one component, because any single opaque link is enough: Swing paints an
+     * opaque component's background before its children draw, so one opaque ancestor with a white fill
+     * produces exactly the measured backdrop no matter how correct the Skia layer below it is. Reading
+     * only the layer answered "everything is fine" on a window that was visibly grey.
+     */
+    fun describeOpacityChain(from: javax.swing.JComponent): String =
+        generateSequence<java.awt.Component>(from) { it.parent }
+            .take(TREE_DUMP_MAX_DEPTH * 2)
+            .joinToString(" < ") { component ->
+                val opaque = (component as? javax.swing.JComponent)?.isOpaque ?: component.isOpaque
+                val name = component.javaClass.simpleName
+                "$name(opaque=$opaque, bg=${describeColor(component.background)})"
+            }
+
+    /** `Color` with its alpha spelled out, since the alpha is the whole point of every reading here. */
+    fun describeColor(color: java.awt.Color?): String =
+        color?.let { "#%02x%02x%02x alpha=%d".format(it.red, it.green, it.blue, it.alpha) } ?: "null"
+
+    /**
+     * The class names on the path from [root] down the AWT tree, for when [findSkiaLayer] finds
+     * nothing.
+     *
+     * Logged only in that case, and bounded. A `layerFound=false` line is otherwise an unreadable
+     * result rather than a reading - it says the diagnostic failed without saying what it saw, which is
+     * exactly how the first run of this instrumentation burned a whole app launch.
+     */
+    fun describeComponentTree(
+        root: java.awt.Component,
+        depth: Int = 0,
+    ): List<String> =
+        if (depth > TREE_DUMP_MAX_DEPTH) {
+            emptyList()
+        } else {
+            listOf("  ".repeat(depth) + root.javaClass.name) +
+                ((root as? java.awt.Container)?.components.orEmpty())
+                    .flatMap { OverlayStateFormat.describeComponentTree(it, depth + 1) }
+        }
+}
 
 /** Deep enough to reach the Skia layer under a root pane, shallow enough not to flood the log. */
 private const val TREE_DUMP_MAX_DEPTH = 6
