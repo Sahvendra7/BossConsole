@@ -17,8 +17,18 @@ import androidx.compose.runtime.Composable
  */
 internal const val AUTH_BRAND_PAGE = "files/auth-brand/index.html"
 
-/** The stylesheet [AUTH_BRAND_PAGE] links, which has to be unpacked beside it to resolve. */
-internal const val AUTH_BRAND_STYLESHEET = "files/auth-brand/site.css"
+/**
+ * The assets [AUTH_BRAND_PAGE] links, which have to be unpacked beside it to resolve.
+ *
+ * Both are referenced relatively by the page, so all three files land in one directory. Miss one and it
+ * fails quietly in a different way each: without the stylesheet the sections render unstyled, without
+ * the script the panel is simply static - which is why the page is written to be complete without it.
+ */
+internal val AUTH_BRAND_ASSETS =
+    listOf(
+        "files/auth-brand/site.css",
+        "files/auth-brand/brand.js",
+    )
 
 /**
  * Whether the brand panel should show [AUTH_BRAND_PAGE] over the drawn art. **On by default.**

@@ -72,13 +72,17 @@ private suspend fun unpackBrandPage(): String {
     val dir = withContext(Dispatchers.IO) { Files.createTempDirectory("boss-auth-brand") }
     dir.toFile().deleteOnExit()
     val page = dir.resolve("index.html")
-    val stylesheet = dir.resolve("site.css")
     withContext(Dispatchers.IO) {
         page.writeBytes(Res.readBytes(AUTH_BRAND_PAGE))
-        stylesheet.writeBytes(Res.readBytes(AUTH_BRAND_STYLESHEET))
+        // Written by their own file names, because the page references them relatively: it links
+        // "site.css" and "brand.js", so the names on disk are part of the contract.
+        for (asset in AUTH_BRAND_ASSETS) {
+            val target = dir.resolve(asset.substringAfterLast('/'))
+            target.writeBytes(Res.readBytes(asset))
+            target.toFile().deleteOnExit()
+        }
     }
     page.toFile().deleteOnExit()
-    stylesheet.toFile().deleteOnExit()
     return page.toUri().toString()
 }
 
