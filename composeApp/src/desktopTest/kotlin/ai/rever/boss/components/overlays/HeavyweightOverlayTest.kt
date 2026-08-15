@@ -331,4 +331,45 @@ class HeavyweightOverlayTest {
         // is the case the focus-loss dismissal actually exists for.
         assertTrue(shouldDismissOnFocusLoss(openHeavyweightPopups = 0, oppositeWindow = null))
     }
+
+    // --- overlay transparency diagnosis ---
+
+    @Test
+    fun `an overlay paints transparent only when the flag is on and the clear colour has no alpha`() {
+        // Mirrors skiko's own rule, which is the whole reason this predicate exists rather than a
+        // bare `!transparency`: SkiaLayer clears with `bg` when transparency is on, and with
+        // `bg or 0xFF000000` otherwise. So the flag being on is necessary and NOT sufficient - a
+        // layer whose background is opaque clears opaque either way, and that pair
+        // (transparency on, background inherited opaque) is what a null layer background
+        // degenerates into.
+        assertFalse(overlayWillPaintOpaque(transparency = true, backgroundAlpha = 0))
+        assertTrue(overlayWillPaintOpaque(transparency = false, backgroundAlpha = 0))
+        assertTrue(overlayWillPaintOpaque(transparency = true, backgroundAlpha = 255))
+        assertTrue(overlayWillPaintOpaque(transparency = false, backgroundAlpha = 255))
+    }
+
+    @Test
+    fun `a layer this could not inspect is reported as opaque, never as healthy`() {
+        // Both inputs are null when reflection could not reach the Skia layer at all. Reporting
+        // "healthy" there is the one answer indistinguishable from a genuine pass, which would make
+        // the entire diagnostic unfalsifiable - the same trap the AWT-background check it replaces
+        // fell into, where a condition that could never be true read as evidence that nothing was
+        // wrong.
+        assertTrue(overlayWillPaintOpaque(transparency = null, backgroundAlpha = null))
+        assertTrue(overlayWillPaintOpaque(transparency = true, backgroundAlpha = null))
+        assertTrue(overlayWillPaintOpaque(transparency = null, backgroundAlpha = 0))
+    }
+
+    @Test
+    fun `the skia layer is matched by its fully qualified skiko class name`() {
+        // A headless test cannot construct a real SkiaLayer - it needs a display and a render
+        // device - so this predicate is the only part of the tree walk a unit test can reach, and
+        // it is the part that silently stops matching if skiko ever moves the class. A near miss
+        // must not match: the walk would then read getTransparency() off the wrong component and
+        // report a confident, wrong answer.
+        assertTrue(isSkiaLayerClassName("org.jetbrains.skiko.SkiaLayer"))
+        assertFalse(isSkiaLayerClassName("SkiaLayer"))
+        assertFalse(isSkiaLayerClassName("org.jetbrains.skiko.SkiaLayerKt"))
+        assertFalse(isSkiaLayerClassName("androidx.compose.ui.awt.ComposeWindowPanel"))
+    }
 }

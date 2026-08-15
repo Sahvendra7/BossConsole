@@ -46,7 +46,7 @@ fun HeavyweightHud(
         focusable = false,
         resizable = false,
     ) {
-        EnsureOverlayWindowTransparent(window)
+        EnsureOverlayWindowTransparent(window, kind = "hud")
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = alignment) {
             content()
         }

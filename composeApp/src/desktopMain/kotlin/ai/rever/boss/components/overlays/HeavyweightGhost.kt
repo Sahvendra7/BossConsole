@@ -102,7 +102,7 @@ fun HeavyweightGhost(
         focusable = false,
         resizable = false,
     ) {
-        EnsureOverlayWindowTransparent(window)
+        EnsureOverlayWindowTransparent(window, kind = "ghost")
         Box(modifier = Modifier.fillMaxSize()) {
             content()
         }

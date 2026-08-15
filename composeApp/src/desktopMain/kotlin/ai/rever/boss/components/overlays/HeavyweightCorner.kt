@@ -136,7 +136,7 @@ fun HeavyweightCorner(
         focusable = false,
         resizable = false,
     ) {
-        EnsureOverlayWindowTransparent(window)
+        EnsureOverlayWindowTransparent(window, kind = "corner")
         Box(
             modifier =
                 Modifier
