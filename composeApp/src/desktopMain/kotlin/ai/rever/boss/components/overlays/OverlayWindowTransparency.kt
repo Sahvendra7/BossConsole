@@ -123,7 +123,14 @@ internal fun EnsureOverlayWindowTransparent(
             object : java.awt.event.WindowAdapter() {
                 override fun windowOpened(e: java.awt.event.WindowEvent?) {
                     logOverlayTransparency(window, kind, phase = "opened")
+                    reassertNativeTransparency(window)
                     javax.swing.SwingUtilities.invokeLater {
+                        // Again one turn later. The first call happens while the window is still
+                        // being ordered on screen, and it is that ordering - always-on-top level and
+                        // style bits - that is suspected of resetting the native flag in the first
+                        // place, so a single early call can be undone by the very thing it is
+                        // fighting.
+                        if (window.isDisplayable) reassertNativeTransparency(window)
                         // A deferred sample can land after the overlay is gone - a context menu
                         // dismissed within one EDT turn of opening does exactly that. A disposed
                         // window has no component tree, so the probe finds no layer and the
@@ -140,6 +147,68 @@ internal fun EnsureOverlayWindowTransparent(
         onDispose { window.removeWindowListener(listener) }
     }
 }
+
+/**
+ * Force AWT to hand the native window its "not opaque" flag again, after it is on screen.
+ *
+ * ## Why anything is needed when every Java reading is already correct
+ *
+ * Measured on a window that was visibly grey at the moment of the sample: `transparency=true`,
+ * layer background `#000000 alpha=0`, `renderApi=METAL`, every Swing ancestor `opaque=false`, window
+ * background `#000000 alpha=0`, `translucencyCapable=true`. The Skia surface is being cleared to
+ * fully transparent pixels and nothing in Swing paints a fill over it, yet the window displays
+ * opaque white. So the opacity is BELOW Java - in the native window - and no amount of setting the
+ * Java-side flags differently, or earlier, can address it. That is what killed the other candidate
+ * fix.
+ *
+ * The reproduction is the other half of the argument: background the application, bring it back,
+ * and from then on almost every overlay is affected. That is a persistent app-level condition
+ * rather than a per-window race, and re-activation is exactly when AppKit re-applies a window's
+ * level and style bits - which is what resets `NSWindow.isOpaque` behind AWT's back. Every overlay
+ * here is `alwaysOnTop`, so every overlay gets that treatment.
+ *
+ * ## Why the assignment has to go through an OPAQUE colour
+ *
+ * Both layers between here and the native call short-circuit on the value already being right, and
+ * it already IS right on the Java side - which is precisely the problem:
+ *
+ *  - `java.awt.Window.setBackground` returns early when `oldBg.equals(bgColor)`, so re-assigning
+ *    `Color(0,0,0,0)` never reaches the peer at all. This is why the check this file used to carry
+ *    could not have repaired anything even had it fired.
+ *  - `LWWindowPeer.setOpaque` is guarded by `if (this.isOpaque != isOpaque)`, so even reaching it
+ *    with `false` does nothing while the peer already believes the window is non-opaque.
+ *
+ * Driving the peer's flag true and then false is the only route that makes it run `updateOpaque()`,
+ * which is what calls `platformWindow.setOpaque(...)` and replaces the surface data. Both
+ * assignments happen in one EDT turn, so no frame is painted between them and there is no flash.
+ *
+ * `setLayersOpaque` is invoked in both directions by those assignments, but it touches only the
+ * layered pane, root pane and content pane and does so symmetrically, so the chain ends where it
+ * started - which the `ancestors` field in the samples above is there to keep honest.
+ *
+ * Inert unless there is something to re-assert: a window whose background is null or already opaque
+ * is not a transparent overlay, and Windows-with-Direct3D reaches exactly that state because skiko's
+ * `transparentWindowBackgroundHack` returns null there. So the platform this shipped working on
+ * cannot regress.
+ */
+private fun reassertNativeTransparency(window: Window) {
+    runCatching {
+        if (window.background?.alpha != 0) return@runCatching
+        window.background = java.awt.Color(0, 0, 0, OPAQUE_ALPHA)
+        window.background = java.awt.Color(0, 0, 0, 0)
+    }.onFailure {
+        // Never fatal, for the same reason the sampling is not: a grey backdrop is ugly, an
+        // exception here would take the dialog down with it.
+        logger.warn(
+            LogCategory.UI,
+            "Could not re-assert native overlay transparency",
+            mapOf("error" to it.toString()),
+        )
+    }
+}
+
+/** The alpha that makes AWT consider a window opaque, and so the value that forces the transition. */
+private const val OPAQUE_ALPHA = 255
 
 /** One sample of every layer that decides whether an overlay window paints opaque. */
 private fun logOverlayTransparency(
