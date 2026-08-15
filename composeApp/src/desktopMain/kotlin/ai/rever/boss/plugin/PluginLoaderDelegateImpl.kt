@@ -171,6 +171,21 @@ class PluginLoaderDelegateImpl(
         try {
             logger.info(LogCategory.SYSTEM, "Unloading plugin via delegate", mapOf("pluginId" to pluginId))
             val result = dynamicPluginManager.uninstallPlugin(pluginId, force = false)
+            // The Boolean this returns is all the caller gets, so a refusal would otherwise
+            // leave no trace anywhere: uninstallPlugin logs "Uninstalling plugin" *before*
+            // deciding, so the log just stopped mid-sequence and the reasons the manager
+            // assembled (which name the plugins standing in the way) were dropped here. That is
+            // what made the Toolbox's Update button look like it did nothing at all.
+            result.exceptionOrNull()?.let { cause ->
+                logger.warn(
+                    LogCategory.SYSTEM,
+                    "Plugin unload refused",
+                    mapOf(
+                        "pluginId" to pluginId,
+                        "reason" to (cause.message ?: cause::class.simpleName ?: "unknown"),
+                    ),
+                )
+            }
             result.isSuccess
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Exception unloading plugin", error = e)

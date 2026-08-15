@@ -70,6 +70,21 @@ dependency was absent produced no signal at all and the user met the consequence
 feature that silently did nothing. The AI Gateway made that concrete: three plugins declare it
 `optional: true` and each falls back to an unconfigured state.
 
+**Both readers now agree on what `optional` means.** `checkCanUnload` counted *any* declaration,
+so the same `optional: true` that the install prompt words as "works without it" was a hard veto
+at unload time - and because the Toolbox updates a plugin by uninstalling and reinstalling it,
+the veto landed on the Update button. The AI Gateway could not be updated or removed while
+jupyter-notebook, flow-tab or llmrpa was loaded, which is all three of its consumers. The
+predicate is `PluginDependencyResolution.blockingDependentsOf`, next to `missingFor` so the two
+cannot drift again; it also drops a manifest that names itself, which would otherwise make that
+plugin permanently unremovable.
+
+Refusals must stay visible. `PluginLoaderDelegateImpl.unloadPlugin` returns a bare `Boolean`, and
+`uninstallPlugin` logs `Uninstalling plugin` *before* it decides - so a refusal used to leave the
+log stopping mid-sequence with the manager's reasons dropped at the delegate boundary. It now logs
+`Plugin unload refused` with them. The plugin side cannot receive those reasons through a
+`Boolean`, so the Toolbox's message points at the host log rather than restating the failure.
+
 `PluginDependencyResolution.missingFor(manifest, installedIds)` now answers what is absent, and
 `MissingDependencyDialog` offers to install it. Four things about the placement:
 

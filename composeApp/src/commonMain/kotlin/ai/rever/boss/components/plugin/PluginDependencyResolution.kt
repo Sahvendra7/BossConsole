@@ -153,6 +153,39 @@ object PluginDependencyResolution {
             .map { (_, declarations) -> declarations.minBy { it.optional } }
             .map { dependency -> manifest.toMissing(dependency) }
 
+    /**
+     * Display names of the [loadedManifests] that would actually break if [pluginId] were
+     * unloaded, for `DynamicPluginManager.checkCanUnload`.
+     *
+     * **Only non-optional declarations count.** `optional: true` is how a manifest says the
+     * plugin works without the dependency and merely lights up extra features when it is
+     * there - [missingFor] reports exactly that, and [MissingPluginDependency.description]
+     * words it as "works without X, but some of its features need it". Vetoing an unload on
+     * that same declaration contradicts the manifest, and it is not a small contradiction:
+     * jupyter-notebook, flow-tab and llmrpa all declare the AI Gateway optional, so with the
+     * optional filter missing the gateway could not be unloaded while any one of them was
+     * loaded. The Toolbox's update path is an uninstall followed by a reinstall, so what the
+     * user saw was an Update button that did nothing at all.
+     *
+     * **Presence is by id only.** `PluginDependency.version` is ignored, matching [missingFor]:
+     * a dependent needing 2.x is "satisfied" by 1.x here too, so this never refuses an unload
+     * over a version range it has no way to act on.
+     */
+    fun blockingDependentsOf(
+        pluginId: String,
+        loadedManifests: List<PluginManifest>,
+    ): List<String> =
+        loadedManifests
+            // A manifest naming itself is a mistake ([missingFor] drops it on the install side
+            // too), but here it would be a permanent one: the plugin could never be unloaded,
+            // updated or removed, and the reason shown would name the plugin being unloaded.
+            .filterNot { manifest -> manifest.pluginId == pluginId }
+            .filter { manifest ->
+                manifest.dependencies.any { dependency ->
+                    dependency.pluginId == pluginId && !dependency.optional
+                }
+            }.map { manifest -> manifest.displayName }
+
     private fun PluginManifest.toMissing(dependency: PluginDependency) =
         MissingPluginDependency(
             dependentPluginId = pluginId,
