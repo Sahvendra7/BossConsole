@@ -28,6 +28,7 @@ import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.services.TerminalHandlerService
 import ai.rever.boss.services.auth.CoreAuthService
 import ai.rever.boss.services.auth.UserDataStorage
@@ -126,13 +127,21 @@ internal fun BossAppStartupEffects(state: BossAppState) {
     // there would re-run onDispose and, in a single-window app, perform a
     // mid-session app-level write.
     DisposableEffect(windowId) {
+        // The one thing resolved here rather than in the callback: the callback can run on
+        // the shutdown-hook thread, and DefaultWorkingDirectory.path() touches the filesystem,
+        // which on a network-mounted home would delay quit.
+        val defaultWorkingDirectory = DefaultWorkingDirectory.path()
         LastSessionCoordinator.instance.register(
             windowId = windowId,
             isFirstWindow = isFirstWindow,
         ) {
             // Invoked at teardown, possibly from the shutdown-hook thread, so read
             // live state here rather than closing over a recomposition snapshot.
-            extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
+            extractCurrentWorkspace(
+                splitViewState,
+                windowProjectState.selectedProject.value.path,
+                defaultWorkingDirectory = defaultWorkingDirectory,
+            )
         }
         onDispose {
             LastSessionCoordinator.instance.onWindowDisposed(windowId)
@@ -671,10 +680,20 @@ internal fun BossAppStartupEffects(state: BossAppState) {
         var lastWorkspaceSnapshot: LayoutWorkspace? = null
         var saveJob: Job? = null
 
+        // Outside the producer on purpose. The block below re-runs on every panel split and
+        // close - it reads SplitViewState.rootNode, which is snapshot state - and
+        // DefaultWorkingDirectory.path() touches the filesystem, which does not belong on the
+        // composition thread once per layout change.
+        val defaultWorkingDirectory = DefaultWorkingDirectory.path()
+
         // Monitor the entire layout structure for changes
         snapshotFlow {
             // Extract current layout workspace
-            extractCurrentWorkspace(splitViewState, selectedProject.path)
+            extractCurrentWorkspace(
+                splitViewState,
+                selectedProject.path,
+                defaultWorkingDirectory = defaultWorkingDirectory,
+            )
         }.onEach { currentLayout ->
             // Check if we have a loaded workspace
             val loadedConfig = workspaceManager.currentWorkspace.value

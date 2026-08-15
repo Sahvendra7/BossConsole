@@ -184,6 +184,13 @@ fun main(args: Array<String>) {
     // them is a window opening a terminal - creating it on demand would put the mkdirs on the
     // thread doing that. Best-effort and idempotent: path() creates the directory itself if
     // this has not finished, or did not work.
+    //
+    // Unconditional, on every platform, and that is the decision rather than an oversight: a
+    // browser-only user on Windows has no TCC prompts to avoid and may never create a
+    // project, so they get an empty folder they did not ask for. Gating it on macOS would
+    // buy that user nothing back - the placeholder fallback and every terminal resolve there
+    // on all three platforms, so the directory gets created on first use anyway - while
+    // giving the two platforms different startup states to reason about.
     startupScope.launch(Dispatchers.IO) {
         ai.rever.boss.project.DefaultWorkingDirectory
             .path()

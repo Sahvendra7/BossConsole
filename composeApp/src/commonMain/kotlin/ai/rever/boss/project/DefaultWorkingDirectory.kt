@@ -75,6 +75,13 @@ object DefaultWorkingDirectory {
      * the workspace was applied *later*. Persisting the resolved `~/BossProjects` verbatim
      * would freeze that decision: re-applying the layout with a project selected would open
      * the terminal in the projects folder instead of the project.
+     *
+     * Two consequences of keying on the path rather than on "was this resolved from no
+     * project". [default] must come from [path], not from
+     * `ProjectCreationService.getDefaultProjectsDirectory()` by a route that skips `File`
+     * normalization, or the comparison never matches on Windows. And a terminal the user
+     * deliberately pointed at `~/BossProjects` is treated as a default one; restore then opens
+     * the projects folder, which is where it was pointed anyway.
      */
     internal fun persisted(
         workingDirectory: String?,

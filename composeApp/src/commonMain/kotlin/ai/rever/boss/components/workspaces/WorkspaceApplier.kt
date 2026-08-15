@@ -70,8 +70,14 @@ suspend fun applyWorkspace(
         }
     }
 
-    // Get current project path for tab creation
-    val currentProjectPath = windowProjectState?.selectedProject?.value?.path ?: workspace.projectPath ?: ""
+    // Get current project path for tab creation. Resolved once for the whole tree rather than
+    // per tab - with no project this is ~/BossProjects, and DefaultWorkingDirectory.path()
+    // touches the filesystem, so an N-tab workspace would otherwise ask N times. Mirrors
+    // WorkspaceExtractor, which hoists the same value on the way out.
+    val currentProjectPath =
+        DefaultWorkingDirectory.resolve(
+            windowProjectState?.selectedProject?.value?.path ?: workspace.projectPath,
+        )
 
     // Try to restore preserved state first
     if (splitViewState.restorePreservedState(workspaceId)) {
@@ -281,15 +287,16 @@ private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? =
         is HorizontalSplit -> getFirstTab(workspaceConfig.top)
     }
 
+/**
+ * @param resolvedProjectPath the selected project's path, or the no-project default when there
+ *   is none - already through `DefaultWorkingDirectory.resolve`, once, in [applyWorkspace].
+ *   Never empty, which is why the terminal branch below has no null case left.
+ */
 private fun createTabFromWorkspaceConfig(
     tabConfig: TabConfig,
-    projectPath: String,
+    resolvedProjectPath: String,
     splitViewState: SplitViewState,
 ): TabInfo? {
-    // Resolve project path for placeholder resolution. With no project this is
-    // ~/BossProjects rather than the home directory - see DefaultWorkingDirectory.
-    val resolvedProjectPath = DefaultWorkingDirectory.resolve(projectPath)
-
     // Dispatch on the resolved type id (see tabTypeIdFor) so the mapping that
     // decides what restore waits for and the mapping that constructs tabs
     // cannot drift apart.
@@ -317,8 +324,7 @@ private fun createTabFromWorkspaceConfig(
         TerminalTabType.typeId -> {
             // Process working directory placeholder
             // No stored working directory means "wherever the project is", which is what
-            // resolvedProjectPath already holds - it is never empty, so there is no null case
-            // left for a terminal to fall into.
+            // resolvedProjectPath already holds.
             val workingDir =
                 tabConfig.workingDirectory?.let {
                     SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)

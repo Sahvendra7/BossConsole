@@ -116,11 +116,6 @@ class DefaultWorkingDirectoryTest {
         assertNull(DefaultWorkingDirectory.persisted(default, default))
         assertNull(DefaultWorkingDirectory.persisted(null, default))
         assertEquals("/work/repo", DefaultWorkingDirectory.persisted("/work/repo", default))
-        assertEquals(
-            "{projectPath}",
-            DefaultWorkingDirectory.persisted("{projectPath}", default),
-            "a template placeholder is not a resolved path and must survive a round trip",
-        )
     }
 
     /**

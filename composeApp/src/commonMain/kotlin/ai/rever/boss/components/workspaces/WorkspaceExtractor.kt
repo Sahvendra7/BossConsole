@@ -19,16 +19,22 @@ import kotlin.time.Clock
  * @param projectPath The current project path (per-window)
  * @param name The name of the workspace
  * @param description The description of the workspace
+ * @param defaultWorkingDirectory The no-project working directory, used to decide which
+ *   terminals are persisted with a null one. A parameter, and not read inside, because the
+ *   default `DefaultWorkingDirectory.path()` touches the filesystem and two callers cannot
+ *   afford that where they stand: the auto-save `snapshotFlow` re-runs this on the
+ *   composition thread on every panel split and close, and the Last Session teardown can run
+ *   on the shutdown-hook thread. Both resolve it once, outside. Tests pass their own so they
+ *   never create `~/BossProjects` on the machine running them.
  */
 fun extractCurrentWorkspace(
     splitViewState: SplitViewState,
     projectPath: String = "",
     name: String = "Current",
     description: String = "Current layout workspace",
+    defaultWorkingDirectory: String = DefaultWorkingDirectory.path(),
 ): LayoutWorkspace {
-    // Resolved once for the whole tree rather than per terminal tab: this runs on Save Layout
-    // and on the shutdown snapshot, and path() touches the filesystem.
-    val layout = extractSplitConfig(splitViewState.rootNode, DefaultWorkingDirectory.path())
+    val layout = extractSplitConfig(splitViewState.rootNode, defaultWorkingDirectory)
     return LayoutWorkspace(
         id = LayoutWorkspace.generateId(),
         name = name,
