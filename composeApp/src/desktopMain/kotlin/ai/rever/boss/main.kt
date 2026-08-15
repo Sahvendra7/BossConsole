@@ -28,7 +28,10 @@ import ai.rever.boss.utils.WindowsProtocolHandler
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.AWTKeyboardInterceptor
+import ai.rever.boss.window.ApplyBossWindowIcon
 import ai.rever.boss.window.BossWindow
+import ai.rever.boss.window.BossWindowIcon
+import ai.rever.boss.window.DefaultWindowIcon
 import ai.rever.boss.window.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -371,16 +374,30 @@ fun main(args: Array<String>) {
         }
     }
 
+    // Brand any window BOSS does not compose itself - JxBrowser's own Swing dialogs, JFileChooser,
+    // a frame opened by a plugin - so none of them shows the JDK's default Java icon on Windows.
+    // Every window this app opens sets its own icon; this is only the net under them.
+    //
+    // Position is fenced on both sides. Registering an AWT event listener initialises the toolkit,
+    // so this cannot go up beside setLinuxWMClass: the ChromiumFlagsSettingsManager and
+    // BOSS_SKIKO_RENDER_API blocks up there have to publish their system properties before AWT/Skiko
+    // reads them, and skiko.renderApi in particular is read at init and never again. It also has to
+    // stay below the two paths that exit without ever showing a window - `--unregister-protocol`
+    // (an installer action) and the single-instance deep-link forward - which is why it is here
+    // rather than beside JPopupMenu.setDefaultLightWeightPopupEnabled: neither should be made to
+    // start a window system to do its job. Everything from here on is a session that gets a window.
+    DefaultWindowIcon.install()
+
     // Create ~/BossProjects before a window asks for it. Every no-project path now resolves
     // there instead of to the home directory (see DefaultWorkingDirectory), and the first of
     // them is a window opening a terminal - creating it on demand would put the mkdirs on the
     // thread doing that. Best-effort and idempotent: path() creates the directory itself if
     // this has not finished, or did not work.
     //
-    // Below the single-instance block, not up with the other startup warm-ups, so that
-    // creating a directory in the user's home is tied to actually starting the app. Above it
-    // sit `--unregister-protocol` and the deep-link forward, both of which exitProcess after
-    // doing something headless; neither should leave a folder behind.
+    // Here for the same reason the icon install above is - "everything from here on is a
+    // session that gets a window". Up with the other startup warm-ups it would run for
+    // `--unregister-protocol` and for a deep-link forward, both of which exitProcess after
+    // doing something headless, and neither should leave a folder in the user's home behind.
     //
     // Unconditional, on every platform, and that is the decision rather than an oversight: a
     // browser-only user on Windows has no TCC prompts to avoid and may never create a
@@ -858,7 +875,12 @@ fun main(args: Array<String>) {
                     state = downloadWindowState,
                     title = "BOSS - Setup",
                     resizable = false,
+                    // This is the one window that opens before any main window exists, so it can
+                    // inherit an icon from nothing - and it is the first thing a new user sees.
+                    icon = BossWindowIcon.painter,
                 ) {
+                    ApplyBossWindowIcon(window)
+
                     // Start download when dialog opens
                     LaunchedEffect(Unit) {
                         ChromiumAutoDownloader.downloadChromium { progress ->
