@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BOSS Console</title>
+    <!--
+      Offline copy of bossconsole.ai's HERO section, for the sign-in screen's brand panel.
+
+      WHY LOCAL. Loading the live site put a network fetch on the sign-in path - the one screen a user
+      cannot get past - so a blank pane was likeliest exactly when the network was bad and someone was
+      trying to sign in. It was also a fully interactive page with no browser chrome, where one stray
+      click navigated away with no way back until relaunch.
+
+      WHAT IS KEPT. The hero only: eyebrow, headline, copy, platform line, and the orbital control-plane
+      art. Nothing else from the page.
+
+      WHAT IS DELIBERATELY REMOVED.
+        - `.hero-actions` - the "Download BOSS" and "View on GitHub" buttons. There is nowhere for them
+          to go from a login panel, and a button that does nothing is worse than no button.
+        - The console-frame workspace mock that follows the art in the real hero: it is a three-column
+          layout that has no room in a pane this narrow.
+        - The site's Google Fonts `@import`, deleted from `site.css`. A page that fetches a webfont is
+          not offline, so JetBrains Mono falls back to the platform mono - the one visible difference
+          from the real site.
+
+      NOTHING HERE OVERRIDES THE SITE'S OWN COLOURS. An earlier version of this file set
+      `body { background: var(--paper) }`, which fought `site.css`'s own `body { background: var(--ink) }`
+      and was why the panel looked broken. The only local rules are the two below, and both are about
+      this being a non-scrolling decorative panel rather than a web page.
+
+      Regenerating: markup comes from the site's JS bundle (search `className:"hero container-wide"`),
+      the class contract from `site.css`. Re-fetch both and re-strip the `@import`.
+    -->
+    <link rel="stylesheet" href="site.css" />
+    <style>
+      /* Local rules, all four about this being a fixed decorative panel rather than a scrolling page.
+         None of them touches colour: an earlier version set a background here and that is what broke
+         the styling, since site.css sets the body's own dark background.
+
+         The centring is the point. `site.css` gives `.hero` a `min-height: 1080px` because on the real
+         site the hero is a full first screen with more page beneath it. In a panel there is nothing
+         beneath, so the hero was forced to nearly the panel's height with its content sitting up in the
+         118px top padding and the rest left empty. Neutralising that min-height lets the hero be as
+         tall as its content, and `margin: auto` in a flex body centres it.
+
+         `margin: auto` rather than `align-content: center`, deliberately: auto margins resolve to zero
+         when there is no free space, so a panel SHORTER than the hero degrades to top-aligned instead
+         of clipping the headline off the top edge.
+
+         Nothing here touches `.hero-art`, whose offsets are relative to `.hero` and so travel with it -
+         which is what keeps its two breakpoint variants (scaled at =1060px, stacked at =720px) intact. */
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        display: flex;
+        overflow: hidden;
+      }
+      .hero {
+        min-height: 0;
+        margin: auto;
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="hero container-wide">
+      <div class="hero-glow"></div>
+      <div class="hero-intro">
+        <div class="eyebrow">
+          <span class="status-dot"></span> Open source · Model neutral · Runs where you do
+        </div>
+        <h1>The governed workspace for AI agents.</h1>
+        <p class="hero-copy">
+          Give Codex, Claude Code, Gemini, and OpenCode real tools to get real work done, while you stay
+          in control of every capability, credential, and action.
+        </p>
+        <div class="platform-line">Available for macOS, Windows, and Linux</div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="hero-orb hero-orb-a"></div>
+        <div class="hero-orb hero-orb-b"></div>
+        <div class="hero-orb hero-orb-c"></div>
+        <div class="hero-product-wordmark"><span>BOSS</span><small>CONTROL PLANE</small></div>
+        <div class="hero-tool-chip chip-browser">BROWSER</div>
+        <div class="hero-tool-chip chip-terminal">TERMINAL</div>
+        <div class="hero-tool-chip chip-policy">POLICY</div>
+      </div>
+    </section>
+  </body>
+</html>

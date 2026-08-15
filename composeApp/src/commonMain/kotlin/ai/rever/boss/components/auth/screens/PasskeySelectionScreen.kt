@@ -48,30 +48,17 @@ fun PasskeySelectionScreen(
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier =
-                Modifier
-                    .heightIn(min = maxHeight)
-                    .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            BossLogo()
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            AuthCard {
-                PasskeySelectionCardContent(
-                    email = email,
-                    passkeys = passkeys,
-                    selectedCredentialId = selectedCredentialId,
-                    onSelect = { selectedCredentialId = it },
-                    onContinue = { selectedCredentialId?.let(onPasskeySelected) },
-                    onBack = onBack,
-                )
-            }
-        }
+    // The scaffold brings the verticalScroll this screen never had - and it is the screen that needed
+    // it most, since its content grows with the number of registered passkeys.
+    AuthScaffold(title = "Choose Your Passkey") {
+        PasskeySelectionCardContent(
+            email = email,
+            passkeys = passkeys,
+            selectedCredentialId = selectedCredentialId,
+            onSelect = { selectedCredentialId = it },
+            onContinue = { selectedCredentialId?.let(onPasskeySelected) },
+            onBack = onBack,
+        )
     }
 }
 
@@ -85,8 +72,6 @@ private fun PasskeySelectionCardContent(
     onBack: () -> Unit,
 ) {
     val colors = BossTheme.colors
-    AuthCardTitle("Choose Your Passkey")
-
     Text("Signing in as:", fontSize = 14.sp, color = colors.textSecondary, textAlign = TextAlign.Center)
     Spacer(modifier = Modifier.height(8.dp))
     Text(email, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colors.signal, textAlign = TextAlign.Center)
