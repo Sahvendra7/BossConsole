@@ -66,4 +66,30 @@ class SubstituteProjectPathTest {
             SplitTemplatesManager.substituteProjectPath("cd {projectPath}", plain, quote = true),
         )
     }
+
+    /**
+     * All three project placeholders read "is there a project" the same way, for null and for
+     * blank alike. They did not: `{projectPath}` treated blank as absent while the other two
+     * took it as a real path, so `{claudeContinueFlag}` ran a session lookup whose encoded
+     * path was empty - landing on `~/.claude/projects/` itself.
+     *
+     * Asserted through `{gitRemoteUrl}` and `{claudeContinueFlag}` only. `{projectPath}` is
+     * left out on purpose: its no-project answer is `DefaultWorkingDirectory.path()`, which
+     * would create `~/BossProjects` on the machine running this.
+     */
+    @Test
+    fun blankProjectPathIsTreatedAsNoProject() {
+        for (absent in listOf(null, "", "   ")) {
+            assertEquals(
+                "https://google.com",
+                SplitTemplatesManager.processPlaceholders("{gitRemoteUrl}", absent),
+                "projectPath=${absent.orEmpty().ifEmpty { "<blank>" }}",
+            )
+            assertEquals(
+                "",
+                SplitTemplatesManager.processPlaceholders("{claudeContinueFlag}", absent),
+                "projectPath=${absent.orEmpty().ifEmpty { "<blank>" }}",
+            )
+        }
+    }
 }

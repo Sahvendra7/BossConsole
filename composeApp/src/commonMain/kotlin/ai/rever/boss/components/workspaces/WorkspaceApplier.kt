@@ -70,20 +70,28 @@ suspend fun applyWorkspace(
         }
     }
 
-    // Get current project path for tab creation. Resolved once for the whole tree rather than
-    // per tab - with no project this is ~/BossProjects, and DefaultWorkingDirectory.path()
-    // touches the filesystem, so an N-tab workspace would otherwise ask N times. Mirrors
-    // WorkspaceExtractor, which hoists the same value on the way out.
-    val currentProjectPath =
-        DefaultWorkingDirectory.resolve(
-            windowProjectState?.selectedProject?.value?.path ?: workspace.projectPath,
-        )
-
     // Try to restore preserved state first
     if (splitViewState.restorePreservedState(workspaceId)) {
         // State restored successfully
         return
     }
+
+    // Get current project path for tab creation. Below the early return, not above it:
+    // switching back to a workspace whose state is still in memory builds no tabs, so
+    // resolving there would touch the filesystem, on Dispatchers.Main, for nothing.
+    //
+    // Resolved once for the whole tree rather than per tab - an N-tab workspace would
+    // otherwise ask N times. Mirrors WorkspaceExtractor, which hoists it on the way out.
+    //
+    // selectedOrNull, not `?:`: the window's path is "" when no project is selected, and an
+    // empty string is not null, so the workspace's own recorded projectPath could never be
+    // reached. (With restoreProject = true the selectProject above has already put it in
+    // window state, so this only matters for the restoreProject = false and null-state paths.)
+    val currentProjectPath =
+        DefaultWorkingDirectory.resolve(
+            DefaultWorkingDirectory.selectedOrNull(windowProjectState?.selectedProject?.value?.path)
+                ?: workspace.projectPath,
+        )
 
     // No preserved state, apply workspace from scratch.
     // Wait (bounded) for the plugin-provided tab types this workspace needs —

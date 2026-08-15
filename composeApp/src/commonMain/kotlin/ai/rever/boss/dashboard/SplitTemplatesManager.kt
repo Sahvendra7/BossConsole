@@ -411,13 +411,20 @@ object SplitTemplatesManager {
     ): String {
         var result = content
 
+        // One reading of "is there a project" for all three project placeholders. They used to
+        // disagree about a blank path: {projectPath} treated it as absent, while the two below
+        // took it as a real path - getClaudeContinueFlag("") looks in ~/.claude/projects/
+        // itself. No caller passes blank today, but this function's contract invites one to.
+        val selectedProject = DefaultWorkingDirectory.selectedOrNull(projectPath)
+
         // Replace project path (shell-quoted when used inside a command). With no project the
         // fallback is ~/BossProjects, not the home directory - see DefaultWorkingDirectory.
-        val pathValue = DefaultWorkingDirectory.resolve(projectPath)
+        val pathValue = selectedProject ?: DefaultWorkingDirectory.path()
         result = substituteProjectPath(result, pathValue, quoteProjectPath)
 
-        // Replace git remote URL
-        val gitUrl = projectPath?.let { getGitRemoteUrl(it) } ?: "https://google.com"
+        // Replace git remote URL. Not resolved to the default: the projects folder is not a
+        // repository, and "no project" means there is no remote to link to.
+        val gitUrl = selectedProject?.let { getGitRemoteUrl(it) } ?: "https://google.com"
         result = result.replace("{gitRemoteUrl}", gitUrl)
 
         // Replace current file
@@ -426,7 +433,7 @@ object SplitTemplatesManager {
         }
 
         // Replace Claude continue flag based on session existence
-        val claudeFlag = getClaudeContinueFlag(projectPath)
+        val claudeFlag = getClaudeContinueFlag(selectedProject)
         result = result.replace("{claudeContinueFlag}", claudeFlag)
 
         // Normalize command separators for current platform (MUST be last step)

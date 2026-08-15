@@ -5,6 +5,7 @@ import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 
 /**
  * Where BOSS works when no project is selected.
@@ -60,7 +61,14 @@ object DefaultWorkingDirectory {
      *   transient failure at extract time would make [persisted] compare a terminal's real
      *   `~/BossProjects` against `~`, find them different, and freeze the resolved default
      *   into the saved layout - precisely what [persisted] exists to prevent. This cannot
-     *   fail, so the comparison does not depend on filesystem state.
+     *   fail, so *that* direction is closed: which string the comparison uses no longer
+     *   depends on filesystem state at extract time.
+     *
+     * The mirror case is not closed, and is not worth the machinery: if creation failed when
+     * the *terminal* was created, its working directory is the home directory, which differs
+     * from this and so is persisted verbatim. Treating `~` as a default too would silence a
+     * user who deliberately opened a terminal there, to fix a case that only arises once the
+     * fallback has already fired.
      *
      * Through `File` on both sides, so the separator normalization matches what [resolve]
      * handed the tab.
@@ -118,15 +126,21 @@ object DefaultWorkingDirectory {
      * creating `~/BossProjects` on whatever machine runs them.
      */
     internal fun ensureDirectory(target: File): String? {
-        // createDirectories, not mkdirs(). Three callers create this same path - the startup
-        // warm-up in main(), the first window's resolve() and validateProjectLocation - and
-        // mkdirs() returns false when another of them won the race, which would send this
-        // caller to the home-directory fallback on exactly the cold first launch this exists
-        // to fix. createDirectories is idempotent by contract, and there is no isDirectory
-        // pre-check to go stale between the look and the create.
         val failure =
             try {
-                Files.createDirectories(target.toPath())
+                // isDirectory first: that is the steady state and the only branch the UI
+                // thread normally takes, and it is one stat with no create and no exception.
+                // Short-circuiting the *success* case is race-free - a true answer means the
+                // directory is there.
+                //
+                // Otherwise createDirectories, not mkdirs(). Three callers create this same
+                // path - the startup warm-up in main(), the first window's resolve() and
+                // validateProjectLocation - and mkdirs() returns false when another of them
+                // won the race, which would send this caller to the home-directory fallback
+                // on exactly the cold first launch this exists to fix. createDirectories
+                // succeeds when the directory is already there, so losing the race between
+                // the check above and this line is not a failure either.
+                if (!target.isDirectory) Files.createDirectories(target.toPath())
                 null
             } catch (e: IOException) {
                 // Includes FileAlreadyExistsException, which createDirectories raises only for
@@ -134,22 +148,36 @@ object DefaultWorkingDirectory {
                 e
             } catch (e: SecurityException) {
                 e
+            } catch (e: InvalidPathException) {
+                // Unchecked, from toPath(). Vanishingly unlikely for a home-relative path, but
+                // it would otherwise escape past the fallback to the caller.
+                e
             }
-
-        if (failure == null) return target.path
 
         // Every failure that happens in the field - a read-only home, a quota, a file at the
         // path - lands here, and the user meets it as the home-directory prompts this exists
         // to remove. Silence would leave nothing in the log to explain them.
-        logger.warn(
-            LogCategory.FILE,
-            "Cannot create the default projects directory, falling back to the home directory",
-            mapOf("path" to target.path),
-            error = failure,
-        )
-        return null
+        failure?.let {
+            logger.warn(
+                LogCategory.FILE,
+                "Cannot create the default projects directory, falling back to the home directory",
+                mapOf("path" to target.path),
+                error = it,
+            )
+        }
+
+        return if (failure == null) target.path else null
     }
 
-    /** [target] itself if there is no home directory to fall back to, which no JVM reports. */
+    /**
+     * [target] itself if there is no home directory to fall back to, which no JVM reports.
+     *
+     * The one branch where this class breaks its own contract of "a path a terminal can start
+     * in": with no `user.home`, `getDefaultProjectsDirectory()` yields the *relative*
+     * `BossProjects`, which resolves against the process working directory - `/` for a
+     * packaged `.app`. Nothing is gained by inventing a better guess here; the JVM defining no
+     * home directory is a broken environment, and the previous code produced a literal
+     * `null/BossProjects` in the same situation.
+     */
     private fun homeDirectory(target: File): String = System.getProperty("user.home") ?: target.path
 }

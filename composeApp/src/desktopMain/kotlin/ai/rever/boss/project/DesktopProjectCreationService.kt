@@ -156,12 +156,12 @@ actual object ProjectCreationService {
         if (!parentDir.exists()) {
             // Try to create the default directory if it doesn't exist
             if (parentDirectory == getDefaultProjectsDirectory()) {
-                try {
-                    if (!parentDir.mkdirs()) {
-                        return ValidationResult.Invalid("Cannot create projects directory: $parentDirectory")
-                    }
-                } catch (e: Exception) {
-                    return ValidationResult.Invalid("Cannot create projects directory: ${e.message}")
+                // Through DefaultWorkingDirectory so this and the startup warm-up cannot
+                // disagree. mkdirs() here returned false when the warm-up won the race, and
+                // the loser showed the user "Cannot create projects directory" in the New
+                // Project wizard for a directory that had just been created successfully.
+                if (DefaultWorkingDirectory.ensureDirectory(parentDir) == null) {
+                    return ValidationResult.Invalid("Cannot create projects directory: $parentDirectory")
                 }
             } else {
                 return ValidationResult.Invalid("Parent directory does not exist: $parentDirectory")
