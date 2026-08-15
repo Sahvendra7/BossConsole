@@ -1,5 +1,6 @@
 package ai.rever.boss.project
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
@@ -31,11 +32,11 @@ object DefaultWorkingDirectory {
     /**
      * The default working directory, created if it does not exist yet.
      *
-     * Falls back to the user's home directory - the historical behaviour - when
-     * `~/BossProjects` cannot be created or a file already occupies that name. Handing back a
-     * path that does not exist would be worse than the problem this fixes: a terminal spawned
-     * with a non-existent working directory fails to start, where the old default only started
-     * somewhere noisy.
+     * Falls back - to `~/.boss`, then the home directory - when `~/BossProjects` cannot be
+     * created, a file already occupies that name, or it exists but is not writable. Handing
+     * back a path that does not exist or cannot be written to would be worse than the problem
+     * this fixes: a terminal spawned with such a working directory fails to start, where the
+     * old default only started somewhere noisy. See [fallbackDirectory].
      *
      * Deliberately not cached. It is called when a tab is created, never in a loop, and a
      * cached path would go on being handed out after the user moved or deleted the directory.
@@ -48,7 +49,7 @@ object DefaultWorkingDirectory {
      */
     internal fun ensureDefaultDirectory(ensure: (File) -> String?): String {
         val target = File(nominalPath())
-        return ensure(target) ?: homeDirectory(target)
+        return ensure(target) ?: fallbackDirectory(target)
     }
 
     /**
@@ -63,18 +64,18 @@ object DefaultWorkingDirectory {
      *   directory changes, and from the Last Session teardown, which can be the shutdown-hook
      *   thread. A `createDirectories` syscall per browser-title update is the kind of blocking
      *   I/O `docs/THREADING.md` rules out, and its warn-on-failure would repeat just as often.
-     * - **Stability.** [ensureDefaultDirectory] answers with the *home* directory when creation fails. A
-     *   transient failure at extract time would make [persisted] compare a terminal's real
-     *   `~/BossProjects` against `~`, find them different, and freeze the resolved default
-     *   into the saved layout - precisely what [persisted] exists to prevent. This cannot
-     *   fail, so *that* direction is closed: which string the comparison uses no longer
-     *   depends on filesystem state at extract time.
+     * - **Stability.** [ensureDefaultDirectory] answers with a *fallback* directory when
+     *   creation fails. A transient failure at extract time would make [persisted] compare a
+     *   terminal's real `~/BossProjects` against that fallback, find them different, and
+     *   freeze the resolved default into the saved layout - precisely what [persisted] exists
+     *   to prevent. This cannot fail, so *that* direction is closed: which string the
+     *   comparison uses no longer depends on filesystem state at extract time.
      *
-     * The mirror case is not closed *here*, and does not need to be: if creation failed when
-     * the *terminal* was created, its working directory is the home directory, which differs
-     * from this and so is persisted verbatim. [restored] then reads that `~` as absent on the
-     * way back in, so the layout self-heals on the next restore rather than carrying the
-     * fallback forever.
+     * The mirror case is not closed *here*, and only half needs to be: if creation failed when
+     * the *terminal* was created, its working directory is a fallback, which differs from this
+     * and so is persisted verbatim. Where that fallback was the home directory, [restored]
+     * reads it as absent on the way back in and the layout self-heals on the next restore.
+     * Where it was `~/.boss`, it does not - that path is stored and restored like any other.
      *
      * Through `File` on both sides, so the separator normalization matches what [resolve]
      * handed the tab.
@@ -267,14 +268,29 @@ object DefaultWorkingDirectory {
     }
 
     /**
-     * [target] itself if there is no home directory to fall back to, which no JVM reports.
+     * Where to work when `~/BossProjects` cannot be used.
      *
-     * The one branch where this class breaks its own contract of "a path a terminal can start
-     * in": with no `user.home`, `getDefaultProjectsDirectory()` yields the *relative*
-     * `BossProjects`, which resolves against the process working directory - `/` for a
-     * packaged `.app`. Nothing is gained by inventing a better guess here; the JVM defining no
-     * home directory is a broken environment, and the previous code produced a literal
-     * `null/BossProjects` in the same situation.
+     * `~/.boss` first, and only then the home directory. The two failures that actually reach
+     * here are a *file* named BossProjects and an unwritable one, and in both `~/.boss` is
+     * fine: BOSS owns it, other subsystems create it already, and macOS does not guard it. So
+     * the fallback keeps the point of this class rather than surrendering it - falling
+     * straight to `~` would hand back the TCC prompts at the first hurdle. It is not a
+     * projects folder, which is why it is the fallback and not the default.
+     *
+     * The home directory remains the last resort, and [target] itself if there is not even
+     * one. That last branch is where this class breaks its own contract of "a path a terminal
+     * can start in": with no `user.home`, `getDefaultProjectsDirectory()` yields the *relative*
+     * `BossProjects`, which resolves against the process working directory - `/` for a packaged
+     * `.app`. Nothing is gained by inventing a better guess; a JVM defining no home directory
+     * is a broken environment, and the previous code produced a literal `null/BossProjects` in
+     * the same situation.
      */
-    private fun homeDirectory(target: File): String = System.getProperty("user.home") ?: target.path
+    private fun fallbackDirectory(target: File): String {
+        val bossDir = BossDirectories.rootDir
+        // Checked, not created: rootDir's own accessor already tries, and this is the path
+        // where creating things in the home directory has just failed.
+        if (bossDir.isDirectory && Files.isWritable(bossDir.toPath())) return bossDir.path
+
+        return System.getProperty("user.home") ?: target.path
+    }
 }

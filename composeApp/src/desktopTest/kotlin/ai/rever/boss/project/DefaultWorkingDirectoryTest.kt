@@ -1,5 +1,6 @@
 package ai.rever.boss.project
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -157,14 +158,28 @@ class DefaultWorkingDirectoryTest {
     }
 
     /**
-     * The branch the PR description calls out as silently reinstating the problem this fixes:
-     * when the directory cannot be created, callers get the home directory rather than a path
-     * nothing can start in. Through the `ensure` seam, since a machine where creating
-     * `~/BossProjects` genuinely fails is not something a test can arrange.
+     * When the directory cannot be created, callers get a usable path rather than one nothing
+     * can start in - `~/.boss` where that is available, the home directory otherwise. Through
+     * the `ensure` seam, since a machine where creating `~/BossProjects` genuinely fails is not
+     * something a test can arrange.
+     *
+     * Both outcomes are accepted because which one applies depends on the machine: `~/.boss`
+     * exists on any host that has run BOSS, and not on a clean CI runner. What matters is that
+     * neither is the unusable path, and that `~/.boss` is preferred when it is there - the
+     * whole point of the fallback chain, since falling straight to `~` would hand back the
+     * permission prompts at the first hurdle.
      */
     @Test
-    fun `an uncreatable directory falls back to the home directory`() {
-        assertEquals(System.getProperty("user.home"), DefaultWorkingDirectory.ensureDefaultDirectory { null })
+    fun `an uncreatable directory falls back to a usable one`() {
+        val fallback = DefaultWorkingDirectory.ensureDefaultDirectory { null }
+        val bossDir = BossDirectories.rootDir
+
+        assertNotEquals(DefaultWorkingDirectory.nominalPath(), fallback)
+        if (bossDir.isDirectory && Files.isWritable(bossDir.toPath())) {
+            assertEquals(bossDir.path, fallback, "~/.boss is preferred over the home directory")
+        } else {
+            assertEquals(System.getProperty("user.home"), fallback)
+        }
     }
 
     @Test

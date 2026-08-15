@@ -44,10 +44,7 @@ import kotlin.test.assertTrue
  * ratio to preserve — structure, panel ids, and tab mapping are the contract.
  *
  * Everything goes through [extract] rather than calling [extractCurrentWorkspace] directly, so
- * the assertions do not depend on the real home directory of the machine running them. The
- * default argument is `DefaultWorkingDirectory.nominalPath()`, which creates nothing - an
- * earlier revision defaulted to the creating `ensureDefaultDirectory()`, and this wrapper was
- * added when that was making `~/BossProjects` on every dev machine.
+ * the assertions do not depend on the real home directory of the machine running them.
  */
 class WorkspaceExtractorTest {
     private object JupyterStubType : TabTypeInfo {

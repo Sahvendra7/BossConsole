@@ -71,8 +71,12 @@ data class CustomTemplatesData(
 object SplitTemplatesManager {
     private val logger = BossLogger.forComponent("SplitTemplatesManager")
 
-    /** Also the guard in [processPlaceholders], so the two cannot drift apart. */
+    // Also the guards in [processPlaceholders], so a guard and its substitution cannot drift.
+    // Every placeholder whose value costs something to compute needs one: a mkdir, a `git`
+    // subprocess and a directory listing respectively.
     private const val PROJECT_PATH_PLACEHOLDER = "{projectPath}"
+    private const val GIT_REMOTE_URL_PLACEHOLDER = "{gitRemoteUrl}"
+    private const val CLAUDE_CONTINUE_FLAG_PLACEHOLDER = "{claudeContinueFlag}"
     private val settingsFile = BossDirectories.resolve("split-templates.json")
     private val json =
         Json {
@@ -442,17 +446,27 @@ object SplitTemplatesManager {
 
         // Replace git remote URL. Deliberately not resolved to the default: the projects
         // folder is not a repository, so "no project" means there is no remote to link to.
-        val gitUrl = selectedProject?.let { getGitRemoteUrl(it) } ?: "https://google.com"
-        result = result.replace("{gitRemoteUrl}", gitUrl)
+        //
+        // Guarded for the same reason as {projectPath}, and this is the expensive one:
+        // getGitRemoteUrl forks `git remote get-url origin` and waits for it. Restoring a
+        // workspace calls this once per placeholder-carrying field on the composition thread,
+        // so an unguarded lookup was a subprocess spawn per tab for content that never asked
+        // for a remote.
+        if (result.contains(GIT_REMOTE_URL_PLACEHOLDER)) {
+            val gitUrl = selectedProject?.let { getGitRemoteUrl(it) } ?: "https://google.com"
+            result = result.replace(GIT_REMOTE_URL_PLACEHOLDER, gitUrl)
+        }
 
         // Replace current file
         if (currentFile != null) {
             result = result.replace("{currentFile}", currentFile)
         }
 
-        // Replace Claude continue flag based on session existence
-        val claudeFlag = getClaudeContinueFlag(selectedProject)
-        result = result.replace("{claudeContinueFlag}", claudeFlag)
+        // Replace Claude continue flag based on session existence. Guarded too:
+        // checkClaudeSessionExists lists ~/.claude/projects/<encoded>.
+        if (result.contains(CLAUDE_CONTINUE_FLAG_PLACEHOLDER)) {
+            result = result.replace(CLAUDE_CONTINUE_FLAG_PLACEHOLDER, getClaudeContinueFlag(selectedProject))
+        }
 
         // Normalize command separators for current platform (MUST be last step)
         result = CommandProcessor.normalizeCommand(result)

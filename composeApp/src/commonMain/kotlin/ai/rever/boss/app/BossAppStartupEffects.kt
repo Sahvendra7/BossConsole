@@ -127,9 +127,9 @@ internal fun BossAppStartupEffects(state: BossAppState) {
     // there would re-run onDispose and, in a single-window app, perform a
     // mid-session app-level write.
     DisposableEffect(windowId) {
-        // nominalPath(), and resolved here rather than in the callback: the callback can run
-        // on the shutdown-hook thread, and the extractor only needs the directory's name to
-        // compare against, never for it to exist.
+        // The extractor only needs the directory's name to compare against, never for it to
+        // exist, so this is nominalPath(). Resolved here rather than inside the callback
+        // because the callback can run on the shutdown-hook thread.
         val defaultWorkingDirectory = DefaultWorkingDirectory.nominalPath()
         LastSessionCoordinator.instance.register(
             windowId = windowId,
