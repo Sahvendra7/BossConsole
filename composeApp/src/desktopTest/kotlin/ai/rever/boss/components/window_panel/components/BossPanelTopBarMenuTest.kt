@@ -152,6 +152,48 @@ class BossPanelTopBarMenuTest {
     }
 
     @Test
+    fun `a local build offers Install Store Version, on the same action as the tag`() {
+        // The point of the row is discoverability, so what matters is that it is named as an action
+        // and reaches the same place the tag does - not that some clickable thing exists.
+        show(buildInfo = localBuild())
+        openMenu()
+
+        compose.onNodeWithText("Install Store Version").performClick()
+
+        assertEquals(1, tagClicked)
+    }
+
+    @Test
+    fun `a released build is not offered Install Store Version`() {
+        show(
+            buildInfo =
+                PluginBuildInfo(
+                    pluginId = "p",
+                    displayName = "Probe",
+                    version = "1.0.3",
+                    signedBytes = true,
+                    storeSourced = true,
+                    reloadStamp = null,
+                ),
+        )
+        openMenu()
+
+        compose.onNodeWithText("Install Store Version").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a hot reloaded build is offered Install Store Version too`() {
+        // HOT is a local build that was overwritten in place, so the way back to the released jar
+        // matters at least as much as it does for DEBUG.
+        show(buildInfo = localBuild(reloadStamp = 1_754_890_231_447L))
+        openMenu()
+
+        compose.onNodeWithText("Install Store Version").performClick()
+
+        assertEquals(1, tagClicked)
+    }
+
+    @Test
     fun `clicking the tag itself raises the store-version prompt`() {
         show(buildInfo = localBuild())
 

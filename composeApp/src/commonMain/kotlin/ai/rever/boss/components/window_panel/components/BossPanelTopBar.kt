@@ -22,6 +22,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MonitorHeart
@@ -97,6 +98,17 @@ fun BossPanelTopBar(
                         onClick = { onBuildTagClick?.invoke() },
                     ),
                 )
+                // The way back to the released build, named as the action it is. The version row
+                // above already carries it, but that row reads as a statement of fact, so the only
+                // discoverable route was clicking the tag - and the tag is a 10sp pill that
+                // disappears entirely once the panel is narrow enough to ellipsize the title.
+                add(
+                    ContextMenuItem(
+                        text = "Install Store Version",
+                        icon = Icons.Outlined.CloudDownload,
+                        onClick = { onBuildTagClick?.invoke() },
+                    ),
+                )
                 add(ContextMenuItem(isDivider = true))
             }
             // "Reload Panel" is the user-facing name for what is really a reload of the owning
@@ -147,35 +159,41 @@ fun BossPanelTopBar(
     ) {
         Spacer(modifier = Modifier.width(8.dp))
 
-        Text(
-            text = title ?: "",
-            color = BossThemeColors.TextPrimary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier =
-                Modifier
-                    // Give way rather than grow: an unbounded title in a narrow side panel would push
-                    // the build tag - the entire signal - off the end of the row. fill = false so a
-                    // short title still hugs its text and the tag sits next to it, not at the edge.
-                    .weight(1f, fill = false)
-                    .align(Alignment.CenterVertically),
-        )
-
-        // Next to the name, not out at the edge: the tag qualifies which build of this panel you are
-        // looking at, so it belongs with the thing it qualifies. Not hover-gated - a panel running
-        // unreleased code should say so whether or not the pointer is over it.
-        if (buildInfo?.isTagged == true) {
-            Spacer(modifier = Modifier.width(6.dp))
-            PluginBuildTag(
-                info = buildInfo,
-                modifier = Modifier.align(Alignment.CenterVertically),
-                onClick = onBuildTagClick,
+        // Title and tag are one group, and the group takes all the free space. This has to be a
+        // nested Row rather than a weighted title beside a weighted spacer: two weights in one Row
+        // split the free space 1:1, and because the title is fill = false, the half it did not use
+        // was laid out AFTER the trailing controls - so Minimize and the kebab sat short of the
+        // right edge by half the title's unused width, drifting further in the shorter the title.
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title ?: "",
+                color = BossThemeColors.TextPrimary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier =
+                    Modifier
+                        // Give way rather than grow: an unbounded title in a narrow side panel would push
+                        // the build tag - the entire signal - off the end of the row. fill = false so a
+                        // short title still hugs its text and the tag sits next to it, not at the edge.
+                        .weight(1f, fill = false),
             )
-        }
 
-        Spacer(modifier = Modifier.weight(1f))
+            // Next to the name, not out at the edge: the tag qualifies which build of this panel you
+            // are looking at, so it belongs with the thing it qualifies. Not hover-gated - a panel
+            // running unreleased code should say so whether or not the pointer is over it.
+            if (buildInfo?.isTagged == true) {
+                Spacer(modifier = Modifier.width(6.dp))
+                PluginBuildTag(
+                    info = buildInfo,
+                    onClick = onBuildTagClick,
+                )
+            }
+        }
 
         // "Update available" badge — always visible (not hover-gated) when a compatible update
         // exists for this plugin. Clicking it prompts to update.
