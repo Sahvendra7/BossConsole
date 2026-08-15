@@ -167,13 +167,30 @@ object PluginDependencyResolution {
      * loaded. The Toolbox's update path is an uninstall followed by a reinstall, so what the
      * user saw was an Update button that did nothing at all.
      *
+     * **A disabled dependent does not count.** `DynamicPluginManager.disablePlugin` unregisters
+     * the tracking context and flips the state to `DISABLED`, but never calls
+     * `pluginLoader.unloadPlugin` - so a disabled plugin is still in `getLoadedPlugins()`. It
+     * would otherwise veto on behalf of something that cannot break, because it is not running:
+     * the same shape as the optional case above, and the reason shown would name a plugin the
+     * user had already turned off.
+     *
      * **Presence is by id only.** `PluginDependency.version` is ignored, matching [missingFor]:
      * a dependent needing 2.x is "satisfied" by 1.x here too, so this never refuses an unload
      * over a version range it has no way to act on.
+     *
+     * @param isDisabled whether a dependent is switched off; the host asks its `_pluginStates`.
+     *   Deliberately **has no default**, so a new call site has to answer rather than silently
+     *   getting the over-vetoing behaviour this exists to remove. It is asked only about
+     *   plugins that already declare a hard dependency, and it **fails closed**: the host
+     *   answers false for a state it does not recognise or does not track, so an unfamiliar
+     *   state still vetoes. `PluginState` has more members than LOADED and DISABLED
+     *   (REGISTERED, INITIALIZING, ...), and treating "not exactly LOADED" as "not running"
+     *   would drop real dependents.
      */
     fun blockingDependentsOf(
         pluginId: String,
         loadedManifests: List<PluginManifest>,
+        isDisabled: (pluginId: String) -> Boolean,
     ): List<String> =
         loadedManifests
             // A manifest naming itself is a mistake ([missingFor] drops it on the install side
@@ -184,7 +201,8 @@ object PluginDependencyResolution {
                 manifest.dependencies.any { dependency ->
                     dependency.pluginId == pluginId && !dependency.optional
                 }
-            }.map { manifest -> manifest.displayName }
+            }.filterNot { manifest -> isDisabled(manifest.pluginId) }
+            .map { manifest -> manifest.displayName }
 
     private fun PluginManifest.toMissing(dependency: PluginDependency) =
         MissingPluginDependency(

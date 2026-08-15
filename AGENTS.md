@@ -79,11 +79,30 @@ predicate is `PluginDependencyResolution.blockingDependentsOf`, next to `missing
 cannot drift again; it also drops a manifest that names itself, which would otherwise make that
 plugin permanently unremovable.
 
+**A disabled dependent does not veto either.** `disablePlugin` unregisters the tracking context
+and flips the state to `DISABLED` but never calls `pluginLoader.unloadPlugin`, so a disabled
+plugin is still in `getLoadedPlugins()` and would refuse on behalf of something that is not
+running. `blockingDependentsOf` therefore takes an `isDisabled` predicate with **no default**, so
+a new call site has to answer; it **fails closed**, since `PluginState` has more members than
+LOADED and DISABLED and treating "not exactly LOADED" as "not running" would drop real dependents.
+
 Refusals must stay visible. `PluginLoaderDelegateImpl.unloadPlugin` returns a bare `Boolean`, and
 `uninstallPlugin` logs `Uninstalling plugin` *before* it decides - so a refusal used to leave the
 log stopping mid-sequence with the manager's reasons dropped at the delegate boundary. It now logs
-`Plugin unload refused` with them. The plugin side cannot receive those reasons through a
-`Boolean`, so the Toolbox's message points at the host log rather than restating the failure.
+`Plugin unload refused` with them, read off `PluginUnloadException.reasons` rather than the joined
+message. Refusal and failure log **separately**: `uninstallPlugin` returns `Result.failure` for
+both, and they send a reader to opposite places - a refusal means another plugin is in the way,
+while "Plugin not found" or a `pluginLoader.unloadPlugin` error is a fault that wants a stack
+trace. The plugin side cannot receive those reasons through a `Boolean`, so the Toolbox's message
+points at the host log rather than restating the failure.
+
+**Known, and deliberate: the veto does not distinguish Update from Remove.** The host's own update
+paths pass `force = true` (`PluginUpdateBridge`, `PluginStoreVersionBridge`), so they never meet
+it. The one path that does is the plugin-facing `PluginLoaderDelegateImpl.unloadPlugin`, which
+cannot tell which button was pressed - so a plugin with a *required* loaded dependent can still not
+be updated from the Toolbox, even though an update ends with it present again at a newer version.
+Refusing the removal is right; refusing the update is much harder to justify, and closing it needs
+an update-shaped verb (or an intent parameter) on the api rather than a change to this predicate.
 
 `PluginDependencyResolution.missingFor(manifest, installedIds)` now answers what is absent, and
 `MissingDependencyDialog` offers to install it. Four things about the placement:

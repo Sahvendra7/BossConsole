@@ -346,6 +346,7 @@ class PluginDependencyResolutionTest {
                             dependencies = listOf(dependency("com.example.gateway", optional = true)),
                         ),
                     ),
+                isDisabled = { false },
             )
 
         assertEquals(emptyList(), blocking)
@@ -364,6 +365,7 @@ class PluginDependencyResolutionTest {
                             dependencies = listOf(dependency("com.example.gateway")),
                         ),
                     ),
+                isDisabled = { false },
             )
 
         // The display name, because it goes straight into a reason the user reads.
@@ -385,6 +387,7 @@ class PluginDependencyResolutionTest {
                             dependencies = listOf(dependency("com.example.gateway")),
                         ),
                     ),
+                isDisabled = { false },
             )
 
         assertEquals(emptyList(), blocking)
@@ -403,6 +406,7 @@ class PluginDependencyResolutionTest {
                             dependencies = listOf(dependency("com.example.unrelated")),
                         ),
                     ),
+                isDisabled = { false },
             )
 
         assertEquals(emptyList(), blocking)
@@ -431,9 +435,79 @@ class PluginDependencyResolutionTest {
                             dependencies = listOf(dependency("com.example.gateway", optional = true)),
                         ),
                     ),
+                isDisabled = { false },
             )
 
         assertEquals(listOf("Flow"), blocking)
+    }
+
+    @Test
+    fun `a disabled dependent does not block an unload`() {
+        // disablePlugin unregisters the tracking context and flips state to DISABLED but never
+        // calls pluginLoader.unloadPlugin, so a disabled plugin is still in getLoadedPlugins().
+        // Letting it veto raises a refusal on behalf of something that is not running.
+        val blocking =
+            PluginDependencyResolution.blockingDependentsOf(
+                pluginId = "com.example.gateway",
+                loadedManifests =
+                    listOf(
+                        manifest(
+                            pluginId = "com.example.jupyter",
+                            displayName = "Jupyter Notebook",
+                            dependencies = listOf(dependency("com.example.gateway")),
+                        ),
+                    ),
+                isDisabled = { it == "com.example.jupyter" },
+            )
+
+        assertEquals(emptyList(), blocking)
+    }
+
+    @Test
+    fun `an enabled dependent still blocks when a disabled one does not`() {
+        val blocking =
+            PluginDependencyResolution.blockingDependentsOf(
+                pluginId = "com.example.gateway",
+                loadedManifests =
+                    listOf(
+                        manifest(
+                            pluginId = "com.example.jupyter",
+                            displayName = "Jupyter Notebook",
+                            dependencies = listOf(dependency("com.example.gateway")),
+                        ),
+                        manifest(
+                            pluginId = "com.example.flow",
+                            displayName = "Flow",
+                            dependencies = listOf(dependency("com.example.gateway")),
+                        ),
+                    ),
+                isDisabled = { it == "com.example.jupyter" },
+            )
+
+        assertEquals(listOf("Flow"), blocking)
+    }
+
+    @Test
+    fun `the disabled check fails closed`() {
+        // The host answers false for a state it does not recognise or does not track, so an
+        // untracked-but-loaded dependent still vetoes. Over-vetoing an unfamiliar state is
+        // recoverable; dropping a real dependent silently is what this whole predicate is
+        // about not doing.
+        val blocking =
+            PluginDependencyResolution.blockingDependentsOf(
+                pluginId = "com.example.gateway",
+                loadedManifests =
+                    listOf(
+                        manifest(
+                            pluginId = "com.example.untracked",
+                            displayName = "Untracked",
+                            dependencies = listOf(dependency("com.example.gateway")),
+                        ),
+                    ),
+                isDisabled = { false },
+            )
+
+        assertEquals(listOf("Untracked"), blocking)
     }
 
     @Test
@@ -456,6 +530,7 @@ class PluginDependencyResolutionTest {
                                 ),
                         ),
                     ),
+                isDisabled = { false },
             )
 
         assertEquals(listOf("Flow"), blocking)

@@ -1196,6 +1196,9 @@ class DynamicPluginManager(
                 .blockingDependentsOf(
                     pluginId = pluginId,
                     loadedManifests = pluginLoader.getLoadedPlugins().map { it.manifest },
+                    // Fails closed: only a state we positively recognise as DISABLED stops a
+                    // dependent counting. An untracked plugin, or any other state, still vetoes.
+                    isDisabled = { id -> _pluginStates.value[id]?.state == PluginState.DISABLED },
                 ).map { displayName -> "Plugin '$displayName' depends on this plugin" },
         )
 
