@@ -4,6 +4,7 @@ import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.BOSS_MACOS_APP_BUNDLE_NAME
 import ai.rever.boss.utils.BOSS_MACOS_BUNDLE_ID
 import ai.rever.boss.utils.Version
+import ai.rever.boss.utils.WindowsProtocolCleanup
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -28,10 +29,24 @@ private const val WINDOWS_LAUNCHER_NAME = "BOSS.exe"
 
 /**
  * How far up from the running code to look for the launcher. The jpackage layout puts
- * it two levels up (`<install>\app\*.jar` -> `<install>\BOSS.exe`); the slack costs
- * nothing and covers a jar nested deeper.
+ * it two levels up (`<install>\app\*.jar` -> `<install>\BOSS.exe`); the slack covers a
+ * jar nested deeper, and [WINDOWS_INSTALL_MARKER_DIRS] is what keeps it from wandering.
  */
 private const val WINDOWS_LAUNCHER_SEARCH_DEPTH = 5
+
+/**
+ * Directories jpackage always puts beside the launcher, used to require that a candidate
+ * directory actually looks like a BOSS install.
+ *
+ * Without this the walk could accept any `BOSS.exe` sitting in an ancestor directory, and
+ * above `<install>` for a per-user install those ancestors are `%LOCALAPPDATA%`,
+ * `C:\Users\<account>\AppData` and `C:\Users\<account>` - all user-writable, and the
+ * result is handed straight to `start`. Reaching that needs `jpackage.app-path` absent or
+ * stale *and* the real launcher gone, so it was never likely; "we could not find the
+ * launcher" is still a much better outcome than launching whatever is named right three
+ * directories up.
+ */
+private val WINDOWS_INSTALL_MARKER_DIRS = listOf("app", "runtime")
 
 /** Staging directory (inside the platform temp directory) that downloads land in. */
 internal const val UPDATE_STAGING_DIR_NAME = "boss-updates"
@@ -92,7 +107,7 @@ internal fun realAppPathFor(
  *
  * @param jpackageAppPath `jpackage.app-path`, the launcher path jpackage itself set.
  * @param codeSourcePath Absolute path of the running jar or classes directory.
- * @param exists Filesystem probe, injected.
+ * @param exists Filesystem probe, injected. Answers for directories as well as files.
  */
 internal fun windowsLauncherPathFor(
     jpackageAppPath: String?,
@@ -106,13 +121,21 @@ internal fun windowsLauncherPathFor(
 
     // Otherwise walk up from the running code looking for the launcher beside a
     // directory we are inside: `<install>\app\composeApp.jar` -> `<install>\BOSS.exe`.
+    // Nearest match wins, and each candidate has to look like an install.
     return codeSourcePath
         ?.let(::File)
         ?.let { code -> generateSequence(code.parentFile) { it.parentFile } }
         ?.take(WINDOWS_LAUNCHER_SEARCH_DEPTH)
+        ?.filter { directory -> isWindowsInstallDir(directory, exists) }
         ?.map { File(it, WINDOWS_LAUNCHER_NAME).path }
         ?.firstOrNull(exists)
 }
+
+/** Whether [directory] carries one of the [WINDOWS_INSTALL_MARKER_DIRS] jpackage emits. */
+private fun isWindowsInstallDir(
+    directory: File,
+    exists: (String) -> Boolean,
+): Boolean = WINDOWS_INSTALL_MARKER_DIRS.any { exists(File(directory, it).path) }
 
 /**
  * Platform-specific update installation logic
@@ -746,7 +769,13 @@ object UpdateInstaller {
 
         return try {
             UpdatePathValidator.validatePathAndFileName(launcher, "Target exe path")
-            logger.debug(LogCategory.SYSTEM, "Resolved Windows launcher for relaunch", mapOf("path" to launcher))
+            // Masked: a per-user install puts the Windows account name in this path, and
+            // `maskUserPath` is the sibling helper written for exactly that shape.
+            logger.debug(
+                LogCategory.SYSTEM,
+                "Resolved Windows launcher for relaunch",
+                mapOf("path" to WindowsProtocolCleanup.maskUserPath(launcher)),
+            )
             launcher
         } catch (e: SecurityException) {
             logger.warn(
