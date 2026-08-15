@@ -170,15 +170,32 @@ class PluginRepositoryManager {
      *
      * Searches local repositories first, then remote repositories.
      *
+     * A repository that FAILS to answer is not the same as one that does not have the plugin, and the
+     * two are no longer reported alike. `success(null)` now means every repository was asked and none
+     * had it - the ordinary case for a plugin built locally and never published. A repository that
+     * threw yields `failure(PluginLookupException)` **only when nothing was found**, so one broken
+     * repository still cannot hide a hit from another.
+     *
+     * This mattered: swallowing the failure here is what made the first-run wizard report "Tool not
+     * found in repository" for a plugin whose store row was present and valid, sending anyone
+     * diagnosing it after the wrong thing entirely. `PluginStoreVersionBridge` already draws this
+     * distinction when it talks to a repository directly; this brings the manager in line with it.
+     *
      * @param pluginId The plugin ID
-     * @return Plugin with source information, or null if not found
+     * @return Plugin with source information, `null` if no repository has it, or a failure if some
+     *   repository could not be queried and no other repository had it
      */
     suspend fun getPlugin(pluginId: String): Result<PluginWithSource?> =
         coroutineScope {
+            // Every repository that could not be asked, kept rather than discarded. Not thrown on the
+            // spot: a failing local repository must not stop the remote one from answering.
+            val failures = mutableListOf<Throwable>()
             runCatching {
                 // Check local repositories first
                 for (repo in repositories.values.filter { it.isLocal }) {
-                    val plugin = repo.getPlugin(pluginId).getOrNull()
+                    val result = repo.getPlugin(pluginId)
+                    result.exceptionOrNull()?.let { failures.add(it) }
+                    val plugin = result.getOrNull()
                     if (plugin != null) {
                         return@runCatching PluginWithSource(
                             plugin = plugin,
@@ -194,7 +211,9 @@ class PluginRepositoryManager {
 
                 // Check remote repositories
                 for (repo in repositories.values.filter { !it.isLocal }) {
-                    val plugin = repo.getPlugin(pluginId).getOrNull()
+                    val result = repo.getPlugin(pluginId)
+                    result.exceptionOrNull()?.let { failures.add(it) }
+                    val plugin = result.getOrNull()
                     if (plugin != null) {
                         return@runCatching PluginWithSource(
                             plugin = plugin,
@@ -206,6 +225,14 @@ class PluginRepositoryManager {
                                 ),
                         )
                     }
+                }
+
+                // Nothing had it. Report WHY if any repository could not be asked, since "absent" and
+                // "unanswerable" call for different reactions from the user.
+                val first = failures.firstOrNull()
+                if (first != null) {
+                    failures.drop(1).forEach { first.addSuppressed(it) }
+                    throw PluginLookupException(pluginId, first)
                 }
 
                 null
