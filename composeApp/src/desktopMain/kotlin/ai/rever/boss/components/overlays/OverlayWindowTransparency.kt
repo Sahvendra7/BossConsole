@@ -287,6 +287,13 @@ private fun logOverlayTransparency(
  * background (unconditionally true on macOS), and with `bg or 0xFF000000` otherwise. So the surface
  * is transparent only when the flag is on AND the background it clears to has zero alpha.
  *
+ * **`false` here does NOT mean the overlay looks right, and that is not a shortcoming to be fixed.**
+ * It answers one question - what colour Skia clears to - and it was answered `false` on a window
+ * that was visibly grey at the moment of the sample. That reading is what proved the opacity lives
+ * below Java and killed the Java-side candidate fix, so the value of this predicate came from
+ * disagreeing with the screen, not from agreeing with it. Read it as evidence about one layer, never
+ * as a health check: the layer it describes is not the last one that can paint.
+ *
  * **Unknown reads as opaque.** Both inputs are null when reflection could not reach the layer, and
  * a diagnostic that reported "healthy" for a window it failed to inspect would be worse than no
  * diagnostic - it is the one answer that cannot be distinguished from a genuine pass.

@@ -334,6 +334,11 @@ class HeavyweightOverlayTest {
 
     // --- overlay transparency diagnosis ---
 
+    // A false verdict from overlayWillPaintOpaque does NOT mean the overlay looked right. It was
+    // measured false on a window that was visibly grey, and that disagreement is what proved the
+    // opacity lives below Java. These tests pin what the predicate claims about skiko's clear rule,
+    // and nothing about what reached the screen.
+
     @Test
     fun `an overlay paints transparent only when the flag is on and the clear colour has no alpha`() {
         // Mirrors skiko's own rule, which is the whole reason this predicate exists rather than a
