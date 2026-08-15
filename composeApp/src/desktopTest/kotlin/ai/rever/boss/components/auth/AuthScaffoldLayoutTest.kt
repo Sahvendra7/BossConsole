@@ -2,6 +2,7 @@ package ai.rever.boss.components.auth
 
 import ai.rever.boss.components.auth.forms.AuthScaffold
 import ai.rever.boss.components.auth.forms.BrandPanelMinWindowWidth
+import ai.rever.boss.components.auth.forms.authBrandSiteOverride
 import ai.rever.boss.components.auth.forms.showsBrandPanel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +15,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import kotlin.math.abs
@@ -74,6 +77,28 @@ class AuthScaffoldLayoutTest {
 
     @get:Rule
     val rule = createComposeRule()
+
+    private var savedOverride: Boolean? = null
+
+    /**
+     * Turns the brand page off for these tests.
+     *
+     * It is on by default, and composing it starts a real Chromium view - which in a test scene has no
+     * usable AWT window and fails with "Can't obtain the display ID of a closed window". These tests are
+     * about the scaffold's geometry, so the browser has no business in them. The override is used rather
+     * than the system property because the environment variable takes precedence over the property, and
+     * a developer may have it set.
+     */
+    @Before
+    fun disableBrandPage() {
+        savedOverride = authBrandSiteOverride
+        authBrandSiteOverride = false
+    }
+
+    @After
+    fun restoreBrandPage() {
+        authBrandSiteOverride = savedOverride
+    }
 
     private fun setScaffoldInWindow(
         width: Dp,

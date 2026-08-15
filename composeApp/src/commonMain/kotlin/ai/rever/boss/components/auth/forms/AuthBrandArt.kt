@@ -50,8 +50,8 @@ import androidx.compose.ui.unit.dp
 internal fun AuthBrandArt(modifier: Modifier) {
     val colors = BossTheme.colors
     val isLight = BossThemeController.current.isLight
-    // Only ever true when a deployment opted in; see authBrandSiteEnabled for what that costs.
-    val siteEnabled = authBrandSiteEnabled()
+    // On unless a deployment turned it off; see authBrandSiteEnabled for what it costs and how.
+    val siteEnabled = authBrandSiteActive()
     var siteReady by remember { mutableStateOf(false) }
     var siteFailed by remember { mutableStateOf(false) }
 

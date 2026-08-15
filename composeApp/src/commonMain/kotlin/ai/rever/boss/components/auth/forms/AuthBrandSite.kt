@@ -21,16 +21,37 @@ internal const val AUTH_BRAND_PAGE = "files/auth-brand/index.html"
 internal const val AUTH_BRAND_STYLESHEET = "files/auth-brand/site.css"
 
 /**
- * Whether the brand panel should show [AUTH_BRAND_PAGE] over the drawn art.
+ * Whether the brand panel should show [AUTH_BRAND_PAGE] over the drawn art. **On by default.**
  *
- * Still opt-in even now the page is local, because the remaining cost is not the network: rendering it
- * starts a Chromium engine on the sign-in path, and `AuthBrandArt` is a complete panel without one.
+ * It was opt-in while the panel loaded the live site, and bundling the page is what earned the default:
+ * the two real objections were a network fetch on the sign-in path - the one screen a user cannot get
+ * past - and a live interactive page with no browser chrome. Neither survives a local file.
  *
- * The art stays underneath either way, so a failure to render, a missing engine or a disabled flag all
- * land on the same drawn panel rather than on nothing.
+ * What remains is that rendering it starts a Chromium engine, which is why there is still a way to turn
+ * it off: `BOSS_AUTH_BRAND_SITE=false` (or `-Dboss.auth.brand.site=false`). A deployment that does not
+ * want an engine on its login screen sets that and gets `AuthBrandArt`, which is a complete panel.
+ *
+ * The art stays composed underneath regardless, so a disabled flag, an engine that will not start and a
+ * page that fails to render all land on the same drawn panel rather than on nothing.
  */
 @Composable
 internal expect fun authBrandSiteEnabled(): Boolean
+
+/**
+ * Forces [authBrandSiteActive] one way, for tests. Null means "ask the environment".
+ *
+ * A layout test of the scaffold must not depend on whether a browser engine happens to start on the
+ * machine running it - and now that the panel is on by default, `AuthScaffoldLayoutTest` would drag a
+ * real Chromium view into a unit test and fail on `Can't obtain the display ID of a closed window`.
+ * Setting the system property is not enough, because the environment variable takes precedence and a
+ * developer may have it set. Same save-and-restore shape as `BossOverlayHost.useHeavyweightOverlays` in
+ * `BossAlertDialogComposeTest`.
+ */
+internal var authBrandSiteOverride: Boolean? = null
+
+/** [authBrandSiteEnabled], with [authBrandSiteOverride] winning when a test has set it. */
+@Composable
+internal fun authBrandSiteActive(): Boolean = authBrandSiteOverride ?: authBrandSiteEnabled()
 
 /**
  * Renders the bundled brand page, reporting when it is ready to be shown.

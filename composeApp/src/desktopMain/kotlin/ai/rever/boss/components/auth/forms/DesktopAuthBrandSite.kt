@@ -30,22 +30,32 @@ import kotlin.io.path.writeBytes
 
 private val logger = BossLogger.forComponent("AuthBrandSite")
 
-/** Environment variable that opts a deployment in. */
+/** Environment variable that opts a deployment OUT. */
 private const val BRAND_SITE_KEY = "BOSS_AUTH_BRAND_SITE"
 
-/** System property equivalent, so `-Dboss.auth.brand.site=true` works as well as the env var. */
+/** System property equivalent, so `-Dboss.auth.brand.site=false` works as well as the env var. */
 private const val BRAND_SITE_PROPERTY = "boss.auth.brand.site"
 
 /**
- * Read once per composition and never cached across launches, matching the other flags of this shape:
- * `1`, `yes` and `on` count as well as `true` (see [FluckEngine.isTruthyFlag]), and a blank env var
- * does not shadow the property.
+ * On unless a deployment turns it off, and the direction of that default is the whole subtlety.
+ *
+ * **It reads as an opt-OUT**, so the check is falsiness: `0`, `false`, `no` and `off` all disable it
+ * (see [FluckEngine.isFalsyFlag]), matching the vocabulary of the browser-telemetry kill switch. A
+ * default-on flag that only understood *truthy* values would have no off position at all - which is
+ * exactly the failure that guard exists to prevent, and is why this is not a one-character change from
+ * the opt-in version.
+ *
+ * `isNotBlank` on the env var for the same reason the telemetry switch has it: an env var set to the
+ * empty string is still non-null, so `BOSS_AUTH_BRAND_SITE=` (a common way to "unset" one in a launcher
+ * script) would otherwise shadow `-Dboss.auth.brand.site=false` and silently re-enable this.
+ *
+ * Read once per composition, never cached across launches.
  */
 @Composable
 internal actual fun authBrandSiteEnabled(): Boolean =
     remember {
         val env = System.getenv(BRAND_SITE_KEY)?.takeIf { it.isNotBlank() }
-        FluckEngine.isTruthyFlag(env ?: System.getProperty(BRAND_SITE_PROPERTY))
+        !FluckEngine.isFalsyFlag(env ?: System.getProperty(BRAND_SITE_PROPERTY))
     }
 
 /**
@@ -134,6 +144,26 @@ internal actual fun AuthBrandSite(
         remember(localWindow) {
             localWindow ?: Window.getWindows().firstOrNull() ?: Frame()
         }
-    val state = remember(current, window) { BrowserViewState(current, MainScope(), window) }
+    // Guarded, because attaching the view is its own failure mode and it is NOT covered by the catch
+    // around the engine above. `BrowserViewState` asks the AWT window for its display, which throws
+    // "Can't obtain the display ID of a closed window" when there is no usable window - and an
+    // exception here escapes composition and takes the whole sign-in screen with it, which is the one
+    // outcome this panel must never cause. Falling through leaves the art, like every other failure.
+    val state =
+        remember(current, window) {
+            runCatching { BrowserViewState(current, MainScope(), window) }
+                .onFailure { e ->
+                    logger.warn(
+                        LogCategory.BROWSER,
+                        "Brand page view could not attach; keeping the drawn panel",
+                        error = e,
+                    )
+                }.getOrNull()
+        }
+    if (state == null) {
+        // Reported outside the remember, so it survives the recomposition that reads it.
+        LaunchedEffect(Unit) { onFailed() }
+        return
+    }
     BrowserView(state = state, modifier = Modifier.fillMaxSize())
 }
