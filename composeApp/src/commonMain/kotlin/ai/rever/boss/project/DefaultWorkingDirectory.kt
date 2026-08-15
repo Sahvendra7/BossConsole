@@ -81,7 +81,17 @@ object DefaultWorkingDirectory {
      */
     fun nominalPath(): String = File(ProjectCreationService.getDefaultProjectsDirectory()).path
 
-    /** [projectPath] when a project is selected, [path] otherwise. */
+    /**
+     * [projectPath] when a project is selected, [path] otherwise.
+     *
+     * **Touches the filesystem on the no-project branch** - a `stat`, and a create the first
+     * time. Free when a project is selected, since [path] is never reached. Call it off the
+     * main thread where that is possible: `applyWorkspace` does. The tab-creation handlers do
+     * not, because they are not suspending and the cost is one `stat` in the steady state
+     * (the startup warm-up in `main` has normally done the create already) - but on a network
+     * home directory, a Windows roaming profile or a macOS network account, an unresponsive
+     * volume stalls the frame. That is the known cost of this being uncached; see [path].
+     */
     fun resolve(projectPath: String?): String = resolve(projectPath, ::path)
 
     /**
@@ -165,12 +175,14 @@ object DefaultWorkingDirectory {
             }
 
         // Every failure that happens in the field - a read-only home, a quota, a file at the
-        // path - lands here, and the user meets it as the home-directory prompts this exists
-        // to remove. Silence would leave nothing in the log to explain them.
+        // path - lands here, and the user meets it as either the home-directory prompts this
+        // exists to remove or a refusal in the New Project wizard. Silence would leave nothing
+        // in the log to explain either. The message names only the failure, not what the
+        // caller does about it: validateProjectLocation does not fall back to anything.
         failure?.let {
             logger.warn(
                 LogCategory.FILE,
-                "Cannot create the default projects directory, falling back to the home directory",
+                "Cannot create the projects directory",
                 mapOf("path" to target.path),
                 error = it,
             )

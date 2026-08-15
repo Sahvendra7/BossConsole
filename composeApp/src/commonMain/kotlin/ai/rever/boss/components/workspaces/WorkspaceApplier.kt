@@ -26,6 +26,8 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.Project
 import ai.rever.boss.window.WindowProjectState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 import kotlin.time.Clock
 
@@ -78,20 +80,24 @@ suspend fun applyWorkspace(
 
     // Get current project path for tab creation. Below the early return, not above it:
     // switching back to a workspace whose state is still in memory builds no tabs, so
-    // resolving there would touch the filesystem, on Dispatchers.Main, for nothing.
+    // resolving there would touch the filesystem for nothing.
     //
-    // Resolved once for the whole tree rather than per tab - an N-tab workspace would
-    // otherwise ask N times. Mirrors WorkspaceExtractor, which hoists it on the way out.
+    // On IO because resolve() stats and may create - every caller launches this from a Compose
+    // scope, i.e. Main, and docs/THREADING.md rule 1 is about exactly that. Resolved once for
+    // the whole tree rather than per tab, mirroring WorkspaceExtractor on the way out.
     //
-    // selectedOrNull, not `?:`: the window's path is "" when no project is selected, and an
-    // empty string is not null, so the workspace's own recorded projectPath could never be
-    // reached. (With restoreProject = true the selectProject above has already put it in
-    // window state, so this only matters for the restoreProject = false and null-state paths.)
+    // The `?:` is load-bearing in a way that reads like a bug and is left alone deliberately:
+    // the window's path is "" when no project is selected, and "" is not null, so
+    // `workspace.projectPath` is unreachable whenever windowProjectState is non-null. Using
+    // selectedOrNull here instead would make a saved workspace's recorded project win over the
+    // no-project default - a different answer to "which project do these terminals open in",
+    // which is not what this change is about. Pre-existing, and left that way.
     val currentProjectPath =
-        DefaultWorkingDirectory.resolve(
-            DefaultWorkingDirectory.selectedOrNull(windowProjectState?.selectedProject?.value?.path)
-                ?: workspace.projectPath,
-        )
+        withContext(Dispatchers.IO) {
+            DefaultWorkingDirectory.resolve(
+                windowProjectState?.selectedProject?.value?.path ?: workspace.projectPath,
+            )
+        }
 
     // No preserved state, apply workspace from scratch.
     // Wait (bounded) for the plugin-provided tab types this workspace needs —
