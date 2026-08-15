@@ -16,7 +16,11 @@ import androidx.compose.material.TextFieldDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -50,9 +54,21 @@ fun EmailField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    autoFocus: Boolean = false,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     val colors = BossTheme.colors
+    val focusRequester = remember { FocusRequester() }
+
+    if (autoFocus) {
+        // Guarded, because `requestFocus` throws if the node is not attached yet, and this composable is
+        // reachable from screens that may compose it before layout has placed it. A sign-in screen that
+        // crashed on the way to focusing a field would be a poor trade for saving one click.
+        LaunchedEffect(Unit) {
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -64,7 +80,7 @@ fun EmailField(
                 tint = colors.textSecondary,
             )
         },
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().focusRequester(focusRequester),
         singleLine = true,
         shape = BossTheme.radius.inputShape,
         keyboardOptions =

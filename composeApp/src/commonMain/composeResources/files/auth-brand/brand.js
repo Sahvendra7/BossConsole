@@ -34,6 +34,10 @@
 
      Dimness and lifetime are now INDEPENDENT, which they were not before: alpha is computed per glyph,
      so it can go as faint as it likes without affecting whether or when anything disappears.
+
+     IT DOES NOT START UNTIL THE OPENING HAS FINISHED. The panel arrives zoomed and settles back; digits
+     falling through that would fight the one thing the eye should be following. See the bottom of this
+     block for how the two are synchronised.
      --------------------------------------------------------------------------------------------- */
   (function digitRain() {
     if (reduceMotion) return;
@@ -101,7 +105,7 @@
         // A column lifts slightly as the pointer passes, so the field acknowledges the mouse without
         // anything as literal as a spotlight.
         var near = Math.abs(pointer.x - x);
-        var boost = near < 130 ? (1 - near / 130) * 0.1 : 0;
+        var boost = near < 130 ? (1 - near / 130) * 0.05 : 0;
 
         col.tick++;
         if (col.tick >= col.framesPerStep) {
@@ -125,7 +129,7 @@
           // Linear fade to nothing. The newest glyph is the brightest simply by being the youngest, so
           // no separate "head" case is needed.
           var life = 1 - glyph.age / LIFETIME;
-          ctx.fillStyle = 'rgba(198, 220, 255, ' + (0.13 * life + boost * life) + ')';
+          ctx.fillStyle = 'rgba(198, 220, 255, ' + (0.055 * life + boost * life) + ')';
           ctx.fillText(glyph.ch, x, glyph.y);
         }
 
@@ -146,36 +150,51 @@
       pointer.x = -9999;
       pointer.y = -9999;
     });
-    resize();
-    frame();
+
+    /* The rain waits for the opening to finish.
+       Driven by the reveal's own `animationend` rather than a matching timeout, so the two cannot drift
+       apart when the animation is retimed - the duration lives in one place, the stylesheet. The name is
+       checked because several animations end on this element and its descendants.
+
+       The timeout is a safety net, not the mechanism: if the animation never runs or its end event is
+       missed (an interrupted first paint, a browser that throttles background tabs), the field still
+       starts rather than the panel sitting empty for good. */
+    var startedRain = false;
+
+    function startRain() {
+      if (startedRain) return;
+      startedRain = true;
+      resize();
+      frame();
+    }
+
+    var hero = document.querySelector('.hero');
+    if (hero) {
+      hero.addEventListener('animationend', function (e) {
+        if (e.animationName === 'brand-hero-reveal') startRain();
+      });
+      window.setTimeout(startRain, 2600);
+    } else {
+      startRain();
+    }
   })();
 
   /* ---------------------------------------------------------------------------------------------
-     Pointer parallax and the custom cursor.
+     The custom cursor.
 
-     The parallax is written to `.hero` as custom properties, NOT to its children. The children are
-     exactly the wrong place: `.hero-art` carries the breakpoint `scale(.86)`, and the glow, sweep,
-     pulses and chips all have transform ANIMATIONS - a scripted transform on any of them would beat
-     the keyframes and stop that motion dead. Composing the offset into `.hero`'s own transform moves
-     the whole scene with every inner animation still running.
+     THE PANEL ITSELF DOES NOT MOVE WITH THE POINTER. Pointer parallax was built here and deliberately
+     taken out: a scene that leans about behind the form is motion nobody asked for, every time they
+     reach for the email field. The cursor follows the pointer; nothing else does.
      --------------------------------------------------------------------------------------------- */
   (function pointerLayers() {
-    var hero = document.querySelector('.hero');
     var cursor = document.querySelector('.brand-cursor');
-    if (!hero && !cursor) return;
+    if (!cursor) return;
     var cx = 0;
     var cy = 0;
     var tx = 0;
     var ty = 0;
 
     function onMove(e) {
-      if (hero && !reduceMotion) {
-        // Inverted and small, so the scene leans away from the pointer like a held object.
-        var nx = e.clientX / window.innerWidth - 0.5;
-        var ny = e.clientY / window.innerHeight - 0.5;
-        hero.style.setProperty('--brand-px', (-nx * 24).toFixed(2) + 'px');
-        hero.style.setProperty('--brand-py', (-ny * 18).toFixed(2) + 'px');
-      }
       tx = e.clientX;
       ty = e.clientY;
       if (cursor) {
@@ -196,10 +215,6 @@
     function hide() {
       if (cursor) cursor.classList.remove('is-visible');
       document.body.classList.remove('brand-cursor-active');
-      if (hero) {
-        hero.style.setProperty('--brand-px', '0px');
-        hero.style.setProperty('--brand-py', '0px');
-      }
     }
 
     /* Hiding needs BELT AND BRACES, because the panel is a native browser surface embedded in a Compose
@@ -414,86 +429,5 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && !dialog.hidden) close();
     });
-  })();
-
-  /* ---------------------------------------------------------------------------------------------
-     Ambient sound, on first pointer entry.
-
-     NOT ON LOAD, and that is a constraint rather than a choice: Chromium's autoplay policy leaves an
-     AudioContext suspended until a user gesture, so a chime fired from `load` would silently never
-     play. The first real pointer event is the earliest moment it can work at all - and it doubles as
-     restraint, since a sign-in screen that makes a noise before anyone has touched it would be the
-     wrong kind of surprise.
-
-     Synthesised rather than bundled: no audio asset to ship and nothing to fetch. Deliberately quiet,
-     and the context is closed afterwards so a login screen left open holds no audio hardware.
-     --------------------------------------------------------------------------------------------- */
-  (function cosmicSound() {
-    if (reduceMotion) return;
-    var Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    var played = false;
-
-    function play() {
-      if (played) return;
-      played = true;
-      window.removeEventListener('pointermove', play);
-      window.removeEventListener('pointerdown', play);
-      try {
-        var ctx = new Ctx();
-        var now = ctx.currentTime;
-        var master = ctx.createGain();
-        // Quiet on purpose: this may be an office, or someone on a call.
-        master.gain.setValueAtTime(0.0001, now);
-        master.gain.exponentialRampToValueAtTime(0.055, now + 0.5);
-        master.gain.exponentialRampToValueAtTime(0.0001, now + 2.6);
-        master.connect(ctx.destination);
-
-        // Two detuned sines sweeping up an octave: the swell.
-        [110, 164.81].forEach(function (freq, i) {
-          var osc = ctx.createOscillator();
-          var gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, now);
-          osc.frequency.exponentialRampToValueAtTime(freq * 2, now + 2.2);
-          gain.gain.setValueAtTime(i === 0 ? 0.9 : 0.5, now);
-          osc.connect(gain);
-          gain.connect(master);
-          osc.start(now);
-          osc.stop(now + 2.7);
-        });
-
-        // Filtered noise over the top, so it is not a bare tone.
-        var frames = Math.floor(ctx.sampleRate * 2.4);
-        var buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
-        var data = buffer.getChannelData(0);
-        for (var i = 0; i < frames; i++) {
-          data[i] = (Math.random() * 2 - 1) * (1 - i / frames) * 0.5;
-        }
-        var noise = ctx.createBufferSource();
-        noise.buffer = buffer;
-        var band = ctx.createBiquadFilter();
-        band.type = 'bandpass';
-        band.frequency.setValueAtTime(900, now);
-        band.frequency.exponentialRampToValueAtTime(3200, now + 2.2);
-        band.Q.value = 1.2;
-        var noiseGain = ctx.createGain();
-        noiseGain.gain.setValueAtTime(0.16, now);
-        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.4);
-        noise.connect(band);
-        band.connect(noiseGain);
-        noiseGain.connect(master);
-        noise.start(now);
-
-        window.setTimeout(function () {
-          if (ctx.close) ctx.close();
-        }, 3200);
-      } catch (e) {
-        // Decoration: if the audio stack refuses, everything else carries on.
-      }
-    }
-
-    window.addEventListener('pointermove', play);
-    window.addEventListener('pointerdown', play);
   })();
 })();

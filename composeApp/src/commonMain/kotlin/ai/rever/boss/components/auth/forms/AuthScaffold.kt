@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -85,6 +86,16 @@ fun AuthScaffold(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = BossTheme.colors
+
+    // A four-second arrival swell, tied to this screen's lifetime. DisposableEffect rather than
+    // LaunchedEffect because of the stop half: four seconds is easily longer than a saved session takes to
+    // sign in, and a sound carrying on over the signed-in app is the one outcome to avoid. Starting is
+    // latched per process, so moving between the four auth screens this scaffold frames does not re-fire it.
+    DisposableEffect(Unit) {
+        startAuthTheme()
+        onDispose { stopAuthTheme() }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // Captured before the Row: inside it, RowScope is the innermost receiver and the
         // BoxWithConstraintsScope members are no longer reachable implicitly.

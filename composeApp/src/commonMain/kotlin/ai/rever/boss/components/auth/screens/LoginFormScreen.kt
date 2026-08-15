@@ -92,6 +92,9 @@ fun LoginFormScreen(
                 }
             },
             enabled = !isLoading && !checkingUserExists,
+            // The only thing anyone does on this screen is type an address, so the caret starts there.
+            // Combined with the Go key action below, signing in never needs the mouse.
+            autoFocus = true,
             keyboardActions = KeyboardActions(onGo = { submit() }),
         )
 
