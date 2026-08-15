@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -17,8 +18,13 @@ import kotlin.test.assertTrue
  * to decode made the first-run wizard report "Tool not found in repository" for a plugin that was
  * published and fine, and nothing short of the stack trace in the log said otherwise.
  *
- * The asymmetry in the last test is the point of the design - a broken repository must not be able to
- * hide a plugin another repository can serve, so a failure is only reported when nothing was found.
+ * Three properties here are the design rather than incidental behaviour, and each was a bug someone
+ * could reintroduce while "simplifying":
+ *  - a broken repository must not hide a plugin another repository can serve, so a failure is only
+ *    reported when nothing was found;
+ *  - a repository may throw instead of returning `Result.failure`, and both must arrive the same way;
+ *  - the failure's message is bounded, because it reaches a wizard row while a kotlinx decode error
+ *    carries the whole document it choked on.
  */
 class PluginLookupFailureTest {
     @Test
@@ -79,6 +85,70 @@ class PluginLookupFailureTest {
             assertEquals("store", result.getOrNull()?.source?.repositoryId)
         }
 
+    @Test
+    fun `a repository that throws is handled like one that returns a failure`() =
+        runTest {
+            // PluginRepository permits either. RemotePluginRepository returns, but a third-party
+            // repository need not, and an unwrapped throwable would escape as itself - unbounded
+            // message and all.
+            val manager = PluginRepositoryManager()
+            manager.addRepository(ThrowingRepository(id = "store"))
+
+            val result = manager.getPlugin("ai.rever.boss.plugin.dynamic.flowtab")
+
+            assertIs<PluginLookupException>(result.exceptionOrNull())
+        }
+
+    @Test
+    fun `two repositories sharing one throwable do not turn into a self-suppression error`() =
+        runTest {
+            // addSuppressed(itself) throws IllegalArgumentException("Self-suppression not permitted"),
+            // which would then be the message the user sees instead of the real cause.
+            val shared = IllegalStateException("Field 'versionRange' is required")
+            val manager = PluginRepositoryManager()
+            manager.addRepository(FakeRepository(id = "local", isLocal = true, answer = Result.failure(shared)))
+            manager.addRepository(FakeRepository(id = "store", isLocal = false, answer = Result.failure(shared)))
+
+            val failure = manager.getPlugin("ai.rever.boss.plugin.dynamic.flowtab").exceptionOrNull()
+
+            assertIs<PluginLookupException>(failure)
+            assertEquals(shared, failure.cause)
+            assertTrue(shared.suppressedExceptions.isEmpty(), "the shared cause must not suppress itself")
+        }
+
+    @Test
+    fun `the message stays short even when the underlying error is enormous`() =
+        runTest {
+            // A kotlinx malformed-input error appends the whole offending document, and this message
+            // goes into a wizard row.
+            val huge = IllegalStateException("Field 'versionRange' is required\n" + "x".repeat(50_000))
+            val manager = PluginRepositoryManager()
+            manager.addRepository(FakeRepository(id = "store", isLocal = false, answer = Result.failure(huge)))
+
+            val failure = manager.getPlugin("ai.rever.boss.plugin.dynamic.flowtab").exceptionOrNull()
+
+            assertNotNull(failure)
+            assertTrue(
+                failure.message!!.length < 300,
+                "message reaches the UI, length was ${failure.message!!.length}",
+            )
+            assertEquals(huge, failure.cause, "the full detail must still be available for the log")
+        }
+
+    @Test
+    fun `shortFailureReason clips a long first line and keeps a short one`() {
+        assertEquals("boom", shortFailureReason(IllegalStateException("boom")))
+        // First line only: the rest of a kotlinx error is the document it choked on.
+        assertEquals("first", shortFailureReason(IllegalStateException("first\nsecond")))
+        val clipped = shortFailureReason(IllegalStateException("y".repeat(5_000)))
+        assertTrue(clipped.length < 200, "clipped to ${clipped.length}")
+        assertTrue(clipped.endsWith("…"), "a clipped reason should show that it was cut: $clipped")
+        // A throwable with no message at all still yields something nameable.
+        assertEquals("IllegalStateException", shortFailureReason(IllegalStateException(null as String?)))
+        // As does one whose message is blank, which would otherwise render as an empty reason.
+        assertEquals("IllegalStateException", shortFailureReason(IllegalStateException("   ")))
+    }
+
     private fun pluginInfo(pluginId: String) =
         PluginInfo(
             pluginId = pluginId,
@@ -97,6 +167,34 @@ class PluginLookupFailureTest {
         override val isAvailable: Boolean = true
 
         override suspend fun getPlugin(pluginId: String): Result<PluginInfo?> = answer
+
+        override suspend fun listPlugins(): Result<List<PluginInfo>> = Result.success(emptyList())
+
+        override suspend fun searchPlugins(filter: PluginSearchFilter): Result<PluginSearchResult> =
+            Result.failure(UnsupportedOperationException())
+
+        override suspend fun getPluginVersions(pluginId: String): Result<List<PluginInfo>> = Result.success(emptyList())
+
+        override suspend fun downloadPlugin(
+            pluginId: String,
+            version: String?,
+            targetPath: String,
+        ): Result<String> = Result.failure(UnsupportedOperationException())
+
+        override fun getDownloadProgress(pluginId: String): Flow<Float>? = null
+
+        override suspend fun refresh(): Result<Unit> = Result.success(Unit)
+    }
+
+    /** Throws out of `getPlugin` instead of returning `Result.failure`, which the interface allows. */
+    private class ThrowingRepository(
+        override val id: String,
+    ) : PluginRepository {
+        override val name: String = id
+        override val isLocal: Boolean = false
+        override val isAvailable: Boolean = true
+
+        override suspend fun getPlugin(pluginId: String): Result<PluginInfo?> = error("this repository throws")
 
         override suspend fun listPlugins(): Result<List<PluginInfo>> = Result.success(emptyList())
 

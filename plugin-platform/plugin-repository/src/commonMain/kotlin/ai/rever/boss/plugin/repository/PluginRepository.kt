@@ -137,15 +137,19 @@ class DownloadException(
 class PluginLookupException(
     val pluginId: String,
     cause: Throwable,
-) : Exception("Could not query the plugin repository for $pluginId: ${shortReason(cause)}", cause)
+) : Exception("Could not query the plugin repository for $pluginId: ${shortFailureReason(cause)}", cause)
 
 /**
  * A one-line description of [cause] fit for a UI row.
  *
  * Takes the first line and clips it, because the messages behind a failed lookup are unbounded - a
  * kotlinx serialization error carries the whole JSON document it choked on.
+ *
+ * Public because more than one caller puts a repository failure in front of a user, and each one
+ * inventing its own clipping is how one of them ends up without any. `PluginStoreVersionBridge` builds
+ * its own `Unavailable` message rather than surfacing an exception, so it shares this instead.
  */
-private fun shortReason(cause: Throwable): String {
+fun shortFailureReason(cause: Throwable): String {
     val firstLine =
         cause.message
             ?.lineSequence()

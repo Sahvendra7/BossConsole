@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -112,13 +113,17 @@ fun LogoutConfirmationDialog(onDismiss: () -> Unit) {
                         colors =
                             ButtonDefaults.buttonColors(
                                 backgroundColor = colors.alert,
-                                contentColor = colors.textPrimary,
+                                // White, not textPrimary: this is a destructive fill, and every other
+                                // one in the app is white-on-red (ConfirmationDialog). textPrimary is
+                                // near-black in the Daylight scheme, so it would put dark text on a red
+                                // button in that theme only.
+                                contentColor = Color.White,
                             ),
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
-                                color = colors.textPrimary,
+                                color = Color.White,
                                 strokeWidth = 2.dp,
                             )
                         } else {
