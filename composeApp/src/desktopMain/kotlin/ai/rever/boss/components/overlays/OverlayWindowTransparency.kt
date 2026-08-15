@@ -124,7 +124,15 @@ internal fun EnsureOverlayWindowTransparent(
                 override fun windowOpened(e: java.awt.event.WindowEvent?) {
                     logOverlayTransparency(window, kind, phase = "opened")
                     javax.swing.SwingUtilities.invokeLater {
-                        logOverlayTransparency(window, kind, phase = "postShow")
+                        // A deferred sample can land after the overlay is gone - a context menu
+                        // dismissed within one EDT turn of opening does exactly that. A disposed
+                        // window has no component tree, so the probe finds no layer and the
+                        // "unknown reads as opaque" rule reports willPaintOpaque=true. That is the
+                        // right answer to the wrong question, and it is indistinguishable in the log
+                        // from the failure being hunted, so it must not be logged at all.
+                        if (window.isDisplayable) {
+                            logOverlayTransparency(window, kind, phase = "postShow")
+                        }
                     }
                 }
             }
