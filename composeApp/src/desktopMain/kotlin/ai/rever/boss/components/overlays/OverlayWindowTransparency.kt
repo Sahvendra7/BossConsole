@@ -173,6 +173,17 @@ private fun logOverlayTransparency(
                     overlayWillPaintOpaque(transparency, layerBackground?.alpha).toString(),
             ),
         )
+        if (layer == null) {
+            logger.warn(
+                LogCategory.UI,
+                "Overlay window transparency sample found no Skia layer",
+                mapOf(
+                    "kind" to kind,
+                    "phase" to phase,
+                    "tree" to describeComponentTree(window).joinToString(" | "),
+                ),
+            )
+        }
     }.onFailure {
         // An overlay must never be taken down by its own instrumentation - the same rule the
         // re-assert above already follows.
@@ -215,21 +226,56 @@ internal fun overlayWillPaintOpaque(
 internal fun isSkiaLayerClassName(name: String): Boolean = name == "org.jetbrains.skiko.SkiaLayer"
 
 /**
+ * Whether [type] IS skiko's layer, or any subclass of it.
+ *
+ * The superclass walk is not defensive padding, it is the difference between reporting and not
+ * reporting: matching the exact name alone found nothing at all on a live 1.11.1 build, at every
+ * phase, on a window that was demonstrably rendering. Compose instantiates the layer as its own
+ * subclass, so `javaClass.name` is never the skiko name. Anything that only ever reads public
+ * `SkiaLayer` members is correct against a subclass too.
+ */
+private fun isSkiaLayerClass(type: Class<*>): Boolean =
+    generateSequence<Class<*>>(type) { it.superclass }.any { isSkiaLayerClassName(it.name) }
+
+/**
  * The skiko layer inside [root], found by walking the AWT component tree.
  *
- * Matched by class NAME and read reflectively rather than through a typed dependency. `composeApp`
- * declares no skiko dependency and gets it only transitively from Compose, so declaring one would
- * pin a version that has to be kept in step with every Compose bump - for code whose only job is to
- * report a field.
+ * Matched by class identity and read reflectively rather than through a typed dependency.
+ * `composeApp` declares no skiko dependency and gets it only transitively from Compose, so
+ * declaring one would pin a version that has to be kept in step with every Compose bump - for code
+ * whose only job is to report a field.
  */
 private fun findSkiaLayer(root: java.awt.Component): javax.swing.JComponent? =
-    if (isSkiaLayerClassName(root.javaClass.name)) {
+    if (isSkiaLayerClass(root.javaClass)) {
         root as? javax.swing.JComponent
     } else {
         (root as? java.awt.Container)
             ?.components
             ?.firstNotNullOfOrNull { findSkiaLayer(it) }
     }
+
+/**
+ * The class names on the path from [root] down the AWT tree, for when [findSkiaLayer] finds
+ * nothing.
+ *
+ * Logged only in that case, and bounded. A `layerFound=false` line is otherwise an unreadable
+ * result rather than a reading - it says the diagnostic failed without saying what it saw, which is
+ * exactly how the first run of this instrumentation burned a whole app launch.
+ */
+private fun describeComponentTree(
+    root: java.awt.Component,
+    depth: Int = 0,
+): List<String> =
+    if (depth > TREE_DUMP_MAX_DEPTH) {
+        emptyList()
+    } else {
+        listOf("  ".repeat(depth) + root.javaClass.name) +
+            ((root as? java.awt.Container)?.components.orEmpty())
+                .flatMap { describeComponentTree(it, depth + 1) }
+    }
+
+/** Deep enough to reach the Skia layer under a root pane, shallow enough not to flood the log. */
+private const val TREE_DUMP_MAX_DEPTH = 6
 
 /** `SkiaLayer.transparency`, or null if it could not be read. Never throws. */
 private fun skiaLayerTransparency(layer: javax.swing.JComponent): Boolean? =
