@@ -40,9 +40,32 @@ object DefaultWorkingDirectory {
      * cached path would go on being handed out after the user moved or deleted the directory.
      */
     fun path(): String {
-        val target = File(ProjectCreationService.getDefaultProjectsDirectory())
+        val target = File(nominalPath())
         return ensureDirectory(target) ?: homeDirectory(target)
     }
+
+    /**
+     * Where the default working directory *would* be, without creating it or touching the
+     * filesystem at all.
+     *
+     * For callers that only need the string to compare against - [persisted], through
+     * `WorkspaceExtractor`. Two reasons they must not use [path] instead:
+     *
+     * - **Cost and position.** Extraction runs from the auto-save `snapshotFlow`, whose
+     *   producer re-runs on the composition thread whenever any tab's title, url or working
+     *   directory changes, and from the Last Session teardown, which can be the shutdown-hook
+     *   thread. A `createDirectories` syscall per browser-title update is the kind of blocking
+     *   I/O `docs/THREADING.md` rules out, and its warn-on-failure would repeat just as often.
+     * - **Stability.** [path] answers with the *home* directory when creation fails. A
+     *   transient failure at extract time would make [persisted] compare a terminal's real
+     *   `~/BossProjects` against `~`, find them different, and freeze the resolved default
+     *   into the saved layout - precisely what [persisted] exists to prevent. This cannot
+     *   fail, so the comparison does not depend on filesystem state.
+     *
+     * Through `File` on both sides, so the separator normalization matches what [resolve]
+     * handed the tab.
+     */
+    fun nominalPath(): String = File(ProjectCreationService.getDefaultProjectsDirectory()).path
 
     /** [projectPath] when a project is selected, [path] otherwise. */
     fun resolve(projectPath: String?): String = resolve(projectPath, ::path)

@@ -1300,7 +1300,8 @@ private fun createTabFromConfig(
                 title = "Terminal",
                 icon = ai.rever.boss.plugin.tab.terminal.TerminalTabType.icon,
                 initialCommand = command,
-                workingDirectory = projectPath,
+                // Already resolved by every caller; see the same call in TabFactories.
+                workingDirectory = DefaultWorkingDirectory.resolve(projectPath),
             )
         }
 

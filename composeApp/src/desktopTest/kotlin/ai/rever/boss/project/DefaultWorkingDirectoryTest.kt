@@ -119,15 +119,30 @@ class DefaultWorkingDirectoryTest {
     }
 
     /**
-     * The point of the change. Asserted on the string rather than by running [path], so the
-     * test does not depend on `~/BossProjects` being creatable on the machine running it.
+     * The point of the change. Through [DefaultWorkingDirectory.nominalPath], which is the
+     * whole reason that function exists: it answers without creating anything, so this does
+     * not depend on - or leave behind - `~/BossProjects` on the machine running it.
      */
     @Test
     fun `the default directory is BossProjects, not the home directory`() {
         val home = System.getProperty("user.home")
-        val default = ProjectCreationService.getDefaultProjectsDirectory()
 
-        assertNotEquals(home, default)
-        assertEquals(File(home, "BossProjects").path, File(default).path)
+        assertNotEquals(home, DefaultWorkingDirectory.nominalPath())
+        assertEquals(File(home, "BossProjects").path, DefaultWorkingDirectory.nominalPath())
+    }
+
+    /**
+     * `persisted()` compares a tab's working directory against this, and `resolve()` is what
+     * put that string there. A separator that disagreed - `getDefaultProjectsDirectory()` used
+     * to build its own with a literal `/` - would make the comparison silently never match on
+     * Windows, so every no-project terminal would freeze the resolved path into saved layouts.
+     */
+    @Test
+    fun `the nominal path is separator-normalised, like every path compared against it`() {
+        assertEquals(
+            File(ProjectCreationService.getDefaultProjectsDirectory()).path,
+            DefaultWorkingDirectory.nominalPath(),
+        )
+        assertEquals(DefaultWorkingDirectory.nominalPath(), ProjectCreationService.getDefaultProjectsDirectory())
     }
 }

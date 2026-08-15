@@ -20,19 +20,18 @@ import kotlin.time.Clock
  * @param name The name of the workspace
  * @param description The description of the workspace
  * @param defaultWorkingDirectory The no-project working directory, used to decide which
- *   terminals are persisted with a null one. A parameter, and not read inside, because the
- *   default `DefaultWorkingDirectory.path()` touches the filesystem and two callers cannot
- *   afford that where they stand: the auto-save `snapshotFlow` re-runs this on the
- *   composition thread on every panel split and close, and the Last Session teardown can run
- *   on the shutdown-hook thread. Both resolve it once, outside. Tests pass their own so they
- *   never create `~/BossProjects` on the machine running them.
+ *   terminals are persisted with a null one. `nominalPath()`, not `path()`: nothing here needs
+ *   the directory to *exist*, only its name to compare against, and this runs from the
+ *   auto-save `snapshotFlow` - whose producer re-runs on the composition thread whenever a tab
+ *   title, url or working directory changes - and from the Last Session teardown, which can be
+ *   the shutdown-hook thread. A parameter rather than read inside so tests can pass their own.
  */
 fun extractCurrentWorkspace(
     splitViewState: SplitViewState,
     projectPath: String = "",
     name: String = "Current",
     description: String = "Current layout workspace",
-    defaultWorkingDirectory: String = DefaultWorkingDirectory.path(),
+    defaultWorkingDirectory: String = DefaultWorkingDirectory.nominalPath(),
 ): LayoutWorkspace {
     val layout = extractSplitConfig(splitViewState.rootNode, defaultWorkingDirectory)
     return LayoutWorkspace(

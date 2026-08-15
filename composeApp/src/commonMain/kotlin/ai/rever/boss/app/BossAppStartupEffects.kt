@@ -127,10 +127,10 @@ internal fun BossAppStartupEffects(state: BossAppState) {
     // there would re-run onDispose and, in a single-window app, perform a
     // mid-session app-level write.
     DisposableEffect(windowId) {
-        // The one thing resolved here rather than in the callback: the callback can run on
-        // the shutdown-hook thread, and DefaultWorkingDirectory.path() touches the filesystem,
-        // which on a network-mounted home would delay quit.
-        val defaultWorkingDirectory = DefaultWorkingDirectory.path()
+        // nominalPath(), and resolved here rather than in the callback: the callback can run
+        // on the shutdown-hook thread, and the extractor only needs the directory's name to
+        // compare against, never for it to exist.
+        val defaultWorkingDirectory = DefaultWorkingDirectory.nominalPath()
         LastSessionCoordinator.instance.register(
             windowId = windowId,
             isFirstWindow = isFirstWindow,
@@ -680,11 +680,11 @@ internal fun BossAppStartupEffects(state: BossAppState) {
         var lastWorkspaceSnapshot: LayoutWorkspace? = null
         var saveJob: Job? = null
 
-        // Outside the producer on purpose. The block below re-runs on every panel split and
-        // close - it reads SplitViewState.rootNode, which is snapshot state - and
-        // DefaultWorkingDirectory.path() touches the filesystem, which does not belong on the
-        // composition thread once per layout change.
-        val defaultWorkingDirectory = DefaultWorkingDirectory.path()
+        // nominalPath(), which touches nothing, and hoisted out of the producer anyway. The
+        // block below re-runs on the composition thread far more often than "on save": it
+        // reads rootNode plus every tab's title, url and working directory, all snapshot
+        // state, so a browser updating its title mid-navigation re-runs the whole walk.
+        val defaultWorkingDirectory = DefaultWorkingDirectory.nominalPath()
 
         // Monitor the entire layout structure for changes
         snapshotFlow {
