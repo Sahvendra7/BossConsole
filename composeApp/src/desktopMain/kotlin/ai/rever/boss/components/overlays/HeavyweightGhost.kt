@@ -1,6 +1,7 @@
 package ai.rever.boss.components.overlays
 
-import ai.rever.boss.window.bossWindowIcon
+import ai.rever.boss.window.ApplyBossWindowIcon
+import ai.rever.boss.window.BossWindowIcon
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -102,9 +103,10 @@ fun HeavyweightGhost(
         alwaysOnTop = true,
         focusable = false,
         resizable = false,
-        icon = bossWindowIcon(),
+        icon = BossWindowIcon.painter,
     ) {
         EnsureOverlayWindowTransparent(window)
+        ApplyBossWindowIcon(window)
         Box(modifier = Modifier.fillMaxSize()) {
             content()
         }

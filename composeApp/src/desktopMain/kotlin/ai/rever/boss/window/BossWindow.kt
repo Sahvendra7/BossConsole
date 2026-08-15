@@ -142,8 +142,10 @@ fun ApplicationScope.BossWindow(
         onCloseRequest = onCloseRequest,
         title = windowState.title,
         state = composeWindowState,
-        icon = bossWindowIcon(),
+        icon = BossWindowIcon.painter,
     ) {
+        ApplyBossWindowIcon(window)
+
         // Apply programmatic resize requests (BossTerm "Fit host to my screen").
         // Lives inside Window {} so it can read this window's `window` (AWT
         // ComposeWindow) for the display scale + per-monitor bounds, and runs on

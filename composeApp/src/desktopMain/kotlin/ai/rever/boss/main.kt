@@ -28,10 +28,11 @@ import ai.rever.boss.utils.WindowsProtocolHandler
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.AWTKeyboardInterceptor
+import ai.rever.boss.window.ApplyBossWindowIcon
 import ai.rever.boss.window.BossWindow
+import ai.rever.boss.window.BossWindowIcon
 import ai.rever.boss.window.DefaultWindowIcon
 import ai.rever.boss.window.WindowManager
-import ai.rever.boss.window.bossWindowIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -230,18 +231,6 @@ fun main(args: Array<String>) {
     // This ensures Swing popup menus (context menus) appear above the browser view
     JPopupMenu.setDefaultLightWeightPopupEnabled(false)
 
-    // Brand any window BOSS does not compose itself - JxBrowser's own Swing dialogs, JFileChooser,
-    // a frame opened by a plugin - so none of them shows the JDK's default Java icon on Windows.
-    // Every window this app opens sets its own icon; this is only the net under them.
-    //
-    // Position is load-bearing in BOTH directions. It registers an AWT event listener, so it
-    // initialises the toolkit - which is why it cannot go up beside setLinuxWMClass: the
-    // ChromiumFlagsSettingsManager and BOSS_SKIKO_RENDER_API blocks above both have to publish their
-    // system properties before AWT/Skiko reads them, and skiko.renderApi in particular is read at
-    // init and never again. It only has to be earlier than the first window, and every window is
-    // still a long way below here.
-    DefaultWindowIcon.install()
-
     // Uninstall hook (Windows): `BOSS.exe --unregister-protocol` removes the boss://
     // handler that WindowsProtocolHandler registers at runtime, so uninstalling does not
     // leave a registry handler pointing at a deleted executable. Handled before any
@@ -384,6 +373,20 @@ fun main(args: Array<String>) {
             exitProcess(0)
         }
     }
+
+    // Brand any window BOSS does not compose itself - JxBrowser's own Swing dialogs, JFileChooser,
+    // a frame opened by a plugin - so none of them shows the JDK's default Java icon on Windows.
+    // Every window this app opens sets its own icon; this is only the net under them.
+    //
+    // Position is fenced on both sides. Registering an AWT event listener initialises the toolkit,
+    // so this cannot go up beside setLinuxWMClass: the ChromiumFlagsSettingsManager and
+    // BOSS_SKIKO_RENDER_API blocks up there have to publish their system properties before AWT/Skiko
+    // reads them, and skiko.renderApi in particular is read at init and never again. It also has to
+    // stay below the two paths that exit without ever showing a window - `--unregister-protocol`
+    // (an installer action) and the single-instance deep-link forward - which is why it is here
+    // rather than beside JPopupMenu.setDefaultLightWeightPopupEnabled: neither should be made to
+    // start a window system to do its job. Everything from here on is a session that gets a window.
+    DefaultWindowIcon.install()
 
     // Register shutdown hook to release the single-instance lock AND close browser engine
     Runtime.getRuntime().addShutdownHook(
@@ -852,8 +855,10 @@ fun main(args: Array<String>) {
                     resizable = false,
                     // This is the one window that opens before any main window exists, so it can
                     // inherit an icon from nothing - and it is the first thing a new user sees.
-                    icon = bossWindowIcon(),
+                    icon = BossWindowIcon.painter,
                 ) {
+                    ApplyBossWindowIcon(window)
+
                     // Start download when dialog opens
                     LaunchedEffect(Unit) {
                         ChromiumAutoDownloader.downloadChromium { progress ->
