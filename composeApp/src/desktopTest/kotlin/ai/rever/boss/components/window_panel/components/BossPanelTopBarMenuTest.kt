@@ -64,6 +64,7 @@ class BossPanelTopBarMenuTest {
     private fun show(
         buildInfo: PluginBuildInfo? = null,
         uninstallEnabled: Boolean = true,
+        withTagAction: Boolean = true,
     ) {
         compose.setContent {
             BossPanelTopBar(
@@ -74,7 +75,7 @@ class BossPanelTopBarMenuTest {
                 uninstallEnabled = uninstallEnabled,
                 onMinimize = {},
                 buildInfo = buildInfo,
-                onBuildTagClick = { tagClicked++ },
+                onBuildTagClick = if (withTagAction) ({ tagClicked++ }) else null,
             )
         }
     }
@@ -161,6 +162,20 @@ class BossPanelTopBarMenuTest {
         compose.onNodeWithText("Install Store Version").performClick()
 
         assertEquals(1, tagClicked)
+    }
+
+    @Test
+    fun `neither build row is offered when there is no action behind it`() {
+        // onBuildTagClick is null when the panel has no resolvable window. Offering a row named as
+        // an imperative that silently does nothing is worse than offering no row, so both go - the
+        // factual version row with the action row, since they are the same click.
+        show(buildInfo = localBuild(), withTagAction = false)
+        openMenu()
+
+        compose.onNodeWithText("Install Store Version").assertDoesNotExist()
+        compose.onNodeWithText("Version 1.0.3-debug").assertDoesNotExist()
+        // The rest of the menu is unaffected.
+        compose.onNodeWithText("Reload Panel").assertExists()
     }
 
     @Test

@@ -89,24 +89,32 @@ fun BossPanelTopBar(
             // Which build is running, first and clickable, for a plugin that is not on the released
             // version. The version has to be the item's TEXT rather than a badge widget: with no
             // trailing icon this menu is native-representable, so on macOS it renders as a real
-            // NSMenu whose items are a label and an enabled flag, nothing more.
-            buildInfo?.takeIf { it.isTagged }?.let { info ->
+            // NSMenu, whose items carry a label, an enabled flag and a rasterised leading icon -
+            // but nothing that is a widget, which is what a badge would need.
+            //
+            // Both rows are gated on the action existing, not merely on the build being tagged:
+            // onBuildTagClick is null whenever the panel has no resolvable window (LocalWindowId
+            // defaults to null), and a row named as an imperative that silently does nothing is a
+            // worse failure than no row at all. The tag itself is inert in exactly that case.
+            val installStoreVersion = onBuildTagClick
+            val taggedBuild = buildInfo?.takeIf { it.isTagged }
+            if (taggedBuild != null && installStoreVersion != null) {
                 add(
                     ContextMenuItem(
-                        text = "Version ${info.displayVersion}",
+                        text = "Version ${taggedBuild.displayVersion}",
                         icon = Icons.Outlined.Info,
-                        onClick = { onBuildTagClick?.invoke() },
+                        onClick = installStoreVersion,
                     ),
                 )
                 // The way back to the released build, named as the action it is. The version row
                 // above already carries it, but that row reads as a statement of fact, so the only
-                // discoverable route was clicking the tag - and the tag is a 10sp pill that
-                // disappears entirely once the panel is narrow enough to ellipsize the title.
+                // discoverable route was clicking the tag - and the tag is a 9sp pill that is the
+                // first thing to run out of room once the panel narrows.
                 add(
                     ContextMenuItem(
                         text = "Install Store Version",
                         icon = Icons.Outlined.CloudDownload,
-                        onClick = { onBuildTagClick?.invoke() },
+                        onClick = installStoreVersion,
                     ),
                 )
                 add(ContextMenuItem(isDivider = true))
