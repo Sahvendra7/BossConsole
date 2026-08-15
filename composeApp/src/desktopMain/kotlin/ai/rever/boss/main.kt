@@ -179,23 +179,6 @@ fun main(args: Array<String>) {
         ai.rever.boss.focusmode.FocusModeSettingsManager.currentSettings
     }
 
-    // Create ~/BossProjects before a window asks for it. Every no-project path now resolves
-    // there instead of to the home directory (see DefaultWorkingDirectory), and the first of
-    // them is a window opening a terminal - creating it on demand would put the mkdirs on the
-    // thread doing that. Best-effort and idempotent: path() creates the directory itself if
-    // this has not finished, or did not work.
-    //
-    // Unconditional, on every platform, and that is the decision rather than an oversight: a
-    // browser-only user on Windows has no TCC prompts to avoid and may never create a
-    // project, so they get an empty folder they did not ask for. Gating it on macOS would
-    // buy that user nothing back - the placeholder fallback and every terminal resolve there
-    // on all three platforms, so the directory gets created on first use anyway - while
-    // giving the two platforms different startup states to reason about.
-    startupScope.launch(Dispatchers.IO) {
-        ai.rever.boss.project.DefaultWorkingDirectory
-            .path()
-    }
-
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
     setLinuxWMClass()
 
@@ -386,6 +369,28 @@ fun main(args: Array<String>) {
             logger.info(LogCategory.SYSTEM, "No URL to send - existing BOSS window should be visible")
             exitProcess(0)
         }
+    }
+
+    // Create ~/BossProjects before a window asks for it. Every no-project path now resolves
+    // there instead of to the home directory (see DefaultWorkingDirectory), and the first of
+    // them is a window opening a terminal - creating it on demand would put the mkdirs on the
+    // thread doing that. Best-effort and idempotent: path() creates the directory itself if
+    // this has not finished, or did not work.
+    //
+    // Below the single-instance block, not up with the other startup warm-ups, so that
+    // creating a directory in the user's home is tied to actually starting the app. Above it
+    // sit `--unregister-protocol` and the deep-link forward, both of which exitProcess after
+    // doing something headless; neither should leave a folder behind.
+    //
+    // Unconditional, on every platform, and that is the decision rather than an oversight: a
+    // browser-only user on Windows has no TCC prompts to avoid and may never create a
+    // project, so they get an empty folder they did not ask for. Gating it on macOS would
+    // buy that user nothing back - the placeholder fallback and every terminal resolve there
+    // on all three platforms, so the directory gets created on first use anyway - while
+    // giving the two platforms different startup states to reason about.
+    startupScope.launch(Dispatchers.IO) {
+        ai.rever.boss.project.DefaultWorkingDirectory
+            .path()
     }
 
     // Register shutdown hook to release the single-instance lock AND close browser engine

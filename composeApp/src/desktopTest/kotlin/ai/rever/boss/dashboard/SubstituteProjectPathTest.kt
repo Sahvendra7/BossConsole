@@ -76,6 +76,11 @@ class SubstituteProjectPathTest {
      * Asserted through `{gitRemoteUrl}` and `{claudeContinueFlag}` only. `{projectPath}` is
      * left out on purpose: its no-project answer is `DefaultWorkingDirectory.path()`, which
      * would create `~/BossProjects` on the machine running this.
+     *
+     * This is the direct-caller path. Every production caller resolves before calling, so with
+     * no project selected they all pass `~/BossProjects` and take the has-a-project branch -
+     * see the note on `processPlaceholders`. What is pinned here is that null and blank mean
+     * the same thing to all three placeholders, not that the app reaches this branch.
      */
     @Test
     fun blankProjectPathIsTreatedAsNoProject() {

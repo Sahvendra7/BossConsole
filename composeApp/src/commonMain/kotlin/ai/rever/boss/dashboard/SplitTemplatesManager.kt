@@ -387,11 +387,12 @@ object SplitTemplatesManager {
      * - {currentFile}: Currently open file path
      *
      * @param content The content string with placeholders
-     * @param projectPath The current project path, or null/blank for no project. **This
-     *   function owns the no-project fallback** (`DefaultWorkingDirectory`), so a caller may
-     *   pass a raw project path straight from window state. Callers that resolve first - they
-     *   need the same directory for something other than a placeholder - are passing a
-     *   non-blank path, which makes the second resolve a no-op rather than a second answer.
+     * @param projectPath The current project path, or null/blank for no project. This function
+     *   handles the no-project case for all three project placeholders consistently, so a
+     *   caller may pass a raw path straight from window state - but note that every production
+     *   caller resolves first (it needs the same directory for a tab's `workingDirectory`), so
+     *   the no-project branch below is reached only by a direct caller. Passing an
+     *   already-resolved path is not a second answer, just a no-op.
      * @param currentFile The currently open file (optional)
      * @param quoteProjectPath When true, {projectPath} is substituted as a
      *   shell-quoted argument. Pass true ONLY for shell command content
@@ -414,7 +415,14 @@ object SplitTemplatesManager {
         // One reading of "is there a project" for all three project placeholders. They used to
         // disagree about a blank path: {projectPath} treated it as absent, while the two below
         // took it as a real path - getClaudeContinueFlag("") looks in ~/.claude/projects/
-        // itself. No caller passes blank today, but this function's contract invites one to.
+        // itself.
+        //
+        // Reachable only by a direct caller. Every production caller resolves first, because
+        // it needs the same directory for a tab's workingDirectory, so with no project
+        // selected all three see ~/BossProjects and take the has-a-project branch: the git
+        // lookup runs in the projects folder and finds no remote, and the session lookup
+        // misses. That is what the old code did with the home directory too. What this buys is
+        // that the branches agree with each other, whichever one a caller lands on.
         val selectedProject = DefaultWorkingDirectory.selectedOrNull(projectPath)
 
         // Replace project path (shell-quoted when used inside a command). With no project the
@@ -422,8 +430,8 @@ object SplitTemplatesManager {
         val pathValue = selectedProject ?: DefaultWorkingDirectory.path()
         result = substituteProjectPath(result, pathValue, quoteProjectPath)
 
-        // Replace git remote URL. Not resolved to the default: the projects folder is not a
-        // repository, and "no project" means there is no remote to link to.
+        // Replace git remote URL. Deliberately not resolved to the default: the projects
+        // folder is not a repository, so "no project" means there is no remote to link to.
         val gitUrl = selectedProject?.let { getGitRemoteUrl(it) } ?: "https://google.com"
         result = result.replace("{gitRemoteUrl}", gitUrl)
 

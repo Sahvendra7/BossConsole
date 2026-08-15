@@ -132,6 +132,25 @@ class DefaultWorkingDirectoryTest {
     }
 
     /**
+     * The branch the PR description calls out as silently reinstating the problem this fixes:
+     * when the directory cannot be created, callers get the home directory rather than a path
+     * nothing can start in. Through the `ensure` seam, since a machine where creating
+     * `~/BossProjects` genuinely fails is not something a test can arrange.
+     */
+    @Test
+    fun `an uncreatable directory falls back to the home directory`() {
+        assertEquals(System.getProperty("user.home"), DefaultWorkingDirectory.path { null })
+    }
+
+    @Test
+    fun `a creatable directory is what path answers with`() {
+        assertEquals(
+            DefaultWorkingDirectory.nominalPath(),
+            DefaultWorkingDirectory.path { it.path },
+        )
+    }
+
+    /**
      * `persisted()` compares a tab's working directory against this, and `resolve()` is what
      * put that string there. A separator that disagreed - `getDefaultProjectsDirectory()` used
      * to build its own with a literal `/` - would make the comparison silently never match on

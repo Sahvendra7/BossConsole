@@ -40,9 +40,15 @@ object DefaultWorkingDirectory {
      * Deliberately not cached. It is called when a tab is created, never in a loop, and a
      * cached path would go on being handed out after the user moved or deleted the directory.
      */
-    fun path(): String {
+    fun path(): String = path(::ensureDirectory)
+
+    /**
+     * [path] against a supplied creator, so the fallback composition is testable without a
+     * machine on which creating `~/BossProjects` actually fails.
+     */
+    internal fun path(ensure: (File) -> String?): String {
         val target = File(nominalPath())
-        return ensureDirectory(target) ?: homeDirectory(target)
+        return ensure(target) ?: homeDirectory(target)
     }
 
     /**
@@ -111,8 +117,12 @@ object DefaultWorkingDirectory {
      * project". [default] must come from [path], not from
      * `ProjectCreationService.getDefaultProjectsDirectory()` by a route that skips `File`
      * normalization, or the comparison never matches on Windows. And a terminal the user
-     * deliberately pointed at `~/BossProjects` is treated as a default one; restore then opens
-     * the projects folder, which is where it was pointed anyway.
+     * deliberately pointed at `~/BossProjects` is indistinguishable from a default one: with
+     * no project selected restore lands back in the projects folder, which is where it was
+     * pointed, but *with* a project selected the null re-resolves to the project instead. That
+     * second case loses the user's choice. Accepted rather than fixed - telling the two apart
+     * needs a flag on `TabConfig`, i.e. a workspace format change, to serve a terminal
+     * deliberately opened in the projects folder itself.
      */
     internal fun persisted(
         workingDirectory: String?,
