@@ -56,6 +56,10 @@ internal expect fun authBrandSiteEnabled(): Boolean
  * Setting the system property is not enough, because the environment variable takes precedence and a
  * developer may have it set. Same save-and-restore shape as `BossOverlayHost.useHeavyweightOverlays` in
  * `BossAlertDialogComposeTest`.
+ *
+ * **Set it before composing, not during.** It is a plain `var` rather than a `MutableState`, so
+ * [authBrandSiteActive] reading it from a composable will not recompose when it changes - fine for a
+ * `@Before` seam, useless as a runtime toggle.
  */
 internal var authBrandSiteOverride: Boolean? = null
 

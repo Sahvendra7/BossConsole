@@ -111,41 +111,56 @@ private fun DrawScope.drawBlueprintGrid(
     isLight: Boolean,
 ) {
     val minor = MINOR_GRID.toPx()
-    val major = MAJOR_GRID.toPx()
     val minorInk = inkContrast.copy(alpha = if (isLight) 0.05f else 0.04f)
     val majorInk = inkContrast.copy(alpha = if (isLight) 0.09f else 0.07f)
 
-    var x = 0f
-    while (x <= size.width) {
+    // Emphasis is decided by an integer INDEX, not by testing an accumulated float for divisibility.
+    // The previous version walked `x += minor` and asked `x % major < 1f`: at fractional densities the
+    // running total drifts, so a line that should be major can land just below a multiple of `major`,
+    // the modulo comes out near `major` instead of near zero, and the emphasis silently renders as a
+    // hairline. Counting lines is exact at any density, and drops two modulos per line as well.
+    val majorEvery = (MAJOR_GRID / MINOR_GRID).toInt()
+
+    var column = 0
+    while (column * minor <= size.width) {
+        val x = column * minor
         drawLine(
-            color = if (x % major < 1f) majorInk else minorInk,
+            color = if (column % majorEvery == 0) majorInk else minorInk,
             start = Offset(x, 0f),
             end = Offset(x, size.height),
             strokeWidth = 1f,
         )
-        x += minor
+        column++
     }
-    var y = 0f
-    while (y <= size.height) {
+    var row = 0
+    while (row * minor <= size.height) {
+        val y = row * minor
         drawLine(
-            color = if (y % major < 1f) majorInk else minorInk,
+            color = if (row % majorEvery == 0) majorInk else minorInk,
             start = Offset(0f, y),
             end = Offset(size.width, y),
             strokeWidth = 1f,
         )
-        y += minor
+        row++
     }
 
+    // Same index-based walk as the lines, so the dots land exactly on major intersections rather than
+    // drifting away from them across a wide pane.
     val dot = inkContrast.copy(alpha = if (isLight) 0.16f else 0.13f)
     val dotRadius = 1.dp.toPx()
-    var dx = 0f
-    while (dx <= size.width) {
-        var dy = 0f
-        while (dy <= size.height) {
-            drawCircle(color = dot, radius = dotRadius, center = Offset(dx, dy))
-            dy += major
+    val majorStep = majorEvery * minor
+    var dotColumn = 0
+    while (dotColumn * majorStep <= size.width) {
+        var dotRow = 0
+        while (dotRow * majorStep <= size.height) {
+            drawCircle(
+                color = dot,
+                radius = dotRadius,
+                center = Offset(dotColumn * majorStep, dotRow * majorStep),
+            )
+            dotRow++
         }
-        dx += major
+        dotColumn++
     }
 }
 

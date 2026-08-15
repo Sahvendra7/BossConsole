@@ -8,11 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -84,8 +80,17 @@ private fun PasskeySelectionCardContent(
             color = colors.textSecondary,
             modifier = Modifier.padding(bottom = 12.dp),
         )
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(passkeys) { passkey ->
+        // A plain Column, not a LazyColumn, now that the scaffold scrolls this screen. The list was a
+        // LazyColumn capped at 400dp, which is a scrollable inside a scrollable on the same axis: legal,
+        // since the height bound satisfies Compose's constraint check, but a wheel gesture over the list
+        // scrolled the inner one and never chained out to the page - on the one screen the scaffold's own
+        // KDoc singles out as needing the outer scroll most. Laziness bought nothing here either; nobody
+        // has enough registered passkeys for it to matter.
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            passkeys.forEach { passkey ->
                 PasskeyCard(passkey, selectedCredentialId == passkey.credentialId) { onSelect(passkey.credentialId) }
             }
         }

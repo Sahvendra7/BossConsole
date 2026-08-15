@@ -6,7 +6,6 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,8 +18,10 @@ import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.Frame
@@ -100,43 +101,56 @@ internal actual fun AuthBrandSite(
     var loaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // LaunchedEffect, not DisposableEffect: unpacking the page reads a Compose resource, which
-    // suspends. Cleanup is a separate effect below, keyed on the browser it has to close.
+    // One effect owns the browser for its whole life: created here, closed in this function's own
+    // `finally`. It used to be created here and closed by a separate `DisposableEffect(current)`, which
+    // leaked - that effect is keyed on a value that is still null until the recomposition AFTER creation,
+    // so a panel leaving composition in that window (a resize under 900dp, a navigation) left a Chromium
+    // instance open with nothing holding a reference to close it.
     LaunchedEffect(Unit) {
+        var created: Browser? = null
         try {
             val page = unpackBrandPage()
-            // Throws when the engine cannot start - no licence, headless CI, a Chromium that failed
-            // to unpack. All of those mean "stay on the art".
-            val created = FluckEngine.engine.newBrowser()
+            // OFF THE UI THREAD. `FluckEngine.engine` is a synchronous, multi-second Chromium boot under
+            // a lock - `CrossDeviceBrowserManager` documents exactly that, which is why the engine is not
+            // booted on the startup path either. A LaunchedEffect body runs on the composition
+            // dispatcher, so calling it directly froze the sign-in screen, email field included, for as
+            // long as the boot took. The startup prewarm does not save it: that is skipped entirely on a
+            // first-ever launch, when no browser profile exists yet, and mid-prewarm this would block on
+            // the same lock.
+            created = withContext(Dispatchers.IO) { FluckEngine.engine.newBrowser() }
             created.navigation().on(LoadFinished::class.java) {
                 scope.launch(Dispatchers.Main) { loaded = true }
             }
             created.navigation().loadUrl(page)
             browser = created
-        } catch (e: Exception) {
+            // Park until cancelled, so the `finally` below is this panel's disposal hook.
+            awaitCancellation()
+        } catch (e: CancellationException) {
+            // Normal disposal, not a failure: no report, and the `finally` still closes the browser.
+            throw e
+        } catch (e: Throwable) {
+            // THROWABLE, NOT EXCEPTION, and that is the whole point of catching here. The engine's
+            // characteristic failure is `UnsatisfiedLinkError` from a Chromium bundle that does not match
+            // this build - a `LinkageError`, which an `Exception` catch lets straight through into the
+            // composition. `FluckEngine.prewarmInBackground` catches `Throwable` and names that error for
+            // the same reason. A crashed sign-in screen on the machines least able to recover from it is
+            // the one outcome this panel must never cause.
             logger.warn(
                 LogCategory.BROWSER,
                 "Brand page unavailable; keeping the drawn panel",
                 error = e,
             )
             onFailed()
+        } finally {
+            // The login screen is transient - it goes away on the first successful sign-in - so this
+            // browser must not outlive it. A leaked Chromium instance per sign-in attempt would be the
+            // worst kind of cost for a decorative panel.
+            runCatching { created?.close() }
+                .onFailure { logger.warn(LogCategory.BROWSER, "Error closing brand page browser", error = it) }
         }
     }
 
     val current = browser
-
-    DisposableEffect(current) {
-        onDispose {
-            // The login screen is transient - it goes away on the first successful sign-in - so this
-            // browser must not outlive it. A leaked Chromium instance per sign-in attempt would be
-            // the worst kind of cost for a decorative panel.
-            try {
-                current?.close()
-            } catch (e: Exception) {
-                logger.warn(LogCategory.BROWSER, "Error closing brand page browser", error = e)
-            }
-        }
-    }
     // Reveal only once the page has actually painted; the art stays up until then.
     LaunchedEffect(current, loaded) {
         if (current != null && loaded) onReady()
