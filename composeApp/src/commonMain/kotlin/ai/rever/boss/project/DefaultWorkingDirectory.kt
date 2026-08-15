@@ -228,7 +228,15 @@ object DefaultWorkingDirectory {
                 // a terminal can start in", would never fire. The old behaviour was `~`,
                 // writable by construction, so that would be a failure mode this change
                 // introduced rather than inherited.
-                if (target.canWrite()) null else IOException("Projects directory is not writable")
+                //
+                // Files.isWritable, not File.canWrite: on Windows the JDK short-circuits
+                // canWrite() to true for anything with FILE_ATTRIBUTE_DIRECTORY set, so it
+                // cannot see the ACL case this check is for. Files.isWritable consults the ACL.
+                if (Files.isWritable(target.toPath())) {
+                    null
+                } else {
+                    IOException("Projects directory is not writable")
+                }
             } catch (e: IOException) {
                 // Includes FileAlreadyExistsException, which createDirectories raises only for
                 // a non-directory at the path - a *file* named BossProjects.

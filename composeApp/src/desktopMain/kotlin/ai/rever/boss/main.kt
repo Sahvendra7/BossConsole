@@ -392,7 +392,7 @@ fun main(args: Array<String>) {
     // Create ~/BossProjects before a window asks for it. Every no-project path now resolves
     // there instead of to the home directory (see DefaultWorkingDirectory), and the first of
     // them is a window opening a terminal - creating it on demand would put the mkdirs on the
-    // thread doing that. Best-effort and idempotent: path() creates the directory itself if
+    // thread doing that. Best-effort and idempotent: ensureDefaultDirectory() creates the directory itself if
     // this has not finished, or did not work.
     //
     // Here for the same reason the icon install above is - "everything from here on is a

@@ -21,7 +21,7 @@ import kotlin.time.Clock
  * @param name The name of the workspace
  * @param description The description of the workspace
  * @param defaultWorkingDirectory The no-project working directory, used to decide which
- *   terminals are persisted with a null one. `nominalPath()`, not `path()`: nothing here needs
+ *   terminals are persisted with a null one. `nominalPath()`, not `ensureDefaultDirectory()`: nothing here needs
  *   the directory to *exist*, only its name to compare against, and this runs from the
  *   auto-save `snapshotFlow` - whose producer re-runs on the composition thread whenever a tab
  *   title, url or working directory changes - and from the Last Session teardown, which can be
@@ -48,7 +48,7 @@ fun extractCurrentWorkspace(
 /**
  * @param defaultWorkingDirectory the no-project working directory, from
  *   `DefaultWorkingDirectory.nominalPath()` - see [extractCurrentWorkspace] for why not
- *   `path()`. A terminal sitting in it is persisted with a null
+ *   `ensureDefaultDirectory()`. A terminal sitting in it is persisted with a null
  *   working directory so restore re-resolves against whatever project is selected then - see
  *   `DefaultWorkingDirectory.persisted`.
  */

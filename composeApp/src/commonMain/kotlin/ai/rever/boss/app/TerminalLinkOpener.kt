@@ -24,10 +24,15 @@ import kotlinx.coroutines.launch
 /**
  * Helper function to open a runner terminal in the main panel.
  * Creates a terminal tab with the run command and adds it to the active panel.
+ *
+ * @param projectPath the window's selected project, or "" for none. Used only when the event
+ *   carries no working directory of its own, which is what a CUSTOM run configuration with an
+ *   empty working directory and no file to derive a root from produces.
  */
 internal fun openRunnerInMainPanel(
     event: RunnerTerminalOpenEvent,
     splitViewState: SplitViewState,
+    projectPath: String,
 ) {
     // Create terminal tab in active panel
     val terminalTab =
@@ -36,11 +41,16 @@ internal fun openRunnerInMainPanel(
             typeId = TabTypeId("terminal"),
             title = "Run: ${event.configName}",
             initialCommand = event.command,
-            // A CUSTOM run configuration saved with an empty working directory reaches here
-            // as null - DesktopRunnerTerminalService builds the event with
+            // A CUSTOM run configuration saved with an empty working directory reaches here as
+            // null - DesktopRunnerTerminalService builds the event with
             // `resolveWorkingDirectory(config).ifBlank { null }` - and a null one lands the
-            // shell in the home directory via TerminalServiceImpl's own fallback.
-            workingDirectory = DefaultWorkingDirectory.resolve(event.workingDirectory),
+            // shell in the home directory via TerminalServiceImpl's own fallback. The selected
+            // project comes before the no-project default, the same shape
+            // openTerminalInActivePanel uses: running a configuration with a project open
+            // should run it in the project, not in the projects folder.
+            workingDirectory =
+                DefaultWorkingDirectory.selectedOrNull(event.workingDirectory)
+                    ?: DefaultWorkingDirectory.resolve(projectPath),
         )
 
     // Find existing tab or create new one
