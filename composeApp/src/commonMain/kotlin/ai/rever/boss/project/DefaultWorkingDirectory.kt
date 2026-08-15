@@ -140,6 +140,32 @@ object DefaultWorkingDirectory {
     ): String? = workingDirectory?.takeIf { it != default }
 
     /**
+     * A saved workspace's terminal working directory, read back with the home directory
+     * treated as "not set".
+     *
+     * Without this the fix does not reach anyone who already uses BOSS. Saved layouts on disk
+     * were written by the code this replaces: a no-project terminal resolved to `~`, carried a
+     * *non-null* `~`, and `WorkspaceExtractor` persisted it verbatim. So Last Session would go
+     * on restoring terminals into the home directory after the upgrade - and [persisted] would
+     * go on writing `~` back out, because `~` is not the default it compares against. The TCC
+     * prompts would return on the first restore and never stop, for exactly the people this
+     * change is for.
+     *
+     * Reading `~` as absent lets [WorkspaceApplier] re-resolve it to `~/BossProjects`; the next
+     * auto-save then extracts that, [persisted] nulls it, and the layout is repaired. It is a
+     * migration by value rather than a versioned one, because `TabConfig` carries no version
+     * and adding one to fix this would be a workspace format change.
+     *
+     * The cost is a terminal someone deliberately parked in their home directory, which
+     * re-resolves to the projects folder once. That is the trade this whole change is: the
+     * home directory is the place BOSS should not be working in.
+     */
+    internal fun restored(
+        workingDirectory: String?,
+        home: String? = System.getProperty("user.home"),
+    ): String? = workingDirectory?.takeIf { it != home }
+
+    /**
      * [target]'s path once it is known to be a directory, or null if it cannot be made one.
      *
      * Split out so tests can exercise both outcomes against a temporary directory rather than

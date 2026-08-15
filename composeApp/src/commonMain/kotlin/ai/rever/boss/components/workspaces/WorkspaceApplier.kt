@@ -338,9 +338,11 @@ private fun createTabFromWorkspaceConfig(
         TerminalTabType.typeId -> {
             // Process working directory placeholder
             // No stored working directory means "wherever the project is", which is what
-            // resolvedProjectPath already holds.
+            // resolvedProjectPath already holds. `restored` also reads a stored home directory
+            // that way - layouts written before this change carry a literal `~` for every
+            // no-project terminal, and honouring it would restore the problem on every launch.
             val workingDir =
-                tabConfig.workingDirectory?.let {
+                DefaultWorkingDirectory.restored(tabConfig.workingDirectory)?.let {
                     SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
                 } ?: resolvedProjectPath
 

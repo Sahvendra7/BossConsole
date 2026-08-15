@@ -151,6 +151,27 @@ class DefaultWorkingDirectoryTest {
     }
 
     /**
+     * The upgrade path. Layouts already on disk were written by the code this replaces: a
+     * no-project terminal resolved to `~` and was persisted verbatim, so honouring the stored
+     * value would restore the home directory on every launch, and `persisted()` would write it
+     * straight back - `~` is not the default it compares against. Reading it as absent lets it
+     * re-resolve, and the next auto-save repairs the file.
+     */
+    @Test
+    fun `a saved home directory is read back as no working directory`() {
+        val home = "/Users/someone"
+
+        assertNull(DefaultWorkingDirectory.restored(home, home))
+        assertNull(DefaultWorkingDirectory.restored(null, home))
+        assertEquals("/work/repo", DefaultWorkingDirectory.restored("/work/repo", home))
+        assertEquals(
+            "/Users/someone/BossProjects",
+            DefaultWorkingDirectory.restored("/Users/someone/BossProjects", home),
+            "the new default is a real answer on the way in; only persisted() drops it",
+        )
+    }
+
+    /**
      * `persisted()` compares a tab's working directory against this, and `resolve()` is what
      * put that string there. A separator that disagreed - `getDefaultProjectsDirectory()` used
      * to build its own with a literal `/` - would make the comparison silently never match on
