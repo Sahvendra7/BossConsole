@@ -115,6 +115,8 @@ class DefaultWorkingDirectoryTest {
 
         assertNull(DefaultWorkingDirectory.persisted(default, default))
         assertNull(DefaultWorkingDirectory.persisted(null, default))
+        assertNull(DefaultWorkingDirectory.persisted("", default), "blank is absent on the way out too")
+        assertNull(DefaultWorkingDirectory.persisted("   ", default))
         assertEquals("/work/repo", DefaultWorkingDirectory.persisted("/work/repo", default))
     }
 
@@ -163,6 +165,12 @@ class DefaultWorkingDirectoryTest {
 
         assertNull(DefaultWorkingDirectory.restored(home, home))
         assertNull(DefaultWorkingDirectory.restored(null, home))
+        // Blank is absent here too. A stored "" is neither null nor the home directory, so
+        // returning it verbatim reached the terminal as "" and TerminalServiceImpl's own
+        // `ifBlank { user.home }` put it in the home directory - exempting a slice of exactly
+        // the population this migration is for, and one no later save would repair.
+        assertNull(DefaultWorkingDirectory.restored("", home))
+        assertNull(DefaultWorkingDirectory.restored("   ", home))
         assertEquals("/work/repo", DefaultWorkingDirectory.restored("/work/repo", home))
         assertEquals(
             "/Users/someone/BossProjects",

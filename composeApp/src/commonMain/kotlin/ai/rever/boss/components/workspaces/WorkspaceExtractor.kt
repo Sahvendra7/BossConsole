@@ -3,6 +3,7 @@ package ai.rever.boss.components.workspaces
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewState
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
@@ -85,7 +86,7 @@ private fun extractSplitConfig(
 
 /** The saved form of one open tab, or null for a tab that must not be persisted. */
 private fun extractTabConfig(
-    tab: ai.rever.boss.plugin.api.TabInfo,
+    tab: TabInfo,
     defaultWorkingDirectory: String,
 ): TabConfig? =
     when (tab) {

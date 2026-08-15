@@ -70,11 +70,11 @@ object DefaultWorkingDirectory {
      *   fail, so *that* direction is closed: which string the comparison uses no longer
      *   depends on filesystem state at extract time.
      *
-     * The mirror case is not closed, and is not worth the machinery: if creation failed when
+     * The mirror case is not closed *here*, and does not need to be: if creation failed when
      * the *terminal* was created, its working directory is the home directory, which differs
-     * from this and so is persisted verbatim. Treating `~` as a default too would silence a
-     * user who deliberately opened a terminal there, to fix a case that only arises once the
-     * fallback has already fired.
+     * from this and so is persisted verbatim. [restored] then reads that `~` as absent on the
+     * way back in, so the layout self-heals on the next restore rather than carrying the
+     * fallback forever.
      *
      * Through `File` on both sides, so the separator normalization matches what [resolve]
      * handed the tab.
@@ -138,7 +138,7 @@ object DefaultWorkingDirectory {
     internal fun persisted(
         workingDirectory: String?,
         default: String,
-    ): String? = workingDirectory?.takeIf { it != default }
+    ): String? = selectedOrNull(workingDirectory)?.takeIf { it != default }
 
     /**
      * A saved workspace's terminal working directory, read back with the home directory
@@ -176,14 +176,24 @@ object DefaultWorkingDirectory {
         workingDirectory: String?,
         home: String? = System.getProperty("user.home"),
     ): String? {
-        if (workingDirectory == null || workingDirectory != home) return workingDirectory
-
-        logger.info(
-            LogCategory.WORKSPACE,
-            "Restoring a saved home-directory terminal into the default projects directory",
-            mapOf("path" to workingDirectory),
-        )
-        return null
+        // Blank counts as absent here too, the same rule selectedOrNull applies to a project
+        // path. A stored "" is neither null nor equal to home, so returning it verbatim left
+        // the applier's `?: resolvedProjectPath` unreached, built the tab with "", and
+        // TerminalServiceImpl's own `ifBlank { user.home }` put the terminal in the home
+        // directory - the exact outcome this exists to remove, and one persisted() would not
+        // repair either, so it survived every launch.
+        val selected = selectedOrNull(workingDirectory)
+        // `selected != null` matters: with no `user.home` at all, [home] is null too, and a
+        // blank stored value would otherwise log a relocation that is really just "absent".
+        if (selected != null && selected == home) {
+            logger.info(
+                LogCategory.WORKSPACE,
+                "Restoring a saved home-directory terminal into the default projects directory",
+                mapOf("path" to selected),
+            )
+            return null
+        }
+        return selected
     }
 
     /**

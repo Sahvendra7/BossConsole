@@ -90,6 +90,18 @@ class WorkspaceApplierMigrationTest {
     }
 
     /**
+     * A blank stored directory is absent, not a path. It is neither null nor the home
+     * directory, so an equality-only migration handed `""` to the tab, and the terminal
+     * service's own `ifBlank { user.home }` then started it in the home directory - exempting
+     * a slice of exactly the population the migration is for, and one no later save repairs.
+     */
+    @Test
+    fun `a blank saved directory follows the project rather than reaching the terminal`() {
+        assertEquals(projectPath, applyTerminal(storedWorkingDirectory = "").workingDirectory)
+        assertEquals(projectPath, applyTerminal(storedWorkingDirectory = "   ").workingDirectory)
+    }
+
+    /**
      * Applies a one-terminal workspace to a window with [projectPath] selected and returns the
      * terminal that came back.
      *

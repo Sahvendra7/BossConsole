@@ -20,6 +20,7 @@ import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
 import ai.rever.boss.plugin.sandbox.ui.PluginRenderRecovery
 import ai.rever.boss.plugin.ui.BossThemeController
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.DeepLinkOrigin
@@ -406,8 +407,7 @@ fun main(args: Array<String>) {
     // on all three platforms, so the directory gets created on first use anyway - while
     // giving the two platforms different startup states to reason about.
     startupScope.launch(Dispatchers.IO) {
-        ai.rever.boss.project.DefaultWorkingDirectory
-            .path()
+        DefaultWorkingDirectory.path()
     }
 
     // Register shutdown hook to release the single-instance lock AND close browser engine
