@@ -633,26 +633,27 @@ internal class BrowserHandleImpl(
         }
     }
 
-    /**
-     * Whether a re-attach is allowed right now, and record it if so.
-     *
-     * Bounded like `EngineWedgeDetector`'s recycle: past the cap the handle degrades to the
-     * pre-existing behaviour (the user switches tabs themselves) rather than flickering forever.
-     */
-
-    /**
-     * Note that a handle which has given up still probes on every commit. That reads like waste and
-     * is not: [FrameStallPolicy.recordHealthyNavigation] is only reachable from a reading, so
-     * probing is the only way a retired tab can ever come back. Giving up means "stop re-attaching",
-     * not "stop looking".
-     */
-
     /** Monotonic, not wall clock: an NTP step must not stretch or shorten the cooldown. */
     private fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000L
 
-    private fun claimReattachSlot(): FrameStallPolicy.Decision {
-        val decision = frameStallPolicy.claim(monotonicNowMs())
-        if (decision == FrameStallPolicy.Decision.GIVE_UP_NOW) {
+    /**
+     * Ask whether a re-attach is allowed, recording the attempt when it is.
+     *
+     * Answers with the *reason* rather than a boolean, because the two refusals are not
+     * interchangeable: a cooldown is worth waiting out and a give-up is not. See
+     * [FrameStallPolicy.claimOrDefer] for why deciding both in one place matters.
+     *
+     * Bounded like `EngineWedgeDetector`'s recycle: past the cap the handle degrades to the
+     * pre-existing behaviour (the user switches tabs themselves) rather than flickering forever.
+     *
+     * A handle which has given up still probes on every commit. That reads like waste and is not:
+     * [FrameStallPolicy.recordHealthyNavigation] is only reachable from a reading, so probing is
+     * the only way a retired tab can ever come back. Giving up means "stop re-attaching", not
+     * "stop looking".
+     */
+    private fun claimReattachSlot(): FrameStallPolicy.Claim {
+        val claim = frameStallPolicy.claimOrDefer(monotonicNowMs())
+        if (claim is FrameStallPolicy.Claim.Refused && claim.firstRefusal) {
             logger.warn(
                 LogCategory.BROWSER,
                 "Re-attaching stopped helping - leaving this tab alone",
@@ -662,7 +663,27 @@ internal class BrowserHandleImpl(
                 ),
             )
         }
-        return decision
+        return claim
+    }
+
+    /**
+     * Record a page that painted without help, and say so if this tab had been given up on.
+     *
+     * Shared by the decision loop and the deferred retry so the revival line cannot go missing on
+     * one of them - a log that says a tab was abandoned and never says it came back is the exact
+     * asymmetry the line exists to prevent.
+     */
+    private fun notePaintedUnaided() {
+        // Read before the reset, since the reset is what clears it.
+        val wasRetired = frameStallPolicy.hasGivenUp
+        frameStallPolicy.recordHealthyNavigation()
+        if (wasRetired) {
+            logger.info(
+                LogCategory.BROWSER,
+                "Tab painted unaided - frame-stall watchdog active again",
+                mapOf("attemptsTotal" to frameStallPolicy.attempts.toString()),
+            )
+        }
     }
 
     /**
@@ -672,47 +693,56 @@ internal class BrowserHandleImpl(
      * within about 7.5s of a repaired one sat blank with nothing in the log to explain it. The
      * rate limit is still honoured - this waits for the remainder instead of shortening it - and
      * only one deferral is attempted, so a tab navigating in a tight loop cannot queue them up.
-     */
-    private suspend fun claimReattachSlotWaiting(): Boolean {
-        if (claimReattachSlot() == FrameStallPolicy.Decision.REATTACH) return true
-        // A refusal with nothing left on the clock is a give-up, not a cooldown: nothing to wait
-        // out, and claimReattachSlot has already logged it.
-        val remaining = frameStallPolicy.remainingCooldownMs(monotonicNowMs())
-        return remaining > 0L && claimAfterCooldown(remaining)
-    }
-
-    /**
-     * Wait out [remainingMs] of cooldown, then re-judge and claim once.
      *
-     * Split from its caller only to keep each side within the return-count limit; the reason it
-     * re-judges rather than claiming straight away is that the wait is long enough for the page to
-     * have started painting on its own, or for the view to be hidden or the handle disposed.
+     * Deferring costs the user the wait: worst case the page stays blank for the 2500ms decision
+     * plus the remaining cooldown, so up to about 12.5s before it snaps in. That is the deliberate
+     * price of not rebuilding the view more often than the rate limit allows.
+     *
+     * Only a cooldown is waited out. A give-up is refused immediately, which is what keeps a
+     * retired tab from being deferred and then silently un-retired by the re-judge below.
      */
+    private suspend fun claimReattachSlotWaiting(): Boolean =
+        when (val claim = claimReattachSlot()) {
+            is FrameStallPolicy.Claim.Now -> true
+            is FrameStallPolicy.Claim.After -> claimAfterCooldown(claim.waitMs)
+            is FrameStallPolicy.Claim.Refused -> false
+        }
+
     private suspend fun claimAfterCooldown(remainingMs: Long): Boolean {
-        logger.debug(
+        // INFO, not DEBUG: the default level is INFO, so a DEBUG line here would leave a page
+        // blank for up to another 10s with nothing in a shipped log to say why - the same silence
+        // this change set out to remove.
+        logger.info(
             LogCategory.BROWSER,
             "Frame-stall repair deferred until the cooldown expires",
             mapOf("remainingMs" to remainingMs.toString()),
         )
         delay(remainingMs)
+        // Re-judged rather than claimed blind: the wait is long enough for the page to have
+        // started painting on its own, or for the view to be hidden or the handle disposed.
+        //
+        // Tri-state, because isStalled(null) is false and an unanswered probe would otherwise be
+        // credited as "painted while we waited" - clearing the ineffective run in exactly the
+        // wedged-renderer case the cap exists for, and doing it on the population most likely to
+        // stop answering, since this path is only reached for a tab already known stalled.
+        if (!viewComposed) return false
         val stillWorthRepairing =
-            when {
-                !viewComposed -> {
-                    false
-                }
-
-                BrowserFrameStall.isStalled(readFrameBeacon()) -> {
+            when (BrowserFrameStall.repairOutcome(readFrameBeacon())) {
+                false -> {
                     true
                 }
 
-                else -> {
-                    // Painted while we waited, so the tab is fine and any earlier ineffective run
-                    // should decay just as it would on any unaided paint.
-                    frameStallPolicy.recordHealthyNavigation()
+                true -> {
+                    notePaintedUnaided()
+                    false
+                }
+
+                // Unknown: no evidence either way, so leave the ineffective run untouched.
+                null -> {
                     false
                 }
             }
-        return stillWorthRepairing && claimReattachSlot() == FrameStallPolicy.Decision.REATTACH
+        return stillWorthRepairing && claimReattachSlot() is FrameStallPolicy.Claim.Now
     }
 
     /**
@@ -743,22 +773,27 @@ internal class BrowserHandleImpl(
                 repeat(2) {
                     delay(BrowserFrameStall.READ_GAP_MS)
                     if (!viewComposed) return@launch
-                    if (!BrowserFrameStall.isStalled(readFrameBeacon())) {
-                        // Painted unaided, so this tab is evidently fine - let that decay any
-                        // earlier ineffective attempts rather than holding them against it.
-                        // Read before the reset, since the reset is what clears it.
-                        val wasRetired = frameStallPolicy.hasGivenUp
-                        frameStallPolicy.recordHealthyNavigation()
-                        if (wasRetired) {
-                            // The counterpart to the give-up line, so a log that says a tab was
-                            // abandoned also says when it came back.
-                            logger.info(
-                                LogCategory.BROWSER,
-                                "Tab painted unaided - frame-stall watchdog active again",
-                                mapOf("attemptsTotal" to frameStallPolicy.attempts.toString()),
-                            )
+                    // Tri-state, not isStalled: that reads null as "not stalled", so an
+                    // unanswered probe would be credited as a page painting unaided and would
+                    // clear a legitimate ineffective run on no evidence at all.
+                    when (BrowserFrameStall.repairOutcome(readFrameBeacon())) {
+                        true -> {
+                            // Painted unaided, so this tab is evidently fine - let that decay any
+                            // earlier ineffective attempts rather than holding them against it.
+                            notePaintedUnaided()
+                            return@launch
                         }
-                        return@launch
+
+                        // Unknown: not evidence of a stall, and not evidence of health either, so
+                        // stop without touching the run.
+                        null -> {
+                            return@launch
+                        }
+
+                        // Still blank; keep going and take the second reading.
+                        false -> {
+                            Unit
+                        }
                     }
                 }
 

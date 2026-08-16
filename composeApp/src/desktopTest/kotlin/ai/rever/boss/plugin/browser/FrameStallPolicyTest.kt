@@ -198,6 +198,44 @@ class FrameStallPolicyTest {
     }
 
     @Test
+    fun `claimOrDefer grants, defers a cooldown, and refuses a give-up`() {
+        val p = policy()
+        assertEquals(FrameStallPolicy.Claim.Now, p.claimOrDefer(0L))
+        assertEquals(FrameStallPolicy.Claim.After(7_000L), p.claimOrDefer(3_000L))
+        assertEquals(FrameStallPolicy.Claim.Now, p.claimOrDefer(10_000L))
+    }
+
+    @Test
+    fun `a tab that has given up is refused outright, never deferred`() {
+        // The bug this exists for: claim() tests the cap BEFORE the cooldown, so a retired tab
+        // refuses while lastReattachAt is still recent. A caller that asked for the decision and
+        // the leftover cooldown separately would wait out a tab it had just abandoned - logging
+        // "leaving this tab alone" and "deferred until the cooldown expires" about the same
+        // decision, and then possibly un-retiring it when the re-judge found it painting.
+        val p = policy()
+        var now = 0L
+        repeat(3) {
+            assertEquals(FrameStallPolicy.Claim.Now, p.claimOrDefer(now))
+            p.recordAttemptPending()
+            now += 10_000L
+        }
+        // Retired, and only 2.5s since the last re-attach - so there IS cooldown left to read.
+        val soonAfter = now - 7_500L
+        assertTrue(p.remainingCooldownMs(soonAfter) > 0, "precondition: cooldown time remains")
+        assertEquals(FrameStallPolicy.Claim.Refused(firstRefusal = true), p.claimOrDefer(soonAfter))
+        assertEquals(FrameStallPolicy.Claim.Refused(firstRefusal = false), p.claimOrDefer(soonAfter + 1))
+    }
+
+    @Test
+    fun `the deferred wait is exactly what makes the next claim succeed`() {
+        val p = policy()
+        assertEquals(FrameStallPolicy.Claim.Now, p.claimOrDefer(0L))
+        val deferred = p.claimOrDefer(4_000L)
+        assertTrue(deferred is FrameStallPolicy.Claim.After)
+        assertEquals(FrameStallPolicy.Claim.Now, p.claimOrDefer(4_000L + deferred.waitMs))
+    }
+
+    @Test
     fun `attempts counts only granted claims`() {
         val p = policy()
         p.claim(0L)

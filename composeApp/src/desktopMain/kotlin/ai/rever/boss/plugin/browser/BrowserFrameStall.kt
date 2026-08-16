@@ -117,8 +117,12 @@ internal object BrowserFrameStall {
     fun isStalled(beaconReading: String?): Boolean = beaconReading == BEACON_UNPAINTED
 
     /**
-     * What a post-repair reading says about the re-attach: true painting, false still blank, null
-     * unknown.
+     * What a beacon reading says: true painting, false still blank, null unknown.
+     *
+     * Used for **every** read whose answer feeds the ineffective run - the post-repair
+     * confirmation and the "did it paint unaided" reads - because all of them can be wrong in the
+     * same way. [isStalled] stays the right predicate for the narrower question of whether to
+     * touch the view at all, where an unknown must read as "leave it alone".
      *
      * **Three states, not two, and [isStalled] must not be reused here.** For the *decision* to
      * re-attach, null correctly means "leave it alone". For the *outcome*, `!isStalled(null)`
@@ -256,6 +260,44 @@ internal class FrameStallPolicy(
             }
         }
     }
+
+    /** What the caller should do about a stall it has just confirmed. */
+    sealed interface Claim {
+        /** Granted; the attempt is already recorded. */
+        object Now : Claim
+
+        /** Refused for now, but [waitMs] from now it would be granted. */
+        data class After(
+            val waitMs: Long,
+        ) : Claim
+
+        /** Refused for good. [firstRefusal] is true exactly once, for the log. */
+        data class Refused(
+            val firstRefusal: Boolean,
+        ) : Claim
+    }
+
+    /**
+     * [claim], answered in the form the caller actually needs.
+     *
+     * **One synchronized call, deliberately.** Asking `claim` and then `remainingCooldownMs`
+     * separately is two decisions about a clock that moved in between, and it conflates two
+     * different refusals: [claim] tests the give-up cap *before* the cooldown, so a retired tab
+     * refuses while `lastReattachAt` is still recent, and a caller reading the leftover cooldown
+     * would deferentially wait out a tab it has already abandoned - logging "leaving this tab
+     * alone" and "deferred until the cooldown expires" about the same decision, then possibly
+     * un-retiring it. Returning the reason with the wait makes that unrepresentable, and it
+     * removes the boundary race where the remainder reaches 0 between the two reads and a
+     * grantable repair is dropped.
+     */
+    @Synchronized
+    fun claimOrDefer(nowMs: Long): Claim =
+        when (claim(nowMs)) {
+            Decision.REATTACH -> Claim.Now
+            Decision.COOLING_DOWN -> Claim.After(remainingCooldownMs(nowMs))
+            Decision.GIVE_UP_NOW -> Claim.Refused(firstRefusal = true)
+            Decision.GIVEN_UP -> Claim.Refused(firstRefusal = false)
+        }
 
     /**
      * How much of the cooldown is left at [nowMs], or 0 when a claim would be granted now.
