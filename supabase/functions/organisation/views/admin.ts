@@ -8,7 +8,7 @@
  */
 
 import { esc, scrollable } from "../utils/html.ts"
-import { csrfField, layout, tabs } from "./layout.ts"
+import { COPY_BEHAVIOUR, csrfField, layout, tabs } from "./layout.ts"
 import { formatDate } from "./org.ts"
 import { CSRF_FIELD } from "../utils/csrf.ts"
 import type { OrgDetail, OrgDomain, OrgInvite, OrgMember, OrgRole } from "../services/org.ts"
@@ -42,6 +42,8 @@ export function adminPage(options: AdminPageOptions): string {
   return layout({
     title: `${org.name} configuration - BOSS`,
     nonce,
+    // Only this page renders `data-copy` buttons, so only this page carries the script.
+    script: COPY_BEHAVIOUR,
     banner: banner ?? null,
     body: `
 <header class="page">
@@ -68,9 +70,15 @@ ${domainsCard(action, csrf, domains)}`,
  * bearer credential, and a link invites a middle-click that would open it in
  * this browser.
  *
- * No `onfocus="this.select()"`, and no copy button. The CSP is
- * `script-src 'nonce-...'`, which blocks inline event handlers outright, so
- * either would be dead markup that looks like it works.
+ * No `onfocus="this.select()"`: the CSP is `script-src 'nonce-...'`, which blocks
+ * inline event handlers outright, so it would be dead markup that looks like it
+ * works.
+ *
+ * It has no copy button either, but that is now a CHOICE rather than a
+ * constraint. This page carries COPY_BEHAVIOUR for the DNS records, so a
+ * `data-copy` button here would work today - the reason it was ruled out (no
+ * scripting) stopped being true. Worth adding; deliberately not folded into the
+ * DNS change.
  */
 function newInviteCard(url: string): string {
   return `
@@ -392,6 +400,52 @@ function invitesCard(
 </section>`
 }
 
+/**
+ * The TXT record, as three copyable fields rather than one string.
+ *
+ * It used to render as `<name> TXT <value>` in a single span. That reads fine and is useless to
+ * the person holding it: every DNS registrar asks for the host and the value in SEPARATE inputs,
+ * so a one-line blob has to be picked apart by hand, and selecting part of a long token with a
+ * mouse is exactly where a truncated record comes from. A record that fails to verify because a
+ * character was dropped looks identical to one that has not propagated yet.
+ *
+ * The copy button carries the value in `data-copy` rather than reading the element's text, so what
+ * lands on the clipboard is the record even if CSS wraps or truncates what is drawn.
+ *
+ * Type is shown but has no button: "TXT" is three characters and is usually a dropdown anyway.
+ */
+function dnsRecord(domain: OrgDomain): string {
+  return `
+      <div class="dns">
+        <div class="dns-row">
+          <span class="dns-key">Name</span>
+          <span class="pill mono">${esc(domain.dns_record_name)}</span>
+          ${copyButton(domain.dns_record_name, "name")}
+        </div>
+        <div class="dns-row">
+          <span class="dns-key">Type</span>
+          <span class="pill mono">TXT</span>
+        </div>
+        <div class="dns-row">
+          <span class="dns-key">Value</span>
+          <span class="pill mono">${esc(domain.dns_record_value)}</span>
+          ${copyButton(domain.dns_record_value, "value")}
+        </div>
+      </div>`
+}
+
+/**
+ * A copy control.
+ *
+ * `type="button"` is load-bearing: these sit in a table whose other cells hold POST forms, and a
+ * button that defaulted to `submit` would be one stray Enter away from verifying or removing a
+ * domain. The aria-label distinguishes the two buttons in a row, which both read "Copy".
+ */
+function copyButton(value: string, what: string): string {
+  return `<button type="button" class="secondary copy" data-copy="${esc(value)}"` +
+    ` aria-label="Copy the DNS record ${esc(what)}">Copy</button>`
+}
+
 function domainsCard(action: string, csrf: string, domains: OrgDomain[]): string {
   const rows = domains.length === 0
     ? '<tr><td colspan="4" class="empty">No domains claimed.</td></tr>'
@@ -405,11 +459,7 @@ function domainsCard(action: string, csrf: string, domains: OrgDomain[]): string
         ? '<span class="pill ok">verified</span>'
         : '<span class="pill warn">unverified</span>'
     }</td>
-      <td>${
-      domain.verified ? "" : `<span class="mono">${esc(domain.dns_record_name)} TXT ${
-        esc(domain.dns_record_value)
-      }</span>`
-    }</td>
+      <td>${domain.verified ? "" : dnsRecord(domain)}</td>
       <td>
         ${
       domain.verified ? "" : `
