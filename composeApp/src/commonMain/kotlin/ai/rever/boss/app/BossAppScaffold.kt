@@ -3,6 +3,7 @@ package ai.rever.boss.app
 import ai.rever.boss.components.bars.horizontal.BossBottomBar
 import ai.rever.boss.components.bars.horizontal.BossTitleBar
 import ai.rever.boss.components.bars.horizontal.BossTopBar
+import ai.rever.boss.components.bars.isBarVisible
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.overlays.DraggingItemOverlay
@@ -529,6 +530,9 @@ internal fun BossAppScaffold(
                 state = reveal,
                 settings = focusModeSettings,
                 revealOffsetDp = revealOffsetDp,
+                // No strip for a bar switched off in settings: hover cannot bring it back, so the
+                // band would sit dead over live content and, at the top edge, hide the quick actions.
+                barVisible = { edge -> appearance.isBarVisible(edge) },
             )
 
             // Draw the dragging item overlay (ghost) if an item is being dragged

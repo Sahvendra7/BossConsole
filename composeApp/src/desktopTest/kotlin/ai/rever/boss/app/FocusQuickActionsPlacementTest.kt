@@ -154,28 +154,61 @@ class FocusQuickActionsPlacementTest {
     }
 
     @Test
-    fun `a top bar hidden for good puts them on the rail, with focus mode never enabled`() {
-        // The appearance flag is the second way the top bar can be gone. Without it reaching this
-        // function the three actions would be placed NONE and Sign Out would render nowhere.
+    fun `a top bar hidden for good puts them on the rail, at the showTopBar the app really has`() {
+        // `showTopBar = true` because with focus mode off EdgeRevealEffects leaves `shown` true -
+        // that is the only value the scaffold can pass here, and asserting the unreachable `false`
+        // is how the NONE-placement bug shipped past this suite. See FocusModeVisibilityTest.
         val off = FocusModeSettings(enabled = false)
 
         assertEquals(
             FocusQuickActionsPlacement.RIGHT_RAIL,
-            placementOf(off, showTopBar = false, topBarHidden = true),
+            placementOf(off, showTopBar = true, topBarHidden = true),
         )
     }
 
     @Test
     fun `they float when the right strip is hidden for good, not onto a bar that is not there`() {
         // The trap this closes: `hides(RIGHT)` is false when the user hid the strip by preference
-        // rather than through focus mode, so the old test would answer RIGHT_RAIL and hand three
-        // icons to a bar the scaffold is not composing at all.
+        // rather than through focus mode, so without the flag this would answer RIGHT_RAIL and hand
+        // three icons to a bar the scaffold is not composing at all.
         val off = FocusModeSettings(enabled = false)
 
         assertEquals(
             FocusQuickActionsPlacement.FLOATING,
-            placementOf(off, showTopBar = false, topBarHidden = true, rightStripHidden = true),
+            placementOf(off, showTopBar = true, topBarHidden = true, rightStripHidden = true),
         )
+    }
+
+    @Test
+    fun `the reserve is never held for a placement of NONE`() {
+        // The corroborating symptom of the same root cause: rows are computed without showTopBar,
+        // so if the placement says NONE while the reserve says three, the rail keeps three empty
+        // icon rows. Swept across every reachable combination rather than a hand-picked one.
+        val cases =
+            listOf(
+                FocusModeSettings(enabled = false),
+                FocusModeSettings(enabled = true, hideTopBar = true, hideRightSidebar = false),
+                FocusModeSettings(enabled = true, hideTopBar = true, hideRightSidebar = true),
+                FocusModeSettings(enabled = true, hideTopBar = false, hideRightSidebar = true),
+            )
+
+        val flags = listOf(false to false, false to true, true to false, true to true)
+        val combinations = cases.flatMap { settings -> flags.map { settings to it } }
+
+        combinations.forEach { (settings, hidden) ->
+            val (topBarHidden, rightStripHidden) = hidden
+            val showTopBar = !settings.hideTopBar || !settings.enabled
+            val placement = placementOf(settings, showTopBar, topBarHidden, rightStripHidden)
+            val rows = rowsOf(settings, topBarHidden, rightStripHidden)
+            val expected = if (placement == FocusQuickActionsPlacement.RIGHT_RAIL) FOCUS_QUICK_ACTION_COUNT else 0
+
+            assertEquals(
+                expected,
+                rows,
+                "reserved $rows rows for placement $placement " +
+                    "(settings=$settings, topBarHidden=$topBarHidden, rightStripHidden=$rightStripHidden)",
+            )
+        }
     }
 
     @Test

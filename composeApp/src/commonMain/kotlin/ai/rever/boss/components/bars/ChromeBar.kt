@@ -1,6 +1,7 @@
 package ai.rever.boss.components.bars
 
 import ai.rever.boss.components.overlays.ContextMenuItem
+import ai.rever.boss.focusmode.FocusModeEdge
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.MenuActionsHandler
@@ -15,6 +16,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -25,7 +28,7 @@ import kotlinx.coroutines.launch
  * different settings objects. Keeping them separate is what stops a hover strip being laid for an
  * edge that is permanently hidden and has nothing to reveal.
  */
-enum class ChromeBar {
+internal enum class ChromeBar {
     TOP,
     BOTTOM,
     LEFT_STRIP,
@@ -63,6 +66,23 @@ internal fun WindowAppearanceSettings.isBarVisible(bar: ChromeBar): Boolean =
     }
 
 /**
+ * The bar sitting at [edge], for the places that hold a `FocusModeEdge` and need this settings
+ * object - the hover strips, which must not lay a band over an edge whose bar is switched off.
+ *
+ * The two enums stay distinct (see [ChromeBar]) and this is the one seam between them, so the
+ * correspondence is written down once rather than re-derived at each call site.
+ */
+internal fun WindowAppearanceSettings.isBarVisible(edge: FocusModeEdge): Boolean =
+    isBarVisible(
+        when (edge) {
+            FocusModeEdge.TOP -> ChromeBar.TOP
+            FocusModeEdge.BOTTOM -> ChromeBar.BOTTOM
+            FocusModeEdge.LEFT -> ChromeBar.LEFT_STRIP
+            FocusModeEdge.RIGHT -> ChromeBar.RIGHT_STRIP
+        },
+    )
+
+/**
  * Right-click menu shared by the top bar, the bottom bar and both icon strips.
  *
  * Replaces the two placeholder entries the top bar carried since it was written - an "Edit" and a
@@ -79,14 +99,22 @@ internal fun WindowAppearanceSettings.isBarVisible(bar: ChromeBar): Boolean =
  * the browser's native surface on Windows. Leading icons are fine and do not disqualify it.
  */
 @Composable
-fun rememberBarContextMenuItems(bar: ChromeBar): List<ContextMenuItem> {
+internal fun rememberBarContextMenuItems(bar: ChromeBar): List<ContextMenuItem> {
     val windowId = LocalWindowId.current
     val scope = rememberCoroutineScope()
-    val appearance by WindowAppearanceSettingsManager.currentSettings.collectAsState()
-    val focusMode by FocusModeSettingsManager.currentSettings.collectAsState()
-    val focusEnabled = focusMode.enabled
 
-    return remember(bar, windowId, appearance, focusEnabled, scope) {
+    // Only the focus-mode flag is collected, because only it changes an item's TEXT. The appearance
+    // settings are read at click time from `currentSettings.value` instead, which is what the two
+    // neighbouring writers of this same store do (`BossWindow`'s View checkboxes and the
+    // `Customize Sidebar…` repair in `BossAppMenuActionEffects`). Composing a snapshot into the
+    // lambda would let a click on an already-composed menu write back a stale object and revert a
+    // concurrent change from Settings or another window - and keying the remember on it rebuilt all
+    // four menus whenever anything unrelated in that store moved, tab sizing included.
+    val focusEnabled by
+        remember { FocusModeSettingsManager.currentSettings.map { it.enabled }.distinctUntilChanged() }
+            .collectAsState(initial = FocusModeSettingsManager.currentSettings.value.enabled)
+
+    return remember(bar, windowId, focusEnabled, scope) {
         listOf(
             ContextMenuItem(
                 text = "Hide ${bar.displayName()}",
@@ -94,7 +122,8 @@ fun rememberBarContextMenuItems(bar: ChromeBar): List<ContextMenuItem> {
                 onClick = {
                     scope.launch {
                         WindowAppearanceSettingsManager.updateSettings(
-                            appearance.withBarVisible(bar, visible = false),
+                            WindowAppearanceSettingsManager.currentSettings.value
+                                .withBarVisible(bar, visible = false),
                         )
                     }
                 },

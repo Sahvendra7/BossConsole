@@ -113,11 +113,12 @@ private fun BarsSection() {
         }
 
         SettingsInfoRow(
-            label = "Focus Mode",
-            value = "Separate",
+            label = "Applies to",
+            value = "All windows",
             description =
-                "These stay hidden until you switch them back on. Focus Mode hides bars " +
-                    "temporarily and reveals them again when you move the pointer to the edge.",
+                "These stay hidden until you switch them back on, in every window - hiding a bar " +
+                    "from its right-click menu hides it everywhere. Focus Mode is separate: it " +
+                    "hides bars temporarily and reveals them when you move the pointer to the edge.",
         )
     }
 }
