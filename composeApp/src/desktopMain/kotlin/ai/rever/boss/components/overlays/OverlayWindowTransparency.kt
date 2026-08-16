@@ -77,7 +77,14 @@ private val logger = BossLogger.forComponent("OverlayTransparency")
  * [kind] names the overlay ("modal", "popup", "hud", "ghost", "corner") so a line can be tied to
  * what was on screen; all five kinds share this one code path.
  *
- * INFO rather than DEBUG deliberately: the healthy samples are as load-bearing as the broken ones,
+ * DEBUG, not INFO. It ran at INFO for the investigation, where the healthy samples were as
+ * load-bearing as the broken ones - only the ratio between them said anything, and the whole
+ * diagnosis came from a sample that read healthy on a window that was visibly grey. That question is
+ * answered, and three lines per overlay open is not something to ship on by default. Turn it back up
+ * with `BOSS_LOG_LEVEL=DEBUG` (or `-Dboss.log.level=DEBUG`) if this recurs; the sampling is kept
+ * precisely so a recurrence does not have to be re-instrumented from scratch.
+ *
+ * The old rationale, kept because it is the reason the samples exist at all:
  * because the failure is intermittent and only the ratio between them says anything. Drop it once
  * the question above is answered.
  */
@@ -225,7 +232,7 @@ private fun logOverlayTransparency(
         // precisely the state under suspicion (Compose sets the layer background to null on the
         // Metal path) and hide the opaque colour that is actually being painted.
         val layerBackground = layer?.background
-        logger.info(
+        logger.debug(
             LogCategory.UI,
             "Overlay window transparency sample",
             mapOf(
