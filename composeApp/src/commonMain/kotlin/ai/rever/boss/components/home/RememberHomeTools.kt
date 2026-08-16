@@ -10,6 +10,7 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,16 +30,21 @@ private val logger = BossLogger.forComponent("HomeTools")
 internal fun rememberHomeTools(): List<HomeTool> {
     val tabRegistry = LocalTabRegistry.current
     val panelRegistry = LocalPanelRegistry.current
-    val pluginStates = LocalPluginStates.current
+    val pluginStates by LocalPluginStates.current?.collectAsState()
+        ?: remember { mutableStateOf(emptyMap()) }
     val access = LocalRegistryAccess.current
 
+    // Observed, not read once: this screen is what an empty panel renders, so on a cold start it
+    // composes before the store provider exists. Keying the fetch on the provider means the
+    // discovery half fills in when the store comes up instead of staying empty until something
+    // happens to remount the screen.
+    val catalogProvider by HomeCatalogAccess.provider.collectAsState()
     var discoverable by remember { mutableStateOf<List<HomeStorePluginInput>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        // One fetch per mount. The store's list changes far more slowly than this screen is
-        // opened, and a failure yields an empty list rather than an error - the grid is still
-        // everything that is installed, which is already more than the screen this replaces
-        // could show.
-        discoverable = HomeCatalogAccess.current()?.discoverable().orEmpty()
+    LaunchedEffect(catalogProvider) {
+        // The provider caches its result for the session, so a remount does not re-fetch. A
+        // failure yields an empty list rather than an error - the grid is still everything that is
+        // installed, which is already more than the screen this replaces could show.
+        discoverable = catalogProvider?.discoverable().orEmpty()
     }
 
     val tabTypes =

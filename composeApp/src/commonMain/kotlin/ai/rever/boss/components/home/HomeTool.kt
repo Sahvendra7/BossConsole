@@ -23,7 +23,6 @@ data class HomeTool(
      */
     val id: String,
     val label: String,
-    val description: String,
     val icon: HomeToolIcon,
     val launch: HomeToolLaunch,
     /** The plugin that owns this tool, or null for a host action that needs no plugin. */
@@ -84,11 +83,13 @@ sealed interface HomeToolLaunch {
     /**
      * Install this plugin from the store, after which it becomes one of the above.
      *
-     * [version] is the store's latest, so the tile can say what it would install.
+     * Carries no version: `HomeCatalogProvider.install` takes only an id and resolves the latest
+     * itself, and a version nothing reads is the dead-field pattern the rest of this screen
+     * removes. Same reason there is no `description` on [HomeTool] - if either is ever shown, a
+     * tooltip is where they belong.
      */
     data class Install(
         val pluginId: String,
-        val version: String,
     ) : HomeToolLaunch
 
     /** A host action that owns no plugin: new terminal, open project, settings. */

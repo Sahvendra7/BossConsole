@@ -80,21 +80,22 @@ object RecentFilesManager {
                 if (settingsFile.exists()) {
                     val content = settingsFile.readText()
                     val data = json.decodeFromString<RecentFilesData>(content)
-                    // Drop files that are no longer on disk, the way
-                    // ProjectState.loadRecentProjects already prunes missing directories.
-                    // Without it a deleted or moved file stayed on the home screen and opened
-                    // as an empty editor - fileExists existed for exactly this and had no
-                    // callers. Already on Dispatchers.IO, so the stat calls belong here.
+                    // Hide files that are no longer on disk, so a deleted or moved one stops
+                    // opening as an empty editor - fileExists existed for exactly this and had
+                    // no callers. Already on Dispatchers.IO, so the stat calls belong here.
+                    //
+                    // **Filtered in memory, deliberately not persisted.** `File.exists()` is also
+                    // false for an unmounted volume, a disconnected share, or a container mount
+                    // that has not come up yet - all normal at login, which is exactly when this
+                    // runs. Writing the pruned list back would turn "not here right now" into
+                    // permanent loss. The entry stays in the file and reappears when the mount
+                    // does; the only cost is re-checking on the next launch.
                     val present = data.files.filter { fileExists(it.path) }
                     _recentFiles.value = present
-                    if (present.size != data.files.size) {
-                        // Persist the pruned list rather than re-checking every launch.
-                        saveImmediately()
-                    }
                     recentFilesLogger.debug(
                         LogCategory.FILE,
                         "Loaded recent files",
-                        mapOf("count" to present.size, "pruned" to (data.files.size - present.size)),
+                        mapOf("count" to present.size, "hidden" to (data.files.size - present.size)),
                     )
                 }
             } catch (e: Exception) {

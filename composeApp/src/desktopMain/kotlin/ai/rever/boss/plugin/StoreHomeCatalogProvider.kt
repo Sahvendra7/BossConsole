@@ -96,7 +96,6 @@ class StoreHomeCatalogProvider(
         HomeStorePluginInput(
             pluginId = row.pluginId,
             displayName = row.displayName,
-            description = row.description,
             version = row.version,
             // Straight through from `plugins.icon_url`. The host holds no icon table for
             // not-yet-installed plugins: this column is the source, and a blank one renders as the

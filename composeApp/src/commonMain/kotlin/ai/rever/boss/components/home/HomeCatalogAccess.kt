@@ -2,6 +2,9 @@ package ai.rever.boss.components.home
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 private val logger = BossLogger.forComponent("HomeCatalogAccess")
 
@@ -44,8 +47,22 @@ interface HomeCatalogProvider {
  * than a broken one.
  */
 object HomeCatalogAccess {
-    @Volatile
-    private var provider: HomeCatalogProvider? = null
+    private val _provider = MutableStateFlow<HomeCatalogProvider?>(null)
+
+    /**
+     * Observable, because the home screen can mount before this is populated.
+     *
+     * A plain nullable field made the discovery half of the grid a race. The screen is what an
+     * empty panel renders, so on a cold start it composes before `DefaultPlugin` has reached
+     * `PluginLoaderDelegateSetup.register` and before `PluginStoreSetup` has a repository. A
+     * `LaunchedEffect(Unit)` then read null, `.orEmpty()` swallowed it, and nothing re-ran the
+     * effect - so no Install tiles appeared until the panel happened to remount. It looked like it
+     * worked only because closing a tab remounts the screen.
+     *
+     * Collecting this and keying the fetch on it means the grid fills in as soon as the store
+     * exists, with no polling. Same pattern as `HomeToolAccess`.
+     */
+    val provider: StateFlow<HomeCatalogProvider?> = _provider.asStateFlow()
 
     /**
      * Called from desktop startup. **First caller wins.**
@@ -60,14 +77,14 @@ object HomeCatalogAccess {
      */
     fun initialize(implementation: HomeCatalogProvider) {
         synchronized(this) {
-            if (provider != null) {
+            if (_provider.value != null) {
                 logger.debug(LogCategory.SYSTEM, "HomeCatalogAccess already initialized; keeping the first provider")
                 return
             }
-            provider = implementation
+            _provider.value = implementation
         }
         logger.debug(LogCategory.SYSTEM, "HomeCatalogAccess initialized")
     }
 
-    fun current(): HomeCatalogProvider? = provider
+    fun current(): HomeCatalogProvider? = _provider.value
 }

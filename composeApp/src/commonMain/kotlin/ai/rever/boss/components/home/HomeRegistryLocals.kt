@@ -5,6 +5,7 @@ import ai.rever.boss.components.plugin.registries.RegistryAccess
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.TabRegistry
 import androidx.compose.runtime.compositionLocalOf
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The registries the home screen derives its tool grid from, reached as composition locals.
@@ -24,15 +25,19 @@ val LocalTabRegistry = compositionLocalOf<TabRegistry?> { null }
 val LocalPanelRegistry = compositionLocalOf<PanelRegistry?> { null }
 
 /**
- * The plugin manager's current entries, for deciding which store plugins are already installed.
+ * The plugin manager's entries, for deciding which store plugins are already installed.
  *
- * A snapshot map rather than the manager itself: the only question asked of it is which ids are
- * installed, and the answer runs through
- * `PluginDependencyResolution.installedAndOnDisk` - the codebase's single definition of that,
- * which AGENTS.md records as having broken the dependency prompt once when two callers
- * disagreed.
+ * The **flow**, not a collected snapshot. Providing the snapshot meant collecting it in
+ * `BossAppCompositionLocals`, so every plugin state transition invalidated the window scaffold and
+ * re-ran its `CompositionLocalProvider` body - dozens of times during startup with 33 plugins, and
+ * again on every install, enable and reload. Handing over the flow confines that to the one screen
+ * that reads it.
+ *
+ * The only question asked of it is which ids are installed, and the answer runs through
+ * `PluginDependencyResolution.installedAndOnDisk` - the codebase's single definition of that, which
+ * AGENTS.md records as having broken the dependency prompt once when two callers disagreed.
  */
-val LocalPluginStates = compositionLocalOf<Map<String, DynamicPluginInfo>> { emptyMap() }
+val LocalPluginStates = compositionLocalOf<StateFlow<Map<String, DynamicPluginInfo>>?> { null }
 
 /** The current user's RBAC snapshot, so gated tools appear and disappear live. */
 val LocalRegistryAccess = compositionLocalOf { RegistryAccess() }

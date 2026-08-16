@@ -229,6 +229,12 @@ object RecentBrowserPagesManager {
             ),
         )
 
+    /**
+     * Canonical keys of the padding suggestions, which are the only urls worth remembering a
+     * dismissal for. Bounds `dismissedSuggestions` to the size of that list.
+     */
+    private val promoKeys: Set<String> by lazy { POPULAR_DEV_SITES.map { canonicalUrlKey(it.url) }.toSet() }
+
     init {
         scope.launch {
             loadAsync()
@@ -248,7 +254,10 @@ object RecentBrowserPagesManager {
                     val content = settingsFile.readText()
                     val data = json.decodeFromString<RecentBrowserPagesData>(content)
                     _recentPages.value = data.pages
-                    _dismissedSuggestions.value = data.dismissedSuggestions.toSet()
+                    // Intersected with the current promo list: a file written before dismissals
+                    // were bounded can hold an entry per page ever removed, and nothing else would
+                    // ever drop them.
+                    _dismissedSuggestions.value = data.dismissedSuggestions.toSet() intersect promoKeys
                     logger.debug(LogCategory.SYSTEM, "Loaded recent pages", mapOf("count" to data.pages.size))
                 } else {
                     // Bootstrap from existing browser history if available
@@ -425,7 +434,14 @@ object RecentBrowserPagesManager {
         // StateFlow writes, and `scheduleSave` launches its own debounced job, so the coroutine
         // bought nothing and cost the user a dispatch before the card disappeared.
         _recentPages.update { pages -> pages.filter { it.url != url } }
-        _dismissedSuggestions.update { it + canonicalUrlKey(url) }
+        // Recorded only for a padding suggestion. A recorded page is excluded by being removed
+        // from `_recentPages` above, so adding it here achieved nothing except growing a persisted
+        // list with no cap - one entry for every page the user ever dismissed, while `pages`
+        // itself is bounded at MAX_PAGES.
+        val key = canonicalUrlKey(url)
+        if (key in promoKeys) {
+            _dismissedSuggestions.update { it + key }
+        }
         scheduleSave()
     }
 
@@ -492,7 +508,7 @@ object RecentBrowserPagesManager {
         // only while recentPages is non-empty.
         // Unioned, not replaced: `removePage` also records real pages it dismissed, and
         // overwriting the set would discard those and let them return as padding later.
-        _dismissedSuggestions.update { it + POPULAR_DEV_SITES.map { site -> canonicalUrlKey(site.url) } }
+        _dismissedSuggestions.update { it + promoKeys }
         scheduleSave()
     }
 

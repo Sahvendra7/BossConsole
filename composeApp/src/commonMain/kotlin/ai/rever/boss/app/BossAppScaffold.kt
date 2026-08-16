@@ -158,12 +158,9 @@ internal fun BossAppCompositionLocals(
 
     // For the home screen's tool grid. Both are read reactively so a plugin loading, unloading,
     // or the user's role changing re-derives the grid without a relaunch.
-    val pluginStates by
-        state.currentDefaultPlugin
-            ?.dynamicPluginManager
-            ?.pluginStates
-            ?.collectAsState()
-            ?: remember { mutableStateOf(emptyMap()) }
+    // The flow, not a collected value: collecting here would invalidate this scaffold on every
+    // plugin state transition. `rememberHomeTools` collects it, so only the home screen recomposes.
+    val pluginStates = state.currentDefaultPlugin?.dynamicPluginManager?.pluginStates
     val registryAccess by HomeToolAccess.access.collectAsState()
 
     CompositionLocalProvider(

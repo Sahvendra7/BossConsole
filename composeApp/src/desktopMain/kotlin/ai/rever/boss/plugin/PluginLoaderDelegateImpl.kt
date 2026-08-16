@@ -1,6 +1,5 @@
 package ai.rever.boss.plugin
 
-import ai.rever.boss.components.home.HomeCatalogAccess
 import ai.rever.boss.components.plugin.DynamicPluginInfo
 import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MicrokernelRuntime
@@ -63,24 +62,6 @@ class PluginLoaderDelegateImpl(
      * paths report and, more importantly, which must not.
      */
     private val dependencyReporter = MissingDependencyReporter.forManager(dynamicPluginManager)
-
-    init {
-        // Publish the home screen's store access from here, because this is where a manager
-        // exists and the screen (commonMain) cannot reach one. First delegate constructed wins.
-        //
-        // One provider for every window even though there is one manager per window: the store
-        // is process-global, so discovery is identical, and installs are coalesced process-wide
-        // inside StoreMissingDependencyInstaller. What follows from that is the limitation
-        // MissingDependencyPrompt already documents - a plugin installed from one window's grid
-        // loads into the manager that started the install, so another window may not show it
-        // until relaunch.
-        HomeCatalogAccess.initialize(
-            StoreHomeCatalogProvider(
-                repository = { PluginStoreSetup.remoteRepository },
-                installer = MissingDependencyReporter.installerFor(dynamicPluginManager),
-            ),
-        )
-    }
 
     /**
      * Report the plugin's unmet dependencies (unless this is a reload) and describe it for the

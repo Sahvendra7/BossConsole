@@ -48,7 +48,6 @@ class HomeToolCatalogTest {
     ) = HomeStorePluginInput(
         pluginId = pluginId,
         displayName = displayName,
-        description = "",
         version = "1.0.0",
         iconUrl = iconUrl,
         requiresAdmin = requiresAdmin,
@@ -110,10 +109,7 @@ class HomeToolCatalogTest {
 
         val k8s = tools.single()
         assertFalse(k8s.isReady)
-        assertEquals(
-            HomeToolLaunch.Install("ai.rever.boss.plugin.dynamic.kubernetes", "1.0.0"),
-            k8s.launch,
-        )
+        assertEquals(HomeToolLaunch.Install("ai.rever.boss.plugin.dynamic.kubernetes"), k8s.launch)
     }
 
     @Test

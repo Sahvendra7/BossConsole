@@ -68,14 +68,18 @@ internal fun HomeToolGrid(
     // (an offline store, or everything already installed) "All / Installed / Available" is three
     // chips for one answer.
     val showFilter = tools.any { it.isReady } && tools.any { !it.isReady }
-    val visible = tools.filter { filter.accepts(it) }
+    // With the chips hidden there is no control to change the filter, so anything but ALL would
+    // strand the grid: install the last available plugin while AVAILABLE is selected and the chips
+    // disappear over an empty grid with no way back.
+    val effective = if (showFilter) filter else HomeToolFilter.ALL
+    val visible = tools.filter { effective.accepts(it) }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(space.md),
     ) {
         if (showFilter) {
-            FilterChips(selected = filter, onSelect = onSelectFilter)
+            FilterChips(selected = effective, onSelect = onSelectFilter)
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {

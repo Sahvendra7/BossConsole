@@ -3,6 +3,7 @@ package ai.rever.boss.app
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.events.DashboardEventBus
+import ai.rever.boss.components.events.DashboardOpenTabTypeEvent
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.GitTerminalEventBus
 import ai.rever.boss.components.events.NavigationTargetBus
@@ -17,6 +18,7 @@ import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.components.plugin.PluginDependencyEventBus
 import ai.rever.boss.components.plugin.resolveRegisteredPanelId
 import ai.rever.boss.components.window_panel.SplitOrientation
+import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.workspaces.PredefinedWorkspaces
 import ai.rever.boss.components.workspaces.WorkspaceSerializer
 import ai.rever.boss.components.workspaces.applyWorkspace
@@ -29,6 +31,7 @@ import ai.rever.boss.plugin.api.Panel.Companion.left
 import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.plugin.api.PanelInfo
+import ai.rever.boss.plugin.api.TabTypeInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.project.DefaultWorkingDirectory
@@ -43,7 +46,9 @@ import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.utils.awaitRegistryCondition
+import ai.rever.boss.utils.logging.ComponentLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.window.WindowProjectState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -539,22 +544,38 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                             // The fast path stays inline, so ordinary toggles keep their existing
                             // sequential behaviour and only the already-degenerate case defers.
                             effectScope.launch {
-                                awaitRegistryCondition(
-                                    state.panelRegistry::addChangeListener,
-                                    state.panelRegistry::removeChangeListener,
-                                ) { findPanelInfo() != null }
-                                val late = findPanelInfo()
-                                if (late == null) {
+                                // Its own runCatching: the enclosing try/catch is lexical, and a
+                                // child coroutine's body runs outside it. Without this, a throw
+                                // from `activate` (which ends in plugin-supplied `onClick`) would
+                                // reach the LaunchedEffect job, cancel the collector, and stop
+                                // panel toggling in this window for the rest of its life -
+                                // silently. Every path through this handler was caught before the
+                                // wait was deferred; this keeps that true.
+                                runCatching {
+                                    awaitRegistryCondition(
+                                        state.panelRegistry::addChangeListener,
+                                        state.panelRegistry::removeChangeListener,
+                                    ) { findPanelInfo() != null }
+                                    val late = findPanelInfo()
+                                    if (late == null) {
+                                        logger.warn(
+                                            LogCategory.UI,
+                                            "Dropping panel toggle event - panel never registered",
+                                            mapOf(
+                                                "panelId" to event.panelId.panelId,
+                                                "pluginId" to event.panelId.pluginId,
+                                            ),
+                                        )
+                                    } else {
+                                        activate(late)
+                                    }
+                                }.onFailure { error ->
                                     logger.warn(
                                         LogCategory.UI,
-                                        "Dropping panel toggle event - panel never registered",
-                                        mapOf(
-                                            "panelId" to event.panelId.panelId,
-                                            "pluginId" to event.panelId.pluginId,
-                                        ),
+                                        "Deferred panel toggle failed",
+                                        mapOf("panelId" to event.panelId.panelId),
+                                        error = error,
                                     )
-                                } else {
-                                    activate(late)
                                 }
                             }
                         }
@@ -575,6 +596,9 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
     // Listen for Dashboard events from Fluck tabs (when Dashboard is shown in empty browser tabs)
     // Issue #506: Filter by window to prevent events affecting all windows
     LaunchedEffect(splitViewState, windowId) {
+        // Captured so a deferred registry wait can run as a child of this effect rather than on
+        // the collector; see the openTabTypeEvents handler below.
+        val tabEffectScope = this
         // Handle file open events.
         //
         // Delegated to FileEventBus rather than calling openFileInActivePanel directly,
@@ -751,60 +775,44 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                             (event.typePluginId.isBlank() || candidate.typeId.pluginId == event.typePluginId)
                     }
 
-                var info = typeInfo()
-                if (info == null) {
-                    awaitRegistryCondition(
-                        state.tabRegistry::addChangeListener,
-                        state.tabRegistry::removeChangeListener,
-                    ) { typeInfo() != null }
-                    info = typeInfo()
-                }
-                if (info == null) {
-                    logger.warn(
-                        LogCategory.UI,
-                        "Dropping open tab type event - tab type never registered",
-                        mapOf("typeId" to event.typeId),
-                    )
-                    return@onEach
-                }
-                // Plugin code, so crash-isolated: a throwing createTabInfo must not take
-                // down the window that asked. Null means the plugin rejected the input.
-                val tabInfo =
-                    try {
-                        info.createTabInfo(
-                            event.input.trim(),
-                            NewTabContext(
-                                projectPath = windowProjectState.selectedProject.value.path,
-                                windowId = windowId,
-                            ),
-                        )
-                    } catch (e: Exception) {
-                        logger.warn(
-                            LogCategory.UI,
-                            "Plugin createTabInfo failed for a home screen tool",
-                            mapOf("typeId" to event.typeId),
-                            error = e,
-                        )
-                        null
+                // Deferred when the type is not registered yet, for the reason the panel handler
+                // documents: `onEach` is one sequential collector, so awaiting inline lets one
+                // event for a type that never registers hold every later tool click for the full
+                // 15s timeout, and then start suspending `emit` once the buffer fills. The two
+                // handlers deliberately share this shape rather than teaching opposite lessons.
+                val immediate = typeInfo()
+                if (immediate == null) {
+                    tabEffectScope.launch {
+                        // runCatching for the same reason as the panel handler's child: this body
+                        // runs outside the enclosing scope's error handling, and an escape would
+                        // cancel the collector and stop every later tool click in this window.
+                        runCatching {
+                            awaitRegistryCondition(
+                                state.tabRegistry::addChangeListener,
+                                state.tabRegistry::removeChangeListener,
+                            ) { typeInfo() != null }
+                            val late = typeInfo()
+                            if (late == null) {
+                                logger.warn(
+                                    LogCategory.UI,
+                                    "Dropping open tab type event - tab type never registered",
+                                    mapOf("typeId" to event.typeId),
+                                )
+                            } else {
+                                openRegisteredTabType(late, event, splitViewState, windowProjectState, logger)
+                            }
+                        }.onFailure { error ->
+                            logger.warn(
+                                LogCategory.UI,
+                                "Deferred tab type open failed",
+                                mapOf("typeId" to event.typeId),
+                                error = error,
+                            )
+                        }
                     }
-                if (tabInfo == null) {
-                    StatusMessageManager.showMessage("Could not open ${info.displayName}")
                     return@onEach
                 }
-                // Reported, not dropped: everything else in this handler says why it failed, and a
-                // click that opens no tab and logs nothing is the class of defect this whole
-                // change exists to remove.
-                val tabs = splitViewState.getActiveTabsComponent()
-                if (tabs == null) {
-                    logger.warn(
-                        LogCategory.UI,
-                        "Could not open a home screen tool - no active tabs component",
-                        mapOf("typeId" to event.typeId),
-                    )
-                    StatusMessageManager.showMessage("Could not open ${info.displayName} here")
-                } else {
-                    tabs.addTab(tabInfo)
-                }
+                openRegisteredTabType(immediate, event, splitViewState, windowProjectState, logger)
             }.launchIn(this)
     }
 
@@ -855,5 +863,57 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                     state.showNewTabDialog = true
                 }
             }
+    }
+}
+
+/**
+ * Build a plugin's `TabInfo` and add it to the active panel.
+ *
+ * Extracted so the immediate and the deferred path through `openTabTypeEvents` cannot drift: they
+ * differ only in whether the type was already registered.
+ */
+private fun openRegisteredTabType(
+    info: TabTypeInfo,
+    event: DashboardOpenTabTypeEvent,
+    splitViewState: SplitViewState,
+    windowProjectState: WindowProjectState,
+    logger: ComponentLogger,
+) {
+    // Plugin code, so crash-isolated: a throwing createTabInfo must not take down the window that
+    // asked. Null means the plugin rejected the input.
+    val tabInfo =
+        try {
+            info.createTabInfo(
+                event.input.trim(),
+                NewTabContext(
+                    projectPath = windowProjectState.selectedProject.value.path,
+                    windowId = event.sourceWindowId,
+                ),
+            )
+        } catch (e: Exception) {
+            logger.warn(
+                LogCategory.UI,
+                "Plugin createTabInfo failed for a home screen tool",
+                mapOf("typeId" to event.typeId),
+                error = e,
+            )
+            null
+        }
+    if (tabInfo == null) {
+        StatusMessageManager.showMessage("Could not open ${info.displayName}")
+        return
+    }
+    // Reported, not dropped: everything else in this handler says why it failed, and a click that
+    // opens no tab and logs nothing is the class of defect this whole change exists to remove.
+    val tabs = splitViewState.getActiveTabsComponent()
+    if (tabs == null) {
+        logger.warn(
+            LogCategory.UI,
+            "Could not open a home screen tool - no active tabs component",
+            mapOf("typeId" to event.typeId),
+        )
+        StatusMessageManager.showMessage("Could not open ${info.displayName} here")
+    } else {
+        tabs.addTab(tabInfo)
     }
 }

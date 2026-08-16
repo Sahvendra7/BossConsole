@@ -50,7 +50,6 @@ data class HomePanelInput(
 data class HomeStorePluginInput(
     val pluginId: String,
     val displayName: String,
-    val description: String,
     val version: String,
     /**
      * `plugins.icon_url`, passed through verbatim.
@@ -133,7 +132,6 @@ object HomeToolCatalog {
                         // silently drop one of them here.
                         id = "tab:${type.typePluginId}:${type.typeId}",
                         label = type.displayName,
-                        description = "",
                         icon = HomeToolIcon.Vector(type.icon),
                         launch = HomeToolLaunch.OpenTab(type.typeId, type.typePluginId, type.needsInput),
                         pluginId = type.ownerPluginId,
@@ -148,7 +146,6 @@ object HomeToolCatalog {
                     // pair, and the panel registry is keyed on the whole of it.
                     id = "panel:${panel.panelId.pluginId}:${panel.panelId.panelId}",
                     label = panel.label,
-                    description = "",
                     icon = HomeToolIcon.Vector(panel.icon),
                     launch = HomeToolLaunch.OpenPanel(panel.panelId),
                     pluginId = panel.ownerPluginId,
@@ -183,11 +180,10 @@ object HomeToolCatalog {
                     HomeTool(
                         id = row.pluginId,
                         label = label,
-                        description = row.description,
                         // Straight from the store row. Blank resolves to initials at render time,
                         // so a populated icon_url starts appearing with no client change.
                         icon = HomeToolIcon.FromStore(row.iconUrl, initialsFor(label)),
-                        launch = HomeToolLaunch.Install(row.pluginId, row.version),
+                        launch = HomeToolLaunch.Install(row.pluginId),
                         pluginId = row.pluginId,
                     )
                 }.toList()
@@ -214,7 +210,6 @@ object HomeToolCatalog {
                     HomeHostAction.SETTINGS -> "Settings"
                     HomeHostAction.SEARCH -> "Search"
                 },
-            description = "",
             icon = HomeToolIcon.Vector(HomeHostActionIcons.iconFor(action)),
             launch = HomeToolLaunch.HostAction(action),
         )
