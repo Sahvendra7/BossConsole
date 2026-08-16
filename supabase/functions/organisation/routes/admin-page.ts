@@ -35,6 +35,7 @@ const RESULT_MESSAGES: Record<string, string> = {
   domain_verified: "Domain verified.",
   domain_primary: "Primary domain updated.",
   domain_unverified: "The TXT record was not found. DNS changes can take a few minutes.",
+  domain_users_added: "Members added. Everyone with an address at that domain is now in the organisation.",
 }
 
 // invite_created and dns_failed were removed as unreachable: the invite handler renders its

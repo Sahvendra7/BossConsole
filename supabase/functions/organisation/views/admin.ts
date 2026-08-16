@@ -59,7 +59,7 @@ ${pending.length > 0 ? pendingCard(action, csrf, pending) : ""}
 ${membersCard(action, csrf, org, active, roles)}
 ${rolesCard(action, csrf, org, roles)}
 ${invitesCard(action, csrf, invites, roles)}
-${domainsCard(action, csrf, domains)}`,
+${domainsCard(action, csrf, domains, org.slug)}`,
   })
 }
 
@@ -446,7 +446,47 @@ function copyButton(value: string, what: string): string {
     ` aria-label="Copy the DNS record ${esc(what)}">Copy</button>`
 }
 
-function domainsCard(action: string, csrf: string, domains: OrgDomain[]): string {
+/**
+ * "Add the N existing users at this domain."
+ *
+ * Only for a VERIFIED domain, and only when there is somebody to add. A control that
+ * always showed would sit there reading "Add 0 users" on every organisation that has
+ * already adopted its domain, and a disabled button explaining nothing is worse than
+ * no button.
+ *
+ * THE COUNT IS IN THE LABEL, which is the whole of the confirmation step. This adds
+ * people who did not ask, and if the organisation has auto-assign on it also hands
+ * each of them the member role - so the administrator has to see the size of what
+ * they are about to do before pressing, not after. `addable_user_count` comes from
+ * the same predicate the RPC uses, so the number is the number.
+ *
+ * Not styled `danger`: it is a normal administrative action on a domain this
+ * organisation has proved it controls, not a destructive one. The hint under the
+ * table carries the consequence.
+ */
+function addUsersForm(action: string, csrf: string, domain: OrgDomain): string {
+  // Read defensively rather than trusting the declared type, because the deploy order can make it
+  // a lie: this function ships separately from the migration that adds `addable_user_count` to
+  // list_organisation_domains, and against the older database the field is absent. `undefined < 1`
+  // is FALSE, so a naive guard would have rendered "Add undefined existing users" on every
+  // verified domain in the window between the two deploys.
+  const count = typeof domain.addable_user_count === "number" ? domain.addable_user_count : 0
+  if (!domain.verified || count < 1) return ""
+  const label = count === 1 ? "Add 1 existing user" : `Add ${count} existing users`
+  return `
+        <form class="inline" method="post" action="${esc(action)}/domains/add-users">
+          ${csrfField(CSRF_FIELD, csrf)}
+          <input type="hidden" name="domain_id" value="${esc(domain.domain_id)}">
+          <button type="submit" class="secondary">${esc(label)}</button>
+        </form>`
+}
+
+function domainsCard(
+  action: string,
+  csrf: string,
+  domains: OrgDomain[],
+  orgSlug: string,
+): string {
   const rows = domains.length === 0
     ? '<tr><td colspan="4" class="empty">No domains claimed.</td></tr>'
     : domains.map((domain) => `
@@ -478,6 +518,7 @@ function domainsCard(action: string, csrf: string, domains: OrgDomain[]): string
           </form>`
         : ""
     }
+        ${addUsersForm(action, csrf, domain)}
         <form class="inline" method="post" action="${esc(action)}/domains/remove">
           ${csrfField(CSRF_FIELD, csrf)}
           <input type="hidden" name="domain_id" value="${esc(domain.domain_id)}">
@@ -490,6 +531,9 @@ function domainsCard(action: string, csrf: string, domains: OrgDomain[]): string
 <section class="card">
   <h2>Domains</h2>
   <p class="hint">A verified domain lets people with a matching email address find and join this organisation. Add the TXT record, then press Verify.</p>
+  <p class="hint">Once a domain is verified you can also add the accounts that already use it. They become members immediately without being asked, and if new members are given the ${
+    esc(orgSlug)
+  }_user role automatically, anything shared with that role becomes readable by all of them.</p>
   ${scrollable("Domains", `
   <table>
     <thead><tr><th>Domain</th><th>Status</th><th>DNS record</th><th></th></tr></thead>
