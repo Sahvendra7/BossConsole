@@ -419,37 +419,46 @@ internal class BrowserHandleImpl(
     private var viewGeneration by mutableStateOf(0)
 
     /**
-     * True while [Content] is in composition, i.e. while this handle's view is actually on screen.
+     * How many compositions currently show this handle's view.
      *
-     * The frame-stall probe is meaningless without it. Chromium does not run rAF for a page that
-     * is not visible, so a navigation committing in a background tab - or in a handle a plugin
-     * created and never rendered at all - reads "no frame" perfectly correctly, and re-attaching
-     * a view that is not composed repairs nothing while logging a warning that is simply false.
-     * Session restore with a handful of background tabs would be that warning once per tab.
+     * **Ref-counted, not a boolean, for the reason [BrowserVisitTracker.setVisible] spells out**:
+     * the caller is a `DisposableEffect` per composition, and a tab moving between windows tears
+     * down one composition while building another in an order the effect does not control. As a
+     * plain boolean the compose-then-dispose order lands on false while the tab is on screen, and
+     * here that would silently disable the watchdog for exactly the tab the user just dragged,
+     * until they hid and re-showed it. Failing safe is not enough when the failure is invisible.
+     *
+     * The gate itself is needed because Chromium serves no frames to a view that is not on screen:
+     * a commit in a background tab, or in a handle a plugin created and never rendered, reads "no
+     * frame" perfectly correctly, and re-attaching it repairs nothing while logging a warning that
+     * is false. Session restore with N background tabs would be N false warnings per launch.
      */
-    @Volatile private var viewComposed = false
+    private val composedSurfaces =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
 
-    /** Re-attaches performed so far, for the log only. The gate is [ineffectiveReattaches]. */
-    @Volatile private var reattachCount = 0
+    private val viewComposed: Boolean get() = composedSurfaces.get() > 0
 
-    /**
-     * Re-attaches in a row that did not restore painting, against
-     * [BrowserFrameStall.MAX_INEFFECTIVE_REATTACHES]. Reset by any repair that works.
-     */
-    @Volatile private var ineffectiveReattaches = 0
-
-    /** When the last re-attach happened, for [BrowserFrameStall.REATTACH_COOLDOWN_MS]. */
-    @Volatile private var lastReattachAtMs = 0L
-
-    /** Logged once when the cap trips, so the give-up is visible without repeating per navigation. */
-    @Volatile private var reattachCapLogged = false
+    /** Cooldown, give-up counting and the log-once flag, extracted so they are unit-testable. */
+    private val frameStallPolicy = FrameStallPolicy()
 
     /**
      * Waits on the frame-stall probe. Separate from [coBrowseScope] so a co-browse teardown cannot
      * cancel a pending check, and on Default so [withTimeoutOrNull] can actually fire - the
      * blocking round-trip itself runs on [frameProbeDispatcher], never here and never on the EDT.
+     *
+     * Carries a handler for the same reason [contextMenuScope] does: the body hops to Main during
+     * what may be window teardown, and an escaping failure would otherwise reach the default
+     * handler and print to stderr, bypassing BossLogger.
      */
-    private val frameStallScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val frameStallScope =
+        CoroutineScope(
+            SupervisorJob() +
+                Dispatchers.Default +
+                CoroutineExceptionHandler { _, error ->
+                    logger.warn(LogCategory.BROWSER, "Frame-stall check failed", error = error)
+                },
+        )
 
     /**
      * Off-thread executor for the beacon round-trip, mirroring [contextMenuLookupDispatcher] and
@@ -586,25 +595,19 @@ internal class BrowserHandleImpl(
      * pre-existing behaviour (the user switches tabs themselves) rather than flickering forever.
      */
     private fun claimReattachSlot(): Boolean {
-        val now = System.currentTimeMillis()
-        val capped = ineffectiveReattaches >= BrowserFrameStall.MAX_INEFFECTIVE_REATTACHES
-        if (capped && !reattachCapLogged) {
-            reattachCapLogged = true
+        // Monotonic, not wall clock: an NTP step must not stretch or shorten the cooldown.
+        val decision = frameStallPolicy.claim(System.nanoTime() / 1_000_000L)
+        if (decision == FrameStallPolicy.Decision.GIVE_UP_NOW) {
             logger.warn(
                 LogCategory.BROWSER,
                 "Re-attaching stopped helping - leaving this tab alone",
                 mapOf(
-                    "ineffectiveInARow" to ineffectiveReattaches.toString(),
-                    "attemptsTotal" to reattachCount.toString(),
+                    "ineffectiveInARow" to frameStallPolicy.ineffectiveInARow.toString(),
+                    "attemptsTotal" to frameStallPolicy.attempts.toString(),
                 ),
             )
         }
-        val allowed = !capped && now - lastReattachAtMs >= BrowserFrameStall.REATTACH_COOLDOWN_MS
-        if (allowed) {
-            lastReattachAtMs = now
-            reattachCount += 1
-        }
-        return allowed
+        return decision == FrameStallPolicy.Decision.REATTACH
     }
 
     /**
@@ -630,7 +633,12 @@ internal class BrowserHandleImpl(
                 repeat(2) {
                     delay(BrowserFrameStall.READ_GAP_MS)
                     if (!viewComposed) return@launch
-                    if (!BrowserFrameStall.isStalled(readFrameBeacon())) return@launch
+                    if (!BrowserFrameStall.isStalled(readFrameBeacon())) {
+                        // Painted unaided, so this tab is evidently fine - let that decay any
+                        // earlier ineffective attempts rather than holding them against it.
+                        frameStallPolicy.recordHealthyNavigation()
+                        return@launch
+                    }
                 }
 
                 if (!claimReattachSlot()) return@launch
@@ -639,7 +647,7 @@ internal class BrowserHandleImpl(
                     "Committed page served no frame - re-attaching the browser view",
                     mapOf(
                         "url" to LogSanitizer.maskUriParams(url.orEmpty()),
-                        "attempt" to reattachCount.toString(),
+                        "attempt" to frameStallPolicy.attempts.toString(),
                     ),
                 )
                 withContext(Dispatchers.Main) { viewGeneration += 1 }
@@ -652,15 +660,12 @@ internal class BrowserHandleImpl(
                 // document across the re-attach - which is exactly what makes this readable as
                 // "did re-attaching start frames for THIS page".
                 delay(BrowserFrameStall.READ_GAP_MS)
+                // Gated like the decision reads, and for the same reason: a tab hidden inside this
+                // window reads "0" because Chromium does not paint hidden pages, and recording that
+                // as an ineffective repair would retire the watchdog on a false reading.
+                if (!viewComposed) return@launch
                 val recovered = !BrowserFrameStall.isStalled(readFrameBeacon())
-                if (recovered) {
-                    // A working repair must not count towards giving up, or a tab that legitimately
-                    // needs it often would be abandoned while it was still working.
-                    ineffectiveReattaches = 0
-                    reattachCapLogged = false
-                } else {
-                    ineffectiveReattaches += 1
-                }
+                frameStallPolicy.recordOutcome(recovered)
                 logger.info(
                     LogCategory.BROWSER,
                     if (recovered) {
@@ -669,8 +674,8 @@ internal class BrowserHandleImpl(
                         "Browser view re-attached and still not painting"
                     },
                     mapOf(
-                        "attempt" to reattachCount.toString(),
-                        "ineffectiveInARow" to ineffectiveReattaches.toString(),
+                        "attempt" to frameStallPolicy.attempts.toString(),
+                        "ineffectiveInARow" to frameStallPolicy.ineffectiveInARow.toString(),
                     ),
                 )
             }
@@ -2218,12 +2223,13 @@ internal class BrowserHandleImpl(
         // so a consumer that cares can intersect the two.
         DisposableEffect(Unit) {
             visitTracker.setVisible(true)
-            // Same signal, second consumer: the frame-stall probe must not judge a view that is
-            // not on screen, because Chromium serves no frames to one. See viewComposed.
-            viewComposed = true
+            // Same signal, second consumer, and ref-counted for the same ordering reason: the
+            // frame-stall probe must not judge a view that is not on screen, because Chromium
+            // serves no frames to one. See composedSurfaces.
+            composedSurfaces.incrementAndGet()
             onDispose {
                 visitTracker.setVisible(false)
-                viewComposed = false
+                composedSurfaces.decrementAndGet()
             }
         }
 

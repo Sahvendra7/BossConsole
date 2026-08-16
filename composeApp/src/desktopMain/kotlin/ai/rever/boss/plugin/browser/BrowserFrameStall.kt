@@ -160,3 +160,99 @@ internal object BrowserFrameStall {
      */
     const val REATTACH_COOLDOWN_MS: Long = 10_000L
 }
+
+/**
+ * When a frame-stall repair is allowed to run, and when to stop trying.
+ *
+ * Split out of `BrowserHandleImpl` for the reason `EngineWedgeDetector` is: this is the part that
+ * decides whether a user ever sees a flicker loop, it needs no JxBrowser view to exercise, and
+ * left inline it was five `@Volatile` fields testable only by driving a real browser. Lock-guarded
+ * rather than volatile because `attempts += 1` is a read-modify-write, and a superseded probe can
+ * still be between [claim] and its next suspension point while a newer one runs.
+ *
+ * [nowMs] must come from a **monotonic** source. Wall-clock time is wrong for measuring a
+ * cooldown: an NTP step backwards would stretch it and a step forwards would open it early.
+ */
+internal class FrameStallPolicy(
+    private val maxIneffective: Int = BrowserFrameStall.MAX_INEFFECTIVE_REATTACHES,
+    private val cooldownMs: Long = BrowserFrameStall.REATTACH_COOLDOWN_MS,
+) {
+    /** What [claim] decided, including whether this is the first refusal worth logging. */
+    enum class Decision {
+        REATTACH,
+        COOLING_DOWN,
+
+        /** Cap reached, and this is the first refusal - log it once. */
+        GIVE_UP_NOW,
+
+        /** Cap reached and already reported; stay silent. */
+        GIVEN_UP,
+    }
+
+    private var attemptCount = 0
+    private var ineffectiveRun = 0
+    private var lastReattachAt: Long? = null
+    private var gaveUpReported = false
+
+    /** Total re-attaches performed, for the log. */
+    @get:Synchronized val attempts: Int get() = attemptCount
+
+    /** Re-attaches in a row that did not restore painting. */
+    @get:Synchronized val ineffectiveInARow: Int get() = ineffectiveRun
+
+    /** Ask for permission to re-attach, recording the attempt when granted. */
+    @Synchronized
+    fun claim(nowMs: Long): Decision {
+        val last = lastReattachAt
+        return when {
+            ineffectiveRun >= maxIneffective && gaveUpReported -> {
+                Decision.GIVEN_UP
+            }
+
+            ineffectiveRun >= maxIneffective -> {
+                gaveUpReported = true
+                Decision.GIVE_UP_NOW
+            }
+
+            last != null && nowMs - last < cooldownMs -> {
+                Decision.COOLING_DOWN
+            }
+
+            else -> {
+                lastReattachAt = nowMs
+                attemptCount += 1
+                Decision.REATTACH
+            }
+        }
+    }
+
+    /**
+     * Report whether the re-attach actually restored painting.
+     *
+     * A success clears the run *and* the reported flag, so a handle that starts failing again
+     * later still gets its one log line.
+     */
+    @Synchronized
+    fun recordOutcome(recovered: Boolean) {
+        if (recovered) {
+            ineffectiveRun = 0
+            gaveUpReported = false
+        } else {
+            ineffectiveRun += 1
+        }
+    }
+
+    /**
+     * A navigation that painted without help.
+     *
+     * "Consecutive" would otherwise be counted in re-attaches rather than in time: three
+     * ineffective attempts spread over hours and dozens of healthy pages would retire the
+     * watchdog for that tab exactly as if they had happened back to back on one page. Any page
+     * that paints on its own is evidence the tab is fine, so it decays the run.
+     */
+    @Synchronized
+    fun recordHealthyNavigation() {
+        ineffectiveRun = 0
+        gaveUpReported = false
+    }
+}
