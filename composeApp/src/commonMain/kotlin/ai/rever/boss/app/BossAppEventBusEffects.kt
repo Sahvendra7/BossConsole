@@ -13,6 +13,7 @@ import ai.rever.boss.components.events.URLEventBus
 import ai.rever.boss.components.events.WorkspaceEventBus
 import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.components.plugin.PluginDependencyEventBus
+import ai.rever.boss.components.plugin.resolveRegisteredPanelId
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.workspaces.WorkspaceSerializer
 import ai.rever.boss.components.workspaces.applyWorkspace
@@ -25,6 +26,7 @@ import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
+import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.run.RunnerSettingsManager
@@ -125,18 +127,26 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                             windowId = windowId,
                             configId = event.configId,
                             command = event.command,
-                            workingDirectory = event.workingDirectory,
+                            // Same reason and same shape as openRunnerInMainPanel: an unset
+                            // run-configuration working directory arrives null and would start
+                            // the shell in the home directory, and the selected project comes
+                            // before the no-project default.
+                            workingDirectory =
+                                DefaultWorkingDirectory.selectedOrNull(event.workingDirectory)
+                                    ?: DefaultWorkingDirectory.resolve(
+                                        windowProjectState.selectedProject.value.path,
+                                    ),
                             tabTitle = "Run: ${event.configName}",
                             isRerun = event.isRerun,
                         )
 
                     if (!success) {
                         // Fallback to main panel if sidebar terminal not available
-                        openRunnerInMainPanel(event, splitViewState)
+                        openRunnerInMainPanel(event, splitViewState, windowProjectState.selectedProject.value.path)
                     }
                 } else {
                     // Open in main panel (original behavior)
-                    openRunnerInMainPanel(event, splitViewState)
+                    openRunnerInMainPanel(event, splitViewState, windowProjectState.selectedProject.value.path)
                 }
             }.launchIn(this)
 
@@ -396,6 +406,37 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
             }.launchIn(this)
     }
 
+    // Listen for "open this panel as a main-area tab" requests — SplitViewOperations.openPanelAsTab.
+    // Deliberately routed to requestOpenAsTab rather than doing the work here: that is the same
+    // entry point the header drag-out uses, so a plugin inherits the move semantics the host's own
+    // promote path has (the cached component and its state carry into the tab, the sidebar copy is
+    // collapsed without being destroyed) and the single-instance rule (already open => focus that
+    // tab, never a second copy). ProcessPendingPromoteToTab, which has SplitView access, performs it.
+    LaunchedEffect(state.draggablePanelComponent, state.panelRegistry, windowId) {
+        PanelEventBus.panelPromoteToTabEvents
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach { event ->
+                // Normalise the id against the registry first. A plugin knows the panel's id
+                // string but not its defaultOrder, and everything downstream — the component
+                // store, the hosted-as-tab counts — keys on the whole data class, so an id
+                // carrying a guessed order would promote nothing and say nothing. The panel-open
+                // handler above matches the same way; this shares the rule rather than copying it.
+                val resolved = state.panelRegistry.resolveRegisteredPanelId(event.panelId)
+                if (resolved == null) {
+                    logger.warn(
+                        LogCategory.UI,
+                        "Dropping panel promote-to-tab event - panel is not registered",
+                        mapOf(
+                            "panelId" to event.panelId.panelId,
+                            "pluginId" to event.panelId.pluginId,
+                        ),
+                    )
+                    return@onEach
+                }
+                state.draggablePanelComponent.requestOpenAsTab(resolved)
+            }.launchIn(this)
+    }
+
     // Listen for panel close events
     // Issue #506: Filter by window to prevent panel closing in all windows
     LaunchedEffect(state.draggablePanelComponent, windowId) {
@@ -528,7 +569,7 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                         typeId = TerminalTabType.typeId,
                         title = "Terminal",
                         icon = TerminalTabType.icon,
-                        workingDirectory = projectPath.ifEmpty { null },
+                        workingDirectory = DefaultWorkingDirectory.resolve(projectPath),
                     )
                 splitViewState.getActiveTabsComponent()?.addTab(terminalTab)
             }.launchIn(this)
@@ -565,9 +606,7 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                 if (activeComponent != null) {
                     val activePanelId = splitViewState.activePanelId
                     val projectPath =
-                        windowProjectState.selectedProject.value.path.ifEmpty {
-                            System.getProperty("user.home")
-                        }
+                        DefaultWorkingDirectory.resolve(windowProjectState.selectedProject.value.path)
                     // Create tabs from template panels
                     val leftPanelConfig = event.template.panels.find { it.position == "left" }
                     val rightPanelConfig = event.template.panels.find { it.position == "right" }
