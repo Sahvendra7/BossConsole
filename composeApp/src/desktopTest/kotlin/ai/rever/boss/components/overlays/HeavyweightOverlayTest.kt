@@ -366,6 +366,36 @@ class HeavyweightOverlayTest {
     }
 
     @Test
+    fun `the native re-assert runs only on macOS, on a transparent window, where it can complete`() {
+        // The happy path, and the only combination that should act.
+        assertTrue(shouldReassertTransparency(backgroundAlpha = 0, isMacOs = true, translucencyCapable = true))
+
+        // Not macOS. The bug and its mechanism are macOS-only, and this gate is the whole basis of
+        // the claim that Windows and Linux cannot regress - which was previously argued in prose
+        // from skiko internals, and was wrong: resolveRenderingMode returns HARDWARE_ACCELERATED on
+        // every platform, so every platform reaches this code.
+        assertFalse(shouldReassertTransparency(backgroundAlpha = 0, isMacOs = false, translucencyCapable = true))
+
+        // Not a transparent overlay. null is what skiko leaves on Windows without Direct3D; forcing
+        // translucency onto either would be inventing a change rather than repairing one.
+        assertFalse(shouldReassertTransparency(backgroundAlpha = null, isMacOs = true, translucencyCapable = true))
+        assertFalse(shouldReassertTransparency(backgroundAlpha = 255, isMacOs = true, translucencyCapable = true))
+    }
+
+    @Test
+    fun `an incapable or unknown graphics configuration refuses, because a half-done cycle is the bug`() {
+        // Window.setBackground applies super.setBackground first and only then throws for a
+        // configuration that cannot do per-pixel translucency - after the opaque leg has already set
+        // the layered, root and content panes opaque, and before the leg that would reverse them. An
+        // opaque content pane filling before Skia draws IS the grey backdrop, so attempting the cycle
+        // here would manufacture the very fault being repaired.
+        assertFalse(shouldReassertTransparency(backgroundAlpha = 0, isMacOs = true, translucencyCapable = false))
+        // Unknown is refused, not attempted. Everywhere else in this file an unreadable value is
+        // treated as the pessimistic answer; here the pessimistic answer is "do not touch it".
+        assertFalse(shouldReassertTransparency(backgroundAlpha = 0, isMacOs = true, translucencyCapable = null))
+    }
+
+    @Test
     fun `the skia layer is matched by its fully qualified skiko class name`() {
         // A headless test cannot construct a real SkiaLayer - it needs a display and a render
         // device - so this predicate is the only part of the tree walk a unit test can reach, and
