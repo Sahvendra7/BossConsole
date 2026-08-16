@@ -18,14 +18,21 @@ import kotlin.test.assertTrue
 class FocusModeVisibilityTest {
     private val focusOnHidingTop = FocusModeSettings(enabled = true, hideTopBar = true)
 
+    /** Named so the appearance flag reads as what it is at each call: nothing is hidden for good. */
+    private fun visible(
+        settings: FocusModeSettings,
+        showTopBar: Boolean,
+        topBarHidden: Boolean = false,
+    ) = focusQuickActionsVisible(settings, topBarHidden = topBarHidden, showTopBar = showTopBar)
+
     @Test
     fun `hidden once focus mode has cleared the top bar`() {
-        assertTrue(focusQuickActionsVisible(focusOnHidingTop, showTopBar = false))
+        assertTrue(visible(focusOnHidingTop, showTopBar = false))
     }
 
     @Test
     fun `stands down while the top bar is revealed`() {
-        assertFalse(focusQuickActionsVisible(focusOnHidingTop, showTopBar = true))
+        assertFalse(visible(focusOnHidingTop, showTopBar = true))
     }
 
     @Test
@@ -35,8 +42,8 @@ class FocusModeVisibilityTest {
         // for, and the only one where the two conjuncts disagree.
         val off = focusOnHidingTop.copy(enabled = false)
 
-        assertFalse(focusQuickActionsVisible(off, showTopBar = false))
-        assertFalse(focusQuickActionsVisible(off, showTopBar = true))
+        assertFalse(visible(off, showTopBar = false))
+        assertFalse(visible(off, showTopBar = true))
     }
 
     @Test
@@ -45,7 +52,25 @@ class FocusModeVisibilityTest {
         // three actions were never taken away and the cluster has nothing to restore.
         val keepsTop = focusOnHidingTop.copy(hideTopBar = false)
 
-        assertFalse(focusQuickActionsVisible(keepsTop, showTopBar = false))
-        assertFalse(focusQuickActionsVisible(keepsTop, showTopBar = true))
+        assertFalse(visible(keepsTop, showTopBar = false))
+        assertFalse(visible(keepsTop, showTopBar = true))
+    }
+
+    @Test
+    fun `composed when the top bar is switched off for good, with focus mode never enabled`() {
+        // The whole reason the appearance flag reaches this predicate. Settings, Search and Sign
+        // Out live only in the top bar, and the native View menu carries Settings but neither of
+        // the other two - so keying this on focus mode alone leaves Sign Out unreachable for any
+        // user who hides the top bar from its own right-click menu.
+        val noFocusMode = FocusModeSettings(enabled = false)
+
+        assertTrue(visible(noFocusMode, showTopBar = false, topBarHidden = true))
+    }
+
+    @Test
+    fun `a hidden top bar still stands down while something is showing the bar`() {
+        // `!showTopBar` keeps its meaning against the new flag too: if the bar is on screen it owns
+        // its own three actions, whatever the preference underneath says.
+        assertFalse(visible(FocusModeSettings(enabled = false), showTopBar = true, topBarHidden = true))
     }
 }

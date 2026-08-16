@@ -63,7 +63,8 @@ internal val QUICK_ACTIONS_OVERLAY_SIZE = DpSize(100.dp, 34.dp)
 internal val QUICK_ACTIONS_MARGIN = 8.dp
 
 /**
- * Whether the cluster belongs on screen: focus mode clears the top bar, and it is not showing now.
+ * Whether the cluster belongs on screen: something has taken the top bar away, and it is not
+ * showing now.
  *
  * Both halves, and the first is the one that looks redundant and is not.
  * `FocusModeEdgeRevealState.shown` starts false and is only turned back on by a `LaunchedEffect`,
@@ -73,14 +74,35 @@ internal val QUICK_ACTIONS_MARGIN = 8.dp
  * turn focus mode on, and reads the content pane before it is showing - which can spend the
  * one-per-session warning flag that exists to make a real failure visible.
  *
+ * **[topBarHidden] is the second way the bar can be gone**, and it is not optional. Settings,
+ * Search and Sign Out live *only* in `BossTopRightBar`. The native View menu has a Settings item
+ * but no Search and no Sign Out, so a top bar switched off through
+ * `WindowAppearanceSettings.showTopBar` with this predicate keyed on focus mode alone would leave
+ * Sign Out with no route to it at all. Focus mode is not the question being asked here; "is the
+ * bar that owns these three on screen" is.
+ *
  * Pure and named because the alternative is a conjunction inlined in the scaffold that no test can
  * see, whose failure mode is a corner flash nothing else would notice. Same reason [signOutHint] is
  * out here.
  */
 internal fun focusQuickActionsVisible(
     settings: FocusModeSettings,
+    topBarHidden: Boolean,
     showTopBar: Boolean,
-): Boolean = settings.hides(FocusModeEdge.TOP) && !showTopBar
+): Boolean = topBarIsGone(settings, topBarHidden) && !showTopBar
+
+/**
+ * Whether the top bar is out of the layout for either of the two reasons it can be: focus mode
+ * clears that edge, or the user switched the bar off in `WindowAppearanceSettings`.
+ *
+ * Extracted so [focusQuickActionsVisible] and [focusQuickActionsRailRows] cannot answer it
+ * differently. They are separate expressions on purpose (the reserve deliberately outlives a
+ * hover-reveal that the icons do not), and this is the part of the question they must share.
+ */
+private fun topBarIsGone(
+    settings: FocusModeSettings,
+    topBarHidden: Boolean,
+): Boolean = settings.hides(FocusModeEdge.TOP) || topBarHidden
 
 /** Where the three actions belong right now. Mutually exclusive by construction. */
 internal enum class FocusQuickActionsPlacement {
@@ -117,14 +139,22 @@ internal enum class FocusQuickActionsPlacement {
  * a rail focus mode *does* clear is transient chrome the user hover-revealed, and moving the
  * cluster into it for two seconds and back out again would be worse than leaving it in the corner.
  * `hides(RIGHT)` is false exactly when the rail is permanent, which is the question being asked.
+ *
+ * [rightStripHidden] is the other way there can be no rail - switched off for good through
+ * `WindowAppearanceSettings.showRightStrip`. Without it this would answer `RIGHT_RAIL` and hand the
+ * three icons to a bar that is not composed, which is not a cosmetic slip: it is Sign Out rendered
+ * nowhere. It reads as "permanent" for the same reason `hides(RIGHT)` does, so it belongs in the
+ * same test rather than in the reveal flags.
  */
 internal fun focusQuickActionsPlacement(
     settings: FocusModeSettings,
+    topBarHidden: Boolean,
+    rightStripHidden: Boolean,
     showTopBar: Boolean,
 ): FocusQuickActionsPlacement =
     when {
-        !focusQuickActionsVisible(settings, showTopBar) -> FocusQuickActionsPlacement.NONE
-        settings.hides(FocusModeEdge.RIGHT) -> FocusQuickActionsPlacement.FLOATING
+        !focusQuickActionsVisible(settings, topBarHidden, showTopBar) -> FocusQuickActionsPlacement.NONE
+        settings.hides(FocusModeEdge.RIGHT) || rightStripHidden -> FocusQuickActionsPlacement.FLOATING
         else -> FocusQuickActionsPlacement.RIGHT_RAIL
     }
 
@@ -182,9 +212,21 @@ private val SIDEBAR_ICON_SIZE = 32.dp
  * So the budget is held for as long as focus mode *owns* the top bar, and only the three icons come
  * and go. The cost is up to 145dp of rail that is briefly reserved and empty, which is invisible:
  * the slack lands in the weighted spacer, and the icons above it do not move.
+ *
+ * The two appearance flags enter for the same reason they enter [focusQuickActionsPlacement]: a top
+ * bar hidden for good also hands these to the rail, and a right strip hidden for good means there
+ * is no rail to reserve on. This has to stay in step with that function - `FocusQuickActionsPlacementTest`
+ * pins the two against each other, because under-reserving pushes an icon off the bottom of the window.
  */
-internal fun focusQuickActionsRailRows(settings: FocusModeSettings): Int =
-    if (settings.hides(FocusModeEdge.TOP) && !settings.hides(FocusModeEdge.RIGHT)) {
+internal fun focusQuickActionsRailRows(
+    settings: FocusModeSettings,
+    topBarHidden: Boolean,
+    rightStripHidden: Boolean,
+): Int =
+    // The rail half is spelled out rather than shared with focusQuickActionsPlacement above: the
+    // two must agree, and the test asserts they do, but inlining keeps this file under detekt's
+    // function-count ceiling. Change one and change the other.
+    if (topBarIsGone(settings, topBarHidden) && !settings.hides(FocusModeEdge.RIGHT) && !rightStripHidden) {
         FOCUS_QUICK_ACTION_COUNT
     } else {
         0

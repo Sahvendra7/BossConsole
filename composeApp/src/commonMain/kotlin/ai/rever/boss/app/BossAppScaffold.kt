@@ -39,6 +39,7 @@ import ai.rever.boss.window.LocalWindowGitState
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.LocalWindowRunnerState
+import ai.rever.boss.window.WindowAppearanceSettings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
@@ -205,7 +206,7 @@ internal fun BossAppScaffold(
     reveal: FocusModeRevealState,
     focusModeSettings: FocusModeSettings,
     revealOffsetDp: Dp,
-    showTitleBar: Boolean,
+    appearance: WindowAppearanceSettings,
     onToggleMaximize: (() -> Unit)?,
 ) {
     val coroutineScope = state.coroutineScope
@@ -229,7 +230,13 @@ internal fun BossAppScaffold(
     // One decision, two mutually exclusive renderings: the bottom of the right rail when that rail
     // is on screen, a floating corner cluster when it is not. Read once here so the two call sites
     // below cannot disagree about it and briefly show both.
-    val quickActionsPlacement = focusQuickActionsPlacement(focusModeSettings, reveal.showTopBar)
+    val quickActionsPlacement =
+        focusQuickActionsPlacement(
+            settings = focusModeSettings,
+            topBarHidden = !appearance.showTopBar,
+            rightStripHidden = !appearance.showRightStrip,
+            showTopBar = reveal.showTopBar,
+        )
 
     // Remembered, not rebuilt each pass, for the allocations and for a stable reserve - NOT to buy
     // a skip. `kotlin.collections.List` is unstable to Compose's stability inference, so taking one
@@ -260,7 +267,7 @@ internal fun BossAppScaffold(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Title bar - conditionally shown based on settings
                 // Default: hidden on Linux/Windows, shown on macOS
-                if (showTitleBar) {
+                if (appearance.showTitleBar) {
                     BossTitleBar(
                         onToggleMaximize = onToggleMaximize,
                     )
@@ -316,9 +323,11 @@ internal fun BossAppScaffold(
                     )
                 }
 
-                // Top bar - hidden in focus mode with smooth expand/shrink animation
+                // Top bar - hidden in focus mode with smooth expand/shrink animation, and switched
+                // off outright by the appearance preference. Both have to agree for a bar to show:
+                // focus mode is the transient posture, the preference is the standing choice.
                 AnimatedVisibility(
-                    visible = reveal.showTopBar,
+                    visible = appearance.showTopBar && reveal.showTopBar,
                     enter =
                         expandVertically(
                             expandFrom = Alignment.Top,
@@ -379,7 +388,7 @@ internal fun BossAppScaffold(
                 ) {
                     // Left sidebar - hidden in focus mode with smooth expand/shrink animation
                     AnimatedVisibility(
-                        visible = reveal.showLeftSidebar,
+                        visible = appearance.showLeftStrip && reveal.showLeftSidebar,
                         enter =
                             expandHorizontally(
                                 expandFrom = Alignment.Start,
@@ -456,7 +465,7 @@ internal fun BossAppScaffold(
 
                     // Right sidebar - hidden in focus mode with smooth expand/shrink animation
                     AnimatedVisibility(
-                        visible = reveal.showRightSidebar,
+                        visible = appearance.showRightStrip && reveal.showRightSidebar,
                         enter =
                             expandHorizontally(
                                 expandFrom = Alignment.End,
@@ -482,7 +491,12 @@ internal fun BossAppScaffold(
                             // the plugin slots and reshuffling them. See focusQuickActionsRailRows.
                             BossRightSideBar(
                                 bottomActions = quickActionsRail,
-                                bottomActionRows = focusQuickActionsRailRows(focusModeSettings),
+                                bottomActionRows =
+                                    focusQuickActionsRailRows(
+                                        settings = focusModeSettings,
+                                        topBarHidden = !appearance.showTopBar,
+                                        rightStripHidden = !appearance.showRightStrip,
+                                    ),
                             )
                         }
                     }
@@ -490,7 +504,7 @@ internal fun BossAppScaffold(
 
                 // Bottom bar - hidden in focus mode with smooth expand/shrink animation
                 AnimatedVisibility(
-                    visible = reveal.showBottomBar,
+                    visible = appearance.showBottomBar && reveal.showBottomBar,
                     enter =
                         expandVertically(
                             expandFrom = Alignment.Bottom,

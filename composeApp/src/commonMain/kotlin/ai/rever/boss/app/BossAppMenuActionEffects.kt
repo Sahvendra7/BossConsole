@@ -28,6 +28,7 @@ import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.topofmind.TabTreeState
 import ai.rever.boss.window.MenuActionsHandler
+import ai.rever.boss.window.WindowAppearanceSettingsManager
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,10 +70,26 @@ internal fun BossAppMenuActionEffects(
     val sidebarVisibilitySettings by SidebarVisibilitySettingsManager.currentSettings.collectAsState()
     LaunchedEffect(customizeTriggers, windowId) {
         if (customizeTriggers.containsKey(windowId)) {
-            if (SidebarVisibilitySettings.isLeftSide(sidebarVisibilitySettings.customizeButtonSlotId)) {
+            val onLeft = SidebarVisibilitySettings.isLeftSide(sidebarVisibilitySettings.customizeButtonSlotId)
+            if (onLeft) {
                 reveal.showLeftSidebar = true
             } else {
                 reveal.showRightSidebar = true
+            }
+            // Force-revealing the focus-mode flag is not enough once a strip can also be switched
+            // off for good: the scaffold requires BOTH, so a strip hidden by preference would leave
+            // this menu item with nowhere to land again - exactly the bug the reveal above fixes.
+            // Switching the preference back on is the honest reading of "Customize Sidebar…": you
+            // cannot customise a bar you have hidden, so asking to customise it asks for it back.
+            val current = WindowAppearanceSettingsManager.currentSettings.value
+            val restored =
+                if (onLeft) {
+                    current.copy(showLeftStrip = true)
+                } else {
+                    current.copy(showRightStrip = true)
+                }
+            if (restored != current) {
+                WindowAppearanceSettingsManager.updateSettings(restored)
             }
         }
     }
