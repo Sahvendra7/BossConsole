@@ -20,7 +20,7 @@
  */
 
 import { OpenAPIHono } from "@hono/zod-openapi"
-import { callForActor } from "../utils/org-rpc.ts"
+import { callForActor, callRpc } from "../utils/org-rpc.ts"
 import { listDomains, type OrgDomain } from "../services/org.ts"
 import { isValidHostname, verifyDomainToken } from "../services/dns.ts"
 import { clientKey, rateLimit } from "../utils/rate-limit.ts"
@@ -154,8 +154,17 @@ domainRoutes.post("/o/:slug/admin/domains/verify", async (ctx) => {
     return redirectTo(facts, session.slug, { ok: "domain_unverified" })
   }
 
-  const result = await callForActor("mark_organisation_domain_verified", session.sub, {
+  // callRpc, NOT callForActor. This is the one domain RPC that takes no `p_actor_id`: it is
+  // service_role-only by design (there is no client-callable path that sets verified = true), and
+  // it names its second parameter `p_verified_by`. callForActor appends `p_actor_id` to every
+  // call, and PostgREST resolves a function by its ARGUMENT NAMES - so that call named a function
+  // signature the database does not have, failed to resolve, and returned "The change was
+  // refused" every single time a DNS check succeeded. Domain verification has never completed.
+  //
+  // It is also what should fill verified_by, which was never being set.
+  const result = await callRpc("mark_organisation_domain_verified", {
     p_domain_id: domainId,
+    p_verified_by: session.sub,
   })
 
   return redirectTo(
