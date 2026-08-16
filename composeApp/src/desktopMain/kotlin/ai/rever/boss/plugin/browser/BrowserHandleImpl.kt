@@ -611,14 +611,26 @@ internal class BrowserHandleImpl(
                     browser.mainFrame().orElse(null)?.executeJavaScript<String?>(BrowserFrameStall.BEACON_SCRIPT)
                 }.getOrNull()
             }
-        val reading = withTimeoutOrNull(BrowserFrameStall.PROBE_TIMEOUT_MS) { probe.await() }
-        // The probe is a child of the scope, not of this coroutine, so neither the timeout above
+        // The probe is a child of the scope, not of this coroutine, so neither the timeout below
         // nor a supersede cancels it. Left alone, one still queued behind a blocked probe on the
-        // single-thread executor would run later against whatever document is current by then.
-        // A queued coroutine honours this immediately; one already inside executeJavaScript is
-        // unaffected either way, which is the parked-thread cost frameProbeExecutor documents.
-        if (reading == null) probe.cancel()
-        return reading
+        // single-thread executor would run later against whatever document is current by then -
+        // arming THAT document's beacon ahead of its own ARM_DELAY_MS, so its first real reading
+        // is no longer the reading the constants describe.
+        //
+        // In a finally, not after the call. `withTimeoutOrNull` swallows only its own
+        // TimeoutCancellationException: when the enclosing job is cancelled instead - the
+        // supersede at the end of scheduleFrameStallCheck, or dispose - `probe.await()` rethrows
+        // that CancellationException and unwinds straight past any cleanup placed after it. The
+        // earlier `if (reading == null) probe.cancel()` therefore covered the timeout and missed
+        // both cancellation paths, which are the ones the paragraph above is about.
+        //
+        // A queued coroutine honours the cancel immediately; one already inside executeJavaScript
+        // is unaffected either way, which is the parked-thread cost frameProbeExecutor documents.
+        return try {
+            withTimeoutOrNull(BrowserFrameStall.PROBE_TIMEOUT_MS) { probe.await() }
+        } finally {
+            if (!probe.isCompleted) probe.cancel()
+        }
     }
 
     /**
@@ -634,9 +646,12 @@ internal class BrowserHandleImpl(
      * probing is the only way a retired tab can ever come back. Giving up means "stop re-attaching",
      * not "stop looking".
      */
-    private fun claimReattachSlot(): Boolean {
-        // Monotonic, not wall clock: an NTP step must not stretch or shorten the cooldown.
-        val decision = frameStallPolicy.claim(System.nanoTime() / 1_000_000L)
+
+    /** Monotonic, not wall clock: an NTP step must not stretch or shorten the cooldown. */
+    private fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000L
+
+    private fun claimReattachSlot(): FrameStallPolicy.Decision {
+        val decision = frameStallPolicy.claim(monotonicNowMs())
         if (decision == FrameStallPolicy.Decision.GIVE_UP_NOW) {
             logger.warn(
                 LogCategory.BROWSER,
@@ -647,7 +662,57 @@ internal class BrowserHandleImpl(
                 ),
             )
         }
-        return decision == FrameStallPolicy.Decision.REATTACH
+        return decision
+    }
+
+    /**
+     * Claim a re-attach slot, waiting out the cooldown once rather than abandoning the page.
+     *
+     * A stall detected inside the cooldown used to end the job silently, so a follow-up query
+     * within about 7.5s of a repaired one sat blank with nothing in the log to explain it. The
+     * rate limit is still honoured - this waits for the remainder instead of shortening it - and
+     * only one deferral is attempted, so a tab navigating in a tight loop cannot queue them up.
+     */
+    private suspend fun claimReattachSlotWaiting(): Boolean {
+        if (claimReattachSlot() == FrameStallPolicy.Decision.REATTACH) return true
+        // A refusal with nothing left on the clock is a give-up, not a cooldown: nothing to wait
+        // out, and claimReattachSlot has already logged it.
+        val remaining = frameStallPolicy.remainingCooldownMs(monotonicNowMs())
+        return remaining > 0L && claimAfterCooldown(remaining)
+    }
+
+    /**
+     * Wait out [remainingMs] of cooldown, then re-judge and claim once.
+     *
+     * Split from its caller only to keep each side within the return-count limit; the reason it
+     * re-judges rather than claiming straight away is that the wait is long enough for the page to
+     * have started painting on its own, or for the view to be hidden or the handle disposed.
+     */
+    private suspend fun claimAfterCooldown(remainingMs: Long): Boolean {
+        logger.debug(
+            LogCategory.BROWSER,
+            "Frame-stall repair deferred until the cooldown expires",
+            mapOf("remainingMs" to remainingMs.toString()),
+        )
+        delay(remainingMs)
+        val stillWorthRepairing =
+            when {
+                !viewComposed -> {
+                    false
+                }
+
+                BrowserFrameStall.isStalled(readFrameBeacon()) -> {
+                    true
+                }
+
+                else -> {
+                    // Painted while we waited, so the tab is fine and any earlier ineffective run
+                    // should decay just as it would on any unaided paint.
+                    frameStallPolicy.recordHealthyNavigation()
+                    false
+                }
+            }
+        return stillWorthRepairing && claimReattachSlot() == FrameStallPolicy.Decision.REATTACH
     }
 
     /**
@@ -697,7 +762,7 @@ internal class BrowserHandleImpl(
                     }
                 }
 
-                if (!claimReattachSlot()) return@launch
+                if (!claimReattachSlotWaiting()) return@launch
                 // Booked as ineffective before the repair, upgraded only by an observed recovery.
                 // Everything that can end this job before the confirmation - a fresh commit
                 // superseding it, the view leaving composition, a probe that never answers - would
@@ -788,7 +853,13 @@ internal class BrowserHandleImpl(
                 // incorrectly updating the URL bar in plugins
                 if (event.isInMainFrame) {
                     val url = event.url()
-                    scheduleFrameStallCheck(url)
+                    // Same-document navigations (pushState, fragment) keep the document, and the
+                    // beacon is armed once per document and latches at painted. Probing one reads
+                    // the "1" the ORIGINAL load left behind, which is not evidence about this
+                    // navigation at all - and it reaches recordHealthyNavigation, clearing a
+                    // legitimate ineffective run on a stale reading. See BrowserFrameStall for the
+                    // mirror case this leaves open.
+                    if (!event.isSameDocument) scheduleFrameStallCheck(url)
                     navigationListeners.forEach { listener ->
                         try {
                             listener(url)

@@ -164,6 +164,40 @@ class FrameStallPolicyTest {
     }
 
     @Test
+    fun `remaining cooldown counts down and reaches zero on the boundary`() {
+        // Drives the deferred retry: a stall found inside the cooldown waits exactly this long
+        // rather than being dropped, so the number has to be the real remainder - too short and
+        // the re-claim is refused again, too long and the page stays blank past the rate limit.
+        val p = policy()
+        assertEquals(0L, p.remainingCooldownMs(0L), "nothing claimed yet, so nothing to wait for")
+        p.claim(1_000L)
+        assertEquals(10_000L, p.remainingCooldownMs(1_000L))
+        assertEquals(1L, p.remainingCooldownMs(10_999L))
+        assertEquals(0L, p.remainingCooldownMs(11_000L))
+    }
+
+    @Test
+    fun `remaining cooldown never goes negative`() {
+        // The caller delays by this value; a negative would throw rather than proceed.
+        val p = policy()
+        p.claim(0L)
+        assertEquals(0L, p.remainingCooldownMs(60_000L))
+    }
+
+    @Test
+    fun `waiting out the remaining cooldown makes the next claim succeed`() {
+        // The deferred-retry contract, end to end on the policy: refused now, granted after
+        // exactly remainingCooldownMs has passed.
+        val p = policy()
+        assertEquals(FrameStallPolicy.Decision.REATTACH, p.claim(0L))
+        val now = 3_000L
+        assertEquals(FrameStallPolicy.Decision.COOLING_DOWN, p.claim(now))
+        val wait = p.remainingCooldownMs(now)
+        assertEquals(7_000L, wait)
+        assertEquals(FrameStallPolicy.Decision.REATTACH, p.claim(now + wait))
+    }
+
+    @Test
     fun `attempts counts only granted claims`() {
         val p = policy()
         p.claim(0L)

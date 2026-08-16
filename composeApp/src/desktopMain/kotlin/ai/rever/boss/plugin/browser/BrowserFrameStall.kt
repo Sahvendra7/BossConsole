@@ -31,6 +31,17 @@ import com.teamdev.jxbrowser.engine.RenderingMode
  * deliberately a recovery and not a cure: it detects a document that committed but never drew, and
  * performs the tab-switch repair on the user's behalf.
  *
+ * **Known limit: only a new document is covered.** The beacon is armed once per document and
+ * latches at [BEACON_PAINTED] for that document's life, so it answers "has this document ever
+ * painted", not "is it painting now". Two consequences, both deliberate. Same-document
+ * navigations (pushState, fragment) are skipped entirely at the call site, because probing one
+ * would read the flag the original load left behind and clear a legitimate ineffective run on
+ * stale evidence. And a stall that *begins* after a document has already painted is invisible -
+ * if Google ever serves the AI Mode transition client-side rather than as a fresh commit, this
+ * stops firing, silently. Catching that would need a liveness beacon (a rolling rAF timestamp
+ * compared against wall time) rather than a latch, which is a different and more expensive
+ * design than the one the measured failure called for.
+ *
  * **Known and accepted: the page can influence the verdict.** The flag lives on `window`, so a
  * page could pin it to `"0"` (forcing a re-attach per navigation, costing flicker) or to `"1"`
  * (suppressing the repair, leaving itself blank). This is the same exposure AGENTS.md already
@@ -244,6 +255,23 @@ internal class FrameStallPolicy(
                 Decision.REATTACH
             }
         }
+    }
+
+    /**
+     * How much of the cooldown is left at [nowMs], or 0 when a claim would be granted now.
+     *
+     * Exists so a stall arriving inside the cooldown can be **deferred rather than dropped**. The
+     * cooldown bounds how often the view is rebuilt; it is not a decision that a blank page stays
+     * blank. The decision point is `ARM_DELAY_MS + 2 * READ_GAP_MS` after a commit and the
+     * cooldown is four times that, so two stalling commits close together used to leave the second
+     * one blank with nothing logged - the same "no signal at all" this whole feature exists to
+     * remove, and on the page it targets, which is one people iterate on. Waiting out the
+     * remainder and claiming once respects the rate limit and still repairs the page.
+     */
+    @Synchronized
+    fun remainingCooldownMs(nowMs: Long): Long {
+        val last = lastReattachAt ?: return 0L
+        return (cooldownMs - (nowMs - last)).coerceAtLeast(0L)
     }
 
     /**
