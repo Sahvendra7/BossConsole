@@ -490,7 +490,9 @@ object RecentBrowserPagesManager {
         // at. Emptying only the recorded pages left all seventeen promo cards in place - and hid
         // the "Clear" label that had just failed to remove them, because that label is shown
         // only while recentPages is non-empty.
-        _dismissedSuggestions.value = POPULAR_DEV_SITES.map { canonicalUrlKey(it.url) }.toSet()
+        // Unioned, not replaced: `removePage` also records real pages it dismissed, and
+        // overwriting the set would discard those and let them return as padding later.
+        _dismissedSuggestions.update { it + POPULAR_DEV_SITES.map { site -> canonicalUrlKey(site.url) } }
         scheduleSave()
     }
 

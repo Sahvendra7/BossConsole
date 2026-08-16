@@ -5,6 +5,7 @@ import ai.rever.boss.components.plugin.registries.owningPluginId
 import ai.rever.boss.plugin.api.NewTabSpec
 import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.api.SidebarItem
+import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
@@ -13,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import java.io.File
 
 private val logger = BossLogger.forComponent("HomeTools")
 
@@ -83,10 +85,18 @@ internal fun rememberHomeTools(): List<HomeTool> {
     val installedPluginIds =
         PluginDependencyResolution.installedAndOnDisk(
             states = pluginStates,
-            // The jar-existence probe is a filesystem call and this is commonMain, so "installed"
-            // here rests on the manager's own state. A LOADED plugin satisfies the predicate's
-            // first clause regardless of its jar path, which is the case the grid needs right.
-            exists = { true },
+            // Both predicates supplied, identical to `MissingDependencyReporter.forManager`, so
+            // the grid and the dependency prompt share one definition of "installed" - which
+            // AGENTS.md records as having broken that feature once when two callers disagreed.
+            //
+            // Passing `exists = { true }` and omitting `isIncompatible` reduced this to
+            // `LOADED || true`, i.e. every entry in `pluginStates` regardless of state. A plugin
+            // whose install failed as binary-incompatible keeps a DISABLED entry while the
+            // installer deletes its jar, so it counted as installed, its store row was filtered
+            // out, and - having registered no tab type or panel - it vanished from the grid with
+            // no way to retry the install from the surface that exists to offer it.
+            exists = { File(it).isFile },
+            isIncompatible = { PluginCrashRegistry.isIncompatible(it) },
         )
 
     return remember(tabTypes, panels, discoverable, installedPluginIds, access) {

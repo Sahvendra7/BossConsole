@@ -39,6 +39,20 @@ class StoreHomeCatalogProvider(
     private val logger = BossLogger.forComponent("StoreHomeCatalogProvider")
 
     /**
+     * The store listing, held for the session after one successful fetch.
+     *
+     * The home screen mounts in every empty split panel and remounts whenever a panel's last tab
+     * closes, so a per-mount fetch turned ordinary tab closing into store traffic. The catalogue
+     * changes far more slowly than that. Stale until relaunch is the trade, and it only affects
+     * which not-yet-installed plugins are offered.
+     *
+     * `@Volatile` rather than a mutex: two concurrent first mounts may both fetch, which costs one
+     * redundant request and cannot produce a wrong answer.
+     */
+    @Volatile
+    private var cached: List<HomeStorePluginInput>? = null
+
+    /**
      * The remote store's rows, reduced to what the grid asks.
      *
      * Deliberately the remote repository rather than `repositoryManager.listAllPlugins()`, which
@@ -54,19 +68,26 @@ class StoreHomeCatalogProvider(
     // the result. Collapsing them would hide which happened, and they log differently.
     @Suppress("ReturnCount")
     override suspend fun discoverable(): List<HomeStorePluginInput> {
+        cached?.let { return it }
+
         val store = repository() ?: return emptyList()
-        val listing =
-            runCatching { store.listPlugins() }
-                .getOrElse { error -> Result.failure(error) }
+        val listing = runCatching { store.listPlugins().getOrThrow() }
         listing.exceptionOrNull()?.let { error ->
             logger.warn(
                 LogCategory.SYSTEM,
                 "Could not list the plugin store for the home screen; showing installed tools only",
                 error = error,
             )
+            // Deliberately not cached: a failure is usually transient (the store was not up yet,
+            // the network was down), and the next time the screen mounts is a reasonable moment to
+            // try again.
             return emptyList()
         }
-        return listing.getOrNull().orEmpty().map(::toInput)
+        return listing
+            .getOrNull()
+            .orEmpty()
+            .map(::toInput)
+            .also { cached = it }
     }
 
     override suspend fun install(pluginId: String): Result<Unit> = installer.install(pluginId)

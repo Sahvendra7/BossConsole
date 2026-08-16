@@ -1,6 +1,7 @@
 package ai.rever.boss.components.home
 
 import ai.rever.boss.components.events.DashboardEventBus
+import java.io.File
 import kotlin.reflect.KFunction
 import kotlin.reflect.KVisibility
 import kotlin.reflect.full.declaredMemberFunctions
@@ -114,6 +115,33 @@ class HomeActionRoutingTest {
                 expected in emitterNames,
                 "$flow has no emit function named '$expected'. A flow with no emitter is dead, " +
                     "which is how nine of these came to have handlers nothing could reach.",
+            )
+        }
+    }
+
+    @Test
+    fun `every event flow is collected by a handler`() {
+        // The other half of the pairing, and the half that was actually missing: an emitter with
+        // no handler is as dead as a handler with no emitter, and neither fails anything at
+        // runtime. Read as source because the handlers are `LaunchedEffect` bodies inside a
+        // composable - there is no registry of them to reflect over.
+        val handlers =
+            File("src/commonMain/kotlin/ai/rever/boss/app/BossAppEventBusEffects.kt")
+                .readText()
+
+        val flowNames =
+            DashboardEventBus::class
+                .declaredMemberProperties
+                .filter { it.visibility == KVisibility.PUBLIC }
+                .map { it.name }
+                .filter { it.endsWith("Events") }
+
+        assertTrue(flowNames.isNotEmpty())
+        flowNames.forEach { flow ->
+            assertTrue(
+                handlers.contains("DashboardEventBus.$flow"),
+                "$flow is emitted but never collected in BossAppEventBusEffects, so the action " +
+                    "it represents silently does nothing.",
             )
         }
     }

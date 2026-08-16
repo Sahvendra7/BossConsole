@@ -10,6 +10,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
@@ -21,7 +22,17 @@ import javax.imageio.ImageIO
 
 private val logger = BossLogger.forComponent("PluginIconLoader")
 
-/** Fetches and decodes plugin store icons. Shape follows `HighQualityFaviconService`. */
+/**
+ * Fetches and decodes plugin store icons. Shape follows `HighQualityFaviconService`.
+ *
+ * **What this does not defend against.** `icon_url` is operator-supplied data and redirects are
+ * followed, so a store row (or a redirect off one) can make this client issue a GET at an address
+ * of the row author's choosing, including one inside the network the app runs in. The scheme check
+ * only covers the initial URL. Nothing is returned to the caller but a decoded image or null, so
+ * this leaks reachability rather than content, and only an admin who can write store rows can
+ * reach it - but a deployment that treats store rows as untrusted should pin an allowed host or
+ * proxy these through the store instead.
+ */
 private object PluginIcons {
     private const val REQUEST_TIMEOUT_MS = 2500L
     private const val MAX_CONCURRENT_FETCHES = 3
@@ -30,8 +41,11 @@ private object PluginIcons {
      * Largest icon accepted, in bytes.
      *
      * `icon_url` is an arbitrary URL from a database row, so the response size is not something
-     * this process controls. Without a bound, one oversized row would be read fully into memory
-     * before `ImageIO` ever rejected it.
+     * this process controls. Checked against `Content-Length` **before** reading the body, then
+     * again on the bytes: the header is a hint a server can omit or lie about, so the second check
+     * is what actually holds, and a chunked response with no length still gets read once at up to
+     * whatever the timeout allows. Bounding that properly needs a streaming read with a running
+     * count, which is more machinery than a 24.dp icon justifies.
      */
     private const val MAX_BYTES = 512 * 1024
 
@@ -102,6 +116,10 @@ private object PluginIcons {
 
             val response = fetchSemaphore.withPermit { httpClient.get(iconUrl) }
             if (response.status != HttpStatusCode.OK) return@withContext null
+
+            // Refuse an oversized body before reading it, where the server declares a length.
+            val declaredLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+            if (declaredLength != null && declaredLength > MAX_BYTES) return@withContext null
 
             val bytes = response.readRawBytes()
             if (bytes.isEmpty() || bytes.size > MAX_BYTES) return@withContext null

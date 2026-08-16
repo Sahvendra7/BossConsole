@@ -127,7 +127,11 @@ object HomeToolCatalog {
                 .filter { it.offeredInNewTab }
                 .map { type ->
                     HomeTool(
-                        id = "tab:${type.typeId}",
+                        // Both halves of the registry key in the id, so two plugins registering
+                        // the same typeId string keep two tiles. The same collision this PR fixed
+                        // on the event side by carrying the pair; deduping on typeId alone would
+                        // silently drop one of them here.
+                        id = "tab:${type.typePluginId}:${type.typeId}",
                         label = type.displayName,
                         description = "",
                         icon = HomeToolIcon.Vector(type.icon),
@@ -140,7 +144,9 @@ object HomeToolCatalog {
         val panelTools =
             panels.map { panel ->
                 HomeTool(
-                    id = "panel:${panel.panelId.panelId}",
+                    // Both halves, for the same reason as the tab ids above: `PanelId` is also a
+                    // pair, and the panel registry is keyed on the whole of it.
+                    id = "panel:${panel.panelId.pluginId}:${panel.panelId.panelId}",
                     label = panel.label,
                     description = "",
                     icon = HomeToolIcon.Vector(panel.icon),

@@ -47,9 +47,25 @@ object HomeCatalogAccess {
     @Volatile
     private var provider: HomeCatalogProvider? = null
 
-    /** Called once from desktop startup. */
+    /**
+     * Called from desktop startup. **First caller wins.**
+     *
+     * Guarded rather than last-write-wins because the provider captures one window's
+     * `DynamicPluginManager`, and that decides which window's manager an install started from any
+     * window's grid loads into. Assigning unconditionally made that "whichever window opened
+     * most recently", which is not a property anything should depend on. First-wins is at least
+     * stable for the session, and the multi-window consequence is the one
+     * `MissingDependencyPrompt` already documents: the answering window may not show the new
+     * plugin until relaunch.
+     */
     fun initialize(implementation: HomeCatalogProvider) {
-        provider = implementation
+        synchronized(this) {
+            if (provider != null) {
+                logger.debug(LogCategory.SYSTEM, "HomeCatalogAccess already initialized; keeping the first provider")
+                return
+            }
+            provider = implementation
+        }
         logger.debug(LogCategory.SYSTEM, "HomeCatalogAccess initialized")
     }
 

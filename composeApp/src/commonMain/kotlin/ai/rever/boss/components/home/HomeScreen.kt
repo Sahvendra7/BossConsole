@@ -101,11 +101,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                 onOpenHere = { selectProjectInWindow(windowProjectState, it) },
             )
 
-            RecentPagesSection(
-                suggestions = suggestions,
-                hasRecordedPages = recentPages.isNotEmpty(),
-                actions = actions,
-            )
+            RecentPagesSection(suggestions = suggestions, actions = actions)
 
             ToolsSection(actions = actions)
 
@@ -255,13 +251,17 @@ private fun RecentFilesSection(
 @Composable
 private fun RecentPagesSection(
     suggestions: List<RecentBrowserPage>,
-    hasRecordedPages: Boolean,
     actions: HomeActions,
 ) {
     if (suggestions.isEmpty()) return
     DashboardSection(
         title = "Recent pages",
-        actionText = if (hasRecordedPages) "Clear" else null,
+        // Unconditional, because the case that needs it most is the one a
+        // `if (recentPages.isNotEmpty())` gate excluded: a fresh install has no recorded pages
+        // and seventeen suggested sites on screen, so gating on recorded pages hid Clear exactly
+        // when the strip was entirely padding. The section already returns early when there is
+        // nothing to show, so the label never appears over an empty strip.
+        actionText = "Clear",
         onAction = { RecentBrowserPagesManager.clearAll() },
     ) {
         CardStrip {

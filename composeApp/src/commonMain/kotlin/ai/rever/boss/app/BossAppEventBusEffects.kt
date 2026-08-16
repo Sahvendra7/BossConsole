@@ -1,6 +1,7 @@
 package ai.rever.boss.app
 
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
+import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.events.DashboardEventBus
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.GitTerminalEventBus
@@ -27,6 +28,7 @@ import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.api.Panel.Companion.left
 import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.api.Panel.Companion.top
+import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.project.DefaultWorkingDirectory
@@ -52,6 +54,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -470,6 +473,9 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
     // Listen for panel toggle events (open if closed, close if open)
     // Issue #506: Filter by window to prevent panel toggling in all windows
     LaunchedEffect(state.draggablePanelComponent, state.panelRegistry, windowId) {
+        // Captured so a deferred registry wait below can run as a child of this effect rather
+        // than on the collector itself. Cancelled with the effect, so nothing outlives the window.
+        val effectScope = this
         PanelEventBus.panelToggleEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
@@ -506,33 +512,7 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                                     it.id.pluginId == event.panelId.pluginId
                             }
 
-                        // Wait for late plugin registration rather than dropping the
-                        // toggle, exactly as panelOpenEvents does above. Every panel a
-                        // toggle targets (codebase, bookmarks, downloads,
-                        // run-configurations, terminal) is registered by a plugin jar, so
-                        // a toggle sent early - the home screen's tool grid clicked
-                        // moments after launch - used to do nothing at all and say
-                        // nothing either.
-                        var panelInfo = findPanelInfo()
-                        if (panelInfo == null) {
-                            awaitRegistryCondition(
-                                state.panelRegistry::addChangeListener,
-                                state.panelRegistry::removeChangeListener,
-                            ) { findPanelInfo() != null }
-                            panelInfo = findPanelInfo()
-                            if (panelInfo == null) {
-                                logger.warn(
-                                    LogCategory.UI,
-                                    "Dropping panel toggle event - panel never registered",
-                                    mapOf(
-                                        "panelId" to event.panelId.panelId,
-                                        "pluginId" to event.panelId.pluginId,
-                                    ),
-                                )
-                            }
-                        }
-
-                        if (panelInfo != null) {
+                        fun activate(panelInfo: PanelInfo) {
                             val panelSlot = panelInfo.defaultSlotPosition
                             // Use the unfiltered listing — programmatic
                             // activation should work even if the user has
@@ -542,6 +522,40 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
 
                             if (targetItem != null) {
                                 state.draggablePanelComponent.onClick.invoke(targetItem)
+                            }
+                        }
+
+                        val immediate = findPanelInfo()
+                        if (immediate != null) {
+                            activate(immediate)
+                        } else {
+                            // Wait for late plugin registration rather than dropping the toggle,
+                            // as panelOpenEvents does - but in a child coroutine, because
+                            // `onEach` runs sequentially on ONE collector and this bus is not
+                            // home-only. `BossBottomBar` (console) and `PerformanceState` emit on
+                            // it too, so awaiting inline let a toggle for a panel that never
+                            // registers hold every later toggle for the full 15s timeout.
+                            //
+                            // The fast path stays inline, so ordinary toggles keep their existing
+                            // sequential behaviour and only the already-degenerate case defers.
+                            effectScope.launch {
+                                awaitRegistryCondition(
+                                    state.panelRegistry::addChangeListener,
+                                    state.panelRegistry::removeChangeListener,
+                                ) { findPanelInfo() != null }
+                                val late = findPanelInfo()
+                                if (late == null) {
+                                    logger.warn(
+                                        LogCategory.UI,
+                                        "Dropping panel toggle event - panel never registered",
+                                        mapOf(
+                                            "panelId" to event.panelId.panelId,
+                                            "pluginId" to event.panelId.pluginId,
+                                        ),
+                                    )
+                                } else {
+                                    activate(late)
+                                }
                             }
                         }
                     }
@@ -623,6 +637,14 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
             .onEach {
                 // File dialog is typically handled by a system file chooser
                 // For now, show new tab dialog with file option
+                //
+                // The initial type is what makes it "with file option": the dialog reads
+                // `newTabDialogInitialType` and the app menu's Open File sets it the same way.
+                // Without it this opened the dialog on its default tab, which is a regression the
+                // home screen would have introduced by routing here - the call site it replaced
+                // set `selectedTabType = TabType.FILE` itself. Unreachable before now, since this
+                // handler had no emitters.
+                state.newTabDialogInitialType = TabType.FILE
                 state.showNewTabDialog = true
             }.launchIn(this)
 
@@ -769,7 +791,20 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                     StatusMessageManager.showMessage("Could not open ${info.displayName}")
                     return@onEach
                 }
-                splitViewState.getActiveTabsComponent()?.addTab(tabInfo)
+                // Reported, not dropped: everything else in this handler says why it failed, and a
+                // click that opens no tab and logs nothing is the class of defect this whole
+                // change exists to remove.
+                val tabs = splitViewState.getActiveTabsComponent()
+                if (tabs == null) {
+                    logger.warn(
+                        LogCategory.UI,
+                        "Could not open a home screen tool - no active tabs component",
+                        mapOf("typeId" to event.typeId),
+                    )
+                    StatusMessageManager.showMessage("Could not open ${info.displayName} here")
+                } else {
+                    tabs.addTab(tabInfo)
+                }
             }.launchIn(this)
     }
 

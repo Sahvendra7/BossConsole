@@ -284,8 +284,8 @@ private fun HintText(
  * state look right in Blueprint and wrong in Daylight.
  */
 private fun lerpSurface(
-    from: androidx.compose.ui.graphics.Color,
-    to: androidx.compose.ui.graphics.Color,
+    from: Color,
+    to: Color,
     progress: Float,
 ) = androidx.compose.ui.graphics
     .lerp(from, to, progress.coerceIn(0f, 1f))
