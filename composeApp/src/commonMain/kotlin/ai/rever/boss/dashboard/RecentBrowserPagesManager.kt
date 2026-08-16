@@ -42,6 +42,16 @@ data class RecentBrowserPage(
 @Serializable
 data class RecentBrowserPagesData(
     val pages: List<RecentBrowserPage> = emptyList(),
+    /**
+     * Suggested sites the user has dismissed, so they stay dismissed.
+     *
+     * Only the padding suggestions need this. A page in [pages] is removed by removing it; a
+     * suggestion drawn from `POPULAR_DEV_SITES` is not in any list, so before this existed its
+     * X button filtered nothing, saved an unchanged list, and the card re-appeared on the next
+     * frame. Seventeen of them could pile up on the home screen with no way to clear them -
+     * "Clear" only touches [pages], and even hid its own label once [pages] was empty.
+     */
+    val dismissedSuggestions: List<String> = emptyList(),
 )
 
 /**
@@ -84,6 +94,16 @@ object RecentBrowserPagesManager {
 
     private val _recentPages = MutableStateFlow<List<RecentBrowserPage>>(emptyList())
     val recentPages: StateFlow<List<RecentBrowserPage>> = _recentPages.asStateFlow()
+
+    /**
+     * Canonical keys of dismissed padding suggestions.
+     *
+     * A StateFlow rather than a plain set so dismissing one recomposes the home screen, and
+     * keyed by [canonicalUrlKey] for the same reason [removeMatchingPages] is: the promo list and
+     * a recorded visit can spell the same page differently.
+     */
+    private val _dismissedSuggestions = MutableStateFlow<Set<String>>(emptySet())
+    val dismissedSuggestions: StateFlow<Set<String>> = _dismissedSuggestions.asStateFlow()
 
     // Popular developer websites for suggestions
     private val POPULAR_DEV_SITES =
@@ -228,6 +248,7 @@ object RecentBrowserPagesManager {
                     val content = settingsFile.readText()
                     val data = json.decodeFromString<RecentBrowserPagesData>(content)
                     _recentPages.value = data.pages
+                    _dismissedSuggestions.value = data.dismissedSuggestions.toSet()
                     logger.debug(LogCategory.SYSTEM, "Loaded recent pages", mapOf("count" to data.pages.size))
                 } else {
                     // Bootstrap from existing browser history if available
@@ -313,7 +334,13 @@ object RecentBrowserPagesManager {
         withContext(Dispatchers.IO) {
             try {
                 target.parentFile?.mkdirs()
-                val data = RecentBrowserPagesData(pages = _recentPages.value)
+                val data =
+                    RecentBrowserPagesData(
+                        pages = _recentPages.value,
+                        // Note `encodeDefaults = false` on the Json above: an empty dismissed
+                        // set is simply absent from the file, and absent decodes back to empty.
+                        dismissedSuggestions = _dismissedSuggestions.value.toList(),
+                    )
                 val content = json.encodeToString(RecentBrowserPagesData.serializer(), data)
                 // Atomic: the debounced save and an eviction can land together, and a
                 // half-written file reads back as "no recent pages".
@@ -385,13 +412,21 @@ object RecentBrowserPagesManager {
     }
 
     /**
-     * Remove a specific page from recent history.
+     * Remove a specific page from recent history, or dismiss a suggestion that was never in it.
+     *
+     * Both, because the home screen shows one strip built from both sources and the user cannot
+     * tell which a given card came from - so the X has to work either way. Dismissing
+     * unconditionally is safe: a url in [_recentPages] is filtered out and never reaches
+     * [getSuggestions] again, and recording it as dismissed as well only matters if it later
+     * turns up as a padding suggestion, which is the same answer the user just gave.
      */
     fun removePage(url: String) {
-        scope.launch {
-            _recentPages.update { pages -> pages.filter { it.url != url } }
-            scheduleSave()
-        }
+        // Applied on the caller's thread, not inside `scope.launch`. Both updates are in-memory
+        // StateFlow writes, and `scheduleSave` launches its own debounced job, so the coroutine
+        // bought nothing and cost the user a dispatch before the card disappeared.
+        _recentPages.update { pages -> pages.filter { it.url != url } }
+        _dismissedSuggestions.update { it + canonicalUrlKey(url) }
+        scheduleSave()
     }
 
     /**
@@ -450,10 +485,13 @@ object RecentBrowserPagesManager {
      * Clear all recent pages.
      */
     fun clearAll() {
-        scope.launch {
-            _recentPages.value = emptyList()
-            scheduleSave()
-        }
+        _recentPages.value = emptyList()
+        // Dismiss the padding suggestions too, so "Clear" clears the strip the user is looking
+        // at. Emptying only the recorded pages left all seventeen promo cards in place - and hid
+        // the "Clear" label that had just failed to remove them, because that label is shown
+        // only while recentPages is non-empty.
+        _dismissedSuggestions.value = POPULAR_DEV_SITES.map { canonicalUrlKey(it.url) }.toSet()
+        scheduleSave()
     }
 
     /**
@@ -477,30 +515,57 @@ object RecentBrowserPagesManager {
      * Uses hybrid ranking: visit count weighted heavily + recency decay.
      * Popular dev sites fill remaining slots if history has fewer entries.
      */
-    fun getSuggestions(limit: Int = 8): List<RecentBrowserPage> {
-        val recent = _recentPages.value
-        val recentUrls = recent.map { it.url }.toSet()
-        val now = System.currentTimeMillis()
+    fun getSuggestions(limit: Int = 8): List<RecentBrowserPage> =
+        rankSuggestions(
+            recent = _recentPages.value,
+            dismissed = _dismissedSuggestions.value,
+            popular = POPULAR_DEV_SITES,
+            limit = limit,
+            now = System.currentTimeMillis(),
+        )
+}
 
-        // Hybrid ranking: combine visit count with recency
-        // - visitCount weighted heavily (multiply by 1000)
-        // - recency normalized to hours for reasonable decay
-        val rankedRecent =
-            recent.sortedByDescending { page ->
-                val hoursAgo = (now - page.lastVisited) / (1000.0 * 60 * 60)
-                val recencyScore = maxOf(0.0, 100 - hoursAgo) // Decays over ~4 days
-                (page.visitCount * 1000.0) + recencyScore
-            }
+/**
+ * The suggestion list: ranked history first, then padding from [popular].
+ *
+ * A pure function taking [now] rather than reading the clock, so `SuggestionDismissalTest` can
+ * pin the dismissal rule without mutating a process-wide singleton or writing to the user's real
+ * `~/.boss/recent-browser-pages.json` - which a test driving `clearAll` on the object would do.
+ *
+ * @param dismissed [canonicalUrlKey] values the user has dismissed. Applies to the padding only:
+ *   a page in [recent] is excluded by being removed from [recent]. The dismissed set exists
+ *   because the padding entries live in no persisted list, so before it the card's X filtered
+ *   nothing and the suggestion re-appeared on the next frame.
+ */
+internal fun rankSuggestions(
+    recent: List<RecentBrowserPage>,
+    dismissed: Set<String>,
+    popular: List<RecentBrowserPage>,
+    limit: Int,
+    now: Long,
+): List<RecentBrowserPage> {
+    val recentUrls = recent.map { it.url }.toSet()
 
-        val suggestions = mutableListOf<RecentBrowserPage>()
-        suggestions.addAll(rankedRecent.take(limit))
-
-        // Fill remaining slots with popular sites not in history
-        if (suggestions.size < limit) {
-            val popular = POPULAR_DEV_SITES.filter { !recentUrls.contains(it.url) }
-            suggestions.addAll(popular.take(limit - suggestions.size))
+    // Hybrid ranking: combine visit count with recency
+    // - visitCount weighted heavily (multiply by 1000)
+    // - recency normalized to hours for reasonable decay
+    val rankedRecent =
+        recent.sortedByDescending { page ->
+            val hoursAgo = (now - page.lastVisited) / (1000.0 * 60 * 60)
+            val recencyScore = maxOf(0.0, 100 - hoursAgo) // Decays over ~4 days
+            (page.visitCount * 1000.0) + recencyScore
         }
 
-        return suggestions.take(limit)
+    val suggestions = mutableListOf<RecentBrowserPage>()
+    suggestions.addAll(rankedRecent.take(limit))
+
+    if (suggestions.size < limit) {
+        val padding =
+            popular.filter { site ->
+                !recentUrls.contains(site.url) && canonicalUrlKey(site.url) !in dismissed
+            }
+        suggestions.addAll(padding.take(limit - suggestions.size))
     }
+
+    return suggestions.take(limit)
 }

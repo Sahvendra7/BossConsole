@@ -1,5 +1,6 @@
 package ai.rever.boss.app
 
+import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.events.DashboardEventBus
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.GitTerminalEventBus
@@ -15,11 +16,13 @@ import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.components.plugin.PluginDependencyEventBus
 import ai.rever.boss.components.plugin.resolveRegisteredPanelId
 import ai.rever.boss.components.window_panel.SplitOrientation
+import ai.rever.boss.components.workspaces.PredefinedWorkspaces
 import ai.rever.boss.components.workspaces.WorkspaceSerializer
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.git.GitTerminalService
+import ai.rever.boss.plugin.api.NewTabContext
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.api.Panel.Companion.left
 import ai.rever.boss.plugin.api.Panel.Companion.right
@@ -38,7 +41,6 @@ import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.utils.awaitRegistryCondition
-import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -498,11 +500,37 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
 
                     if (!foundVisible) {
                         // Panel is not visible - open it using the same logic as panelOpenEvents
-                        val panelInfo =
+                        fun findPanelInfo() =
                             state.panelRegistry.getAllPanels().find {
                                 it.id.panelId == event.panelId.panelId &&
                                     it.id.pluginId == event.panelId.pluginId
                             }
+
+                        // Wait for late plugin registration rather than dropping the
+                        // toggle, exactly as panelOpenEvents does above. Every panel a
+                        // toggle targets (codebase, bookmarks, downloads,
+                        // run-configurations, terminal) is registered by a plugin jar, so
+                        // a toggle sent early - the home screen's tool grid clicked
+                        // moments after launch - used to do nothing at all and say
+                        // nothing either.
+                        var panelInfo = findPanelInfo()
+                        if (panelInfo == null) {
+                            awaitRegistryCondition(
+                                state.panelRegistry::addChangeListener,
+                                state.panelRegistry::removeChangeListener,
+                            ) { findPanelInfo() != null }
+                            panelInfo = findPanelInfo()
+                            if (panelInfo == null) {
+                                logger.warn(
+                                    LogCategory.UI,
+                                    "Dropping panel toggle event - panel never registered",
+                                    mapOf(
+                                        "panelId" to event.panelId.panelId,
+                                        "pluginId" to event.panelId.pluginId,
+                                    ),
+                                )
+                            }
+                        }
 
                         if (panelInfo != null) {
                             val panelSlot = panelInfo.defaultSlotPosition
@@ -533,13 +561,21 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
     // Listen for Dashboard events from Fluck tabs (when Dashboard is shown in empty browser tabs)
     // Issue #506: Filter by window to prevent events affecting all windows
     LaunchedEffect(splitViewState, windowId) {
-        // Handle file open events
+        // Handle file open events.
+        //
+        // Delegated to FileEventBus rather than calling openFileInActivePanel directly,
+        // because FileEventBus is the only path that records the open: its callback drives
+        // RecentFilesManager.recordFileOpen and DashboardStatsManager.recordFileOpen. Opening
+        // a file straight into the split view is what made a file opened FROM the home
+        // screen never bump its own recency - it kept sliding down the very list it was
+        // clicked in - and never increment the counter the old header displayed.
         DashboardEventBus.openFileEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                splitViewState.openFileInActivePanel(
-                    event.path,
-                    event.path.extractFileName().ifEmpty { "untitled" },
+                FileEventBus.openFile(
+                    filePath = event.path,
+                    sourceWindowId = windowId,
+                    projectPath = windowProjectState.selectedProject.value.path,
                 )
             }.launchIn(this)
 
@@ -601,7 +637,23 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
         DashboardEventBus.applySplitTemplateEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                // Split templates from Fluck Dashboard - apply using active panel
+                // Prefer the predefined workspace of the same id, which is what the old home
+                // screen call site did and this handler did not. It matters: all seven built-in
+                // templates have an exact `workspace-<id>` twin, and a workspace applies the
+                // whole arrangement - including bottom panels, which the tab-by-tab fallback
+                // below silently ignores (the `code-review` template has one). Without this,
+                // moving the home screen onto the bus would have quietly downgraded every
+                // workspace layout tile.
+                val matchingWorkspace =
+                    PredefinedWorkspaces.allWorkspaces.find { it.id == "workspace-${event.template.id}" }
+                        ?: PredefinedWorkspaces.allWorkspaces.find { it.name == event.template.name }
+                if (matchingWorkspace != null) {
+                    workspaceManager.loadWorkspace(matchingWorkspace)
+                    applyWorkspace(matchingWorkspace, splitViewState)
+                    return@onEach
+                }
+
+                // Split templates with no workspace twin - apply using active panel
                 val activeComponent = splitViewState.getActiveTabsComponent()
                 if (activeComponent != null) {
                     val activePanelId = splitViewState.activePanelId
@@ -637,6 +689,87 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 state.draggablePanelComponent.activatePlugin(event.pluginId)
+            }.launchIn(this)
+
+        // Handle settings window events from the home screen.
+        DashboardEventBus.showSettingsEvents
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach {
+                state.settingsWindow.open()
+            }.launchIn(this)
+
+        // Handle global search events from the home screen's search affordance. The same dialog
+        // the search.open shortcut raises, rather than a second search of its own.
+        DashboardEventBus.openSearchEvents
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach {
+                state.showGlobalSearchDialog = true
+            }.launchIn(this)
+
+        // Handle "open this registered tab type" events from the home screen's tool grid.
+        //
+        // The same two steps NewTabDialog takes (resolve the type, let the plugin build its
+        // TabInfo), so a tool tile and the dialog tile for one plugin cannot diverge. Waits
+        // for late registration like the panel handlers, since the grid can be clicked while
+        // plugins are still loading.
+        DashboardEventBus.openTabTypeEvents
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach { event ->
+                // Matched over getAllTabTypes() by field, NOT by rebuilding a TabTypeId and
+                // calling getTabTypeInfo. TabTypeId is a data class over (typeId, pluginId), so
+                // `TabTypeId("arcade")` leaves pluginId "" and does not equal the
+                // `TabTypeId("arcade", "ai.rever.boss.plugin.dynamic.arcade")` the plugin
+                // registered - the map lookup missed and every Arcade click was dropped as "tab
+                // type never registered". The panel handlers above compare panelId/pluginId field
+                // by field for the same reason.
+                fun typeInfo() =
+                    state.tabRegistry.getAllTabTypes().firstOrNull { candidate ->
+                        candidate.typeId.typeId == event.typeId &&
+                            // Blank means the caller did not know it, so match on typeId alone.
+                            (event.typePluginId.isBlank() || candidate.typeId.pluginId == event.typePluginId)
+                    }
+
+                var info = typeInfo()
+                if (info == null) {
+                    awaitRegistryCondition(
+                        state.tabRegistry::addChangeListener,
+                        state.tabRegistry::removeChangeListener,
+                    ) { typeInfo() != null }
+                    info = typeInfo()
+                }
+                if (info == null) {
+                    logger.warn(
+                        LogCategory.UI,
+                        "Dropping open tab type event - tab type never registered",
+                        mapOf("typeId" to event.typeId),
+                    )
+                    return@onEach
+                }
+                // Plugin code, so crash-isolated: a throwing createTabInfo must not take
+                // down the window that asked. Null means the plugin rejected the input.
+                val tabInfo =
+                    try {
+                        info.createTabInfo(
+                            event.input.trim(),
+                            NewTabContext(
+                                projectPath = windowProjectState.selectedProject.value.path,
+                                windowId = windowId,
+                            ),
+                        )
+                    } catch (e: Exception) {
+                        logger.warn(
+                            LogCategory.UI,
+                            "Plugin createTabInfo failed for a home screen tool",
+                            mapOf("typeId" to event.typeId),
+                            error = e,
+                        )
+                        null
+                    }
+                if (tabInfo == null) {
+                    StatusMessageManager.showMessage("Could not open ${info.displayName}")
+                    return@onEach
+                }
+                splitViewState.getActiveTabsComponent()?.addTab(tabInfo)
             }.launchIn(this)
     }
 
