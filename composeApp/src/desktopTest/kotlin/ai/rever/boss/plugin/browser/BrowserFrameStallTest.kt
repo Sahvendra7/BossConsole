@@ -2,16 +2,20 @@ package ai.rever.boss.plugin.browser
 
 import com.teamdev.jxbrowser.engine.RenderingMode
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Guards the two decisions in [BrowserFrameStall] that decide whether a user's browser view gets
- * yanked out of composition and put back.
+ * Guards the pure decisions in [BrowserFrameStall] - the ones that decide whether a user's browser
+ * view gets yanked out of composition and put back.
  *
- * Both are cheap to get backwards, and both fail in the direction of doing the re-attach too
- * often - which is a visible flicker on pages that were never broken.
+ * Both fail in the same direction when got wrong: re-attaching too often, which is a visible
+ * flicker on pages that were never broken.
+ *
+ * **What this does not cover**, so green here is not mistaken for a verified mechanism: the
+ * supersede-per-redirect logic, the visibility gate, the cap and cooldown, and the re-attach
+ * itself all need a live JxBrowser view and are covered only by the manual run recorded in the PR
+ * (same click path: 0/5 painted before, 5/5 after, watchdog firing only on the AI Mode commits).
  */
 class BrowserFrameStallTest {
     @Test
@@ -44,21 +48,32 @@ class BrowserFrameStallTest {
     }
 
     @Test
-    fun `a failed beacon read is not a stall`() {
-        // The distinction this test exists for: null means the JS round-trip did not happen (a
-        // navigation raced the probe, the frame went away), NOT that the page failed to draw.
-        // Treating null as a stall re-attaches the view on ordinary pages.
+    fun `only an explicit unpainted reading is a stall`() {
+        assertTrue(BrowserFrameStall.isStalled(BrowserFrameStall.BEACON_UNPAINTED))
+        assertFalse(BrowserFrameStall.isStalled(BrowserFrameStall.BEACON_PAINTED))
+    }
+
+    @Test
+    fun `a failed or timed-out beacon read is not a stall`() {
+        // The distinction this test exists for: null means the JS round-trip did not happen or did
+        // not answer in time (a navigation raced the probe, the frame went away, the renderer is
+        // busy), NOT that the page failed to draw. Treating null as a stall re-attaches the view
+        // on ordinary pages, and does it hardest against exactly the slow renderers least able to
+        // afford it.
         assertFalse(BrowserFrameStall.isStalled(null))
     }
 
     @Test
-    fun `a painted beacon is not a stall and an unpainted one is`() {
-        assertFalse(BrowserFrameStall.isStalled(BrowserFrameStall.BEACON_PAINTED))
-        assertTrue(BrowserFrameStall.isStalled("0"))
+    fun `an unrecognised reading is not a stall`() {
+        // The beacon is a window global, so a page can overwrite it with anything. Anything that
+        // is not the exact unpainted marker is treated as "do not touch this".
+        for (reading in listOf("", "true", "0.0", "unarmed", "[object Object]")) {
+            assertFalse(BrowserFrameStall.isStalled(reading), "should not treat $reading as a stall")
+        }
     }
 
     @Test
-    fun `the beacon script reports the value it also arms`() {
+    fun `the beacon script arms once per document and reports what isStalled compares against`() {
         // The same snippet arms and polls, so a rename on one side cannot silently stop the other
         // from ever matching - which would re-attach the view on every single navigation.
         assertTrue(BrowserFrameStall.BEACON_SCRIPT.contains("__bossFrameBeacon"))
@@ -67,14 +82,34 @@ class BrowserFrameStallTest {
             BrowserFrameStall.BEACON_SCRIPT.contains("'${BrowserFrameStall.BEACON_PAINTED}'"),
             "the script must assign the exact value isStalled compares against",
         )
+        assertTrue(
+            BrowserFrameStall.BEACON_SCRIPT.contains("'${BrowserFrameStall.BEACON_UNPAINTED}'"),
+            "the script must seed the exact value isStalled treats as stalled",
+        )
+        // The typeof guard is what makes arming once-per-document rather than once-per-call, and
+        // that is what lets a second reading confirm the first instead of restarting the clock.
+        assertTrue(
+            BrowserFrameStall.BEACON_SCRIPT.contains("typeof window.__bossFrameBeacon === 'undefined'"),
+            "re-arming on every call would make every reading the first one, which is always unpainted",
+        )
     }
 
     @Test
-    fun `both waits are non-trivial`() {
-        // A first check that fires immediately would call every page stalled, since no page has
-        // painted at commit time.
-        assertTrue(BrowserFrameStall.FIRST_CHECK_MS >= 500)
-        assertTrue(BrowserFrameStall.CONFIRM_MS >= 500)
-        assertEquals(1600L, BrowserFrameStall.FIRST_CHECK_MS + BrowserFrameStall.CONFIRM_MS)
+    fun `the waits leave room for a page to paint`() {
+        // An arm delay of zero would be harmless, but a zero read gap would judge the page in the
+        // same tick it was armed in, when no page has painted yet.
+        assertTrue(BrowserFrameStall.ARM_DELAY_MS >= 500)
+        assertTrue(BrowserFrameStall.READ_GAP_MS >= 500)
+        assertTrue(BrowserFrameStall.PROBE_TIMEOUT_MS > 0)
+    }
+
+    @Test
+    fun `the repair is bounded, but only by how often it fails`() {
+        // Unbounded, any condition that reliably reads unpainted becomes a flicker on every
+        // navigation - worse than the blank being fixed. See EngineWedgeDetector for the sibling.
+        assertTrue(BrowserFrameStall.MAX_INEFFECTIVE_REATTACHES in 1..10)
+        // The rate limit is what bounds a tight navigation loop, and it applies whether or not the
+        // repair is working - so it, not the give-up counter, has to be non-trivial.
+        assertTrue(BrowserFrameStall.REATTACH_COOLDOWN_MS >= 1_000)
     }
 }

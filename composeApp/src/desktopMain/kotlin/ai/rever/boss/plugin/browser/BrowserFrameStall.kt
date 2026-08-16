@@ -30,20 +30,35 @@ import com.teamdev.jxbrowser.engine.RenderingMode
  * The underlying fault is inside the JxBrowser/Chromium widget rather than in BOSS, so this is
  * deliberately a recovery and not a cure: it detects a document that committed but never drew, and
  * performs the tab-switch repair on the user's behalf.
+ *
+ * **Known and accepted: the page can influence the verdict.** The flag lives on `window`, so a
+ * page could pin it to `"0"` (forcing a re-attach per navigation, costing flicker) or to `"1"`
+ * (suppressing the repair, leaving itself blank). This is the same exposure AGENTS.md already
+ * records for `window.__bossInteraction`, and the worst case either way is cosmetic, so it is
+ * written down rather than defended against. The re-attach cap below bounds the noisy direction.
+ *
+ * **Not injected at document start, on purpose.** [BrowserInjectDispatcher] exists for exactly
+ * that and would make the first reading meaningful, but `ensureCoBrowseInjectCallback` still
+ * claims the browser's single `InjectJsCallback` slot with a direct `browser.set`, so registering
+ * through the dispatcher here would clobber the co-browse recorder or be clobbered by it. Arming
+ * lazily on the first probe keeps this feature out of that conflict; the cost is one extra
+ * round-trip, spelled out in [ARM_DELAY_MS].
  */
 internal object BrowserFrameStall {
     /**
-     * Arms a one-shot beacon and reports whether a frame has been served yet.
+     * Arms a one-shot beacon and reports whether a frame has been served since it was armed.
      *
-     * Returns `"1"` once rAF has run, `"0"` while it has not. Re-running it is what reads the
-     * result, so the same snippet both arms and polls - there is no second script to keep in step
-     * with this one.
+     * Returns `"1"` once rAF has run, `"0"` while it has not, and `"unarmed"` never - the same
+     * call that reads is the call that arms, so the first invocation on a document always returns
+     * `"0"` no matter how healthy the page is. That is why [ARM_DELAY_MS] is named for arming and
+     * why the decision needs two readings *after* it.
      *
-     * `__bossFrameBeacon` is deliberately re-armed per call site rather than per document: a
-     * document that is replaced under us (a redirect committing between arm and read) would
-     * otherwise be read through a beacon that belonged to the previous page and look stalled.
+     * The `typeof` guard makes this arm **once per document**: later calls report the existing
+     * beacon rather than restarting it, which is what lets a second reading confirm the first.
+     * A document replaced mid-probe (a redirect committing between calls) gets a fresh `window`
+     * and therefore a fresh beacon, so a stale page's verdict can never carry over.
      */
-    const val BEACON_SCRIPT: String =
+    val BEACON_SCRIPT: String =
         """
         (function () {
           if (typeof window.__bossFrameBeacon === 'undefined') {
@@ -52,10 +67,13 @@ internal object BrowserFrameStall {
           }
           return window.__bossFrameBeacon;
         })()
-        """
+        """.trimIndent()
 
     /** The beacon's answer for "a frame has been served". */
     const val BEACON_PAINTED: String = "1"
+
+    /** The beacon's answer for "armed, still nothing drawn". */
+    const val BEACON_UNPAINTED: String = "0"
 
     /**
      * Whether a committed navigation is worth watching.
@@ -77,24 +95,68 @@ internal object BrowserFrameStall {
     }
 
     /**
-     * Whether the beacon's reading means "stalled".
+     * Whether a beacon reading means "stalled". Only an explicit [BEACON_UNPAINTED] does.
      *
-     * A null reading is NOT a stall. It is what a failed or raced JS round-trip returns - a
-     * navigation that committed again mid-probe, a frame that went away, a renderer busy enough to
-     * miss the call - and treating those as stalls would re-attach the view on ordinary pages,
-     * which costs a visible flicker for nothing. Only an explicit "not painted yet" counts.
+     * Null is NOT a stall, and that is the whole point of this function. Null is what a failed or
+     * timed-out round-trip returns - a navigation that committed again mid-probe, a frame that
+     * went away, a renderer too busy to answer - and treating those as stalls would re-attach the
+     * view on ordinary pages, which costs a visible flicker for nothing. Any unrecognised value
+     * (a page that overwrote the global with something else) is treated the same cautious way.
      */
-    fun isStalled(beaconReading: String?): Boolean = beaconReading != null && beaconReading != BEACON_PAINTED
-
-    /** How long to give a healthy page before the first reading. */
-    const val FIRST_CHECK_MS: Long = 700L
+    fun isStalled(beaconReading: String?): Boolean = beaconReading == BEACON_UNPAINTED
 
     /**
-     * How long to wait again before believing the first reading.
+     * How long after a commit to arm the beacon.
      *
-     * Two readings, not one. A slow page can genuinely have served no frame at 700ms, and a
-     * single reading would re-attach its view mid-load for no reason. Both must say "no frame"
-     * before anything is done.
+     * Named for arming rather than checking because the reading this call returns is always
+     * [BEACON_UNPAINTED] and carries no information (see [BEACON_SCRIPT]). Delayed rather than
+     * immediate so a page that paints promptly is usually already done by the first real reading.
      */
-    const val CONFIRM_MS: Long = 900L
+    const val ARM_DELAY_MS: Long = 700L
+
+    /**
+     * Gap between the arm and each subsequent reading.
+     *
+     * Two real readings, not one. rAF does not run while rendering is blocked, so a page still
+     * fetching a render-blocking stylesheet or font on a poor connection can honestly have drawn
+     * nothing one gap after arming; re-attaching then would yank a healthy page's view out of
+     * composition mid-load. Both readings must say "no frame" before anything is done.
+     */
+    const val READ_GAP_MS: Long = 900L
+
+    /**
+     * How long to wait for a single beacon round-trip before giving up on it.
+     *
+     * `executeJavaScript` blocks and cannot be interrupted, so this bounds the *wait*, not the
+     * call. A probe that times out reads as null, which [isStalled] treats as "not stalled" - the
+     * safe direction, since the renderer this is interrogating is already suspect.
+     */
+    const val PROBE_TIMEOUT_MS: Long = 800L
+
+    /**
+     * How many re-attaches **in a row that failed to restore painting** a handle may perform
+     * before it gives up.
+     *
+     * `EngineWedgeDetector` in this package carries a ceiling for the same reason: a repair with
+     * none turns any condition that reliably reads [BEACON_UNPAINTED] into a flicker on every
+     * navigation, which is worse than the blank it is fixing. Past it the handle degrades to the
+     * pre-existing behaviour - the user switches tabs themselves - and the log says so once.
+     *
+     * **Consecutive-ineffective, deliberately, rather than a lifetime count.** A lifetime cap
+     * sounds safer and measurably is not: AI Mode is a page people use repeatedly, and a run of
+     * five click-throughs on one tab had the fourth and fifth abandoned while the repair was still
+     * working - it had recovered the page 3 times out of 3. Keying on whether the re-attach
+     * actually helped bounds only what warrants bounding (a false positive, or a stall this cannot
+     * fix), and one success resets the count, so a tab that stays repairable stays repaired.
+     */
+    const val MAX_INEFFECTIVE_REATTACHES: Int = 3
+
+    /**
+     * Minimum spacing between two re-attaches on one handle.
+     *
+     * This is what bounds the *rate* of any flicker, and it does so whether or not the repair is
+     * working - so it, rather than [MAX_INEFFECTIVE_REATTACHES], is the guard against an SPA
+     * navigating in a tight loop.
+     */
+    const val REATTACH_COOLDOWN_MS: Long = 10_000L
 }

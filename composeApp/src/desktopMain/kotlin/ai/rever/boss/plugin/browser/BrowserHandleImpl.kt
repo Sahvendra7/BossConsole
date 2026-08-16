@@ -419,17 +419,61 @@ internal class BrowserHandleImpl(
     private var viewGeneration by mutableStateOf(0)
 
     /**
-     * Runs the frame-stall probe. Separate from [coBrowseScope] so a co-browse teardown cannot
-     * cancel a pending check, and on Main because `executeJavaScript` is a blocking round-trip
-     * that JxBrowser expects from the UI thread here, as the other injection sites already do.
+     * True while [Content] is in composition, i.e. while this handle's view is actually on screen.
      *
-     * Only ever one check in flight: a redirect chain fires NavigationFinished repeatedly, and
-     * without this each commit would leave its own probe running against a document that has
-     * already been replaced.
+     * The frame-stall probe is meaningless without it. Chromium does not run rAF for a page that
+     * is not visible, so a navigation committing in a background tab - or in a handle a plugin
+     * created and never rendered at all - reads "no frame" perfectly correctly, and re-attaching
+     * a view that is not composed repairs nothing while logging a warning that is simply false.
+     * Session restore with a handful of background tabs would be that warning once per tab.
      */
-    private val frameStallScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    @Volatile private var viewComposed = false
 
-    @Volatile private var frameStallJob: Job? = null
+    /** Re-attaches performed so far, for the log only. The gate is [ineffectiveReattaches]. */
+    @Volatile private var reattachCount = 0
+
+    /**
+     * Re-attaches in a row that did not restore painting, against
+     * [BrowserFrameStall.MAX_INEFFECTIVE_REATTACHES]. Reset by any repair that works.
+     */
+    @Volatile private var ineffectiveReattaches = 0
+
+    /** When the last re-attach happened, for [BrowserFrameStall.REATTACH_COOLDOWN_MS]. */
+    @Volatile private var lastReattachAtMs = 0L
+
+    /** Logged once when the cap trips, so the give-up is visible without repeating per navigation. */
+    @Volatile private var reattachCapLogged = false
+
+    /**
+     * Waits on the frame-stall probe. Separate from [coBrowseScope] so a co-browse teardown cannot
+     * cancel a pending check, and on Default so [withTimeoutOrNull] can actually fire - the
+     * blocking round-trip itself runs on [frameProbeDispatcher], never here and never on the EDT.
+     */
+    private val frameStallScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Off-thread executor for the beacon round-trip, mirroring [contextMenuLookupDispatcher] and
+     * for the same reason spelled out there: `executeJavaScript` blocks and nothing can interrupt
+     * it, so against a wedged renderer this costs one parked daemon thread rather than a frozen
+     * UI. That matters more here than for the context menu - this probe exists to interrogate a
+     * page already suspected of misbehaving, and it runs on every http(s) commit.
+     */
+    private val frameProbeExecutor =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "boss-frame-probe-$id").apply { isDaemon = true }
+        }
+    private val frameProbeDispatcher = frameProbeExecutor.asCoroutineDispatcher()
+
+    /**
+     * The in-flight check, swapped atomically.
+     *
+     * A redirect chain fires NavigationFinished repeatedly and only the document that finally
+     * sticks is worth judging. `getAndSet` rather than read-cancel-assign so that does not rest on
+     * an assumption about JxBrowser delivering navigation events on one thread.
+     */
+    private val frameStallJob =
+        java.util.concurrent.atomic
+            .AtomicReference<Job?>(null)
 
     // Off-thread executor for context-menu detail lookups. The form-field inspection is a
     // blocking JS round-trip, and it must not run on the JxBrowser callback thread (which
@@ -516,15 +560,52 @@ internal class BrowserHandleImpl(
     }
 
     /**
-     * Read the frame beacon, or null if the round-trip could not be made.
+     * Read the frame beacon, or null if the round-trip could not be made in time.
      *
-     * Null and "0" are kept apart on purpose: see [BrowserFrameStall.isStalled].
+     * The blocking call is confined to [frameProbeDispatcher] and only the *wait* is bounded, so a
+     * renderer that never answers parks that one daemon thread instead of anything shared. Null
+     * and "0" are kept apart on purpose: see [BrowserFrameStall.isStalled].
      */
-    private fun readFrameBeacon(): String? =
-        runCatching {
-            if (!isValid) return null
-            browser.mainFrame().orElse(null)?.executeJavaScript<String?>(BrowserFrameStall.BEACON_SCRIPT)
-        }.getOrNull()
+    private suspend fun readFrameBeacon(): String? {
+        if (!isValid) return null
+        // Raced rather than wrapped, exactly as the context-menu lookup is: executeJavaScript has
+        // no suspension point, so a cancelled withTimeoutOrNull could not interrupt it.
+        val probe =
+            frameStallScope.async(frameProbeDispatcher) {
+                runCatching {
+                    browser.mainFrame().orElse(null)?.executeJavaScript<String?>(BrowserFrameStall.BEACON_SCRIPT)
+                }.getOrNull()
+            }
+        return withTimeoutOrNull(BrowserFrameStall.PROBE_TIMEOUT_MS) { probe.await() }
+    }
+
+    /**
+     * Whether a re-attach is allowed right now, and record it if so.
+     *
+     * Bounded like `EngineWedgeDetector`'s recycle: past the cap the handle degrades to the
+     * pre-existing behaviour (the user switches tabs themselves) rather than flickering forever.
+     */
+    private fun claimReattachSlot(): Boolean {
+        val now = System.currentTimeMillis()
+        val capped = ineffectiveReattaches >= BrowserFrameStall.MAX_INEFFECTIVE_REATTACHES
+        if (capped && !reattachCapLogged) {
+            reattachCapLogged = true
+            logger.warn(
+                LogCategory.BROWSER,
+                "Re-attaching stopped helping - leaving this tab alone",
+                mapOf(
+                    "ineffectiveInARow" to ineffectiveReattaches.toString(),
+                    "attemptsTotal" to reattachCount.toString(),
+                ),
+            )
+        }
+        val allowed = !capped && now - lastReattachAtMs >= BrowserFrameStall.REATTACH_COOLDOWN_MS
+        if (allowed) {
+            lastReattachAtMs = now
+            reattachCount += 1
+        }
+        return allowed
+    }
 
     /**
      * Watch a freshly committed document and re-attach the view if it never draws.
@@ -536,27 +617,65 @@ internal class BrowserHandleImpl(
      */
     private fun scheduleFrameStallCheck(url: String?) {
         if (!BrowserFrameStall.shouldWatch(url, JxBrowserConfig.renderingMode)) return
-        // Supersede rather than stack: a redirect chain commits several times, and only the
-        // document that finally sticks is worth judging.
-        frameStallJob?.cancel()
-        frameStallJob =
+        val started =
             frameStallScope.launch {
-                delay(BrowserFrameStall.FIRST_CHECK_MS)
-                if (!BrowserFrameStall.isStalled(readFrameBeacon())) return@launch
-                // Give a slow page a second chance before touching anything.
-                delay(BrowserFrameStall.CONFIRM_MS)
-                if (!BrowserFrameStall.isStalled(readFrameBeacon())) return@launch
+                // The first call arms the beacon and always answers "not painted", so it is not a
+                // reading and is not treated as one. See BrowserFrameStall.ARM_DELAY_MS.
+                delay(BrowserFrameStall.ARM_DELAY_MS)
+                if (!viewComposed) return@launch
+                readFrameBeacon()
 
+                // Two real readings. A page still blocked on a render-blocking resource can
+                // honestly have drawn nothing at the first one.
+                repeat(2) {
+                    delay(BrowserFrameStall.READ_GAP_MS)
+                    if (!viewComposed) return@launch
+                    if (!BrowserFrameStall.isStalled(readFrameBeacon())) return@launch
+                }
+
+                if (!claimReattachSlot()) return@launch
                 logger.warn(
                     LogCategory.BROWSER,
                     "Committed page served no frame - re-attaching the browser view",
                     mapOf(
                         "url" to LogSanitizer.maskUriParams(url.orEmpty()),
-                        "generation" to (viewGeneration + 1).toString(),
+                        "attempt" to reattachCount.toString(),
                     ),
                 )
-                viewGeneration += 1
+                withContext(Dispatchers.Main) { viewGeneration += 1 }
+
+                // Did the repair take? This both feeds the give-up counter and is the one datum
+                // worth having if this ever needs escalating to TeamDev, since it is a recovery
+                // for a fault we do not own.
+                //
+                // The beacon is per-document and already armed, so it keeps reporting the same
+                // document across the re-attach - which is exactly what makes this readable as
+                // "did re-attaching start frames for THIS page".
+                delay(BrowserFrameStall.READ_GAP_MS)
+                val recovered = !BrowserFrameStall.isStalled(readFrameBeacon())
+                if (recovered) {
+                    // A working repair must not count towards giving up, or a tab that legitimately
+                    // needs it often would be abandoned while it was still working.
+                    ineffectiveReattaches = 0
+                    reattachCapLogged = false
+                } else {
+                    ineffectiveReattaches += 1
+                }
+                logger.info(
+                    LogCategory.BROWSER,
+                    if (recovered) {
+                        "Browser view re-attached and painting"
+                    } else {
+                        "Browser view re-attached and still not painting"
+                    },
+                    mapOf(
+                        "attempt" to reattachCount.toString(),
+                        "ineffectiveInARow" to ineffectiveReattaches.toString(),
+                    ),
+                )
             }
+        // Supersede rather than stack: only the document that finally sticks is worth judging.
+        frameStallJob.getAndSet(started)?.cancel()
     }
 
     private fun setupEventListeners() {
@@ -2099,7 +2218,13 @@ internal class BrowserHandleImpl(
         // so a consumer that cares can intersect the two.
         DisposableEffect(Unit) {
             visitTracker.setVisible(true)
-            onDispose { visitTracker.setVisible(false) }
+            // Same signal, second consumer: the frame-stall probe must not judge a view that is
+            // not on screen, because Chromium serves no frames to one. See viewComposed.
+            viewComposed = true
+            onDispose {
+                visitTracker.setVisible(false)
+                viewComposed = false
+            }
         }
 
         // Which window telemetry is attributed to, kept current across a tab move. Its own
@@ -2361,9 +2486,12 @@ internal class BrowserHandleImpl(
         coBrowseBridge.onEvent = null
         coBrowseScope.cancel()
         // A pending frame-stall probe outlives the tab otherwise, and its next act is a blocking
-        // executeJavaScript against a browser that is being torn down.
-        frameStallJob?.cancel()
+        // executeJavaScript against a browser that is being torn down. shutdown() not
+        // shutdownNow(), for the same reason as the context-menu executor: a round-trip already
+        // inside executeJavaScript cannot be interrupted, and the thread is daemon.
+        frameStallJob.getAndSet(null)?.cancel()
         frameStallScope.cancel()
+        frameProbeExecutor.shutdown()
         // Stops queued menu lookups from starting. A lookup already blocked inside
         // executeJavaScript cannot be interrupted by cancellation — the delivery site
         // checks `disposed` before handing anything back. shutdown() (not shutdownNow())
