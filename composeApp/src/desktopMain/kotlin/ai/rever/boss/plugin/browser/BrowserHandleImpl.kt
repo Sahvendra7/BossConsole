@@ -100,6 +100,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
@@ -433,11 +435,37 @@ internal class BrowserHandleImpl(
      * frame" perfectly correctly, and re-attaching it repairs nothing while logging a warning that
      * is false. Session restore with N background tabs would be N false warnings per launch.
      */
-    private val composedSurfaces =
-        java.util.concurrent.atomic
-            .AtomicInteger(0)
+    private val composedSurfaces = AtomicInteger(0)
 
-    private val viewComposed: Boolean get() = composedSurfaces.get() > 0
+    /**
+     * The AWT window this handle's view is bound to, for the on-screen half of [viewComposed].
+     * Null until [Content] resolves one, and treated as "assume showing" while it is.
+     */
+    @Volatile private var frameStallHostWindow: Window? = null
+
+    /**
+     * Whether this view is genuinely on screen: composed **and** in a window that is showing and
+     * not minimized.
+     *
+     * Composition alone is not the same thing. A minimized window keeps its composition alive, so
+     * its foreground tab would pass a composed-only gate while Chromium is legitimately not
+     * painting it - and the cost of that false positive is not merely a wasted WARN but a view
+     * rebuild, which drops keyboard focus and IME state in that tab.
+     */
+    private val viewComposed: Boolean
+        get() {
+            if (composedSurfaces.get() <= 0) return false
+            val window = frameStallHostWindow ?: return true
+            // Fully qualified: this file already imports JxBrowser's Frame, and an unqualified
+            // one here resolves to that rather than the AWT window type.
+            return runCatching {
+                val minimized =
+                    (window as? java.awt.Frame)
+                        ?.let { it.extendedState and java.awt.Frame.ICONIFIED != 0 }
+                        ?: false
+                window.isShowing && !minimized
+            }.getOrDefault(true)
+        }
 
     /** Cooldown, give-up counting and the log-once flag, extracted so they are unit-testable. */
     private val frameStallPolicy = FrameStallPolicy()
@@ -480,9 +508,7 @@ internal class BrowserHandleImpl(
      * sticks is worth judging. `getAndSet` rather than read-cancel-assign so that does not rest on
      * an assumption about JxBrowser delivering navigation events on one thread.
      */
-    private val frameStallJob =
-        java.util.concurrent.atomic
-            .AtomicReference<Job?>(null)
+    private val frameStallJob = AtomicReference<Job?>(null)
 
     // Off-thread executor for context-menu detail lookups. The form-field inspection is a
     // blocking JS round-trip, and it must not run on the JxBrowser callback thread (which
@@ -585,7 +611,14 @@ internal class BrowserHandleImpl(
                     browser.mainFrame().orElse(null)?.executeJavaScript<String?>(BrowserFrameStall.BEACON_SCRIPT)
                 }.getOrNull()
             }
-        return withTimeoutOrNull(BrowserFrameStall.PROBE_TIMEOUT_MS) { probe.await() }
+        val reading = withTimeoutOrNull(BrowserFrameStall.PROBE_TIMEOUT_MS) { probe.await() }
+        // The probe is a child of the scope, not of this coroutine, so neither the timeout above
+        // nor a supersede cancels it. Left alone, one still queued behind a blocked probe on the
+        // single-thread executor would run later against whatever document is current by then.
+        // A queued coroutine honours this immediately; one already inside executeJavaScript is
+        // unaffected either way, which is the parked-thread cost frameProbeExecutor documents.
+        if (reading == null) probe.cancel()
+        return reading
     }
 
     /**
@@ -593,6 +626,13 @@ internal class BrowserHandleImpl(
      *
      * Bounded like `EngineWedgeDetector`'s recycle: past the cap the handle degrades to the
      * pre-existing behaviour (the user switches tabs themselves) rather than flickering forever.
+     */
+
+    /**
+     * Note that a handle which has given up still probes on every commit. That reads like waste and
+     * is not: [FrameStallPolicy.recordHealthyNavigation] is only reachable from a reading, so
+     * probing is the only way a retired tab can ever come back. Giving up means "stop re-attaching",
+     * not "stop looking".
      */
     private fun claimReattachSlot(): Boolean {
         // Monotonic, not wall clock: an NTP step must not stretch or shorten the cooldown.
@@ -626,7 +666,12 @@ internal class BrowserHandleImpl(
                 // reading and is not treated as one. See BrowserFrameStall.ARM_DELAY_MS.
                 delay(BrowserFrameStall.ARM_DELAY_MS)
                 if (!viewComposed) return@launch
-                readFrameBeacon()
+                // A null here means the arm never landed - the probe timed out, the main frame was
+                // gone mid-commit. Carrying on would silently spend the first loop iteration
+                // arming, leaving one real reading where the design promises two, and it would do
+                // so against exactly the slow renderers most likely to be honestly mid-paint. A
+                // commit that could not be probed at all is not evidence of a stall.
+                if (readFrameBeacon() == null) return@launch
 
                 // Two real readings. A page still blocked on a render-blocking resource can
                 // honestly have drawn nothing at the first one.
@@ -636,12 +681,29 @@ internal class BrowserHandleImpl(
                     if (!BrowserFrameStall.isStalled(readFrameBeacon())) {
                         // Painted unaided, so this tab is evidently fine - let that decay any
                         // earlier ineffective attempts rather than holding them against it.
+                        // Read before the reset, since the reset is what clears it.
+                        val wasRetired = frameStallPolicy.hasGivenUp
                         frameStallPolicy.recordHealthyNavigation()
+                        if (wasRetired) {
+                            // The counterpart to the give-up line, so a log that says a tab was
+                            // abandoned also says when it came back.
+                            logger.info(
+                                LogCategory.BROWSER,
+                                "Tab painted unaided - frame-stall watchdog active again",
+                                mapOf("attemptsTotal" to frameStallPolicy.attempts.toString()),
+                            )
+                        }
                         return@launch
                     }
                 }
 
                 if (!claimReattachSlot()) return@launch
+                // Booked as ineffective before the repair, upgraded only by an observed recovery.
+                // Everything that can end this job before the confirmation - a fresh commit
+                // superseding it, the view leaving composition, a probe that never answers - would
+                // otherwise leave the attempt uncounted, and a tab that keeps reading unpainted
+                // would re-attach every cooldown forever without ever reaching the cap.
+                frameStallPolicy.recordAttemptPending()
                 logger.warn(
                     LogCategory.BROWSER,
                     "Committed page served no frame - re-attaching the browser view",
@@ -664,20 +726,25 @@ internal class BrowserHandleImpl(
                 // window reads "0" because Chromium does not paint hidden pages, and recording that
                 // as an ineffective repair would retire the watchdog on a false reading.
                 if (!viewComposed) return@launch
-                val recovered = !BrowserFrameStall.isStalled(readFrameBeacon())
-                frameStallPolicy.recordOutcome(recovered)
-                logger.info(
-                    LogCategory.BROWSER,
-                    if (recovered) {
-                        "Browser view re-attached and painting"
-                    } else {
-                        "Browser view re-attached and still not painting"
-                    },
+                // Three outcomes, not two. isStalled(null) is false, so reusing it here would read
+                // a probe that never answered as a success - and credit the repair in exactly the
+                // wedged-renderer case the cap exists to stop. See BrowserFrameStall.repairOutcome.
+                val outcome = BrowserFrameStall.repairOutcome(readFrameBeacon())
+                if (outcome == true) frameStallPolicy.recordRecovered()
+                val detail =
                     mapOf(
                         "attempt" to frameStallPolicy.attempts.toString(),
                         "ineffectiveInARow" to frameStallPolicy.ineffectiveInARow.toString(),
-                    ),
-                )
+                    )
+                when (outcome) {
+                    true -> logger.info(LogCategory.BROWSER, "Browser view re-attached and painting", detail)
+
+                    false -> logger.info(LogCategory.BROWSER, "Browser view re-attached and still not painting", detail)
+
+                    // Counted against the tab by recordAttemptPending, deliberately: an
+                    // unanswerable probe is evidence of a renderer this cannot repair.
+                    null -> logger.info(LogCategory.BROWSER, "Browser view re-attached, outcome unknown", detail)
+                }
             }
         // Supersede rather than stack: only the document that finally sticks is worth judging.
         frameStallJob.getAndSet(started)?.cancel()
@@ -2261,6 +2328,10 @@ internal class BrowserHandleImpl(
                             false
                         }
                     }
+
+            // Published for the frame-stall gate, which needs to know whether the window this view
+            // lives in is actually showing - composition alone stays alive while it is minimized.
+            frameStallHostWindow = awtWindow
 
             // Reuse a retained surface ONLY while it still belongs to this window. This effect is
             // keyed on hostWindowId precisely so a tab moved to another window rebinds (see the

@@ -48,10 +48,10 @@ internal object BrowserFrameStall {
     /**
      * Arms a one-shot beacon and reports whether a frame has been served since it was armed.
      *
-     * Returns `"1"` once rAF has run, `"0"` while it has not, and `"unarmed"` never - the same
-     * call that reads is the call that arms, so the first invocation on a document always returns
-     * `"0"` no matter how healthy the page is. That is why [ARM_DELAY_MS] is named for arming and
-     * why the decision needs two readings *after* it.
+     * Returns `"1"` once rAF has run and `"0"` while it has not. The same call that reads is the
+     * call that arms, so the first invocation on a document always returns `"0"` no matter how
+     * healthy the page is. That is why [ARM_DELAY_MS] is named for arming and why the decision
+     * needs two readings *after* it.
      *
      * The `typeof` guard makes this arm **once per document**: later calls report the existing
      * beacon rather than restarting it, which is what lets a second reading confirm the first.
@@ -104,6 +104,26 @@ internal object BrowserFrameStall {
      * (a page that overwrote the global with something else) is treated the same cautious way.
      */
     fun isStalled(beaconReading: String?): Boolean = beaconReading == BEACON_UNPAINTED
+
+    /**
+     * What a post-repair reading says about the re-attach: true painting, false still blank, null
+     * unknown.
+     *
+     * **Three states, not two, and [isStalled] must not be reused here.** For the *decision* to
+     * re-attach, null correctly means "leave it alone". For the *outcome*, `!isStalled(null)`
+     * reads as success and credits a repair that was never observed to work - which is worst in
+     * exactly the case the give-up cap exists for. A renderer wedged badly enough that probes stop
+     * answering within [PROBE_TIMEOUT_MS] is a renderer re-attaching will not fix, yet every
+     * post-repair read would come back null, the ineffective run would never leave zero, the cap
+     * would never trip, and the tab would flicker once per [REATTACH_COOLDOWN_MS] forever while
+     * the log claimed it was painting.
+     */
+    fun repairOutcome(beaconReading: String?): Boolean? =
+        when {
+            beaconReading == null -> null
+            isStalled(beaconReading) -> false
+            else -> true
+        }
 
     /**
      * How long after a commit to arm the beacon.
@@ -227,19 +247,32 @@ internal class FrameStallPolicy(
     }
 
     /**
-     * Report whether the re-attach actually restored painting.
+     * Count a re-attach as ineffective **up front**, before its outcome is known.
      *
-     * A success clears the run *and* the reported flag, so a handle that starts failing again
-     * later still gets its one log line.
+     * Pessimistic on purpose. The outcome is read a beat later, and everything that can end the
+     * job in between - a fresh commit superseding it, the view leaving composition, a probe that
+     * never answers - would otherwise leave the attempt unaccounted for. A tab that reliably reads
+     * unpainted and re-navigates inside that window would then re-attach every cooldown forever
+     * and never reach the cap, which is the one guard against a false positive. Counting first and
+     * crediting only an observed recovery makes every path that skips the confirmation fail
+     * towards giving up rather than towards flickering.
      */
     @Synchronized
-    fun recordOutcome(recovered: Boolean) {
-        if (recovered) {
-            ineffectiveRun = 0
-            gaveUpReported = false
-        } else {
-            ineffectiveRun += 1
-        }
+    fun recordAttemptPending() {
+        ineffectiveRun += 1
+    }
+
+    /**
+     * Credit a re-attach that was **observed** to restore painting.
+     *
+     * Clears the run and the reported flag, so a handle that starts failing again later still gets
+     * its one log line. Never call this for an unknown outcome: see
+     * [BrowserFrameStall.repairOutcome].
+     */
+    @Synchronized
+    fun recordRecovered() {
+        ineffectiveRun = 0
+        gaveUpReported = false
     }
 
     /**
@@ -255,4 +288,12 @@ internal class FrameStallPolicy(
         ineffectiveRun = 0
         gaveUpReported = false
     }
+
+    /**
+     * Whether this handle has stopped repairing.
+     *
+     * Exposed only so the caller can say in the log that it is still probing a retired tab - which
+     * it must, since a reading is the only thing that can bring one back.
+     */
+    @get:Synchronized val hasGivenUp: Boolean get() = ineffectiveRun >= maxIneffective
 }

@@ -2,7 +2,9 @@ package ai.rever.boss.plugin.browser
 
 import com.teamdev.jxbrowser.engine.RenderingMode
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -61,6 +63,26 @@ class BrowserFrameStallTest {
         // on ordinary pages, and does it hardest against exactly the slow renderers least able to
         // afford it.
         assertFalse(BrowserFrameStall.isStalled(null))
+    }
+
+    @Test
+    fun `an unknown post-repair reading is neither a recovery nor a failure`() {
+        // The highest-severity finding from review, and the reason repairOutcome exists rather
+        // than reusing isStalled: `!isStalled(null)` is true, so an unanswered probe read as a
+        // successful repair. That cleared the ineffective run in exactly the case the cap exists
+        // for - a renderer too wedged to answer at all - so the cap could never trip, the tab
+        // flickered once per cooldown forever, and the log claimed it was painting.
+        assertNull(BrowserFrameStall.repairOutcome(null))
+        assertEquals(false, BrowserFrameStall.repairOutcome(BrowserFrameStall.BEACON_UNPAINTED))
+        assertEquals(true, BrowserFrameStall.repairOutcome(BrowserFrameStall.BEACON_PAINTED))
+    }
+
+    @Test
+    fun `an unrecognised post-repair reading counts as recovered, matching isStalled`() {
+        // Deliberately the same cautious polarity as isStalled: only the exact unpainted marker
+        // is evidence of failure, so a page that overwrote the global cannot force the cap to
+        // trip and retire its own repair.
+        assertEquals(true, BrowserFrameStall.repairOutcome("[object Object]"))
     }
 
     @Test
