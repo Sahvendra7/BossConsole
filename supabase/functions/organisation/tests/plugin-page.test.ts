@@ -59,16 +59,18 @@ Deno.test("a README is escaped, not rendered as markup", () => {
   const html = render({ readme: "# Title\n\n<img src=x onerror=alert(1)>\n<script>alert(2)</script>" })
   assertEquals(/<img[^>]*onerror/.test(html), false)
   assertEquals(html.includes("<script>alert(2)</script>"), false)
-  // Present, but as text.
+  // Present, but as text. Rendering the markdown around it changes nothing about this: the source
+  // is escaped BEFORE any formatting rule runs, so no rule can hand a tag back.
   assertStringIncludes(html, "&lt;img src=x onerror=alert(1)&gt;")
   assertStringIncludes(html, "&lt;script&gt;")
 })
 
-Deno.test("markdown is shown as its source rather than interpreted", () => {
-  // The trade this page makes deliberately: headings appear as "# Title". Asserted so nobody
-  // "fixes" it into a markdown renderer without meeting the reason above.
-  const html = render({ readme: "# Title" })
-  assertStringIncludes(html, "# Title")
+Deno.test("markdown is rendered, with headings placed under the page's own", () => {
+  // The page owns h1 and h2. A README that started at h1 would claim the document outline from
+  // the plugin whose page this is.
+  const html = render({ readme: "# Title\n\nSome **bold** prose." })
+  assertStringIncludes(html, "<h3>Title</h3>")
+  assertStringIncludes(html, "<strong>bold</strong>")
   assertEquals(html.includes("<h1>Title</h1>"), false)
 })
 

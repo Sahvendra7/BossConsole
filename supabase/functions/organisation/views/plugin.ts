@@ -6,6 +6,7 @@
  */
 
 import { esc, scrollable } from "../utils/html.ts"
+import { renderMarkdown } from "../services/markdown.ts"
 import { csrfField, layout } from "./layout.ts"
 import { CSRF_FIELD } from "../utils/csrf.ts"
 import type { PluginDetail } from "../services/plugin.ts"
@@ -103,12 +104,14 @@ function identityCard(plugin: PluginDetail): string {
     </div>
   </div>
   ${
-    facts.length === 0 ? "" : `
-  <table>
+    facts.length === 0 ? "" : scrollable(
+      "Plugin details",
+      `<table>
     <tbody>${
-      facts.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="mono">${esc(v)}</td></tr>`).join("")
-    }</tbody>
-  </table>`
+        facts.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="mono">${esc(v)}</td></tr>`).join("")
+      }</tbody>
+  </table>`,
+    )
   }
   ${
     plugin.homepage_url
@@ -167,13 +170,13 @@ function visibilityReadOnly(plugin: PluginDetail): string {
 }
 
 /**
- * The README, as TEXT.
+ * The README, rendered.
  *
- * Escaped and shown preformatted, never rendered as markdown. This is somebody else's repository
- * content on a page that also carries an admin control; turning it into HTML would make the CSP
- * the only thing between a README and the form below it, and a CSP is a second line of defence.
- * The trade is that headings and links appear as their markdown source, which is a fair price for
- * not executing a stranger's document.
+ * Rendered by services/markdown.ts, which escapes the source BEFORE applying any formatting, so
+ * every tag below is one we wrote and nothing the README supplies can become markup. That is why
+ * there is no library involved: a general Markdown renderer passes raw HTML through by design,
+ * which would make the CSP the only thing between somebody else's repository and the admin control
+ * on this page.
  */
 function readmeCard(plugin: PluginDetail, readme: string | null): string {
   if (!readme) {
@@ -191,7 +194,7 @@ function readmeCard(plugin: PluginDetail, readme: string | null): string {
   return `
 <section class="card">
   <h2>About</h2>
-  <p class="hint">From the plugin's README, shown as plain text.</p>
-  ${scrollable("README", `<pre class="mono readme">${esc(readme)}</pre>`, false)}
+  <p class="hint">From the plugin's README.</p>
+  <div class="md">${renderMarkdown(readme)}</div>
 </section>`
 }

@@ -232,21 +232,42 @@ const pluginDetail: PluginDetail = {
   updated_at: "2026-08-01T00:00:00Z",
 }
 
-const README = `# Codex GLM
+const README = `[![build](https://img.shields.io/badge/build-passing-green.svg)](https://example.test/ci)
 
-A BOSS plugin that runs Codex against the RISA LLM gateway.
+# Codex GLM
+
+A BOSS plugin that runs Codex against the RISA LLM gateway. See [the docs](https://example.test/docs)
+or the *relative* [contributing guide](./CONTRIBUTING.md), which keeps its text and loses its link.
 
 ## Install
 
-Open the Toolbox, search for "Codex GLM", press Install. The plugin needs no API key: it
-exchanges your BOSS session for a short-lived scoped credential.
+Open the Toolbox, search for \`Codex GLM\`, press **Install**. No API key: it exchanges your BOSS
+session for a short-lived scoped credential.
+
+\`\`\`bash
+boss llm-token --broker risa-llm-gateway
+export CODEX_MODEL=glm-4.6
+\`\`\`
+
+> A blockquote, for the note every README has.
 
 ## Configuration
 
-| Setting | Default |
-|---|---|
-| Model   | glm-4.6 |
-| Sandbox | workspace-write |
+| Setting | Default | Notes |
+|---|---:|:---:|
+| Model   | glm-4.6 | overridable |
+| Sandbox | workspace-write | see ~~danger~~ safety |
+
+- First bullet with \`inline code\`
+- Second bullet
+- Third
+
+1. Numbered one
+2. Numbered two
+
+---
+
+Raw HTML is shown as text: <script>alert(1)</script>
 
 Long unbroken line to check the wrap: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 `
