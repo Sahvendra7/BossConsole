@@ -20,7 +20,22 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { AuthResult } from "../utils/auth.ts"
+
+/**
+ * The minimum this needs to know about the caller.
+ *
+ * Structural rather than `AuthResult`, because two different authentication paths reach here with
+ * two different shapes: the publish routes carry an `AuthResult`, and the API-key routes carry
+ * `getUserFromToken`'s narrower object. Both satisfy this, and neither has to be widened to a type
+ * it does not otherwise use.
+ *
+ * `apiKeyOrgId` is absent on a browser publish, which is exactly right: there is no key to inherit
+ * an organisation from.
+ */
+export interface PublishingCaller {
+  userId: string
+  apiKeyOrgId?: string
+}
 
 /** The organisation to record, or a refusal to hand back to the caller. */
 export type PublishOrgResolution =
@@ -51,7 +66,7 @@ export type PublishOrgResolution =
  */
 export async function resolvePublishOrg(
   supabase: SupabaseClient,
-  user: AuthResult,
+  user: PublishingCaller,
   requestedOrgId?: string | null,
 ): Promise<PublishOrgResolution> {
   const explicit = requestedOrgId?.trim() || user.apiKeyOrgId?.trim() || null
