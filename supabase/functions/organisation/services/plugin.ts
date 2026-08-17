@@ -9,7 +9,7 @@
  * every test the database layer has. Same rule as utils/org-rpc.ts states for the org tables.
  */
 
-import { callForActor, callRpc } from "../utils/org-rpc.ts"
+import { callForActor, callRpcRows } from "../utils/org-rpc.ts"
 
 export interface PluginDetail {
   id: string
@@ -42,16 +42,19 @@ export async function loadPlugin(
   pluginId: string,
   viewerId: string,
 ): Promise<PluginDetail | null> {
-  const result = await callRpc<unknown>("get_plugin_with_stats_for_viewer", {
+  // callRpcRows, NOT callRpc. This is the one set-returning function this edge function calls:
+  // it is declared RETURNS TABLE, so PostgREST answers with a bare array of rows and there is no
+  // `success` envelope for callRpc to find. Reading it through callRpc returned ok:false for every
+  // plugin, so the page 404'd for everybody while every test still passed. See utils/org-rpc.ts.
+  const result = await callRpcRows<Record<string, unknown>>("get_plugin_with_stats_for_viewer", {
     p_plugin_id: pluginId,
     p_viewer_id: viewerId,
   })
   if (!result.ok) return null
 
-  // The RPC RETURNS TABLE, so PostgREST hands back an array of rows. An empty one is the
-  // not-visible and not-found cases alike.
-  const rows = Array.isArray(result.data) ? result.data : [result.data]
-  const row = rows[0] as Record<string, unknown> | undefined
+  // No rows is the not-visible and the not-found case alike, which is what this function's null
+  // deliberately conflates.
+  const row = result.data[0]
   if (!row || typeof row.id !== "string") return null
 
   return {

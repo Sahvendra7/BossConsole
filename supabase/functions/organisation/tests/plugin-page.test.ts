@@ -278,3 +278,81 @@ Deno.test("a member is not invited to change anything", () => {
   assertStringIncludes(overview([summary()], { is_admin: true }), "set who can see it")
   assertEquals(overview([summary()], { is_admin: false }).includes("set who can see it"), false)
 })
+
+// ---------------------------------------------------------------------------
+// The shape the RPC actually returns
+// ---------------------------------------------------------------------------
+// Written after review found the page 404'd for everybody while every test above passed. Nothing
+// here rendered the page from a real read: the tests supplied a PluginDetail fixture directly, so
+// the one step between the database and the view was the only thing never exercised.
+//
+// get_plugin_with_stats_for_viewer is declared RETURNS TABLE, so PostgREST answers with a bare
+// array of rows. callRpc fails closed on anything without `success: true` - correct for the org
+// RPCs, all of which return a scalar jsonb envelope, and fatal for this one.
+
+import { loadPlugin } from "../services/plugin.ts"
+import { setServiceClientForTests } from "../utils/org-rpc.ts"
+
+/** A client that answers one rpc() call with whatever PostgREST would have said. */
+// deno-lint-ignore no-explicit-any
+function clientReturning(data: unknown, error: unknown = null): any {
+  return { rpc: (_fn: string, _params: unknown) => Promise.resolve({ data, error }) }
+}
+
+const ROW = {
+  id: "11111111-1111-4111-8111-111111111111",
+  plugin_id: "probe.plugin",
+  display_name: "Probe",
+  description: null,
+  author_name: "P",
+  homepage_url: null,
+  icon_url: null,
+  type: "panel",
+  api_version: "1.0",
+  verified: false,
+  published: true,
+  visibility: "public",
+  org_id: null,
+  org_slug: null,
+  download_count: 0,
+  latest_version: "1.0.0",
+  updated_at: null,
+}
+
+async function withClient(data: unknown, error: unknown, body: () => Promise<void>) {
+  setServiceClientForTests(clientReturning(data, error))
+  try {
+    await body()
+  } finally {
+    setServiceClientForTests(null)
+  }
+}
+
+Deno.test("a plugin is loaded from the ARRAY a set-returning RPC returns", async () => {
+  await withClient([ROW], null, async () => {
+    const plugin = await loadPlugin("probe.plugin", "aaaaaaaa-0000-4000-8000-00000000000a")
+    assert(plugin !== null, "a visible plugin came back as null - the page would 404 for everyone")
+    assertEquals(plugin.display_name, "Probe")
+    assertEquals(plugin.visibility, "public")
+  })
+})
+
+Deno.test("no rows is null, which is the not-found and the not-visible case alike", async () => {
+  await withClient([], null, async () => {
+    assertEquals(await loadPlugin("probe.plugin", "aaaaaaaa-0000-4000-8000-00000000000a"), null)
+  })
+})
+
+Deno.test("a database error is null rather than a thrown page", async () => {
+  await withClient(null, { message: "boom" }, async () => {
+    assertEquals(await loadPlugin("probe.plugin", "aaaaaaaa-0000-4000-8000-00000000000a"), null)
+  })
+})
+
+Deno.test("an envelope where rows were expected is refused, not read as a row", async () => {
+  // The other direction of the same mistake: if this function is ever changed to return the org
+  // envelope, reading `{success: true}` as row zero would produce a plugin with no id.
+  await withClient({ success: true, data: [] }, null, async () => {
+    assertEquals(await loadPlugin("probe.plugin", "aaaaaaaa-0000-4000-8000-00000000000a"), null)
+  })
+})
