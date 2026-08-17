@@ -129,6 +129,39 @@ class NativeFileDialogsTest {
     }
 
     /**
+     * The other half of the same claim, and the one that does not need an upgrade to bite.
+     *
+     * `FullscreenBrowserWindow` builds and disposes a Swing view over a live browser on every
+     * fullscreen enter and exit, and the Compose view is recreated on tab switches. If the
+     * view's `unregister()` stripped whatever it found rather than only what it registered,
+     * the first detach would take our callbacks with it and the next attach would install the
+     * Swing chooser - silently, and indistinguishable from the bug being fixed.
+     */
+    @Test
+    fun `unregistering the defaults leaves ours in place`() {
+        val advisable = RecordingAdvisable()
+        val ours = OpenFileCallback { _, action -> action.cancel() }
+        advisable.set(OpenFileCallback::class.java, ours)
+
+        val theirs = OpenFileCallback { _, action -> action.cancel() }
+        val untouched = OpenFilesCallback { _, action -> action.cancel() }
+        val defaults =
+            DefaultCallbacks
+                .of(advisable)
+                .add(theirs)
+                .add(untouched)
+                .build()
+        defaults.register()
+        defaults.unregister()
+
+        assertSame(ours, advisable.callbacks[OpenFileCallback::class.java], "a view detach must not strip ours")
+        assertFalse(
+            advisable.callbacks.containsKey(OpenFilesCallback::class.java),
+            "a default it did install must still be removed, or the test proves nothing",
+        )
+    }
+
+    /**
      * A page's file input stays pending until something answers, so a dialog that throws
      * must still cancel rather than wedge the input for the life of the tab.
      */
@@ -179,10 +212,21 @@ class NativeFileDialogsTest {
     fun `suffixes are normalised and mime types dropped`() {
         assertEquals(listOf("png", "jpeg"), fileDialogSuffixes(listOf(".png", "jpeg")))
         assertEquals(listOf("pdf"), fileDialogSuffixes(listOf(" pdf ")))
-        // An accept attribute of "image/*" or "*" names no suffix. Dropping them leaves an
-        // empty list, which the caller reads as "no filter" - a panel showing everything,
-        // rather than one where every file is greyed out.
+        // A MIME pattern or a bare wildcard names no suffix. The empty list reads as "no
+        // filter" - a panel showing everything, rather than one where every file is greyed out.
         assertEquals(emptyList(), fileDialogSuffixes(listOf("image/*", "*", "", ".")))
+    }
+
+    /**
+     * A mixed list accepts MORE than its suffixes describe, so filtering on the survivors
+     * would grey out a file the page explicitly allows.
+     */
+    @Test
+    fun `a mixed accept list produces no filter at all`() {
+        assertEquals(emptyList(), fileDialogSuffixes(listOf(".png", "image/*")))
+        assertEquals(emptyList(), fileDialogSuffixes(listOf("pdf", "*")))
+        // Still narrowed when every token really is a suffix.
+        assertEquals(listOf("png", "gif"), fileDialogSuffixes(listOf(".png", ".gif")))
     }
 
     @Test
@@ -199,24 +243,12 @@ class NativeFileDialogsTest {
         // Relative and built from segments on purpose: a literal "/tmp/report" has the parent
         // "\\tmp" on the Windows CI leg, which is the separator's business, not this rule's.
         val bare = Paths.get("reports", "report")
-        assertEquals("report.pdf", bare.withExtension("pdf").fileName.toString())
-        assertEquals(
-            "report.pdf",
-            Paths
-                .get("reports", "report.pdf")
-                .withExtension("pdf")
-                .fileName
-                .toString(),
-        )
-        assertEquals(
-            "report.PDF",
-            Paths
-                .get("reports", "report.PDF")
-                .withExtension("pdf")
-                .fileName
-                .toString(),
-        )
-        assertEquals(bare.parent, bare.withExtension("pdf").parent, "the file must not move directory")
+        assertEquals("report.pdf", pathWithExtension(bare, "pdf").fileName.toString())
+        val already = pathWithExtension(Paths.get("reports", "report.pdf"), "pdf")
+        assertEquals("report.pdf", already.fileName.toString())
+        val uppercase = pathWithExtension(Paths.get("reports", "report.PDF"), "pdf")
+        assertEquals("report.PDF", uppercase.fileName.toString(), "matching is case-insensitive")
+        assertEquals(bare.parent, pathWithExtension(bare, "pdf").parent, "the file must not move directory")
     }
 
     @Test
@@ -227,6 +259,8 @@ class NativeFileDialogsTest {
         assertEquals("x", safePrefill("../../x"))
         assertEquals("b.txt", safePrefill("/etc/a/b.txt"))
         assertEquals("my report.txt", safePrefill("my report.txt"), "a space is not a control character")
+        assertEquals("", safePrefill(".."), "accepting \"..\" would hand back a directory")
+        assertEquals("", safePrefill("."))
         assertEquals("ab.txt", safePrefill("a\u0001b.txt"), "control characters are dropped")
     }
 }

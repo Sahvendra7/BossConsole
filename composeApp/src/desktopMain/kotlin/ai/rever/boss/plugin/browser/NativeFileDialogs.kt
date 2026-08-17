@@ -179,7 +179,7 @@ object NativeFileDialogs {
                 acceptAll = false,
                 // The panel's name field is editable, so the user can clear the extension
                 // off a file Chromium is about to write PDF bytes into.
-            )?.withExtension(PDF)
+            )?.let { pathWithExtension(it, PDF) }
         },
         open = action::save,
         cancel = action::cancel,
@@ -221,9 +221,16 @@ object NativeFileDialogs {
                 val picked =
                     try {
                         pick()
-                    } catch (e: Exception) {
-                        logger.warn(LogCategory.BROWSER, "Native file dialog failed", error = e)
-                        null
+                    } catch (t: Throwable) {
+                        // Throwable, not Exception. The house rule elsewhere in this package is
+                        // that Error propagates, and it still does - but an AWTError raised while
+                        // creating the peer would otherwise escape this invokeLater body and leave
+                        // the page's file input pending for the life of the tab, which is the
+                        // exact failure this function exists to prevent. Answer, then rethrow, so
+                        // both properties hold.
+                        logger.warn(LogCategory.BROWSER, "Native file dialog failed", error = t)
+                        answer(null)
+                        throw t
                     }
                 answer(picked)
             }
@@ -251,8 +258,9 @@ private fun showOpen(
     dialog.isMultipleMode = multiple
     dialog.narrowTo(extensions, acceptAll)
     dialog.showModal(directories = false)
-    // getFiles() is populated in both modes; getFile()/getDirectory() are just the
-    // single-selection view of the same result. Empty means cancelled.
+    // getFiles() is populated in both modes, not only multi-select: CFileDialog.Task.run
+    // calls setFiles unconditionally, and getFile()/getDirectory() are just the
+    // single-selection view of that same array. Empty means cancelled.
     return dialog.files.orEmpty().map { it.toPath() }
 }
 
@@ -318,11 +326,20 @@ private fun newDialog(
  *
  * [MAC_DIRECTORY_MODE] is process-wide and read by the peer when the panel is created, and a
  * modal `FileDialog` runs a **nested event loop** on the EDT that keeps dispatching other
- * `invokeLater` blocks - so a second dialog (another file input, a download's `pickSaveFile`)
- * really can be created inside this one's loop. Setting the flag explicitly for *every*
- * dialog rather than only the folder one is what makes that safe: whoever is about to show
- * states its own mode, and the restore unwinds in the reverse order. The property is cleared
- * rather than written back as `"false"`, so an absent property stays absent.
+ * `invokeLater` blocks - so a second dialog really can be created inside this one's loop.
+ * Every dialog here states its own mode immediately before showing and the restore unwinds in
+ * reverse order; the property is cleared rather than written back as `"false"`, so an absent
+ * property stays absent.
+ *
+ * **That invariant is one-directional.** It holds for these dialogs nested inside anything,
+ * because they state their own mode. It does *not* hold in reverse: `DesktopFilePicker`,
+ * `FilePickerProviderFactory` and `SettingsComponents` each create a `LOAD` dialog without
+ * touching the flag, so one of those opened inside [showOpenFolder]'s nested loop would come
+ * up as a directory chooser. Narrow in practice, since the panel is app-modal and it therefore
+ * takes a non-UI-driven caller such as a plugin invoking `openFile` off a background thread.
+ * The durable fix is to route every `FileDialog` in the tree through this helper, which is a
+ * wider change than this one. `SAVE` dialogs are immune either way: the flag only affects
+ * `NSOpenPanel`.
  */
 private fun FileDialog.showModal(directories: Boolean) {
     val previous = System.getProperty(MAC_DIRECTORY_MODE)
@@ -367,28 +384,51 @@ private fun FileDialog.narrowTo(
  * pre-fill as `___.pdf`. Nothing here has to be filesystem-safe - the path returned is the one
  * the panel reports back after the user has accepted it.
  */
-internal fun safePrefill(suggested: String): String = File(suggested).name.filter { it.code >= 0x20 && it.code != DEL }
+internal fun safePrefill(suggested: String): String {
+    val name = File(suggested).name.filter { it.code >= 0x20 && it.code != DEL }
+    // File("..").name is ".." - a legal thing to type, but accepting it hands back a
+    // directory where the page is expecting a file.
+    return if (name == "." || name == "..") "" else name
+}
 
 private const val DEL = 0x7F
 
-/** [this] with [extension] appended unless it already carries it. */
-internal fun Path.withExtension(extension: String): Path {
-    val name = fileName?.toString().orEmpty()
-    return if (name.endsWith(".$extension", ignoreCase = true)) this else resolveSibling("$name.$extension")
+/**
+ * [path] with [extension] appended unless it already carries it.
+ *
+ * Not an extension function on `Path`: `withExtension` is generic enough that putting it in
+ * module scope invites a surprising resolution somewhere else.
+ *
+ * **Known limitation**: the append happens after the panel has closed, so the overwrite prompt
+ * the user answered was for the name they typed. Saving as `report` where `report.pdf` already
+ * exists overwrites it unprompted. `FileDialog` exposes no allowed-file-types API to let
+ * `NSSavePanel` append the extension itself, which is what would fix this properly.
+ */
+internal fun pathWithExtension(
+    path: Path,
+    extension: String,
+): Path {
+    val name = path.fileName?.toString().orEmpty()
+    return if (name.endsWith(".$extension", ignoreCase = true)) path else path.resolveSibling("$name.$extension")
 }
 
 /**
- * The suffixes an `accept` attribute actually names, normalised for [matchesSuffix].
+ * The suffixes an `accept` attribute names, or nothing when it cannot be expressed as
+ * suffixes at all. Normalised for [matchesSuffix]; a leading dot is common and would double
+ * up in the `.ext` comparison.
  *
- * Chromium hands these through however the page wrote them. A leading dot is common and
- * would double up in the `.ext` comparison; **MIME types and wildcards are dropped**, because
- * a filter built from a MIME pattern matches no filename at all - and an empty result means
- * no filter, which shows everything, rather than a panel where nothing is selectable.
+ * **A token that is not a suffix makes the whole filter unrepresentable, not just itself.**
+ * An `accept` of `.png` plus an image MIME pattern admits every image, so filtering on the
+ * surviving `png` would grey out `photo.jpg` - a file the page explicitly allows - and that is
+ * worse than not filtering. The same all-or-nothing rule covers a pure MIME pattern, which
+ * names no suffix at all. Empty means "no filter", so the panel shows everything rather than
+ * nothing.
  */
-internal fun fileDialogSuffixes(extensions: List<String>): List<String> =
-    extensions
-        .mapNotNull { it.trim().removePrefix(".").takeIf(String::isNotEmpty) }
-        .filterNot { it.contains('/') || it.contains('*') }
+internal fun fileDialogSuffixes(extensions: List<String>): List<String> {
+    val tokens = extensions.mapNotNull { it.trim().removePrefix(".").takeIf(String::isNotEmpty) }
+    val suffixes = tokens.filterNot { it.contains('/') || it.contains('*') }
+    return if (suffixes.size == tokens.size) suffixes else emptyList()
+}
 
 /** Whether [name] carries one of [suffixes]. Case-insensitive: the disk is not. */
 internal fun matchesSuffix(
