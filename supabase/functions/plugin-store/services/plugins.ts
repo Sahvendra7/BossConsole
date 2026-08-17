@@ -164,7 +164,16 @@ export async function createPlugin(
   iconUrl: string,
   type: string,
   apiVersion: string,
-  requiredPermissions: string[] = []
+  requiredPermissions: string[] = [],
+  /**
+   * Owning organisation, already authorised by `resolvePublishOrg`.
+   *
+   * OMITTED from the insert when null, not sent as null: `plugins_default_org` is a BEFORE INSERT
+   * trigger keyed on `NEW.org_id IS NULL`, so an explicit null and an absent key both reach it and
+   * both become the boss organisation. Leaving the key out keeps that fallback visibly the
+   * trigger's decision rather than looking like this function chose it.
+   */
+  orgId: string | null = null
 ): Promise<{ id: string }> {
   const { data, error } = await supabase
     .from('plugins')
@@ -179,7 +188,8 @@ export async function createPlugin(
       type,
       api_version: apiVersion,
       required_permissions: requiredPermissions,
-      published: true
+      published: true,
+      ...(orgId ? { org_id: orgId } : {})
     })
     .select('id')
     .single()
