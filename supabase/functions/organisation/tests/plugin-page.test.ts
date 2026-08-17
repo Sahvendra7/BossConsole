@@ -356,3 +356,82 @@ Deno.test("an envelope where rows were expected is refused, not read as a row", 
     assertEquals(await loadPlugin("probe.plugin", "aaaaaaaa-0000-4000-8000-00000000000a"), null)
   })
 })
+
+// ---------------------------------------------------------------------------
+// The README cache
+// ---------------------------------------------------------------------------
+// The page it feeds is readable without a session, so every render was one outbound GitHub call
+// that a stranger could trigger in a loop. GITHUB_TOKEN is shared with plugin-store's github
+// service, so exhausting it takes that down too.
+
+import { clearReadmeCacheForTests, fetchReadme } from "../services/readme.ts"
+
+const REPO = "https://github.com/risa-labs-inc/boss-plugin-codexglm"
+
+/** Counts outbound calls and answers with whatever GitHub is being pretended to say. */
+function countingFetch(response: () => Response) {
+  let calls = 0
+  const original = globalThis.fetch
+  globalThis.fetch = (() => {
+    calls += 1
+    return Promise.resolve(response())
+  }) as typeof fetch
+  return { count: () => calls, restore: () => { globalThis.fetch = original } }
+}
+
+Deno.test("a second read of the same repository does not call GitHub again", async () => {
+  clearReadmeCacheForTests()
+  const f = countingFetch(() => new Response("# Codex", { status: 200 }))
+  try {
+    assertEquals(await fetchReadme(REPO), "# Codex")
+    assertEquals(await fetchReadme(REPO), "# Codex")
+    assertEquals(await fetchReadme(REPO), "# Codex")
+    assertEquals(f.count(), 1, "the README was re-fetched despite the cache")
+  } finally {
+    f.restore()
+    clearReadmeCacheForTests()
+  }
+})
+
+Deno.test("a failure is cached too, which is the case an attacker would pick", async () => {
+  // Caching only successes would leave a private or missing repository re-asked every request.
+  clearReadmeCacheForTests()
+  const f = countingFetch(() => new Response("nope", { status: 404 }))
+  try {
+    assertEquals(await fetchReadme(REPO), null)
+    assertEquals(await fetchReadme(REPO), null)
+    assertEquals(f.count(), 1, "a 404 was re-fetched, so the cheap path stays uncached")
+  } finally {
+    f.restore()
+    clearReadmeCacheForTests()
+  }
+})
+
+Deno.test("different repositories are cached separately", async () => {
+  clearReadmeCacheForTests()
+  let body = "first"
+  const f = countingFetch(() => new Response(body, { status: 200 }))
+  try {
+    assertEquals(await fetchReadme("https://github.com/a/one"), "first")
+    body = "second"
+    assertEquals(await fetchReadme("https://github.com/a/two"), "second")
+    assertEquals(await fetchReadme("https://github.com/a/one"), "first")
+    assertEquals(f.count(), 2)
+  } finally {
+    f.restore()
+    clearReadmeCacheForTests()
+  }
+})
+
+Deno.test("a URL that is not a repository never reaches the network or the cache", async () => {
+  clearReadmeCacheForTests()
+  const f = countingFetch(() => new Response("x", { status: 200 }))
+  try {
+    assertEquals(await fetchReadme("https://github.com.evil.test/a/b"), null)
+    assertEquals(await fetchReadme(null), null)
+    assertEquals(f.count(), 0)
+  } finally {
+    f.restore()
+    clearReadmeCacheForTests()
+  }
+})

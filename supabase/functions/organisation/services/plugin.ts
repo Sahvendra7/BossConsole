@@ -40,7 +40,8 @@ export interface PluginDetail {
  */
 export async function loadPlugin(
   pluginId: string,
-  viewerId: string,
+  /** Null for a signed-out reader, which the RPC answers with its anonymous arm: public+published. */
+  viewerId: string | null,
 ): Promise<PluginDetail | null> {
   // callRpcRows, NOT callRpc. This is the one set-returning function this edge function calls:
   // it is declared RETURNS TABLE, so PostgREST answers with a bare array of rows and there is no

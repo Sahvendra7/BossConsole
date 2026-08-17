@@ -19,6 +19,54 @@ const MAX_BYTES = 64 * 1024
 const TIMEOUT_MS = 4000
 
 /**
+ * Per-isolate memo of what GitHub said, successes and failures alike.
+ *
+ * The page it feeds is readable WITHOUT a session, so anyone can ask for it as often as they
+ * like, and every render otherwise meant one outbound GitHub call. GITHUB_TOKEN is shared with
+ * plugin-store's github service, so a loop over one popular plugin's page could spend the whole
+ * hourly budget and take that service down with it - an availability bug reachable by a stranger.
+ *
+ * Failures are cached too, and that is the half worth stating: caching only successes leaves a
+ * private or missing repository re-asked on every single request, which is the case an attacker
+ * would pick. The TTL is short enough that a README edit shows up on its own.
+ *
+ * An isolate is ephemeral and there may be several, so this bounds the rate, it does not fix it.
+ * It is the proportionate move for a page whose worst case is "the README is missing for a
+ * while"; a shared cache would be a different piece of infrastructure.
+ */
+const CACHE_TTL_MS = 10 * 60 * 1000
+
+/** Bounded so a long-lived isolate cannot be walked into unbounded memory, one repo at a time. */
+const CACHE_MAX_ENTRIES = 200
+
+const cache = new Map<string, { at: number; value: string | null }>()
+
+function cached(key: string): { value: string | null } | null {
+  const hit = cache.get(key)
+  if (!hit) return null
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    cache.delete(key)
+    return null
+  }
+  return { value: hit.value }
+}
+
+function remember(key: string, value: string | null): string | null {
+  // Oldest-first eviction: Map preserves insertion order, so the first key is the oldest write.
+  if (cache.size >= CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next()
+    if (!oldest.done) cache.delete(oldest.value)
+  }
+  cache.set(key, { at: Date.now(), value })
+  return value
+}
+
+/** Test seam: the cache is module state, and a test that did not clear it would see the last one's. */
+export function clearReadmeCacheForTests(): void {
+  cache.clear()
+}
+
+/**
  * `owner/repo` from a GitHub URL, or null for anything else.
  *
  * Exact host match on `github.com` (and `www.github.com`), never `includes("github.com")`, which
@@ -63,6 +111,10 @@ export async function fetchReadme(homepageUrl: string | null | undefined): Promi
   const repo = githubRepoFromUrl(homepageUrl)
   if (!repo) return null
 
+  const key = `${repo.owner}/${repo.repo}`
+  const hit = cached(key)
+  if (hit) return hit.value
+
   const headers: Record<string, string> = {
     // The raw media type: GitHub returns the file's bytes rather than a JSON envelope with
     // base64, which saves decoding something we are only going to escape anyway.
@@ -79,20 +131,20 @@ export async function fetchReadme(homepageUrl: string | null | undefined): Promi
       `https://api.github.com/repos/${repo.owner}/${repo.repo}/readme`,
       { headers, signal: controller.signal },
     )
-    if (!response.ok) return null
+    if (!response.ok) return remember(key, null)
 
     const text = await response.text()
-    if (text.trim().length === 0) return null
+    if (text.trim().length === 0) return remember(key, null)
 
     // Truncated by CHARACTERS after the fact rather than by a Range header: a byte range can cut a
     // multi-byte character in half, and the marker below is more honest than a mojibake tail.
     if (text.length > MAX_BYTES) {
-      return text.slice(0, MAX_BYTES) + "\n\n[truncated]"
+      return remember(key, text.slice(0, MAX_BYTES) + "\n\n[truncated]")
     }
-    return text
+    return remember(key, text)
   } catch {
     // Includes the abort. See the KDoc: every failure is the same absence to the reader.
-    return null
+    return remember(key, null)
   } finally {
     clearTimeout(timer)
   }
