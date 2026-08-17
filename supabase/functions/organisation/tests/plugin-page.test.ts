@@ -437,3 +437,37 @@ Deno.test("a URL that is not a repository never reaches the network or the cache
     clearReadmeCacheForTests()
   }
 })
+
+// ---------------------------------------------------------------------------
+// The source link
+// ---------------------------------------------------------------------------
+
+Deno.test("the source repository is a link, not text to copy out by hand", () => {
+  const html = render()
+  assertStringIncludes(
+    html,
+    '<a class="mono" href="https://github.com/risa-labs-inc/boss-plugin-codexglm"',
+  )
+  assertStringIncludes(html, 'rel="noopener noreferrer nofollow"')
+})
+
+Deno.test("a javascript: homepage cannot reach the href", () => {
+  // homepage_url is publisher-supplied and is the one field on this page that reaches an href.
+  // attrUrl collapses anything but http and https to "#"; esc alone would have let this through
+  // as a working link, because there is nothing to escape in it.
+  const html = render({ p: { homepage_url: "javascript:alert(1)" } })
+  assertEquals(html.includes('href="javascript:'), false)
+  assertStringIncludes(html, 'href="#"')
+})
+
+Deno.test("a protocol-relative homepage is refused", () => {
+  const html = render({ p: { homepage_url: "//evil.test/x" } })
+  assertEquals(html.includes('href="//evil.test'), false)
+})
+
+Deno.test("a publisher-supplied icon url goes through the same gate", () => {
+  // The CSP stops a remote icon being FETCHED. It does not stop the string reaching the attribute,
+  // which is a different job.
+  const html = render({ p: { icon_url: "javascript:alert(1)" } })
+  assertEquals(html.includes('src="javascript:'), false)
+})

@@ -5,7 +5,7 @@
  * ones tests/contrast.test.ts already asserts. Nothing here introduces a colour.
  */
 
-import { esc, scrollable } from "../utils/html.ts"
+import { attrUrl, esc, scrollable } from "../utils/html.ts"
 import { renderMarkdown } from "../services/markdown.ts"
 import { csrfField, layout } from "./layout.ts"
 import { CSRF_FIELD } from "../utils/csrf.ts"
@@ -87,7 +87,10 @@ function identityCard(plugin: PluginDetail): string {
     <div>
       ${
     plugin.icon_url
-      ? `<img src="${esc(plugin.icon_url)}" alt="${
+      // attrUrl for the same reason, even though img-src is `'self' data:` and a remote icon
+      // cannot load: the CSP is what stops it being FETCHED, not what stops a publisher-supplied
+      // string reaching an attribute. Belt and braces, matching every other URL on these pages.
+      ? `<img src="${attrUrl(plugin.icon_url, ["http", "https", "data"])}" alt="${
         esc(plugin.display_name)
       } icon" width="48" height="48">`
       : ""
@@ -115,7 +118,13 @@ function identityCard(plugin: PluginDetail): string {
   }
   ${
     plugin.homepage_url
-      ? `<p class="hint">Source: <span class="mono">${esc(plugin.homepage_url)}</span></p>`
+      // A LINK, and through attrUrl with http/https opted in rather than esc alone. homepage_url
+      // is publisher-supplied, so this is the one field on the page where a `javascript:` could
+      // reach an href; attrUrl collapses anything but http and https to "#". Same treatment the
+      // org page gives its website field, and the same reason.
+      ? `<p class="hint">Source: <a class="mono" href="${
+        attrUrl(plugin.homepage_url, ["http", "https"])
+      }" target="_blank" rel="noopener noreferrer nofollow">${esc(plugin.homepage_url)}</a></p>`
       : ""
   }
 </section>`
