@@ -238,6 +238,10 @@ const STYLES = `
      LAYOUT ONLY - every colour here is a token already asserted by contrast.test.ts on these
      surfaces (--text-2 on card and on washOnCard). Introducing a new colour pair would need a new
      USAGE entry there, and an unasserted pair is how the sub-AA borders shipped the first time. */
+  /* The README block. LAYOUT ONLY - colours are tokens contrast.test.ts already asserts.
+     pre-wrap so a long line wraps instead of forcing the page to scroll sideways; the
+     scrollable() container above it owns the vertical scroll. */
+  pre.readme { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--text-2); margin: 0; }
   .dns { display: flex; flex-direction: column; gap: 4px; }
   .dns-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   /* Fixed width so Name/Type/Value line up as a column and the records read as one block. */

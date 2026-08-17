@@ -17,9 +17,11 @@
 
 import { adminPage, inviteOnlyPage } from "../../views/admin.ts"
 import { orgPage } from "../../views/org.ts"
+import { pluginPage } from "../../views/plugin.ts"
 import { invalidInvitePage, joinPage } from "../../views/join.ts"
 import { errorPage, NOT_AVAILABLE_MESSAGE } from "../../views/error.ts"
 import type { OrgDetail, OrgDomain, OrgInvite, OrgMember, OrgRole } from "../../services/org.ts"
+import type { OrgPluginSummary, PluginDetail } from "../../services/plugin.ts"
 
 const NONCE = "previewnonce"
 /** A plausible one-time invite URL. Only its shape matters to the rendering. */
@@ -174,8 +176,101 @@ const invites: OrgInvite[] = [
   },
 ]
 
+/**
+ * Enough rows to see the section as a reader meets it: a restricted one beside public ones, so
+ * the visibility column has something to distinguish, and one long id to check the table scrolls
+ * inside its card rather than widening the page.
+ */
+const plugins: OrgPluginSummary[] = [
+  {
+    plugin_id: "ai.rever.boss.plugin.dynamic.codexglm",
+    display_name: "Codex GLM",
+    description: "RISA Codex GLM provider",
+    icon_url: null,
+    visibility: "public",
+    published: true,
+    verified: true,
+  },
+  {
+    plugin_id: "ai.rever.boss.plugin.dynamic.medicalnecessity",
+    display_name: "Medical Necessity",
+    description: "Clinical review workflow",
+    icon_url: null,
+    visibility: "org",
+    published: true,
+    verified: false,
+  },
+  {
+    plugin_id: "ai.rever.boss.plugin.dynamic.finance",
+    display_name: "Finance",
+    description: null,
+    icon_url: null,
+    visibility: "unlisted",
+    published: true,
+    verified: false,
+  },
+]
+
+/** One plugin, as its page meets it: a real README's first lines, and a restricted visibility. */
+const pluginDetail: PluginDetail = {
+  id: "33333333-3333-4333-8333-333333333333",
+  plugin_id: "ai.rever.boss.plugin.dynamic.codexglm",
+  display_name: "Codex GLM",
+  description: "RISA Codex GLM provider for BOSS, brokered through the organisation gateway.",
+  author_name: "Shivang",
+  homepage_url: "https://github.com/risa-labs-inc/boss-plugin-codexglm",
+  icon_url: null,
+  type: "panel",
+  api_version: "1.0.75",
+  verified: true,
+  published: true,
+  visibility: "org",
+  org_id: org.id,
+  org_slug: org.slug,
+  download_count: 128,
+  latest_version: "1.0.4",
+  updated_at: "2026-08-01T00:00:00Z",
+}
+
+const README = `# Codex GLM
+
+A BOSS plugin that runs Codex against the RISA LLM gateway.
+
+## Install
+
+Open the Toolbox, search for "Codex GLM", press Install. The plugin needs no API key: it
+exchanges your BOSS session for a short-lived scoped credential.
+
+## Configuration
+
+| Setting | Default |
+|---|---|
+| Model   | glm-4.6 |
+| Sandbox | workspace-write |
+
+Long unbroken line to check the wrap: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`
+
 const pages: Record<string, string> = {
-  "overview.html": orgPage({ nonce: NONCE, basePath: BASE, org, members, roles }),
+  "overview.html": orgPage({ nonce: NONCE, basePath: BASE, org, members, roles, plugins }),
+  "plugin.html": pluginPage({
+    nonce: NONCE,
+    basePath: BASE,
+    orgSlug: org.slug,
+    csrf: "preview-csrf",
+    plugin: pluginDetail,
+    readme: README,
+    canEdit: true,
+  }),
+  "plugin-member.html": pluginPage({
+    nonce: NONCE,
+    basePath: BASE,
+    orgSlug: org.slug,
+    csrf: "preview-csrf",
+    plugin: { ...pluginDetail, visibility: "public" },
+    readme: null,
+    canEdit: false,
+  }),
   "admin.html": adminPage({
     nonce: NONCE,
     basePath: BASE,

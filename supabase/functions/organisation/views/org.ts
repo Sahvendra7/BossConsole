@@ -8,6 +8,7 @@
 import { attrUrl, esc, scrollable } from "../utils/html.ts"
 import { layout, tabs } from "./layout.ts"
 import type { OrgDetail, OrgMember, OrgRole } from "../services/org.ts"
+import type { OrgPluginSummary } from "../services/plugin.ts"
 
 export interface OrgPageOptions {
   nonce: string
@@ -15,9 +16,10 @@ export interface OrgPageOptions {
   org: OrgDetail
   members: OrgMember[]
   roles: OrgRole[]
+  plugins: OrgPluginSummary[]
 }
 
-export function orgPage({ nonce, basePath, org, members, roles }: OrgPageOptions): string {
+export function orgPage({ nonce, basePath, org, members, roles, plugins }: OrgPageOptions): string {
   const active = members.filter((m) => m.status === "active")
 
   return layout({
@@ -67,8 +69,59 @@ ${tabs(basePath, org.slug, "overview", org.is_admin)}
   <h2>Roles</h2>
   <p class="hint">Roles are backed by the BOSS role system. Permissions are granted per role.</p>
   ${rolesTable(roles)}
+</section>
+
+<section class="card">
+  <h2>Plugins</h2>
+  <p class="hint">Plugins published under this organisation. Open one to read about it${
+      org.is_admin ? " and set who can see it" : ""
+    }.</p>
+  ${pluginsTable(basePath, org.slug, plugins)}
 </section>`,
   })
+}
+
+/**
+ * The organisation's plugins, each linking to its page.
+ *
+ * The plugin id goes through `encodeURIComponent` on the way into the href and `esc` on the way
+ * into the text. Both are needed and they are not the same job: the ids are dotted reverse-DNS
+ * strings that survive either treatment unchanged today, so a missing one would not show up by
+ * looking at the page. Nothing constrains the column to that shape.
+ */
+function pluginsTable(basePath: string, slug: string, plugins: OrgPluginSummary[]): string {
+  if (plugins.length === 0) return '<p class="empty">No plugins published under this organisation.</p>'
+
+  const rows = plugins.map((plugin) => {
+    const href = `${basePath}/o/${encodeURIComponent(slug)}/plugins/${
+      encodeURIComponent(plugin.plugin_id)
+    }`
+    return `
+    <tr>
+      <td><a href="${esc(href)}">${esc(plugin.display_name)}</a></td>
+      <td class="mono">${esc(plugin.plugin_id)}</td>
+      <td>${visibilityPill(plugin.visibility)}</td>
+      <td>${
+      plugin.published
+        ? (plugin.verified ? '<span class="pill admin">verified</span>' : '<span class="pill">published</span>')
+        : '<span class="pill">draft</span>'
+    }</td>
+    </tr>`
+  }).join("")
+
+  return scrollable("Plugins", `<table>
+  <thead><tr><th>Plugin</th><th>Id</th><th>Visibility</th><th>Status</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>`)
+}
+
+/**
+ * Visibility as a pill. `public` is the unremarkable case and stays plain; anything narrower is
+ * the one worth seeing at a glance down the column, which is the whole reason this is a list.
+ */
+function visibilityPill(visibility: string): string {
+  const restricted = visibility !== "public"
+  return `<span class="pill${restricted ? " admin" : ""}">${esc(visibility)}</span>`
 }
 
 function membersTable(members: OrgMember[]): string {

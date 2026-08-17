@@ -79,6 +79,7 @@ orgPageRoutes.get("/o/:slug", async (ctx) => {
       org: data.org,
       members: data.members,
       roles: data.roles,
+      plugins: data.plugins,
     })
   )
 })

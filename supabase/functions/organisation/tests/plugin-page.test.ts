@@ -1,0 +1,280 @@
+/**
+ * The plugin page.
+ *
+ * Two of these are the whole reason the page is written the way it is, and neither is visible in
+ * the rendered output: a plugin belonging to ANOTHER organisation must not render or be writable
+ * through this org's session, and the README must never reach the page as markup.
+ */
+
+import { assert, assertEquals, assertStringIncludes } from "@std/assert"
+import { githubRepoFromUrl } from "../services/readme.ts"
+import { pluginPage } from "../views/plugin.ts"
+import type { PluginDetail } from "../services/plugin.ts"
+
+const NONCE = "nonce"
+
+function plugin(overrides: Partial<PluginDetail> = {}): PluginDetail {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    plugin_id: "ai.rever.boss.plugin.dynamic.codexglm",
+    display_name: "Codex GLM",
+    description: "An AI provider",
+    author_name: "Risa Labs",
+    homepage_url: "https://github.com/risa-labs-inc/boss-plugin-codexglm",
+    icon_url: null,
+    type: "panel",
+    api_version: "1.0.73",
+    verified: false,
+    published: true,
+    visibility: "public",
+    org_id: "22222222-2222-4222-8222-222222222222",
+    org_slug: "risa",
+    download_count: 12,
+    latest_version: "1.0.4",
+    updated_at: "2026-08-01T00:00:00Z",
+    ...overrides,
+  }
+}
+
+function render(opts: { readme?: string | null; canEdit?: boolean; p?: Partial<PluginDetail> } = {}) {
+  return pluginPage({
+    nonce: NONCE,
+    basePath: "/functions/v1/organisation",
+    orgSlug: "risa",
+    csrf: "csrf-token",
+    plugin: plugin(opts.p),
+    readme: opts.readme ?? null,
+    canEdit: opts.canEdit ?? false,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// The README is text, never markup
+// ---------------------------------------------------------------------------
+
+Deno.test("a README is escaped, not rendered as markup", () => {
+  // Somebody else's repository content, on a page that also carries an admin form. Rendering it
+  // as HTML would make the CSP the only thing between a README and that form, and a CSP is the
+  // second line of defence.
+  const html = render({ readme: "# Title\n\n<img src=x onerror=alert(1)>\n<script>alert(2)</script>" })
+  assertEquals(/<img[^>]*onerror/.test(html), false)
+  assertEquals(html.includes("<script>alert(2)</script>"), false)
+  // Present, but as text.
+  assertStringIncludes(html, "&lt;img src=x onerror=alert(1)&gt;")
+  assertStringIncludes(html, "&lt;script&gt;")
+})
+
+Deno.test("markdown is shown as its source rather than interpreted", () => {
+  // The trade this page makes deliberately: headings appear as "# Title". Asserted so nobody
+  // "fixes" it into a markdown renderer without meeting the reason above.
+  const html = render({ readme: "# Title" })
+  assertStringIncludes(html, "# Title")
+  assertEquals(html.includes("<h1>Title</h1>"), false)
+})
+
+Deno.test("no README says so rather than rendering an empty block", () => {
+  const withRepo = render({ readme: null })
+  assertStringIncludes(withRepo, "No README could be read")
+  const withoutRepo = render({ readme: null, p: { homepage_url: null } })
+  assertStringIncludes(withoutRepo, "no repository")
+})
+
+// ---------------------------------------------------------------------------
+// The visibility control
+// ---------------------------------------------------------------------------
+
+Deno.test("an admin gets a form; a member gets the value only", () => {
+  const admin = render({ canEdit: true })
+  assertStringIncludes(admin, "/plugins/ai.rever.boss.plugin.dynamic.codexglm/visibility")
+  assertStringIncludes(admin, 'name="visibility"')
+  assertStringIncludes(admin, "csrf-token")
+
+  const member = render({ canEdit: false })
+  assertEquals(member.includes('name="visibility"'), false)
+  assertEquals(member.includes("<form"), false)
+  // Still told what it is, and who may change it.
+  assertStringIncludes(member, "Public")
+  assertStringIncludes(member, "administrators can change it")
+})
+
+Deno.test("the current value is the one preselected", () => {
+  const html = render({ canEdit: true, p: { visibility: "org" } })
+  assertStringIncludes(html, 'value="org" checked')
+  assertEquals(html.includes('value="public" checked'), false)
+})
+
+Deno.test("an unexpected visibility selects nothing rather than everything", () => {
+  // The column is NOT NULL with a CHECK, so this should be unreachable - but a control that
+  // silently preselected a value the row does not have would save the wrong thing on the next
+  // press.
+  const html = render({ canEdit: true, p: { visibility: "something-else" } })
+  // Matched against an INPUT, not the whole document: `includes("checked")` also matches the
+  // word inside a CSS comment in the inlined stylesheet, which is how the first version of this
+  // test failed against correct code.
+  assertEquals(/<input[^>]*checked/.test(html), false)
+})
+
+Deno.test("the consequence of restricting visibility is stated on the page", () => {
+  // The Toolbox reads its catalogue as `anon`, so anything other than public vanishes from the
+  // store list for everyone - including members of the owning organisation. That is a property of
+  // how the client reads today, not of what the value means, so the page has to say it.
+  const html = render({ canEdit: true })
+  assertStringIncludes(html, "removes it from the Toolbox")
+})
+
+// ---------------------------------------------------------------------------
+// The README fetcher's URL rule
+// ---------------------------------------------------------------------------
+
+Deno.test("only github.com repositories are addressable", () => {
+  assertEquals(githubRepoFromUrl("https://github.com/owner/repo"), { owner: "owner", repo: "repo" })
+  assertEquals(
+    githubRepoFromUrl("https://github.com/owner/repo/tree/main/sub"),
+    { owner: "owner", repo: "repo" },
+  )
+  assertEquals(githubRepoFromUrl("https://github.com/owner/repo.git"), { owner: "owner", repo: "repo" })
+})
+
+Deno.test("a lookalike host is refused", () => {
+  // The check is an exact hostname match, never includes("github.com"). homepage_url is
+  // publisher-supplied, so without that this page is a server-side fetcher pointed by whoever
+  // published the plugin.
+  assertEquals(githubRepoFromUrl("https://github.com.evil.test/owner/repo"), null)
+  assertEquals(githubRepoFromUrl("https://notgithub.com/owner/repo"), null)
+  assertEquals(githubRepoFromUrl("https://evil.test/?x=github.com/owner/repo"), null)
+})
+
+Deno.test("non-http schemes and malformed URLs are refused", () => {
+  assertEquals(githubRepoFromUrl("file:///etc/passwd"), null)
+  assertEquals(githubRepoFromUrl("javascript:alert(1)"), null)
+  assertEquals(githubRepoFromUrl("not a url"), null)
+  assertEquals(githubRepoFromUrl(null), null)
+  assertEquals(githubRepoFromUrl(""), null)
+})
+
+Deno.test("nothing that reaches the request path can contain a separator", () => {
+  // The property is the CHARSET, not a traversal check. `https://github.com/../../etc/repo` is
+  // normalised by the URL parser to `/etc/repo` before this function sees it - a perfectly
+  // ordinary path - so there is no traversal left to refuse. What matters is that whatever
+  // survives is interpolated into api.github.com/repos/<owner>/<repo> and therefore cannot carry
+  // a slash, a dot-segment or a query.
+  const normalised = githubRepoFromUrl("https://github.com/../../etc/repo")
+  assertEquals(normalised, { owner: "etc", repo: "repo" })
+
+  for (
+    const url of [
+      "https://github.com/own er/repo",
+      "https://github.com/owner%2F../repo",
+      "https://github.com/ow$ner/repo",
+    ]
+  ) {
+    const parsed = githubRepoFromUrl(url)
+    if (parsed !== null) {
+      assert(/^[A-Za-z0-9._-]+$/.test(parsed.owner), `owner escaped the charset: ${parsed.owner}`)
+      assert(/^[A-Za-z0-9._-]+$/.test(parsed.repo), `repo escaped the charset: ${parsed.repo}`)
+    }
+  }
+})
+
+Deno.test("a repository URL with no repo segment is refused", () => {
+  assertEquals(githubRepoFromUrl("https://github.com/owner"), null)
+  assertEquals(githubRepoFromUrl("https://github.com/"), null)
+})
+
+// ---------------------------------------------------------------------------
+// The section that links to this page
+// ---------------------------------------------------------------------------
+// Written because the page above was unreachable for its whole first draft: it rendered, it was
+// tested, and nothing on any other page pointed at it. A route with no way in is not a feature.
+
+import { orgPage } from "../views/org.ts"
+import type { OrgPluginSummary } from "../services/plugin.ts"
+import type { OrgDetail } from "../services/org.ts"
+
+function summary(overrides: Partial<OrgPluginSummary> = {}): OrgPluginSummary {
+  return {
+    plugin_id: "ai.rever.boss.plugin.dynamic.codexglm",
+    display_name: "Codex GLM",
+    description: "An AI provider",
+    icon_url: null,
+    visibility: "public",
+    published: true,
+    verified: false,
+    ...overrides,
+  }
+}
+
+function orgDetail(overrides: Partial<OrgDetail> = {}): OrgDetail {
+  return {
+    id: "22222222-2222-4222-8222-222222222222",
+    slug: "risa",
+    name: "RISA Labs",
+    description: null,
+    website: null,
+    visibility: "private",
+    join_policy: "invite_only",
+    publish_policy: "admins",
+    member_count: 3,
+    is_admin: true,
+    is_system: false,
+    owner_email: "shivang@risalabs.ai",
+    primary_domain: null,
+    ...overrides,
+  } as OrgDetail
+}
+
+function overview(plugins: OrgPluginSummary[], org: Partial<OrgDetail> = {}) {
+  return orgPage({
+    nonce: NONCE,
+    basePath: "/functions/v1/organisation",
+    org: orgDetail(org),
+    members: [],
+    roles: [],
+    plugins,
+  })
+}
+
+Deno.test("each plugin links to its page under the owning organisation", () => {
+  const html = overview([summary()])
+  assertStringIncludes(
+    html,
+    'href="/functions/v1/organisation/o/risa/plugins/ai.rever.boss.plugin.dynamic.codexglm"',
+  )
+  assertStringIncludes(html, "Codex GLM")
+})
+
+Deno.test("a plugin id is encoded into the href, not pasted in", () => {
+  // Nothing constrains plugins.plugin_id to the dotted reverse-DNS shape every row happens to
+  // have, and this value is built into an href. A `?` or `#` in it would silently truncate the
+  // path and send the reader to a different plugin's page, or to none.
+  const html = overview([summary({ plugin_id: "a b?c#d" })])
+  assertStringIncludes(html, "/plugins/a%20b%3Fc%23d")
+  assertEquals(html.includes("/plugins/a b?c#d"), false)
+})
+
+Deno.test("a plugin name cannot inject markup into the list", () => {
+  const html = overview([summary({ display_name: "<script>alert(1)</script>" })])
+  assertEquals(html.includes("<script>alert(1)</script>"), false)
+  assertStringIncludes(html, "&lt;script&gt;")
+})
+
+Deno.test("a restricted visibility is distinguishable at a glance", () => {
+  // The reason the column exists: `org` and `unlisted` are the states somebody scanning the list
+  // needs to spot, and they are also the states that remove a plugin from the Toolbox.
+  const html = overview([summary({ visibility: "org" }), summary({ plugin_id: "b", visibility: "public" })])
+  assertStringIncludes(html, '<span class="pill admin">org</span>')
+  assertStringIncludes(html, '<span class="pill">public</span>')
+})
+
+Deno.test("an organisation with no plugins says so", () => {
+  const html = overview([])
+  assertStringIncludes(html, "No plugins published under this organisation")
+  assertEquals(html.includes("<th>Visibility</th>"), false)
+})
+
+Deno.test("a member is not invited to change anything", () => {
+  // The hint offers the visibility control, which a non-admin does not get. Promising it to
+  // somebody who then cannot use it is worse than saying less.
+  assertStringIncludes(overview([summary()], { is_admin: true }), "set who can see it")
+  assertEquals(overview([summary()], { is_admin: false }).includes("set who can see it"), false)
+})

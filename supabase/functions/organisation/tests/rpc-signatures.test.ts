@@ -84,12 +84,24 @@ Deno.test("every callForActor target actually accepts p_actor_id", async () => {
   const targets = new Set<string>()
   for (const path of files) {
     const source = await Deno.readTextFile(path)
-    for (const match of source.matchAll(/callForActor(?:<[^>]*>)?\(\s*"([a-z0-9_]+)"/g)) {
+    // The generic is skipped LAZILY. `<[^>]*>` cannot cross a nested one, so
+    // `callForActor<Record<string, unknown>>("list_org_plugins", ...)` matched nothing at all and
+    // that call site was simply absent from this check - which is the worst way for a guard to
+    // fail, because the test still passes. Lazy `[\s\S]*?>` stops at the first `>` that is
+    // followed by the opening paren.
+    for (const match of source.matchAll(/callForActor(?:<[\s\S]*?>)?\(\s*"([a-z0-9_]+)"/g)) {
       targets.add(match[1])
     }
   }
 
   assert(targets.size > 0, "no callForActor call sites found - the scan is broken")
+
+  // Anti-vacuity, on the SOURCE side. The check above only proves the scan found something; these
+  // name call sites written in the three shapes that exist - bare, single generic, nested generic -
+  // so a regex that silently stops seeing one of them fails here rather than passing quietly.
+  for (const known of ["update_organisation_settings", "get_organisation_detail", "list_org_plugins"]) {
+    assert(targets.has(known), `the call-site scan no longer sees callForActor("${known}")`)
+  }
 
   for (const fn of targets) {
     const params = signatures.get(fn)
