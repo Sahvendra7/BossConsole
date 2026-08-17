@@ -196,18 +196,14 @@ class NativeFileDialogsTest {
 
     @Test
     fun `a save-as-pdf name keeps its extension without doubling it`() {
+        // Relative and built from segments on purpose: a literal "/tmp/report" has the parent
+        // "\\tmp" on the Windows CI leg, which is the separator's business, not this rule's.
+        val bare = Paths.get("reports", "report")
+        assertEquals("report.pdf", bare.withExtension("pdf").fileName.toString())
         assertEquals(
             "report.pdf",
             Paths
-                .get("/tmp/report")
-                .withExtension("pdf")
-                .fileName
-                .toString(),
-        )
-        assertEquals(
-            "report.pdf",
-            Paths
-                .get("/tmp/report.pdf")
+                .get("reports", "report.pdf")
                 .withExtension("pdf")
                 .fileName
                 .toString(),
@@ -215,19 +211,12 @@ class NativeFileDialogsTest {
         assertEquals(
             "report.PDF",
             Paths
-                .get("/tmp/report.PDF")
+                .get("reports", "report.PDF")
                 .withExtension("pdf")
                 .fileName
                 .toString(),
         )
-        assertEquals(
-            "/tmp",
-            Paths
-                .get("/tmp/report")
-                .withExtension("pdf")
-                .parent
-                .toString(),
-        )
+        assertEquals(bare.parent, bare.withExtension("pdf").parent, "the file must not move directory")
     }
 
     @Test
