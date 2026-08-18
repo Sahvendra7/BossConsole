@@ -2,6 +2,8 @@ package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.cache.FaviconCache
 import ai.rever.boss.components.overlays.OverlayCorner
+import ai.rever.boss.components.overlays.overlayCornerIsHeavyweight
+import ai.rever.boss.components.window_panel.components.main_window_panels.LocalInMainWindowPanel
 import ai.rever.boss.config.JxBrowserConfig
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import ai.rever.boss.plugin.api.BrowserNavigationType
@@ -18,6 +20,7 @@ import ai.rever.boss.window.MenuActionsHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -2634,14 +2637,24 @@ internal class BrowserHandleImpl(
 
         // Cmd+F that AWT consumed before the browser could see it, dispatched by the browser.find
         // keymap action. Collected HERE, in the composition that knows it is the visible surface of
-        // the active panel in this window, so no registry has to answer "which browser" - and
-        // claimShortcut collapses the case where two compositions both believe they qualify (a
-        // browser in a sidebar slot reads LocalIsPanelActive as true, since its default is true).
+        // the active panel in this window, so no registry has to answer "which browser".
+        //
+        // The event is a broadcast, so more than one surface can qualify: LocalIsPanelActive
+        // defaults to `true`, which makes a browser in a sidebar slot look as active as the one in
+        // the main content area. claimShortcut alone would then pick by whichever coroutine resumed
+        // first - a coin flip between the page being read and the sidebar, which reads as exactly
+        // the flakiness this change removes. So a surface outside a main window panel yields first
+        // and claims only if nothing better did, which makes the winner deterministic. The
+        // non-preferred branch still gets served, a beat later, so a sidebar-only browser is not
+        // cut off.
         val isPanelActive = LocalIsPanelActive.current
-        LaunchedEffect(browser, hostWindowId, isPanelActive) {
+        val inMainPanel = LocalInMainWindowPanel.current
+        LaunchedEffect(browser, hostWindowId, isPanelActive, inMainPanel) {
             if (hostWindowId == null || !isPanelActive) return@LaunchedEffect
             MenuActionsHandler.browserFindEvents.collect { eventWindowId ->
-                if (eventWindowId == hostWindowId && BrowserFindController.claimShortcut(eventWindowId)) {
+                if (eventWindowId != hostWindowId) return@collect
+                if (!inMainPanel) delay(SHORTCUT_DEFERRAL_MS)
+                if (BrowserFindController.claimShortcut(eventWindowId)) {
                     BrowserFindController.onFindKeyFromShortcut(browser)
                 }
             }
@@ -2732,13 +2745,25 @@ internal class BrowserHandleImpl(
             // display rather than over the page it belongs to.
             val findRegion = findRegionInWindow
             if (findState.visible && findRegion != null) {
+                // Which path OverlayCorner will take, asked before deciding where the corner margin
+                // goes. Its lightweight branch aligns inside this BoxScope and ignores
+                // regionInWindow for the same reason it ignores `inset`, so the margin baked into
+                // the region is simply lost there and the bar sits flush in the pane's corner.
+                // Reachable via BOSS_RENDERING_MODE=OFF_SCREEN, a supported escape hatch. Same trap
+                // FocusModeQuickActions documents, and the reason overlayCornerIsHeavyweight exists.
+                val heavyweight = overlayCornerIsHeavyweight()
                 OverlayCorner(
                     alignment = Alignment.TopEnd,
                     initialSize = FIND_BAR_CEILING,
                     focusable = true,
                     regionInWindow = findRegion,
                 ) {
-                    BrowserFindBar(browser = browser, state = findState)
+                    // Margin as region inset on the heavyweight path so it is not a dead band that
+                    // swallows clicks over the page, and as ordinary padding on the lightweight one,
+                    // where nothing is swallowed and the region is not read at all.
+                    Box(modifier = if (heavyweight) Modifier else Modifier.padding(FIND_BAR_MARGIN)) {
+                        BrowserFindBar(browser = browser, state = findState)
+                    }
                 }
             }
         }

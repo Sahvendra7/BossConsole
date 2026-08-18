@@ -10,15 +10,15 @@ import com.teamdev.jxbrowser.js.JsAccessible
  *
  * ## Why this exists at all
  *
- * JxBrowser's key hook gives us exactly two answers — `PressKeyCallback.Response.proceed()`
- * and `.suppress()` — and no way to learn whether the page did anything with a key it was
+ * JxBrowser's key hook gives us exactly two answers - `PressKeyCallback.Response.proceed()`
+ * and `.suppress()` - and no way to learn whether the page did anything with a key it was
  * given. There is no API for this in 9.4.0; the search package is `TextFinder` plus
  * `FindOptions`/`FindResult` and nothing else. So the page has to tell us.
  *
  * Chrome answers the same question the same way. Ctrl/Cmd+F is a *non-reserved* accelerator
  * there: the page sees the key first, and if it calls `preventDefault()` Chrome skips its own
  * find bar. That is the entire mechanism behind Sheets' find working in Chrome, and matching
- * it means we inherit every site that already knows how to opt in — no allowlist to maintain.
+ * it means we inherit every site that already knows how to opt in - no allowlist to maintain.
  *
  * ## How the verdict is read
  *
@@ -31,18 +31,23 @@ import com.teamdev.jxbrowser.js.JsAccessible
  *
  *  - `defaultPrevented` is only final once dispatch has finished. Read inline, in the first
  *    listener to run, it is always false.
- *  - It survives `stopPropagation()`. The obvious alternative — a second listener at the
- *    bubble phase on `window`, reading the flag there — never fires when a page stops
+ *  - It survives `stopPropagation()`. The obvious alternative - a second listener at the
+ *    bubble phase on `window`, reading the flag there - never fires when a page stops
  *    propagation partway, which is precisely what Sheets and Docs do. The timeout is queued
  *    from the capture phase, so nothing the page does downstream can cancel it.
  *
  * ## What a page can do with this
  *
- * Nothing it could not already do. The only lever is "suppress BOSS's find bar on my own
- * page", and calling `preventDefault()` on the key already achieves exactly that — which is
- * the sanctioned way to ask. A page spamming [BrowserFindKeyProbeBridge.report] gains no new
- * capability, and the bridge drops a report with no decision waiting on it, so the loop is
- * cheap to serve.
+ * The only lever is "suppress BOSS's find bar on this page", and calling `preventDefault()` on
+ * the key already achieves exactly that - which is the sanctioned way to ask. The bridge drops a
+ * report with no decision waiting on it, so a page calling it in a loop is cheap to serve.
+ *
+ * **One thing it does add, stated precisely rather than waved away:** the bridge is published on
+ * every frame and `report` carries no frame identity, so a NON-FOCUSED iframe can answer on the
+ * focused document's behalf by polling within the deadline. The consequence is bounded - our bar
+ * does not open for that press, and the user presses again - and any frame on the page could
+ * already claim the chord for itself by calling `preventDefault()`. Carrying a per-frame token in
+ * the report would close it; it is not closed today.
  */
 internal object BrowserFindKeyProbe {
     /** Property the bridge is published on, per frame. Matched by [source]. */
@@ -63,7 +68,7 @@ internal object BrowserFindKeyProbe {
      * Reads nothing from the DOM and nothing from the event but its key identity and modifier
      * flags, so unlike [BrowserInteractionScript] there is no privacy surface to describe.
      *
-     * `event.code` is the physical key, which is what an accelerator is defined against — a
+     * `event.code` is the physical key, which is what an accelerator is defined against - a
      * Dvorak or AZERTY layout puts a different character on that key, and Chromium fires the
      * accelerator on the position either way. `keyCode` is the fallback purely for a frame
      * whose engine predates `code`; both are checked rather than one, because getting this
@@ -106,7 +111,7 @@ internal object BrowserFindKeyProbe {
  * frame's `window.__bossFindProbe`.
  *
  * [report] runs on a JxBrowser thread and must never block or throw into the page's JS
- * thread — a throw here surfaces in the site's own console and can break its scripts. The
+ * thread - a throw here surfaces in the site's own console and can break its scripts. The
  * exception CLASS is logged, never a message: this is reached from arbitrary pages, and a
  * message could carry page detail into a log line.
  */

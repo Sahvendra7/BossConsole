@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.Icon
@@ -31,10 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
@@ -49,70 +53,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.teamdev.jxbrowser.browser.Browser
 import kotlin.math.roundToInt
-
-/** Height of the bar, and the size the corner overlay opens at before it measures. */
-internal val FIND_BAR_HEIGHT = 34.dp
-
-/**
- * Upper bound the corner overlay is measured against.
- *
- * A ceiling, not a first guess: `HeavyweightCorner` measures content against this and never
- * against its own window, so anything wider is CLIPPED rather than merely mis-sized on the first
- * frame. Comfortably above the bar's natural width, which is the field plus a counter and four
- * icon buttons.
- */
-internal val FIND_BAR_CEILING = DpSize(360.dp, 60.dp)
-
-/**
- * Gap between the bar and the pane's top and end edges, in dp.
- *
- * Applied by shrinking the anchor REGION rather than by padding the bar. Padding would work on the
- * lightweight path and be actively wrong on the heavyweight one: that overlay window is sized to
- * its content, so transparent padding grows the window, and a non-focusable AWT window still eats
- * every click under it (the JVM has no portable click-through). The margin would become a dead
- * strip across the top-right of the page.
- */
-private const val FIND_BAR_MARGIN_DP = 8
-
-/**
- * The rectangle a pane's find bar anchors inside: [boundsInWindow] converted to dp and pulled in
- * by [FIND_BAR_MARGIN_DP], or null when there is nowhere sensible to put it.
- *
- * Null is a real answer, not a failure. `boundsInWindow` reports CLIPPED bounds, so a pane scrolled
- * or collapsed out of view measures empty - and `HeavyweightCorner` resolves an unmeasurable parent
- * to the screen origin, which would put an always-on-top bar in the corner of the primary display
- * instead of over the page.
- */
-@Suppress("ReturnCount")
-internal fun findBarRegion(
-    boundsInWindow: Rect,
-    density: Float,
-): IntRect? {
-    if (density <= 0f || !density.isFinite()) return null
-    if (!boundsInWindow.hasArea()) return null
-    val region =
-        IntRect(
-            left = (boundsInWindow.left / density).roundToInt(),
-            top = (boundsInWindow.top / density).roundToInt(),
-            right = (boundsInWindow.right / density).roundToInt(),
-            bottom = (boundsInWindow.bottom / density).roundToInt(),
-        ).deflate(FIND_BAR_MARGIN_DP)
-    // A pane narrower than twice the margin deflates to nothing. Better no bar than one placed at
-    // an inverted rectangle's corner.
-    return region.takeIf { it.width > 0 && it.height > 0 }
-}
-
-/**
- * Whether this rectangle describes a real, finite area.
- *
- * `boundsInWindow` can be empty (a clipped-away pane) and, for a node in a degenerate layout, can
- * carry infinities - which survive the division by density and turn into a garbage `IntRect`.
- */
-private fun Rect.hasArea(): Boolean {
-    val w = width
-    val h = height
-    return w.isFinite() && h.isFinite() && w > 0f && h > 0f
-}
 
 /**
  * Find-in-page bar for one browser pane.
@@ -238,10 +178,14 @@ private fun handleFindBarKey(
             true
         }
 
-        // Cmd+G / Shift+Cmd+G, the macOS "find again" pair. Handled here as well as in the key
-        // callback because while this field holds focus the app's AWT interceptor resolves no
-        // window (the bar is its own always-on-top window) and so routes nothing.
-        event.key == Key.G && event.isMetaPressed -> {
+        // "Find again", both conventions. Handled here as well as in the key callback because
+        // while this field holds focus nothing else can: the bar is its own window, so the AWT
+        // interceptor resolves no window id and routes nothing, and the page is not focused.
+        //
+        // Platform-aware, unlike the first version of this: gating on isMetaPressed alone made
+        // find-again from the field macOS-only, since Ctrl+G matched nothing here and could not
+        // reach the browser either.
+        isFindAgainChord(event) -> {
             submitFind(browser, backward = event.isShiftPressed)
             true
         }
@@ -251,6 +195,15 @@ private fun handleFindBarKey(
         }
     }
 }
+
+/** Reads a Compose key event against the one find-again rule, which lives with the controller. */
+private fun isFindAgainChord(event: KeyEvent): Boolean =
+    isFindAgainChord(
+        isF3 = event.key == Key.F3,
+        isG = event.key == Key.G,
+        meta = event.isMetaPressed,
+        ctrl = event.isCtrlPressed,
+    )
 
 private fun submitFind(
     browser: Browser,
@@ -277,9 +230,18 @@ private fun FindMatchCounter(
         text = if (show) "${state.currentMatch}/${state.totalMatches}" else "",
         color = if (show && state.totalMatches == 0) colors.alert else colors.textSecondary,
         fontSize = 11.sp,
-        modifier = Modifier.width(46.dp),
+        modifier = Modifier.widthIn(min = 46.dp),
     )
 }
+
+/**
+ * Whether there is something to step through.
+ *
+ * Gated on `settled` as well as the count, so the arrows and the counter agree. `totalMatches` is
+ * not cleared when the query changes to a non-empty string - only `settled` is - so reading the
+ * count alone left the arrows enabled on the PREVIOUS query's total while the new search ran.
+ */
+private fun hasMatches(state: BrowserFindState): Boolean = state.settled && state.totalMatches > 0
 
 /** Previous, next, match-case and close. */
 @Composable
@@ -291,7 +253,7 @@ private fun FindBarActions(
     FindBarIcon(
         icon = Icons.Filled.KeyboardArrowUp,
         description = "Previous match",
-        enabled = state.totalMatches > 0,
+        enabled = hasMatches(state),
         tint = colors.textPrimary,
         disabledTint = colors.textMuted,
         onClick = { submitFind(browser, backward = true) },
@@ -299,7 +261,7 @@ private fun FindBarActions(
     FindBarIcon(
         icon = Icons.Filled.KeyboardArrowDown,
         description = "Next match",
-        enabled = state.totalMatches > 0,
+        enabled = hasMatches(state),
         tint = colors.textPrimary,
         disabledTint = colors.textMuted,
         onClick = { submitFind(browser, backward = false) },
@@ -331,11 +293,11 @@ private fun FindBarActions(
 
 @Composable
 private fun FindBarIcon(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     description: String,
     enabled: Boolean,
-    tint: androidx.compose.ui.graphics.Color,
-    disabledTint: androidx.compose.ui.graphics.Color,
+    tint: Color,
+    disabledTint: Color,
     onClick: () -> Unit,
 ) {
     IconButton(

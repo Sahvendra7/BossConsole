@@ -2,6 +2,7 @@ package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.components.overlays.insetBounds
 import ai.rever.boss.components.overlays.resolveRegion
+import ai.rever.boss.utils.SystemUtils
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntRect
@@ -324,13 +325,23 @@ class BrowserFindTest {
             )
             assertFalse(state.visible, "opening is the verdict's decision, not the shortcut's")
 
-            // The re-entry JxBrowser produces from that synthetic key.
-            assertFalse(BrowserFindController.onFindKeyFromPage(browser), "the key must still proceed to the page")
+            // Armed by the shortcut ITSELF, with no re-entry involved. This is the fallback: if a
+            // programmatically dispatched key never reaches this browser's PressKeyCallback, the
+            // deadline is still running and the bar still opens.
             BrowserFindController.onPageVerdict(browser, pageHandledKey = false)
             assertTrue(state.visible, "a page that did not claim the chord gets the BOSS find bar")
         }
     }
 
+    /**
+     * The cancel side of the verdict deadline, asserted synchronously.
+     *
+     * There was a timer-driven twin of this that waited out the deadline and checked the bar had
+     * stayed shut. It went, for two reasons: it only failed when BOTH guards regressed (the verdict
+     * stopping the timer, and the timer's body checking the decision is still pending), so it was a
+     * poor detector; and it flaked once in a full-module run for a reason I could not pin, which is
+     * worse than no test. This one covers the same end state with no timer in it.
+     */
     @Test
     fun `a page that claims the chord gets no BOSS find bar`() {
         withStubbedBrowser { browser, _, _ ->
@@ -352,9 +363,135 @@ class BrowserFindTest {
         }
     }
 
+    @Test
+    fun `the re-entry from the synthetic key does not re-arm the deadline`() {
+        // The shortcut path arms the decision, then dispatches. When JxBrowser DOES re-enter with
+        // the synthetic key, that re-entry must proceed the key to the page without restarting the
+        // timer - one press, one decision, one bar.
+        withStubbedBrowser { browser, _, dispatched ->
+            BrowserFindController.onFindKeyFromShortcut(browser)
+            assertEquals(listOf("KeyPressed", "KeyReleased"), dispatched)
+
+            assertFalse(
+                BrowserFindController.onFindKeyFromPage(browser),
+                "the re-entry must proceed, so the page still gets its chance at the chord",
+            )
+            // Exactly one decision is pending: resolving it once opens the bar, and a second
+            // resolution finds nothing left to resolve.
+            BrowserFindController.onPageVerdict(browser, pageHandledKey = false)
+            assertTrue(BrowserFindController.stateFor(browser).visible)
+            BrowserFindController.close(browser)
+            BrowserFindController.onPageVerdict(browser, pageHandledKey = false)
+            assertFalse(
+                BrowserFindController.stateFor(browser).visible,
+                "a second verdict for one press must not reopen the bar",
+            )
+        }
+    }
+
+    @Test
+    fun `dispose is final - a late key or verdict cannot resurrect a dead browser`() {
+        // Every accessor here used computeIfAbsent or put, so a key event or a verdict arriving
+        // after teardown re-created the state - and through awaitPageVerdict, a live Swing Timer -
+        // for a browser that is gone.
+        withStubbedBrowser(disposeAtEnd = false) { browser, _, dispatched ->
+            BrowserFindController.dispose(browser)
+
+            assertFalse(
+                BrowserFindController.onFindKeyFromPage(browser),
+                "a disposed browser proceeds and does nothing",
+            )
+            BrowserFindController.onFindKeyFromShortcut(browser)
+            assertEquals(emptyList(), dispatched, "nothing is dispatched at a disposed browser")
+            assertFalse(BrowserFindController.onFindAgainKey(browser, backward = false))
+            BrowserFindController.onPageVerdict(browser, pageHandledKey = false)
+
+            assertFalse(BrowserFindController.stateFor(browser).visible, "no bar for a browser that is gone")
+        }
+    }
+
+    @Test
+    fun `a search is skipped rather than locked against the wrong object`() {
+        // withFinder used to mint a fresh ReentrantReadWriteLock when the entry was absent, which
+        // silently substitutes a DIFFERENT lock than the handle's - dropping the mutual exclusion
+        // that the register(browser, browserLock) overload exists to provide.
+        val finder = RecordingTextFinder()
+        val browser = stubBrowser(finder.proxy)
+        // Deliberately NOT registered, which is the only way the lock entry is missing.
+        SwingUtilities.invokeAndWait {
+            BrowserFindController.setQuery(browser, "needle")
+            BrowserFindController.next(browser)
+            assertEquals(0, finder.consumers.size, "no lock means no search, not a search on a new lock")
+            BrowserFindController.dispose(browser)
+        }
+    }
+
+    @Test
+    fun `find again accepts both platform conventions`() {
+        // WAS A BUG. The field gated find-again on isMetaPressed alone, so Ctrl+G matched nothing on
+        // Windows and Linux - and nothing else could serve it either, because the bar owns keyboard
+        // focus while it is up.
+        // F3 everywhere, no modifier needed.
+        assertTrue(isFindAgainChord(isF3 = true, isG = false, meta = false, ctrl = false))
+        if (SystemUtils.isMacOS) {
+            assertTrue(isFindAgainChord(isF3 = false, isG = true, meta = true, ctrl = false))
+            assertFalse(isFindAgainChord(isF3 = false, isG = true, meta = false, ctrl = true))
+            assertFalse(
+                isFindAgainChord(isF3 = false, isG = true, meta = true, ctrl = true),
+                "both modifiers is not the chord, matching the key callback's rule",
+            )
+        } else {
+            assertTrue(isFindAgainChord(isF3 = false, isG = true, meta = false, ctrl = true))
+            assertFalse(isFindAgainChord(isF3 = false, isG = true, meta = true, ctrl = false))
+        }
+        // Some other key with the right modifier is not find-again.
+        assertFalse(isFindAgainChord(isF3 = false, isG = false, meta = true, ctrl = true))
+    }
+
+    @Test
+    fun `the verdict deadline opens the bar when nothing reports`() {
+        // The documented NORMAL path, not a rare fallback: the built-in PDF viewer, network error
+        // pages, `about:` URLs and any frame injection could not reach all report nothing at all.
+        // Nothing else in this suite exercises a timer, so this is the only check that the deadline
+        // is armed rather than merely written down.
+        val finder = RecordingTextFinder()
+        val browser = stubBrowser(finder.proxy)
+        BrowserFindController.register(browser)
+        try {
+            SwingUtilities.invokeAndWait {
+                assertFalse(BrowserFindController.onFindKeyFromPage(browser), "the page gets the chord first")
+                assertFalse(BrowserFindController.stateFor(browser).visible, "and the bar waits for its answer")
+            }
+            // Pumped, not slept through: the deadline is a Swing Timer, so it fires ON this thread.
+            // Each invokeAndWait is a round trip that lets pending timer events run, which converges
+            // as soon as the deadline elapses instead of pinning the test to a fixed sleep.
+            val opened = awaitOnEdt { BrowserFindController.stateFor(browser).visible }
+            assertTrue(opened, "silence from the page must end in the BOSS find bar")
+        } finally {
+            SwingUtilities.invokeAndWait { BrowserFindController.dispose(browser) }
+        }
+    }
+
     // ========================================================================
     // helpers
     // ========================================================================
+
+/**
+     * Poll [predicate] on the AWT event thread until it holds, or the budget runs out.
+     *
+     * Each `invokeAndWait` is a round trip through the event queue, so pending Swing `Timer` events
+     * get to run - which is how a timer-driven assertion converges without a fixed sleep. The budget
+     * is generously above the deadline so a loaded CI machine cannot fail this by being slow.
+     */
+    private fun awaitOnEdt(predicate: () -> Boolean): Boolean {
+        val deadline = System.nanoTime() + 3_000_000_000L
+        while (System.nanoTime() < deadline) {
+            var held = false
+            SwingUtilities.invokeAndWait { held = predicate() }
+            if (held) return true
+        }
+        return false
+    }
 
     /**
      * A [TextFinder] that hands back every consumer it was given, so a test can decide when - and
