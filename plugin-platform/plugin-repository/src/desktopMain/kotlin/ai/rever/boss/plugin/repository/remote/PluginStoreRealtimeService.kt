@@ -1,11 +1,11 @@
 package ai.rever.boss.plugin.repository.remote
 
 import ai.rever.boss.plugin.logging.BossLogger
-import io.github.jan.supabase.logging.LogLevel
-import io.github.jan.supabase.logging.SupabaseLoggingProcessor
 import ai.rever.boss.plugin.logging.LogCategory
 import ai.rever.boss.plugin.repository.PluginInfo
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.logging.LogLevel
+import io.github.jan.supabase.logging.SupabaseLoggingProcessor
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.realtime.RealtimeChannel
@@ -311,7 +311,6 @@ class PluginStoreRealtimeService {
 private class StoreSupabaseLogging(
     private val minimum: LogLevel,
 ) : SupabaseLoggingProcessor {
-
     private val logger = BossLogger.forComponent("Supabase")
 
     override fun isEnabled(level: LogLevel): Boolean = level.ordinal >= minimum.ordinal
@@ -330,7 +329,7 @@ private class StoreSupabaseLogging(
             LogLevel.WARNING -> logger.warn(LogCategory.NETWORK, text, fields, error = throwable)
             LogLevel.INFO -> logger.info(LogCategory.NETWORK, text, fields)
             LogLevel.DEBUG -> logger.debug(LogCategory.NETWORK, text, fields)
-            LogLevel.NONE -> {}
+            LogLevel.NONE -> Unit
         }
     }
 }

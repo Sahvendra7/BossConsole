@@ -30,7 +30,6 @@ class NamedSupabaseLogging(
     private val name: String,
     private val minimum: LogLevel,
 ) : SupabaseLoggingProcessor {
-
     private val logger = BossLogger.forComponent("Supabase")
 
     override fun isEnabled(level: LogLevel): Boolean = level.ordinal >= minimum.ordinal
@@ -46,14 +45,14 @@ class NamedSupabaseLogging(
         // it rather than parse it back out of the message.
         val fields = mapOf<String, Any?>("client" to name, "tag" to tag)
         val text = "[$name] $message"
+        // The library is chatty at debug, so that level stays opt-in via BOSS_LOG_LEVEL
+        // rather than being paid for on every run.
         when (level) {
             LogLevel.ERROR -> logger.error(LogCategory.NETWORK, text, fields, error = throwable)
             LogLevel.WARNING -> logger.warn(LogCategory.NETWORK, text, fields, error = throwable)
             LogLevel.INFO -> logger.info(LogCategory.NETWORK, text, fields)
-            // The library is chatty here, so this stays at debug: opt in with BOSS_LOG_LEVEL
-            // rather than paying for it on every run.
             LogLevel.DEBUG -> logger.debug(LogCategory.NETWORK, text, fields)
-            LogLevel.NONE -> {}
+            LogLevel.NONE -> Unit
         }
     }
 }
