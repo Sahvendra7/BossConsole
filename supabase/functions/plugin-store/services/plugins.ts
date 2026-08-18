@@ -8,9 +8,33 @@ export async function listPlugins(
   supabase: SupabaseClient,
   page: number,
   pageSize: number,
-  sortBy: string
+  sortBy: string,
+  /**
+   * Who is asking, or null for an anonymous browse.
+   *
+   * `search_plugins` reads `auth.uid()`, and this handler holds a SERVICE ROLE client - so auth.uid()
+   * is null however the caller authenticated, and the list was public-only for everybody. That is
+   * what hid an `org`-visibility plugin from the very members it exists for, and it is the follow-up
+   * 20260803000000 names: "routes/browse.ts needs the *_for_viewer variants".
+   *
+   * The viewer is passed to the RPC, which applies user_can_view_plugin_row itself. Nothing here
+   * decides visibility; this only stops the answer being computed for nobody.
+   */
+  viewerId: string | null = null
 ): Promise<{ plugins: PluginListItem[], totalCount: number }> {
-  const { data, error } = await supabase
+  const { data, error } = viewerId
+    ? await supabase.rpc('search_plugins_for_viewer', {
+      p_viewer_id: viewerId,
+      p_query: '',
+      p_type: null,
+      p_tags: null,
+      p_min_rating: 0,
+      p_verified_only: false,
+      p_page: page,
+      p_page_size: pageSize,
+      p_sort_by: sortBy
+    })
+    : await supabase
     .rpc('search_plugins', {
       p_query: '',
       p_type: null,
