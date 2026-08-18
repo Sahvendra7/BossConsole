@@ -43,13 +43,24 @@ class NamedSupabaseLogging(
         if (!isEnabled(level)) return
         // The name goes in the structured fields as well as the text, so a log search can group by
         // it rather than parse it back out of the message.
-        val fields = mapOf<String, Any?>("client" to name, "tag" to tag)
+        //
+        // The throwable is NOT handed to the logger. BossLogger writes `error.message` and a
+        // stack trace to the log file, and what arrives here is whatever supabase-kt chose to
+        // log: a RestException carries the PostgREST error body, which can echo column values.
+        // sanitizeSupabaseFailure would not help, as it rewrites only SerializationException.
+        // The type is the diagnostic half worth keeping; the library's own text is in `message`.
+        val fields =
+            mapOf<String, Any?>(
+                "client" to name,
+                "tag" to tag,
+                "errorType" to throwable?.let { it::class.simpleName },
+            )
         val text = "[$name] $message"
         // The library is chatty at debug, so that level stays opt-in via BOSS_LOG_LEVEL
         // rather than being paid for on every run.
         when (level) {
-            LogLevel.ERROR -> logger.error(LogCategory.NETWORK, text, fields, error = throwable)
-            LogLevel.WARNING -> logger.warn(LogCategory.NETWORK, text, fields, error = throwable)
+            LogLevel.ERROR -> logger.error(LogCategory.NETWORK, text, fields)
+            LogLevel.WARNING -> logger.warn(LogCategory.NETWORK, text, fields)
             LogLevel.INFO -> logger.info(LogCategory.NETWORK, text, fields)
             LogLevel.DEBUG -> logger.debug(LogCategory.NETWORK, text, fields)
             LogLevel.NONE -> Unit

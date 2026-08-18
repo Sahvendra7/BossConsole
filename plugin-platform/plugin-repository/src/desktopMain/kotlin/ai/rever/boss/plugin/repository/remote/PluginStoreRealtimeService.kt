@@ -322,11 +322,21 @@ private class StoreSupabaseLogging(
         message: String,
     ) {
         if (!isEnabled(level)) return
-        val fields = mapOf<String, Any?>("client" to "plugin-store", "tag" to tag)
+        // The throwable is NOT handed to the logger. BossLogger writes `error.message` and a
+        // stack trace to the log file, and what arrives here is whatever supabase-kt chose to
+        // log: a RestException carries the PostgREST error body, which can echo column values.
+        // sanitizeSupabaseFailure would not help, as it rewrites only SerializationException.
+        // The type is the diagnostic half worth keeping; the library's own text is in `message`.
+        val fields =
+            mapOf<String, Any?>(
+                "client" to "plugin-store",
+                "tag" to tag,
+                "errorType" to throwable?.let { it::class.simpleName },
+            )
         val text = "[plugin-store] $message"
         when (level) {
-            LogLevel.ERROR -> logger.error(LogCategory.NETWORK, text, fields, error = throwable)
-            LogLevel.WARNING -> logger.warn(LogCategory.NETWORK, text, fields, error = throwable)
+            LogLevel.ERROR -> logger.error(LogCategory.NETWORK, text, fields)
+            LogLevel.WARNING -> logger.warn(LogCategory.NETWORK, text, fields)
             LogLevel.INFO -> logger.info(LogCategory.NETWORK, text, fields)
             LogLevel.DEBUG -> logger.debug(LogCategory.NETWORK, text, fields)
             LogLevel.NONE -> Unit
