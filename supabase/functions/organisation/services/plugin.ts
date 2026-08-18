@@ -106,14 +106,15 @@ export async function listOrgPlugins(
   actorId: string,
   orgId: string,
 ): Promise<OrgPluginSummary[]> {
-  const result = await callForActor<Record<string, unknown>>("list_org_plugins", actorId, {
+  const result = await callForActor<unknown>("list_org_plugins", actorId, {
     p_org_id: orgId,
   })
   if (!result.ok) return []
 
-  const envelope = result.data
-  if (!envelope || envelope.success !== true) return []
-  const rows = envelope.plugins
+  // callRpc already unwrapped the envelope's `data`, so this IS the row array. It used to be
+  // reached as `envelope.plugins`, a key invented for this one function; 20260815000000 renamed it
+  // to `data` so the shared decoders on both clients can read it.
+  const rows = result.data
   if (!Array.isArray(rows)) return []
 
   return rows.flatMap((raw) => {

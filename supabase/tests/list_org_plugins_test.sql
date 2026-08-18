@@ -8,7 +8,7 @@
 -- than the store catalogue ever would.
 
 begin;
-select plan(13);
+select plan(15);
 
 insert into auth.users (id, email, email_confirmed_at) values
     ('f0000000-0000-4000-8000-000000000001', 'admin@lop.test',    now()),
@@ -97,7 +97,7 @@ select is(
 create temporary table member_rows as
 select jsonb_array_elements(
            public.list_org_plugins((select org from t), 'f0000000-0000-4000-8000-000000000002')
-               -> 'plugins') ->> 'plugin_id' as plugin_id;
+               -> 'data') ->> 'plugin_id' as plugin_id;
 
 select is(
     (select count(*) from member_rows where plugin_id = 'test.lop.public'),
@@ -135,7 +135,7 @@ select is(
     (select count(*)
        from jsonb_array_elements(
                 public.list_org_plugins((select org from t), 'f0000000-0000-4000-8000-000000000001')
-                    -> 'plugins') e
+                    -> 'data') e
       where e ->> 'plugin_id' = 'test.lop.unlisted'),
     1::bigint,
     'an organisation admin does see the unlisted one'
@@ -145,12 +145,12 @@ select is(
 -- ===========================================================================
 -- Shape
 -- ===========================================================================
--- The edge function reads `plugins` as an array. jsonb_agg over no rows is NULL, not '[]', so
--- without the COALESCE this key would be absent-shaped for exactly the organisations most likely
--- to be reading the page for the first time.
+-- jsonb_agg over no rows is NULL, not '[]', so without the COALESCE this key would be
+-- absent-shaped for exactly the organisations most likely to be reading the page for the first
+-- time.
 select is(
     public.list_org_plugins((select empty from t), 'f0000000-0000-4000-8000-000000000005')
-        -> 'plugins',
+        -> 'data',
     '[]'::jsonb,
     'an organisation with nothing visible returns an empty array, never null'
 );
@@ -169,9 +169,27 @@ select is(
     (select array_agg(e ->> 'display_name')
        from jsonb_array_elements(
                 public.list_org_plugins((select org from t), 'f0000000-0000-4000-8000-000000000001')
-                    -> 'plugins') e),
+                    -> 'data') e),
     array['A Org', 'B Public', 'C Unlisted'],
     'rows come back ordered by display name, and a draft is not among them even for an org admin'
+);
+
+-- ===========================================================================
+-- The envelope key
+-- ===========================================================================
+-- Pinned because getting it wrong cost a whole feature and produced no error anyone could act on.
+-- This function first returned its rows under `plugins`; every other organisation RPC returns
+-- `data`, and BOTH shared decoders key on that - utils/org-rpc.ts and the desktop plugin's
+-- RpcEnvelope. The edge function had been written against the odd key so never noticed, and the
+-- plugin reported "Something went wrong. Please try again." for a call that had succeeded.
+select ok(
+    public.list_org_plugins((select org from t), 'f0000000-0000-4000-8000-000000000001') ? 'data',
+    'the rows come back under `data`, the key every org RPC uses'
+);
+
+select ok(
+    NOT (public.list_org_plugins((select org from t), 'f0000000-0000-4000-8000-000000000001') ? 'plugins'),
+    'and not under `plugins`, which no shared decoder reads'
 );
 
 select * from finish();
