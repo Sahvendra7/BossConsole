@@ -88,8 +88,27 @@ object FileSystemUtils {
     }
 
     /**
-     * Generates a unique file path by appending (1), (2), etc. if file already exists.
+     * Paths handed out by [generateUniqueFilePath] whose file does not exist yet.
+     *
+     * "Is the name free?" cannot be answered by [File.exists] alone. A download's file is not
+     * created until bytes arrive, so two downloads of `report.pdf` started before either lands
+     * both saw a free name and both resolved to the same path - the second silently truncating
+     * the first. A claimed path is treated as taken until [releaseFilePath] is called, which
+     * the download's terminal handlers do.
+     */
+    private val claimedPaths =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet<String>()
+
+    /** Highest `(n)` suffix tried before falling back to a name that cannot collide. */
+    private const val MAX_COLLISION_SUFFIX = 1000
+
+    /**
+     * Generates a unique file path by appending (1), (2), etc. if the name is taken.
      * Example: "file.txt" -> "file (1).txt" -> "file (2).txt"
+     *
+     * The returned path is **claimed** until [releaseFilePath] is called for it, so a caller
+     * that has not written its file yet still blocks a concurrent caller from the same name.
      *
      * @param directory Directory where file will be saved
      * @param fileName Original file name
@@ -106,30 +125,59 @@ object FileSystemUtils {
             dir.mkdirs()
         }
 
-        var file = File(dir, fileName)
+        val original = File(dir, fileName)
+        val extension = original.extension
+        val stem = original.nameWithoutExtension
 
-        // If no collision, return original path
-        if (!file.exists()) {
-            return file.absolutePath
+        fun suffixed(suffix: String): File {
+            val name = if (extension.isEmpty()) "$stem ($suffix)" else "$stem ($suffix).$extension"
+            return File(dir, name)
         }
 
-        // Handle collision with incrementing counter
-        val extension = file.extension
-        val nameWithoutExtension = file.nameWithoutExtension
-        var counter = 1
+        val claimed =
+            if (claim(original)) {
+                original
+            } else {
+                (1 until MAX_COLLISION_SUFFIX)
+                    .asSequence()
+                    .map { suffixed(it.toString()) }
+                    .firstOrNull { claim(it) }
+                    ?: run {
+                        // A thousand collisions is not a real directory, but the old loop
+                        // *returned the colliding path* once it gave up, overwriting the very
+                        // file the counter exists to protect. Fall back to a name nothing else
+                        // holds instead.
+                        logger.warn(
+                            LogCategory.FILE,
+                            "Exhausted numbered suffixes for a download name - using a unique suffix",
+                            mapOf("fileName" to fileName),
+                        )
+                        suffixed(System.nanoTime().toString(radix = 16)).also { claim(it) }
+                    }
+            }
+        return claimed.absolutePath
+    }
 
-        do {
-            val newName =
-                if (extension.isNotEmpty()) {
-                    "$nameWithoutExtension ($counter).$extension"
-                } else {
-                    "$nameWithoutExtension ($counter)"
-                }
-            file = File(dir, newName)
-            counter++
-        } while (file.exists() && counter < 1000) // Prevent infinite loop
+    /** Take [file]'s path if nothing holds it and it is not already on disk. */
+    private fun claim(file: File): Boolean {
+        val path = file.absolutePath
+        // add() before exists() so two threads cannot both pass the exists() check; the loser
+        // gives the path back and moves on to the next suffix.
+        if (!claimedPaths.add(path)) return false
+        val free = !file.exists()
+        if (!free) claimedPaths.remove(path)
+        return free
+    }
 
-        return file.absolutePath
+    /**
+     * Give back a path claimed by [generateUniqueFilePath].
+     *
+     * Call this once the file exists (so [File.exists] takes over) or once the transfer that
+     * claimed it has failed. Not calling it leaks one string per download for the life of the
+     * process and pushes a later download of the same name onto a suffix it did not need.
+     */
+    fun releaseFilePath(path: String) {
+        claimedPaths.remove(path)
     }
 
     /**

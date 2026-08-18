@@ -2945,8 +2945,17 @@ object FluckEngine {
                     }
 
                 if (savePath != null) {
+                    // The name the file is actually written under. generateUniqueFilePath may
+                    // have appended " (1)", and the save dialog lets the user type anything at
+                    // all, so sanitizedFileName is only ever a *request*. Recording that instead
+                    // left the Downloads panel showing "report.pdf" for a file on disk called
+                    // "report (1).pdf" - and Rename, Reveal and Open all read from the panel.
+                    val savedFileName = java.io.File(savePath).name
                     // Ensure parent directory exists
                     if (!FileSystemUtils.ensureParentDirectoryExists(savePath)) {
+                        // Bailing before setupDownloadEventListeners means none of the three
+                        // terminal handlers will run, so the claim is released here or never.
+                        FileSystemUtils.releaseFilePath(savePath)
                         action.cancel()
                         return@StartDownloadCallback
                     }
@@ -2975,7 +2984,7 @@ object FluckEngine {
                         downloadManager.addDownload(
                             DownloadItem(
                                 id = downloadId,
-                                fileName = sanitizedFileName,
+                                fileName = savedFileName,
                                 destinationPath = savePath,
                                 url = target.url(),
                                 mimeType = target.mimeType().toString(),
@@ -3068,6 +3077,8 @@ object FluckEngine {
                 // Remove from tracking maps
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
+                // The file exists now, so exists() guards the name from here on.
+                FileSystemUtils.releaseFilePath(destinationPath)
             }
         }
 
@@ -3084,6 +3095,9 @@ object FluckEngine {
                 // Remove from tracking maps
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
+                // Nothing was written, so the name goes back to the pool rather than
+                // pushing the next download of it onto a suffix it does not need.
+                FileSystemUtils.releaseFilePath(destinationPath)
             }
         }
 
@@ -3095,6 +3109,7 @@ object FluckEngine {
                 // Remove from tracking maps
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
+                FileSystemUtils.releaseFilePath(destinationPath)
             }
         }
     }
