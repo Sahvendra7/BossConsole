@@ -5,6 +5,7 @@ import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
@@ -119,3 +120,32 @@ internal fun overlayRectOrScreen(
     bounds: IntArray?,
     screen: IntArray,
 ): IntArray = bounds ?: screen
+
+/**
+ * The rectangle the corner is resolved inside: an explicit [regionInWindow] when the caller gave
+ * one, otherwise [bounds] narrowed by [inset].
+ *
+ * [regionInWindow] is in dp relative to the content pane, matching `HeavyweightPopup`'s
+ * `anchorInWindow`, and AWT's logical units map 1:1 to dp - so this is an offset, never a scale.
+ *
+ * It is CLAMPED to [bounds] rather than trusted. The caller measures it from Compose layout while
+ * the pane is measured from AWT, and the two can disagree for a frame during a resize or a window
+ * move; an unclamped region wider than the pane would place an always-on-top overlay outside the
+ * window it belongs to. A degenerate region (zero or negative after clamping) falls back to the
+ * inset path, because placing the overlay at the pane corner is wrong but visible, whereas a
+ * zero-sized region puts it at the pane origin with no indication why.
+ */
+@Suppress("ReturnCount")
+internal fun resolveRegion(
+    bounds: IntArray?,
+    inset: DpSize,
+    regionInWindow: IntRect?,
+): IntArray? {
+    if (bounds == null || regionInWindow == null) return insetBounds(bounds, inset)
+    val left = regionInWindow.left.coerceIn(0, bounds[2])
+    val top = regionInWindow.top.coerceIn(0, bounds[3])
+    val width = regionInWindow.width.coerceAtMost(bounds[2] - left)
+    val height = regionInWindow.height.coerceAtMost(bounds[3] - top)
+    if (width <= 0 || height <= 0) return insetBounds(bounds, inset)
+    return intArrayOf(bounds[0] + left, bounds[1] + top, width, height)
+}

@@ -1,9 +1,11 @@
 package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.cache.FaviconCache
+import ai.rever.boss.components.overlays.OverlayCorner
 import ai.rever.boss.config.JxBrowserConfig
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import ai.rever.boss.plugin.api.BrowserNavigationType
+import ai.rever.boss.plugin.api.LocalIsPanelActive
 import ai.rever.boss.plugin.window.LocalWindowId
 import ai.rever.boss.tabfullscreen.FullscreenBrowserWindow
 import ai.rever.boss.utils.MacOSGestureHandler
@@ -12,15 +14,19 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.logging.LogSanitizer
 import ai.rever.boss.window.BossWindowIcon
+import ai.rever.boss.window.MenuActionsHandler
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -29,6 +35,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.callback.CreatePopupCallback
@@ -1112,6 +1119,11 @@ internal class BrowserHandleImpl(
         if (config.enableDownloads) {
             FluckEngine.setupBrowserDownloadHandler(browser)
         }
+
+        // Find-in-page, with THIS handle's lock so a search takes the same read lock as every
+        // other access to the browser. Registered before the interceptor, which is what serves the
+        // find chord.
+        BrowserFindController.register(browser, browserLock)
 
         // Setup keyboard interceptor for menu shortcuts
         FluckEngine.setupKeyboardInterceptor(browser, ownerWindowId)
@@ -2608,6 +2620,33 @@ internal class BrowserHandleImpl(
         // pinch gate compares AWT logical units against pixel bounds using it.
         val viewDensity = LocalDensity.current.density
 
+        val findState = remember(browser) { BrowserFindController.stateFor(browser) }
+
+        // Where the find bar goes: this pane's rectangle, in dp relative to the window's content
+        // pane, already inset by the bar's corner margin.
+        //
+        // Snapshot state of its own rather than the @Volatile browserViewBoundsInWindow the pinch
+        // gate uses. That field is read from AWT callbacks and deliberately not observable, so a
+        // bar placed from it would never move when the split divider was dragged. Belonging to
+        // this composition is also correct rather than incidental: a tab moved to another window
+        // gets a fresh one instead of inheriting a rectangle measured in the window it left.
+        var findRegionInWindow by remember { mutableStateOf<IntRect?>(null) }
+
+        // Cmd+F that AWT consumed before the browser could see it, dispatched by the browser.find
+        // keymap action. Collected HERE, in the composition that knows it is the visible surface of
+        // the active panel in this window, so no registry has to answer "which browser" - and
+        // claimShortcut collapses the case where two compositions both believe they qualify (a
+        // browser in a sidebar slot reads LocalIsPanelActive as true, since its default is true).
+        val isPanelActive = LocalIsPanelActive.current
+        LaunchedEffect(browser, hostWindowId, isPanelActive) {
+            if (hostWindowId == null || !isPanelActive) return@LaunchedEffect
+            MenuActionsHandler.browserFindEvents.collect { eventWindowId ->
+                if (eventWindowId == hostWindowId && BrowserFindController.claimShortcut(eventWindowId)) {
+                    BrowserFindController.onFindKeyFromShortcut(browser)
+                }
+            }
+        }
+
         // Render the browser view if available with mouse button handling.
         //
         // Keyed on viewGeneration so the stall watchdog can force the view out of composition and
@@ -2615,59 +2654,92 @@ internal class BrowserHandleImpl(
         // BrowserViewState is deliberately NOT rebuilt with it: the manual repair this imitates (a
         // tab switch) reuses the retained surface too, so re-attaching is what matters and
         // rebuilding the surface would cost far more than it fixes.
-        viewState?.let { state ->
-            key(viewGeneration) {
-                BrowserView(
-                    state = state,
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .offset(y = hardwareTopInsetDp.dp)
-                            // Where this view is, for the pinch gate under HARDWARE_ACCELERATED —
-                            // the only signal available there, since a foreign native surface means
-                            // Compose never reports the pointer entering. Clipped bounds, so a view
-                            // scrolled half out of the window does not claim the hidden half.
-                            .onGloballyPositioned { coords ->
-                                browserViewBoundsInWindow = coords.boundsInWindow()
-                                // Captured with the bounds, from the same layout pass, so the two can
-                                // never describe different displays after a window is dragged between
-                                // monitors. See pointerInsideBounds for why the pairing is required.
-                                browserViewDensity = viewDensity
-                            }
-                            // Hover tracking that gates the window-wide pinch gesture listener to
-                            // this view under OFF_SCREEN (see the DisposableEffect above). Never
-                            // fires under HARDWARE_ACCELERATED; see shouldAllowPinch.
-                            .onPointerEvent(PointerEventType.Enter) { pointerOverBrowserView = true }
-                            .onPointerEvent(PointerEventType.Exit) { pointerOverBrowserView = false }
-                            .onPointerEvent(PointerEventType.Press) { event ->
-                                // Get the native AWT mouse event to check button codes
-                                val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
-
-                                // Handle mouse back button - navigate back
-                                // Windows/macOS: awtButton=4, Linux: awtButton=6 or 8 (varies by mouse)
-                                if (awtEvent?.button in listOf(4, 6, 8)) {
-                                    val now = System.currentTimeMillis()
-                                    if (isValid && (now - lastNavigationTime) > 100 && canGoBack()) {
-                                        lastNavigationTime = now
-                                        goBack()
-                                    }
-                                    event.changes.forEach { it.consume() }
-                                    return@onPointerEvent
+        //
+        // Wrapped in a Box so the find bar has a scope to anchor in. Under OFF_SCREEN it draws in
+        // place, aligned inside THIS pane; under HARDWARE_ACCELERATED - the default on every
+        // platform - OverlayCorner escapes it into its own always-on-top window, because a
+        // lightweight overlay renders behind the native GPU surface.
+        Box(modifier = Modifier.fillMaxSize()) {
+            viewState?.let { state ->
+                key(viewGeneration) {
+                    BrowserView(
+                        state = state,
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .offset(y = hardwareTopInsetDp.dp)
+                                // Where this view is, for the pinch gate under HARDWARE_ACCELERATED —
+                                // the only signal available there, since a foreign native surface means
+                                // Compose never reports the pointer entering. Clipped bounds, so a view
+                                // scrolled half out of the window does not claim the hidden half.
+                                .onGloballyPositioned { coords ->
+                                    val viewBounds = coords.boundsInWindow()
+                                    browserViewBoundsInWindow = viewBounds
+                                    // Captured with the bounds, from the same layout pass, so the two can
+                                    // never describe different displays after a window is dragged between
+                                    // monitors. See pointerInsideBounds for why the pairing is required.
+                                    browserViewDensity = viewDensity
+                                    // Same rectangle, converted for the find bar. Dp, because that is
+                                    // what a heavyweight overlay is placed in - AWT's logical units map
+                                    // 1:1 to dp, so an overlay positioned from device pixels lands off
+                                    // by the scale factor on any HiDPI display.
+                                    findRegionInWindow = findBarRegion(viewBounds, viewDensity)
                                 }
+                                // Hover tracking that gates the window-wide pinch gesture listener to
+                                // this view under OFF_SCREEN (see the DisposableEffect above). Never
+                                // fires under HARDWARE_ACCELERATED; see shouldAllowPinch.
+                                .onPointerEvent(PointerEventType.Enter) { pointerOverBrowserView = true }
+                                .onPointerEvent(PointerEventType.Exit) { pointerOverBrowserView = false }
+                                .onPointerEvent(PointerEventType.Press) { event ->
+                                    // Get the native AWT mouse event to check button codes
+                                    val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
 
-                                // Handle mouse forward button - navigate forward
-                                // Windows/macOS: awtButton=5, Linux: awtButton=7 or 9 (varies by mouse)
-                                if (awtEvent?.button in listOf(5, 7, 9)) {
-                                    val now = System.currentTimeMillis()
-                                    if (isValid && (now - lastNavigationTime) > 100 && canGoForward()) {
-                                        lastNavigationTime = now
-                                        goForward()
+                                    // Handle mouse back button - navigate back
+                                    // Windows/macOS: awtButton=4, Linux: awtButton=6 or 8 (varies by mouse)
+                                    if (awtEvent?.button in listOf(4, 6, 8)) {
+                                        val now = System.currentTimeMillis()
+                                        if (isValid && (now - lastNavigationTime) > 100 && canGoBack()) {
+                                            lastNavigationTime = now
+                                            goBack()
+                                        }
+                                        event.changes.forEach { it.consume() }
+                                        return@onPointerEvent
                                     }
-                                    event.changes.forEach { it.consume() }
-                                    return@onPointerEvent
-                                }
-                            },
-                )
+
+                                    // Handle mouse forward button - navigate forward
+                                    // Windows/macOS: awtButton=5, Linux: awtButton=7 or 9 (varies by mouse)
+                                    if (awtEvent?.button in listOf(5, 7, 9)) {
+                                        val now = System.currentTimeMillis()
+                                        if (isValid && (now - lastNavigationTime) > 100 && canGoForward()) {
+                                            lastNavigationTime = now
+                                            goForward()
+                                        }
+                                        event.changes.forEach { it.consume() }
+                                        return@onPointerEvent
+                                    }
+                                },
+                    )
+                }
+            }
+
+            // Composed only while the bar is up. A heavyweight corner overlay is content-sized but
+            // still swallows the clicks under itself, so one composed unconditionally would leave a
+            // permanently dead rectangle over the page.
+            //
+            // A null region means this pane has not been measured yet (or was just torn down). Not
+            // drawing is deliberate: HeavyweightCorner resolves an unmeasured parent to the screen
+            // origin, so the alternative is an always-on-top bar in the corner of the primary
+            // display rather than over the page it belongs to.
+            val findRegion = findRegionInWindow
+            if (findState.visible && findRegion != null) {
+                OverlayCorner(
+                    alignment = Alignment.TopEnd,
+                    initialSize = FIND_BAR_CEILING,
+                    focusable = true,
+                    regionInWindow = findRegion,
+                ) {
+                    BrowserFindBar(browser = browser, state = findState)
+                }
             }
         }
     }
@@ -2732,8 +2804,9 @@ internal class BrowserHandleImpl(
         currentViewState = null
         currentViewStateWindowId = null
 
-        // Clean up find bar resources before closing browser
-        FluckEngine.disposeBrowserFindBar(browser)
+        // Release find-in-page state and its timers before closing the browser: a debounce that
+        // fires afterwards would search a closed object.
+        BrowserFindController.dispose(browser)
 
         // Close browser
         if (!browser.isClosed) {

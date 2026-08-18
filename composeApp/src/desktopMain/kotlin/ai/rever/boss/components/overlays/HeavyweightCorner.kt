@@ -20,6 +20,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
@@ -94,6 +95,8 @@ fun HeavyweightCorner(
     alignment: Alignment,
     initialSize: DpSize,
     inset: DpSize = DpSize.Zero,
+    focusable: Boolean = false,
+    regionInWindow: IntRect? = null,
     content: @Composable () -> Unit,
 ) {
     val parent = LocalAwtWindow.current
@@ -106,7 +109,7 @@ fun HeavyweightCorner(
     // `bounds` only changes identity on a real change (see [trackedContentPaneBounds]), and a fresh
     // array every recomposition would re-run the placement effect, and with it a native
     // setLocation, for nothing.
-    val region = remember(bounds, inset) { insetBounds(bounds, inset) }
+    val region = remember(bounds, inset, regionInWindow) { resolveRegion(bounds, inset, regionInWindow) }
     // Clamp the ceiling to the region. The ceiling is a hard clip, not a soft start, and toast text
     // is arbitrary plugin content: three wordy toasts can exceed a fixed height, and because the
     // window is CONTENT-sized the overflow is not cosmetic - the bottom toast's dismiss button ends
@@ -135,7 +138,7 @@ fun HeavyweightCorner(
         undecorated = true,
         transparent = true,
         alwaysOnTop = true,
-        focusable = false,
+        focusable = focusable,
         resizable = false,
         icon = BossWindowIcon.painter,
     ) {
@@ -426,6 +429,7 @@ internal fun shouldKeepMeasuring(
  * and the result is a `remember` key: an equal-but-new array would change identity on every
  * recomposition and re-run the placement effect, which is a native `setLocation` each time.
  */
+
 internal fun insetBounds(
     bounds: IntArray?,
     inset: DpSize,
