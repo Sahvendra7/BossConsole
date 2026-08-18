@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin.browser
 
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -20,9 +21,16 @@ import kotlin.test.assertTrue
  * and SIGTERM is a request a stopped or wedged process is free to ignore.
  */
 class FluckEngineProcessKillTest {
+    private val isWindows = System.getProperty("os.name").lowercase().contains("win")
+
     @Test
     fun `kills the whole tree, including a child that outlives its parent`() =
         runBlocking {
+            // Reparenting to pid 1 is what makes ordering matter, and it is a POSIX rule: on
+            // Windows an orphan keeps its recorded parent id and `destroy()` is TerminateProcess
+            // either way. There is no /bin/sh to build the tree with there either.
+            assumeTrue(!isWindows, "Orphan reparenting is POSIX behaviour")
+
             // The shell backgrounds a sleep and then sleeps itself: two processes, and the
             // grandchild is exactly the shape of Chromium's audio helper - it is reparented to
             // pid 1 the moment its parent dies, after which nothing can reach it from here.
@@ -41,6 +49,10 @@ class FluckEngineProcessKillTest {
     @Test
     fun `escalates to SIGKILL for a process that ignores SIGTERM`() =
         runBlocking {
+            // Nothing to escalate from on Windows: destroy() and destroyForcibly() are both
+            // TerminateProcess, which cannot be trapped or ignored.
+            assumeTrue(!isWindows, "SIGTERM is advisory only on POSIX")
+
             // A wedged Chromium is precisely this: alive, signalled, and unmoved. destroy() is a
             // request; only destroyForcibly() frees the --user-data-dir lock.
             val stubborn = ProcessBuilder("/bin/sh", "-c", "trap '' TERM; sleep 120").start()
