@@ -271,6 +271,12 @@ const STYLES = `
      dropped by the browser without a word. */
   .md .md-center { text-align: center; }
   .md .md-right { text-align: right; }
+  /* The pager under a paginated table. LAYOUT ONLY - both colours are tokens contrast.test.ts
+     already asserts on this surface. Rendered only when there is more than one page. */
+  .pager { display: flex; align-items: center; gap: 12px; margin-top: 10px; font-size: 12px; }
+  .pager a { color: var(--text); text-decoration: underline; }
+  .pager .muted { color: var(--text-2); }
+  .pager-state { color: var(--text-2); }
   .dns { display: flex; flex-direction: column; gap: 4px; }
   .dns-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   /* Fixed width so Name/Type/Value line up as a column and the records read as one block. */

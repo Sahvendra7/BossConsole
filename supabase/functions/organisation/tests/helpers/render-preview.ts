@@ -274,6 +274,25 @@ Long unbroken line to check the wrap: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 const pages: Record<string, string> = {
   "overview.html": orgPage({ nonce: NONCE, basePath: BASE, org, members, roles, plugins }),
+  // A second copy with enough rows to page, so the pager is actually looked at rather than
+  // asserted about. Members are cloned from the real fixture to keep the row shape honest.
+  "overview-paged.html": orgPage({
+    nonce: NONCE,
+    basePath: BASE,
+    org,
+    members: Array.from({ length: 60 }, (_, i) => ({
+      ...members[i % members.length],
+      email: `member${i + 1}@risalabs.ai`,
+    })),
+    roles,
+    plugins: Array.from({ length: 40 }, (_, i) => ({
+      ...plugins[i % plugins.length],
+      plugin_id: `ai.rever.boss.plugin.dynamic.sample${i + 1}`,
+      display_name: `Sample Plugin ${i + 1}`,
+    })),
+    membersPage: 2,
+    pluginsPage: 1,
+  }),
   "plugin.html": pluginPage({
     nonce: NONCE,
     basePath: BASE,
