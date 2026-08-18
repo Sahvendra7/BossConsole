@@ -5,6 +5,8 @@ import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.revealInFileManager
 import java.io.File
 import java.io.IOException
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private val logger = BossLogger.forComponent("FileSystemUtils")
 
@@ -88,35 +90,56 @@ object FileSystemUtils {
     }
 
     /**
-     * Paths handed out by [generateUniqueFilePath] whose file does not exist yet.
+     * Paths handed out by [generateUniqueFilePath] whose file does not exist yet, by owner.
      *
      * "Is the name free?" cannot be answered by [File.exists] alone. A download's file is not
      * created until bytes arrive, so two downloads of `report.pdf` started before either lands
      * both saw a free name and both resolved to the same path - the second silently truncating
-     * the first. A claimed path is treated as taken until [releaseFilePath] is called, which
-     * the download's terminal handlers do.
+     * the first.
+     *
+     * **Keyed by owner, not just by path.** A bare `release(path)` let one download free
+     * another's claim: the save-dialog path returns whatever the user typed, which can be a
+     * path the auto path already claimed, and that download's terminal handler would then
+     * release a claim it never took. So a claim records who holds it and only that holder can
+     * give it back.
+     *
+     * Entries are advisory and self-healing. Nothing guarantees a terminal event - the engine
+     * can be disposed mid-download, and `action.download()` itself can throw after the claim -
+     * so a claim whose file still does not exist after [STALE_CLAIM_MS] is treated as
+     * abandoned. Without that, one lost release pushes every later download of that name onto
+     * a numbered suffix for the life of the process, with nothing on disk to explain why: the
+     * exact confusion this whole mechanism exists to remove.
      */
-    private val claimedPaths =
-        java.util.concurrent.ConcurrentHashMap
-            .newKeySet<String>()
+    private val claimedPaths = ConcurrentHashMap<String, Claim>()
 
-    /** Highest `(n)` suffix tried before falling back to a name that cannot collide. */
-    private const val MAX_COLLISION_SUFFIX = 1000
+    private data class Claim(
+        val owner: String,
+        val takenAtMs: Long,
+    )
+
+    /** How long a claim with no file behind it is honoured before it is treated as abandoned. */
+    private const val STALE_CLAIM_MS = 10 * 60 * 1000L
+
+    /** Number of `(n)` suffixes tried before falling back to a name that cannot collide. */
+    private const val MAX_COLLISION_SUFFIX = 999
 
     /**
      * Generates a unique file path by appending (1), (2), etc. if the name is taken.
      * Example: "file.txt" -> "file (1).txt" -> "file (2).txt"
      *
-     * The returned path is **claimed** until [releaseFilePath] is called for it, so a caller
-     * that has not written its file yet still blocks a concurrent caller from the same name.
+     * The returned path is **claimed for [owner]** until [releaseFilePath] is called with the
+     * same owner, so a caller that has not written its file yet still blocks a concurrent
+     * caller from the same name.
      *
      * @param directory Directory where file will be saved
      * @param fileName Original file name
+     * @param owner Identifies the caller, so only it can release the claim
      * @return Absolute path to a unique file (may be the original if no collision)
      */
     fun generateUniqueFilePath(
         directory: String,
         fileName: String,
+        owner: String,
     ): String {
         val dir = File(directory)
 
@@ -135,49 +158,79 @@ object FileSystemUtils {
         }
 
         val claimed =
-            if (claim(original)) {
+            if (claim(original, owner)) {
                 original
             } else {
-                (1 until MAX_COLLISION_SUFFIX)
+                (1..MAX_COLLISION_SUFFIX)
                     .asSequence()
                     .map { suffixed(it.toString()) }
-                    .firstOrNull { claim(it) }
+                    .firstOrNull { claim(it, owner) }
                     ?: run {
-                        // A thousand collisions is not a real directory, but the old loop
-                        // *returned the colliding path* once it gave up, overwriting the very
-                        // file the counter exists to protect. Fall back to a name nothing else
-                        // holds instead.
+                        // The old loop *returned the colliding path* once it gave up,
+                        // overwriting the very file the counter exists to protect. Retry until
+                        // a claim actually succeeds rather than assuming one will: a random
+                        // name that happens to be taken, returned unclaimed, is that bug again.
                         logger.warn(
                             LogCategory.FILE,
                             "Exhausted numbered suffixes for a download name - using a unique suffix",
                             mapOf("fileName" to fileName),
                         )
-                        suffixed(System.nanoTime().toString(radix = 16)).also { claim(it) }
+                        generateSequence { suffixed(UUID.randomUUID().toString()) }
+                            .first { claim(it, owner) }
                     }
             }
         return claimed.absolutePath
     }
 
-    /** Take [file]'s path if nothing holds it and it is not already on disk. */
-    private fun claim(file: File): Boolean {
-        val path = file.absolutePath
-        // add() before exists() so two threads cannot both pass the exists() check; the loser
-        // gives the path back and moves on to the next suffix.
-        if (!claimedPaths.add(path)) return false
-        val free = !file.exists()
-        if (!free) claimedPaths.remove(path)
-        return free
+    /**
+     * Take [file]'s path for [owner] if nothing live holds it and it is not already on disk.
+     *
+     * The key is case-folded, because APFS and NTFS are case-insensitive by default: without
+     * it `report.pdf` and `Report.pdf` are one file but two claims, and a server-supplied
+     * `Content-Disposition` makes that trivial to arrange.
+     */
+    private fun claim(
+        file: File,
+        owner: String,
+    ): Boolean {
+        val key = claimKey(file)
+        val now = System.currentTimeMillis()
+        val mine = Claim(owner, now)
+        var taken = false
+        // Resolve against the map first, so two threads cannot both pass the exists() check.
+        claimedPaths.compute(key) { _, current ->
+            val abandoned = current != null && now - current.takenAtMs > STALE_CLAIM_MS && !file.exists()
+            if (current == null || abandoned) {
+                taken = true
+                mine
+            } else {
+                current
+            }
+        }
+        if (taken && file.exists()) {
+            // A file appeared at the name between the map write and here. Give it straight
+            // back rather than handing out a path whose contents the caller would destroy.
+            claimedPaths.remove(key, mine)
+            taken = false
+        }
+        return taken
     }
+
+    private fun claimKey(file: File): String = file.absolutePath.lowercase()
 
     /**
      * Give back a path claimed by [generateUniqueFilePath].
      *
-     * Call this once the file exists (so [File.exists] takes over) or once the transfer that
-     * claimed it has failed. Not calling it leaks one string per download for the life of the
-     * process and pushes a later download of the same name onto a suffix it did not need.
+     * A no-op unless [owner] is the holder, so a download releasing its own path cannot free
+     * one that belongs to another. Call it once the file exists (so [File.exists] takes over)
+     * or once the transfer has failed.
      */
-    fun releaseFilePath(path: String) {
-        claimedPaths.remove(path)
+    fun releaseFilePath(
+        path: String,
+        owner: String,
+    ) {
+        val key = claimKey(File(path))
+        claimedPaths.computeIfPresent(key) { _, current -> if (current.owner == owner) null else current }
     }
 
     /**

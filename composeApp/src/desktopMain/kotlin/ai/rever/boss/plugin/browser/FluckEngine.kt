@@ -2922,6 +2922,10 @@ object FluckEngine {
                 // Check if Shift key is pressed (force save dialog)
                 val forceDialog = isShiftPressed()
 
+                // Generated up here because it owns the path claim below, and a claim has to
+                // name its holder so that no other download can release it.
+                val downloadId = UUID.randomUUID().toString()
+
                 // Determine save location based on settings
                 val savePath =
                     when {
@@ -2940,7 +2944,7 @@ object FluckEngine {
                             val directory =
                                 downloadSettings.lastUsedDirectory
                                     ?: downloadSettings.defaultDownloadDirectory
-                            FileSystemUtils.generateUniqueFilePath(directory, sanitizedFileName)
+                            FileSystemUtils.generateUniqueFilePath(directory, sanitizedFileName, owner = downloadId)
                         }
                     }
 
@@ -2955,7 +2959,7 @@ object FluckEngine {
                     if (!FileSystemUtils.ensureParentDirectoryExists(savePath)) {
                         // Bailing before setupDownloadEventListeners means none of the three
                         // terminal handlers will run, so the claim is released here or never.
-                        FileSystemUtils.releaseFilePath(savePath)
+                        FileSystemUtils.releaseFilePath(savePath, owner = downloadId)
                         action.cancel()
                         return@StartDownloadCallback
                     }
@@ -2975,9 +2979,6 @@ object FluckEngine {
                     if (parentDir != null) {
                         downloadSettings = downloadSettings.copy(lastUsedDirectory = parentDir)
                     }
-
-                    // Generate unique download ID
-                    val downloadId = UUID.randomUUID().toString()
 
                     // Add download to manager immediately and open Downloads panel
                     CoroutineScope(Dispatchers.Default).launch {
@@ -3078,7 +3079,7 @@ object FluckEngine {
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
                 // The file exists now, so exists() guards the name from here on.
-                FileSystemUtils.releaseFilePath(destinationPath)
+                FileSystemUtils.releaseFilePath(destinationPath, owner = downloadId)
             }
         }
 
@@ -3097,7 +3098,7 @@ object FluckEngine {
                 activeDownloads.remove(downloadId)
                 // Nothing was written, so the name goes back to the pool rather than
                 // pushing the next download of it onto a suffix it does not need.
-                FileSystemUtils.releaseFilePath(destinationPath)
+                FileSystemUtils.releaseFilePath(destinationPath, owner = downloadId)
             }
         }
 
@@ -3109,7 +3110,7 @@ object FluckEngine {
                 // Remove from tracking maps
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
-                FileSystemUtils.releaseFilePath(destinationPath)
+                FileSystemUtils.releaseFilePath(destinationPath, owner = downloadId)
             }
         }
     }

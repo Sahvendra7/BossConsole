@@ -19,6 +19,11 @@ import kotlin.test.assertTrue
  * and a released name was never reusable because nothing released it.
  */
 class UniqueFilePathTest {
+    private companion object {
+        const val OWNER = "download-a"
+        const val OTHER_OWNER = "download-b"
+    }
+
     private val temps = mutableListOf<File>()
 
     private fun tempDir(): File = createTempDirectory("unique-path").toFile().also { temps += it }
@@ -28,12 +33,25 @@ class UniqueFilePathTest {
         temps.forEach { it.deleteRecursively() }
     }
 
-    private fun release(vararg paths: String) = paths.forEach { FileSystemUtils.releaseFilePath(it) }
+    private fun unique(
+        dir: File,
+        name: String,
+        owner: String = OWNER,
+    ): String = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, name, owner)
+
+    private fun release(
+        path: String,
+        owner: String = OWNER,
+    ) = FileSystemUtils.releaseFilePath(path, owner)
+
+    // Named apart from release() on purpose: as an overload, release(a, b) silently bound
+    // b as the *owner* rather than releasing both, and the release then did nothing.
+    private fun releaseAll(vararg paths: String) = paths.forEach { release(it) }
 
     @Test
     fun `a free name is returned unchanged`() {
         val dir = tempDir()
-        val path = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "report.pdf")
+        val path = unique(dir, "report.pdf")
         assertEquals(File(dir, "report.pdf").absolutePath, path)
         release(path)
     }
@@ -43,13 +61,13 @@ class UniqueFilePathTest {
         val dir = tempDir()
         File(dir, "report.pdf").writeText("first")
 
-        val second = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "report.pdf")
+        val second = unique(dir, "report.pdf")
         assertEquals("report (1).pdf", File(second).name)
         File(second).writeText("second")
 
-        val third = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "report.pdf")
+        val third = unique(dir, "report.pdf")
         assertEquals("report (2).pdf", File(third).name)
-        release(second, third)
+        releaseAll(second, third)
 
         assertEquals("first", File(dir, "report.pdf").readText(), "the original must be untouched")
     }
@@ -58,7 +76,7 @@ class UniqueFilePathTest {
     fun `an extensionless name still gets a suffix`() {
         val dir = tempDir()
         File(dir, "LICENSE").writeText("x")
-        val path = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "LICENSE")
+        val path = unique(dir, "LICENSE")
         assertEquals("LICENSE (1)", File(path).name)
         release(path)
     }
@@ -79,13 +97,14 @@ class UniqueFilePathTest {
                     .map {
                         pool.submit<String> {
                             start.await(5, TimeUnit.SECONDS)
-                            FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "race.bin")
+                            // A distinct owner each, which is the real shape: one per download.
+                            unique(dir, "race.bin", "dl-$it")
                         }
                     }.also { start.countDown() }
                     .map { it.get(10, TimeUnit.SECONDS) }
 
             assertEquals(threads, results.toSet().size, "every caller must get its own path")
-            results.forEach(FileSystemUtils::releaseFilePath)
+            results.forEachIndexed { i, path -> release(path, "dl-${i + 1}") }
         } finally {
             pool.shutdownNow()
         }
@@ -95,12 +114,12 @@ class UniqueFilePathTest {
     @Test
     fun `a released name is handed out again`() {
         val dir = tempDir()
-        val first = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "note.txt")
-        val second = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "note.txt")
+        val first = unique(dir, "note.txt")
+        val second = unique(dir, "note.txt")
         assertNotEquals(first, second, "the unreleased claim must still block")
 
-        release(first, second)
-        val reused = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "note.txt")
+        releaseAll(first, second)
+        val reused = unique(dir, "note.txt")
         assertEquals(first, reused, "nothing holds the name and no file exists, so it is free")
         release(reused)
     }
@@ -114,11 +133,11 @@ class UniqueFilePathTest {
     fun `exhausting the numbered suffixes never returns an existing file`() {
         val dir = tempDir()
         File(dir, "x.dat").writeText("keep")
-        for (i in 1 until 1000) {
-            File(dir, "x ($i).dat").writeText("keep")
+        for (i in 1..999) {
+            File(dir, "x ($i).dat").createNewFile()
         }
 
-        val path = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "x.dat")
+        val path = unique(dir, "x.dat")
 
         assertTrue(File(path).parentFile.absolutePath == dir.absolutePath, "must stay in the directory")
         assertTrue(!File(path).exists(), "an occupied path would be overwritten by the caller")
@@ -126,10 +145,40 @@ class UniqueFilePathTest {
         release(path)
     }
 
+    /**
+     * The claim is owned. Without that, the save-dialog path - which returns whatever name
+     * the user typed, and never claims it - would release a claim the auto path was holding,
+     * and a third download could then take a path still being written to.
+     */
+    @Test
+    fun `one download cannot release another's claim`() {
+        val dir = tempDir()
+        val mine = unique(dir, "shared.bin")
+
+        release(mine, OTHER_OWNER)
+
+        val next = unique(dir, "shared.bin", OTHER_OWNER)
+        assertNotEquals(mine, next, "a stranger's release must not free the claim")
+
+        release(mine)
+        release(next, OTHER_OWNER)
+    }
+
+    /** APFS and NTFS are case-insensitive, so these two names are one file. */
+    @Test
+    fun `claims are case-insensitive`() {
+        val dir = tempDir()
+        val lower = unique(dir, "Report.PDF")
+        val upper = unique(dir, "report.pdf", OTHER_OWNER)
+        assertNotEquals(lower.lowercase(), upper.lowercase(), "case alone must not look like a free name")
+        release(lower)
+        release(upper, OTHER_OWNER)
+    }
+
     @Test
     fun `a missing directory is created rather than failing`() {
         val dir = File(tempDir(), "nested/deeper")
-        val path = FileSystemUtils.generateUniqueFilePath(dir.absolutePath, "a.txt")
+        val path = unique(dir, "a.txt")
         assertTrue(dir.isDirectory, "the directory should have been created")
         assertEquals(File(dir, "a.txt").absolutePath, path)
         release(path)
