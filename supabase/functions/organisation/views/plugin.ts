@@ -45,7 +45,10 @@ const VISIBILITY_COPY: Record<string, { label: string; detail: string }> = {
   },
   unlisted: {
     label: "Unlisted",
-    detail: "Hidden from the store. Only this organisation's administrators can see it.",
+    // Administrators, and its author. `user_can_view_plugin_row` answers the author arm before it
+    // reaches the unlisted one, so saying "administrators" alone would be a claim the predicate
+    // does not make.
+    detail: "Hidden from the store. Only this organisation's administrators and the plugin's author can see it.",
   },
 }
 
@@ -219,7 +222,7 @@ function visibilityCard(action: string, csrf: string, plugin: PluginDetail): str
     ${options}
     <button type="submit">Save visibility</button>
   </form>
-  <p class="hint">Anything other than Public also removes it from the Toolbox's store list, for everyone. The Toolbox reads that list anonymously, so it cannot see a plugin restricted to an organisation even for that organisation's own members.</p>
+  <p class="hint">Restricting a plugin removes it from the public store listing. Members of this organisation still find it in their Toolbox, because the Toolbox now reads the store as the signed-in user. Anyone on an older Toolbox reads it anonymously and will not see it at all.</p>
 </section>`
 }
 

@@ -125,11 +125,17 @@ Deno.test("an unexpected visibility selects nothing rather than everything", () 
 })
 
 Deno.test("the consequence of restricting visibility is stated on the page", () => {
-  // The Toolbox reads its catalogue as `anon`, so anything other than public vanishes from the
-  // store list for everyone - including members of the owning organisation. That is a property of
-  // how the client reads today, not of what the value means, so the page has to say it.
+  // What restricting COSTS is a property of how clients read, not of what the value means, so the
+  // page has to say it - and it changed: the Toolbox used to read the catalogue as `anon`, which
+  // hid an org plugin from the very members it exists for. It reads as the signed-in user now, so
+  // the page must no longer claim the plugin vanishes "for everyone".
   const html = render({ canEdit: true })
-  assertStringIncludes(html, "removes it from the Toolbox")
+  assertStringIncludes(html, "removes it from the public store listing")
+  assertStringIncludes(html, "Members of this organisation still find it")
+  // The stale claim, asserted absent so it cannot come back by a copy-paste.
+  assertEquals(html.includes("for everyone"), false)
+  // The caveat that is still true: an older Toolbox reads anonymously.
+  assertStringIncludes(html, "older Toolbox")
 })
 
 // ---------------------------------------------------------------------------
