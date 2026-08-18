@@ -21,6 +21,15 @@ export interface PluginPageOptions {
   readme: string | null
   /** Whether to render the visibility control. The RPC re-checks regardless. */
   canEdit: boolean
+  /**
+   * Whether the reader's machine has this plugin, or null when unknown.
+   *
+   * This page is served by an edge function and cannot see anyone's machine, so the state is told
+   * to it by the Toolbox, which is what links here. Null is a THIRD state, not a synonym for "not
+   * installed": somebody arriving from a shared link must not be invited to install what they may
+   * already have.
+   */
+  installed?: boolean | null
   banner?: { kind: "ok" | "error"; message: string } | null
 }
 
@@ -58,6 +67,7 @@ export function pluginPage(options: PluginPageOptions): string {
 <p class="sub">${esc(plugin.plugin_id)}</p>
 
 ${identityCard(plugin)}
+${actionCard(plugin, options.installed ?? null)}
 ${canEdit ? visibilityCard(action, csrf, plugin) : visibilityReadOnly(plugin)}
 ${readmeCard(plugin, readme)}`,
   })
@@ -127,6 +137,55 @@ function identityCard(plugin: PluginDetail): string {
       }" target="_blank" rel="noopener noreferrer nofollow">${esc(plugin.homepage_url)}</a></p>`
       : ""
   }
+</section>`
+}
+
+/**
+ * Open it, or install it.
+ *
+ * Both are `boss://` deep links, so the desktop app does the work and this page never has to know
+ * anything about the reader's machine. The LABEL follows the hint the Toolbox passed; the ACTION
+ * behind it carries the plugin id and lets the app decide, so a stale or absent hint costs a wrong
+ * word and never a wrong outcome - asking to open something that is not installed offers to
+ * install it, and asking to install something already present says so.
+ *
+ * Nothing is installed by pressing this. The link reaches the Toolbox's handler, which shows a
+ * prompt naming the plugin as the STORE describes it and installs on that press. Worth stating
+ * here because this page is public: anyone can serve a link to it.
+ *
+ * `attrUrl` with `boss` opted in. It is a scheme this file constructs from a value that came out
+ * of the database, and the same rule applies to it as to every other URL on the page.
+ */
+function actionCard(plugin: PluginDetail, installed: boolean | null): string {
+  const toolbox = "ai.rever.boss.plugin.dynamic.pluginmanager"
+  const link = (action: string) =>
+    `boss://plugin?id=${toolbox}&action=${action}&plugin=${encodeURIComponent(plugin.plugin_id)}`
+
+  // Unpublished means there is nothing to fetch, so neither button would do anything.
+  if (!plugin.published) {
+    return `
+<section class="card">
+  <h2>Get it</h2>
+  <p class="hint">This plugin is not published, so it cannot be installed from the store yet.</p>
+</section>`
+  }
+
+  const action = installed === true ? "open" : "install"
+  const label = installed === true ? "Open in BOSS" : "Install in BOSS"
+  const note = installed === true
+    ? "Opens it in the BOSS desktop app."
+    : installed === false
+    ? "Opens BOSS and asks before installing. Nothing is installed until you confirm."
+    : // The honest wording for a reader we know nothing about.
+      "Opens BOSS. If you already have it, BOSS says so instead of installing it again."
+
+  return `
+<section class="card">
+  <h2>Get it</h2>
+  <p>
+    <a class="button" href="${attrUrl(link(action), ["boss"])}">${esc(label)}</a>
+  </p>
+  <p class="hint">${esc(note)}</p>
 </section>`
 }
 

@@ -92,6 +92,10 @@ pluginPageRoutes.get("/o/:slug/plugins/:pluginId", async (ctx) => {
       orgSlug: slug,
       // Empty for a signed-out reader, who gets no form to put it in.
       csrf: session?.csrf ?? "",
+      // Told to us by the Toolbox, which is what links here; absent for any other visitor. Only a
+      // LABEL depends on it - see views/plugin.ts - so an absent or stale value is not a
+      // correctness question. Anything other than the two values we write reads as unknown.
+      installed: installedHint(url.searchParams.get("installed")),
       plugin,
       readme,
       canEdit: isAdmin,
@@ -165,4 +169,11 @@ function notAvailable(): Response {
       }),
     { status: 404 },
   )
+}
+
+/** `1` or `0` from the Toolbox; anything else, including absent, means "not known". */
+function installedHint(raw: string | null): boolean | null {
+  if (raw === "1") return true
+  if (raw === "0") return false
+  return null
 }

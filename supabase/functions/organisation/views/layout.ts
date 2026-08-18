@@ -307,7 +307,13 @@ const STYLES = `
 
   /* ---- buttons --------------------------------------------------------- */
 
-  button {
+  /* A link that acts as the page's primary action (the boss:// deep link on a plugin page).
+     Shares the button rule below rather than restating its colours, so the two cannot drift and
+     no new colour pair is introduced for contrast.test.ts to miss. */
+  a.button {
+    display: inline-block; text-decoration: none; text-align: center;
+  }
+  button, a.button {
     background-color: var(--signal); color: var(--on-signal); border: 1px solid var(--signal);
     border-radius: 7px; padding: 8px 16px; font-size: 14px; font-weight: 600;
     cursor: pointer; font-family: inherit;

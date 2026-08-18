@@ -36,7 +36,14 @@ function plugin(overrides: Partial<PluginDetail> = {}): PluginDetail {
   }
 }
 
-function render(opts: { readme?: string | null; canEdit?: boolean; p?: Partial<PluginDetail> } = {}) {
+function render(
+  opts: {
+    readme?: string | null
+    canEdit?: boolean
+    p?: Partial<PluginDetail>
+    installed?: boolean | null
+  } = {},
+) {
   return pluginPage({
     nonce: NONCE,
     basePath: "/functions/v1/organisation",
@@ -45,6 +52,7 @@ function render(opts: { readme?: string | null; canEdit?: boolean; p?: Partial<P
     plugin: plugin(opts.p),
     readme: opts.readme ?? null,
     canEdit: opts.canEdit ?? false,
+    installed: opts.installed ?? null,
   })
 }
 
@@ -470,4 +478,63 @@ Deno.test("a publisher-supplied icon url goes through the same gate", () => {
   // which is a different job.
   const html = render({ p: { icon_url: "javascript:alert(1)" } })
   assertEquals(html.includes('src="javascript:'), false)
+})
+
+// ---------------------------------------------------------------------------
+// Open or Install
+// ---------------------------------------------------------------------------
+// The page cannot see the reader's machine, so the Toolbox tells it. The LABEL follows that hint;
+// the deep link behind it carries the plugin id and lets the app decide, which is why a stale or
+// absent hint is a wording problem and never a correctness one.
+
+function actionOf(html: string): { label: string; href: string } | null {
+  const m = /<a class="button" href="([^"]+)">([^<]+)<\/a>/.exec(html)
+  return m ? { href: m[1], label: m[2] } : null
+}
+
+Deno.test("an installed plugin offers Open", () => {
+  const a = actionOf(render({ p: {} , installed: true }))!
+  assertEquals(a.label, "Open in BOSS")
+  assertStringIncludes(a.href, "action=open")
+  assertStringIncludes(a.href, "plugin=ai.rever.boss.plugin.dynamic.codexglm")
+})
+
+Deno.test("a plugin that is not installed offers Install", () => {
+  const a = actionOf(render({ installed: false }))!
+  assertEquals(a.label, "Install in BOSS")
+  assertStringIncludes(a.href, "action=install")
+})
+
+Deno.test("an unknown state does not tell the reader to install what they may have", () => {
+  // The third state. Somebody arriving from a shared link is told what BOSS will do rather than
+  // being invited to install something they might already be running.
+  const html = render()
+  assertStringIncludes(html, "If you already have it, BOSS says so")
+
+  // And it takes the install route, whose handler answers "already installed" for somebody who
+  // has it. Asserted because the label and the action are set on separate lines: they agreed by
+  // accident until a mutation flipped one of them and no test noticed.
+  const a = actionOf(html)!
+  assertEquals(a.label, "Install in BOSS")
+  assertStringIncludes(a.href, "action=install")
+})
+
+Deno.test("the link addresses the Toolbox's handler, not the plugin's own panel", () => {
+  // boss://plugin?id= takes the id of whoever HANDLES the action. Addressing the target plugin
+  // would only work for plugins whose panel id happens to equal their plugin id.
+  const a = actionOf(render({ installed: false }))!
+  assertStringIncludes(a.href, "boss://plugin?id=ai.rever.boss.plugin.dynamic.pluginmanager")
+})
+
+Deno.test("an unpublished plugin offers neither", () => {
+  const html = render({ p: { published: false } })
+  assertEquals(actionOf(html), null)
+  assertStringIncludes(html, "cannot be installed from the store yet")
+})
+
+Deno.test("a plugin id with a separator cannot break out of the deep link", () => {
+  const html = render({ installed: false, p: { plugin_id: "a&b=c" } })
+  const a = actionOf(html)!
+  assertStringIncludes(a.href, "plugin=a%26b%3Dc")
+  assertEquals(a.href.includes("plugin=a&b=c"), false)
 })
