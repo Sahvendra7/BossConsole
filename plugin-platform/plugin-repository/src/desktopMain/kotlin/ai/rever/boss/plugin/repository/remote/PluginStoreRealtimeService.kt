@@ -1,6 +1,8 @@
 package ai.rever.boss.plugin.repository.remote
 
 import ai.rever.boss.plugin.logging.BossLogger
+import io.github.jan.supabase.logging.LogLevel
+import io.github.jan.supabase.logging.SupabaseLoggingProcessor
 import ai.rever.boss.plugin.logging.LogCategory
 import ai.rever.boss.plugin.repository.PluginInfo
 import io.github.jan.supabase.createSupabaseClient
@@ -117,6 +119,7 @@ class PluginStoreRealtimeService {
                     supabaseUrl = baseUrl,
                     supabaseKey = anonKey,
                 ) {
+                    defaultLoggingFactory = { level -> StoreSupabaseLogging(level) }
                     install(Realtime) {
                         // Match main SupabaseConfig heartbeat settings to prevent
                         // "Heartbeat timeout" crashes in Ktor websocket
@@ -289,5 +292,45 @@ class PluginStoreRealtimeService {
     fun dispose() {
         stop()
         scope.cancel()
+    }
+}
+
+/**
+ * Names this client's supabase-kt log lines so they can be told apart from the app's other two.
+ *
+ * A near-copy of composeApp's NamedSupabaseLogging, and deliberately not shared: that one is
+ * commonMain in a module this one does not depend on (composeApp depends on plugin-repository, not
+ * the reverse), and this file is desktopMain, so there is no source set both can reach without
+ * inventing a module for forty lines.
+ *
+ * The reason either exists: supabase-kt tags every line `(Supabase-Realtime)` and nothing more, so
+ * with three clients in one process a flapping socket cannot be attributed to a feature - the
+ * lines interleave, and pairing a "Connected" with the next "Heartbeat timeout" quietly assumes
+ * they came from the same client.
+ */
+private class StoreSupabaseLogging(
+    private val minimum: LogLevel,
+) : SupabaseLoggingProcessor {
+
+    private val logger = BossLogger.forComponent("Supabase")
+
+    override fun isEnabled(level: LogLevel): Boolean = level.ordinal >= minimum.ordinal
+
+    override fun processLog(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable?,
+        message: String,
+    ) {
+        if (!isEnabled(level)) return
+        val fields = mapOf<String, Any?>("client" to "plugin-store", "tag" to tag)
+        val text = "[plugin-store] $message"
+        when (level) {
+            LogLevel.ERROR -> logger.error(LogCategory.NETWORK, text, fields, error = throwable)
+            LogLevel.WARNING -> logger.warn(LogCategory.NETWORK, text, fields, error = throwable)
+            LogLevel.INFO -> logger.info(LogCategory.NETWORK, text, fields)
+            LogLevel.DEBUG -> logger.debug(LogCategory.NETWORK, text, fields)
+            LogLevel.NONE -> {}
+        }
     }
 }
