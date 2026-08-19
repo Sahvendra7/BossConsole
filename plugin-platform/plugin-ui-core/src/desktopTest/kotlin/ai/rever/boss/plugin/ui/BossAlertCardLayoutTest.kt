@@ -16,6 +16,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
@@ -66,8 +67,9 @@ class BossAlertCardLayoutTest {
         }
     }
 
-    private fun heightOf(label: String): Dp =
-        rule.onNodeWithText(label).getUnclippedBoundsInRoot().let { it.bottom - it.top }
+    private fun boundsOf(label: String): DpRect = rule.onNodeWithText(label).getUnclippedBoundsInRoot()
+
+    private fun heightOf(label: String): Dp = boundsOf(label).run { bottom - top }
 
     @Test
     fun `the actions keep their height when the body is taller than the window`() {
@@ -149,8 +151,8 @@ class BossAlertCardLayoutTest {
             }
         }
 
-        val lastLine = rule.onNodeWithText(LAST_LINE).getUnclippedBoundsInRoot()
-        val action = rule.onNodeWithText(actionLabel).getUnclippedBoundsInRoot()
+        val lastLine = boundsOf(LAST_LINE)
+        val action = boundsOf(actionLabel)
         assertTrue(
             action.top > lastLine.top,
             "the actions sit at ${action.top} and the body's last line at ${lastLine.top} — the " +
@@ -169,7 +171,7 @@ class BossAlertCardLayoutTest {
 
         val frame = rule.onNodeWithTag(FRAME).getUnclippedBoundsInRoot()
         listOf("Allow this?", actionLabel).forEach { label ->
-            val b = rule.onNodeWithText(label).getUnclippedBoundsInRoot()
+            val b = boundsOf(label)
             assertTrue(b.bottom - b.top > 0.dp, "\"$label\" was squeezed to ${b.bottom - b.top}")
             assertTrue(b.top >= frame.top, "\"$label\" starts ${frame.top - b.top} above the card")
             assertTrue(b.bottom <= frame.bottom, "\"$label\" ends ${b.bottom - frame.bottom} below the card")
@@ -202,7 +204,8 @@ class BossAlertCardLayoutTest {
                 )
             } else {
                 assertEquals(
-                    400.dp, cardWidth,
+                    400.dp,
+                    cardWidth,
                     "a card in a $frameWidth frame measured $cardWidth rather than AlertWidth",
                 )
             }
