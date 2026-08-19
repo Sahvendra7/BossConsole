@@ -103,6 +103,32 @@ class SettingsSearchMatcherTest {
         )
     }
 
+    /**
+     * Regression: "tab switching" found nothing at all.
+     *
+     * Shortcuts had been filed with the delegated sections - panels owned by other modules - on the
+     * grounds that it has its own search box. But its page is host code, so its controls were
+     * indexable all along, and the mis-filing also exempted the section from the drift guard, which
+     * is why no test caught it.
+     */
+    @Test
+    fun `tab switching finds the Shortcuts controls`() {
+        val hits = search("tab switching")
+
+        assertTrue(hits.isNotEmpty(), "searching the words on screen found nothing")
+        assertEquals(SettingsSection.KEYMAP, hits.first().entry.section)
+        assertTrue(
+            hits.map { it.entry.label }.containsAll(listOf("Positional", "Most recently used")),
+            "expected both tab-switching modes, got: ${hits.map { it.entry.label }}",
+        )
+        // Without the context the row reads "Positional / Shortcuts", which says nothing about what
+        // it does - the heading it sits under is a plain Text, so `group` cannot supply this.
+        assertEquals(
+            "Shortcuts > Tab switching",
+            hits.first { it.entry.label == "Positional" }.entry.breadcrumb,
+        )
+    }
+
     @Test
     fun `a blank query returns nothing rather than everything`() {
         assertTrue(search("").isEmpty())

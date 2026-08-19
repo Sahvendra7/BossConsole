@@ -16,8 +16,17 @@ import ai.rever.boss.components.settings.sidebar.SettingsSection
  * @param keywords words a user might search that the label does not contain ("passkey" for
  *   "Platform Authenticator"). Deliberately scored below a label hit - see [SettingsSearchMatcher].
  * @param pluginPageId set instead of [section] for a plugin page, which navigates by page id.
- * @param highlightable false when landing on the section is all this entry can do: the four
- *   delegated sections render panels the host does not own, so there is no control to highlight.
+ * @param highlightable false when landing on the section is all this entry can do - either the page
+ *   belongs to another module, or the control is built from a local composable that carries no
+ *   search target (the Shortcuts tab-switching chips live in commonMain, which cannot reach the
+ *   desktop-only highlight modifier at all).
+ * @param curated true when this entry was written by hand rather than read off a `label =` literal,
+ *   so the drift test's staleness check must skip it - there is no source line for it to find. Only
+ *   for section-level catch-alls and for sections the scanner cannot see.
+ * @param context a heading the control sits under on screen that is not a `SettingsSection`, used
+ *   for the breadcrumb only. Shortcuts groups its tab-switching chips under a plain `Text`, so
+ *   [group] must stay null to match what the scanner computes - without this, the result row reads
+ *   "Positional / Shortcuts", which tells the reader nothing about what it does.
  */
 data class SettingsSearchEntry(
     val label: String,
@@ -26,6 +35,8 @@ data class SettingsSearchEntry(
     val keywords: List<String> = emptyList(),
     val pluginPageId: String? = null,
     val highlightable: Boolean = true,
+    val curated: Boolean = false,
+    val context: String? = null,
 ) {
     init {
         require(section != null || pluginPageId != null) {
@@ -36,7 +47,7 @@ data class SettingsSearchEntry(
     /** "Browser > User Agent", or just "Browser" for a group header. Shown under the result. */
     val breadcrumb: String
         get() =
-            listOfNotNull(section?.displayName ?: PLUGIN_BREADCRUMB, group)
+            listOfNotNull(section?.displayName ?: PLUGIN_BREADCRUMB, group ?: context)
                 .joinToString(" > ")
 
     /**

@@ -43,6 +43,19 @@ class SettingsSearchIndexDriftTest {
             "Status",
         )
 
+    /**
+     * Files under the scanned roots that hold no settings at all.
+     *
+     * Both are modals reached *from* a settings page rather than part of one, and their `label =`
+     * calls are filter chips over test results. Skipped whole rather than listed label by label,
+     * because every one of those labels is templated (`"All (${stats.total})"`).
+     */
+    private val skippedFiles =
+        setOf(
+            "ShortcutTestDialog.kt",
+            "KeyCaptureDialog.kt",
+        )
+
     /** The one templated label, which the scanner sees as a literal it cannot evaluate. */
     private val templatedLiteral = "Show \${bar.displayName()}"
 
@@ -92,6 +105,7 @@ class SettingsSearchIndexDriftTest {
         val stale =
             SettingsSearchIndex.builtIn
                 .filter { it.section in scannedSections }
+                .filter { !it.curated }
                 .filter { it.label !in templatedExpansions }
                 .filter { Pair(it.group, it.label) !in scanned }
                 .map { "${it.section?.name}: ${it.label} (group: ${it.group ?: "none"})" }
@@ -120,8 +134,6 @@ class SettingsSearchIndexDriftTest {
                 SettingsSection.BOSS_EDITOR,
                 SettingsSection.LANGUAGE_SERVERS,
                 SettingsSection.LLM_PROVIDERS,
-                // commonMain, and has its own search box.
-                SettingsSection.KEYMAP,
                 // commonMain UpdateUI.kt, built from raw Text rather than the shared controls.
                 SettingsSection.UPDATES,
             )
@@ -153,7 +165,10 @@ class SettingsSearchIndexDriftTest {
             kotlinSourcesUnder(
                 root,
                 "composeApp/src/desktopMain/kotlin/ai/rever/boss/components/settings/sections",
-            )
+                // Shortcuts lives here, in commonMain. Leaving it out is what let the tab-switching
+                // controls go unindexed with nothing reporting it.
+                "composeApp/src/commonMain/kotlin/ai/rever/boss/components/settings/keymap",
+            ).filter { it.name !in skippedFiles }
         check(files.isNotEmpty()) { "no settings section sources found under $root" }
 
         return files.flatMap { file -> scanFile(file, root) }

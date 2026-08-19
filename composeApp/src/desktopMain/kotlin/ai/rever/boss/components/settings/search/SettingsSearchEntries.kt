@@ -45,6 +45,40 @@ private class EntryScope(
                 keywords = keywords.toList(),
             )
     }
+
+    /**
+     * A control that sits directly on the page with no `SettingsSection` around it.
+     *
+     * Group is null, which is what the drift scanner computes for it too. [highlightable] is false
+     * where the row is drawn by a local composable that carries no search target.
+     */
+    fun ungrouped(
+        label: String,
+        highlightable: Boolean,
+        context: String? = null,
+        vararg keywords: String,
+    ) {
+        entries +=
+            SettingsSearchEntry(
+                label = label,
+                section = section,
+                keywords = keywords.toList(),
+                highlightable = highlightable,
+                context = context,
+            )
+    }
+
+    /** A hand-written catch-all so the section is reachable by words no label contains. */
+    fun sectionLevel(vararg keywords: String) {
+        entries +=
+            SettingsSearchEntry(
+                label = section.displayName,
+                section = section,
+                keywords = keywords.toList(),
+                highlightable = false,
+                curated = true,
+            )
+    }
 }
 
 private fun delegated(
@@ -55,6 +89,7 @@ private fun delegated(
     section = section,
     keywords = keywords.toList(),
     highlightable = false,
+    curated = true,
 )
 
 /**
@@ -63,7 +98,13 @@ private fun delegated(
  * Roughly 330 labels live behind those panels and the host cannot enumerate a single one: the
  * API surface is one opaque `@Composable fun ...SettingsPanel(modifier)`. Curated keywords are
  * the honest stopgap - searching "cursor" lands the user on Terminal rather than on the control,
- * and the result row says so. KEYMAP is here for a different reason: it has its own search box.
+ * and the result row says so.
+ *
+ * Shortcuts is deliberately NOT here, though it was at first, and the mistake is worth recording:
+ * having its own search box is not the same as belonging to another module. `EditableKeymapSettings`
+ * is host code in this repo, so its controls can and should be indexed - see [keymapEntries]. Filing
+ * it as delegated both left its content unfindable and exempted it from the drift guard, so nothing
+ * reported the gap.
  */
 private fun delegatedEntries() =
     listOf(
@@ -102,14 +143,6 @@ private fun delegatedEntries() =
             "model",
             "claude",
             "gateway",
-        ),
-        delegated(
-            SettingsSection.KEYMAP,
-            "shortcut",
-            "hotkey",
-            "binding",
-            "keyboard",
-            "preset",
         ),
     )
 
@@ -332,6 +365,40 @@ private fun advancedEntries() =
         setting("Custom system prompt in use", "Self-Healing")
     }
 
+/**
+ * Shortcuts, whose page is `EditableKeymapSettings` in commonMain.
+ *
+ * Only the two tab-switching chips are static; the shortcut rows themselves are built at runtime
+ * from the keymap plus plugin-contributed defaults, and the page has its own search box for those.
+ *
+ * Both chips are `highlightable = false` for a structural reason rather than a choice: they are
+ * drawn by a local `TabSwitchModeChip` in **commonMain**, which cannot reference the highlight
+ * modifier in desktopMain. Picking one of these results opens Shortcuts without a wash.
+ */
+private fun keymapEntries() =
+    section(SettingsSection.KEYMAP) {
+        sectionLevel("shortcut", "hotkey", "binding", "keyboard", "preset", "conflict", "chord")
+        ungrouped(
+            "Positional",
+            highlightable = false,
+            context = "Tab switching",
+            "tab switching",
+            "ctrl+tab",
+            "tab order",
+            "next tab",
+            "previous tab",
+        )
+        ungrouped(
+            "Most recently used",
+            highlightable = false,
+            context = "Tab switching",
+            "tab switching",
+            "ctrl+tab",
+            "alt+tab",
+            "recent tabs",
+        )
+    }
+
 /** Every built-in entry, in the order the sections appear in the nav rail. */
 internal val builtInEntries: List<SettingsSearchEntry> by lazy {
     browserEntries() +
@@ -339,6 +406,7 @@ internal val builtInEntries: List<SettingsSearchEntry> by lazy {
         runnerEntries() +
         workspaceEntries() +
         securityEntries() +
+        keymapEntries() +
         focusModeEntries() +
         themeEntries() +
         windowAppearanceEntries() +

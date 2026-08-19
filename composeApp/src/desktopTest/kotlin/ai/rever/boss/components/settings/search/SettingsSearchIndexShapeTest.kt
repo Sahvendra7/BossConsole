@@ -69,9 +69,9 @@ class SettingsSearchIndexShapeTest {
     }
 
     /**
-     * The four delegated sections plus Shortcuts own no host controls, so they must stay
+     * The four sections whose pages belong to other modules own no host controls, so they must stay
      * section-level. A hand-added BossTerm label here would produce a result that navigates to the
-     * Terminal page and then highlights nothing, because there is no host control carrying it.
+     * Terminal page and then highlights nothing, because no host control carries it.
      */
     @Test
     fun `delegated sections carry a single non-highlightable entry`() {
@@ -81,7 +81,6 @@ class SettingsSearchIndexShapeTest {
                 SettingsSection.BOSS_EDITOR,
                 SettingsSection.LANGUAGE_SERVERS,
                 SettingsSection.LLM_PROVIDERS,
-                SettingsSection.KEYMAP,
             )
 
         delegated.forEach { section ->
@@ -92,6 +91,37 @@ class SettingsSearchIndexShapeTest {
                 "${section.name} is rendered by another module, so its entry must not claim a control to highlight",
             )
         }
+    }
+
+    /**
+     * Shortcuts is host code, not a delegated panel, and must carry its real controls.
+     *
+     * It was filed as delegated at first. That single mis-classification made "tab switching" find
+     * nothing AND took the section out of the drift guard, so no test objected. Pinning the actual
+     * controls is what stops it silently reverting to a keywords-only stub.
+     */
+    @Test
+    fun `Shortcuts indexes its tab-switching controls`() {
+        val labels = SettingsSearchIndex.builtIn.filter { it.section == SettingsSection.KEYMAP }.map { it.label }
+
+        assertTrue("Positional" in labels, "the tab-switching chips are missing from the index: $labels")
+        assertTrue("Most recently used" in labels, "the tab-switching chips are missing from the index: $labels")
+    }
+
+    /**
+     * A curated entry has no `label =` line behind it, so the staleness check has to skip it. Keeping
+     * that set small matters: every curated entry is one the drift guard cannot verify.
+     */
+    @Test
+    fun `only section-level catch-alls are curated`() {
+        val curated = SettingsSearchIndex.builtIn.filter { it.curated }
+        val offenders = curated.filter { it.label != it.section?.displayName || it.group != null }
+
+        assertTrue(
+            offenders.isEmpty(),
+            "these entries opt out of the staleness check without being section-level catch-alls: " +
+                offenders.map { it.resultKey },
+        )
     }
 
     @Test
