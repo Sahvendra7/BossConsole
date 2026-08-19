@@ -2,8 +2,11 @@ package ai.rever.boss.plugin.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Text
@@ -11,6 +14,7 @@ import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -21,6 +25,7 @@ import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
+import kotlin.math.absoluteValue
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -166,11 +171,16 @@ class BossAlertCardLayoutTest {
         setCard(width = 400.dp, height = 260.dp, body = { TallBody() })
 
         val card = cardBounds()
+        val frame = rule.onNodeWithTag(FRAME).getUnclippedBoundsInRoot()
         listOf("Allow this?", actionLabel).forEach { label ->
             val b = boundsOf(label)
             assertTrue(b.bottom - b.top > 0.dp, "\"$label\" was squeezed to ${b.bottom - b.top}")
             assertTrue(b.top >= card.top, "\"$label\" starts ${card.top - b.top} above the card")
             assertTrue(b.bottom <= card.bottom, "\"$label\" ends ${b.bottom - card.bottom} below the card")
+            // The frame as well as the card: containment in the card is the stronger claim, but a
+            // change that moved the whole card off its parent would satisfy it.
+            assertTrue(b.top >= frame.top, "\"$label\" starts ${frame.top - b.top} above the frame")
+            assertTrue(b.bottom <= frame.bottom, "\"$label\" ends ${b.bottom - frame.bottom} below the frame")
         }
     }
 
@@ -193,10 +203,12 @@ class BossAlertCardLayoutTest {
         setCard(width = 900.dp, height = 600.dp) { Text("x") }
 
         val cardWidth = cardBounds().let { it.right - it.left }
-        assertEquals(
-            AlertWidth,
-            cardWidth,
-            "a card in a 900.dp frame measured $cardWidth rather than AlertWidth",
+        // Tolerance rather than exact Dp equality: the width round-trips through pixels, so it is
+        // exact only at density 1, and a fractional density would make this red for a reason that
+        // has nothing to do with the property.
+        assertTrue(
+            (cardWidth - AlertWidth).value.absoluteValue <= 1f,
+            "a card in a 900.dp frame measured $cardWidth rather than AlertWidth ($AlertWidth)",
         )
     }
 
@@ -206,14 +218,66 @@ class BossAlertCardLayoutTest {
         // measured before the actions: below roughly 176dp there is nothing left to give them.
         // Measured - 36dp at 180dp, 33dp at 173dp, 20dp at 160dp, 0dp at 140dp - so this asserts
         // the last height that fully works rather than pretending the floor is not there.
+        // The expected height is measured in a roomy frame rather than hardcoded to Material's 36dp
+        // TextButton minimum: a spacing-token or type-scale change would otherwise turn this red
+        // with the same message and a different cause.
+        setCard(width = 400.dp, height = 600.dp) { Text("one short line") }
+        val unconstrained = heightOf(actionLabel)
+
         setCard(width = 400.dp, height = 180.dp) { TallBody() }
+        val atTheFloor = heightOf(actionLabel)
 
         assertEquals(
-            36.dp,
-            heightOf(actionLabel),
-            "the actions measured ${heightOf(actionLabel)} at a 180.dp parent - the floor moved, " +
-                "and the fixed chrome above the body is what pushed it",
+            unconstrained,
+            atTheFloor,
+            "the actions measured $atTheFloor at a 180.dp parent against $unconstrained with room " +
+                "to spare - the floor moved, and the fixed chrome above the body is what pushed it",
         )
+    }
+
+    @Test
+    fun `the card keeps a margin from a parent shorter than itself`() {
+        // The height cap's own test. Removing that .then(heightIn(...)) block breaks no other
+        // assertion here - incoming constraints already stop the card exceeding its parent, so the
+        // weight does the whole job of keeping the actions measurable. What the cap adds is this
+        // margin, and without a test it reads like part of the fix.
+        setCard(width = 400.dp, height = 300.dp) { TallBody() }
+
+        val frame = rule.onNodeWithTag(FRAME).getUnclippedBoundsInRoot()
+        val card = cardBounds()
+        assertTrue(
+            card.top >= frame.top && card.bottom <= frame.bottom - MARGIN + 1.dp,
+            "the card spans ${card.top}..${card.bottom} in a frame of ${frame.top}..${frame.bottom} " +
+                "- it is not holding $MARGIN clear of the parent's edges",
+        )
+    }
+
+    @Test
+    fun `a capped lazy list in the body composes rather than throwing`() {
+        // The contract the public overloads now document, pinned. The body is measured with an
+        // unbounded height on this branch, so an UNCAPPED lazy list throws here - that is what
+        // callers are being told to avoid, and this asserts that doing as told is sufficient. If it
+        // ever stops being sufficient, nothing else in the suite would say so.
+        rule.setContent {
+            BossTheme {
+                Box(Modifier.size(400.dp, 300.dp).testTag(FRAME)) {
+                    Box(Modifier.testTag(CARD)) {
+                        BossAlertCard(
+                            buttons = { TextButton(onClick = {}) { Text(actionLabel) } },
+                            title = { Text("Allow this?") },
+                            text = {
+                                LazyColumn(modifier = Modifier.heightIn(max = 120.dp)) {
+                                    items(200) { Text("row $it") }
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        assertTrue(heightOf(actionLabel) > 0.dp, "the actions did not survive a capped lazy body")
+        rule.onNodeWithText("row 0").assertIsDisplayed()
     }
 
     @Test
@@ -238,6 +302,8 @@ class BossAlertCardLayoutTest {
     private companion object {
         const val FRAME = "alert-frame"
         const val CARD = "alert-card"
+        val MARGIN = 16.dp
+
         const val BODY_LINES = 40
 
         fun bodyLine(i: Int) = "line $i of a long body"

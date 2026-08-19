@@ -300,11 +300,12 @@ internal val AlertWidth: Dp = 400.dp
  *
  * @param confirmButton The primary action. Rendered last, i.e. rightmost.
  * @param dismissButton The secondary action, rendered to the left of [confirmButton].
- * @param text The body. **It may be measured with an unbounded height**, because the card gives the
- * body the flexible space and scrolls it so a short window cannot squeeze the actions to nothing.
- * A composable that refuses an unbounded main axis — a `LazyColumn`, or a nested `verticalScroll` —
- * throws `IllegalStateException` unless it is capped, so give any such content a
- * `Modifier.heightIn(max = …)`. This is the one thing about this card a caller has to know.
+ * @param text The body. **When the card's parent bounds its height, the body is placed in a scroll
+ * container and therefore measured with an UNBOUNDED height** — that is the bounded-parent branch,
+ * not the unbounded one, and it is the branch most alerts take. A composable that refuses an
+ * unbounded main axis — a `LazyColumn`, a `LazyVerticalGrid`, a nested `verticalScroll` — will not
+ * lay out there unless it caps itself, so give any such content a `Modifier.heightIn(max = …)`.
+ * This is the one thing about this card a caller has to know.
  * @param shape Card shape; null takes the design system's dialog radius.
  * @param backgroundColor Card fill; [Color.Unspecified] takes the theme's panel color.
  * @param contentColor Default content color; [Color.Unspecified] takes the theme's primary text.
@@ -352,11 +353,12 @@ fun BossAlertDialog(
  * Mirrors Material 2's `buttons` overload. Use it when the actions are not a confirm/dismiss pair:
  * three buttons, a progress row, or no buttons at all.
  *
- * @param text The body. **It may be measured with an unbounded height**, because the card gives the
- * body the flexible space and scrolls it so a short window cannot squeeze the actions to nothing.
- * A composable that refuses an unbounded main axis — a `LazyColumn`, or a nested `verticalScroll` —
- * throws `IllegalStateException` unless it is capped, so give any such content a
- * `Modifier.heightIn(max = …)`. This is the one thing about this card a caller has to know.
+ * @param text The body. **When the card's parent bounds its height, the body is placed in a scroll
+ * container and therefore measured with an UNBOUNDED height** — that is the bounded-parent branch,
+ * not the unbounded one, and it is the branch most alerts take. A composable that refuses an
+ * unbounded main axis — a `LazyColumn`, a `LazyVerticalGrid`, a nested `verticalScroll` — will not
+ * lay out there unless it caps itself, so give any such content a `Modifier.heightIn(max = …)`.
+ * This is the one thing about this card a caller has to know.
  */
 @Composable
 fun BossAlertDialog(
@@ -437,6 +439,13 @@ fun BossAlertDialog(
  * nothing. And there is no bug to fix on that path in the first place, because a window that sizes
  * to its content cannot clip it, so scrolling there is pure loss.
  *
+ * **So this fixes the squeeze on the path where the card is measured against a parent, which is the
+ * scrimmed one** — `ScrimmedModalContent` is a `fillMaxSize` Box, so the card is bounded by the
+ * overlay window, and that is where the report came from. On the lightweight `Dialog` path the
+ * change is inert by design, and the ceiling there is the *screen* rather than the card: a window
+ * that sizes to its content cannot clip it, but a 1116dp card on a shorter display still puts its
+ * actions where they cannot be reached. That is pre-existing and not addressed here.
+ *
  * Scrolling hides content with no affordance of its own, which is a real cost on a card that may be
  * asking for consent. It is the lesser one — the alternative here is clipping, which hides the same
  * content AND removes the actions — but a call site with a long body should still bound and scroll
@@ -446,6 +455,21 @@ fun BossAlertDialog(
  * with `dialogScrollFence`: that lives in `composeApp` and is not on the plugin classpath, so a
  * plugin author following that advice could not write it. (Moving the fence into this module would
  * be reasonable — it is a `LayoutModifier` with no host dependency — but it is a separate change.)
+ *
+ * **An uncapped lazy list in [text] fails, and the failure mode is worse than an exception.**
+ * Compose rejects an infinite main axis for a scrollable container, so the documented cap is not
+ * advice, it is a requirement. Tried to pin the failure and could not: an uncapped `LazyColumn` in
+ * the body **hung** a `createComposeRule` scene rather than throwing, twice, at 200 items and at
+ * five. So the `@param` wording says "will not lay out" rather than naming an exception — the
+ * requirement is verified, the exact failure is not. What is pinned is the other half:
+ * `a capped lazy list in the body composes rather than throwing`.
+ *
+ * **A [text] slot that caps itself against its parent loses that reference point.** A cap written as
+ * `min(myMax, constraints.maxHeight)` — which is what the host's own `dialogScrollFence` computes —
+ * coerces against an infinite maximum here, so it always takes its full constant instead of
+ * shrinking with a short window. The content stays reachable, because the outer scroll takes the
+ * leftover, but it means two nested scroll regions rather than one. A slot that wants to shrink with
+ * the card has to be told the height it may use rather than deriving it from its constraints.
  *
  * `verticalScroll` also applies `clipScrollableContainer`, so the body is now clipped in the scroll
  * direction. Nothing in the host relied on content overflowing a [text] slot inline, but it is a
@@ -475,6 +499,12 @@ internal fun BossAlertCard(
                     .width(AlertWidth.coerceAtMost(available))
                     .then(
                         if (bounded) {
+                            // The MARGIN, not the fix. Incoming constraints already stop the card
+                            // exceeding its parent, so the weight below does the whole job of
+                            // keeping the actions measurable; this only holds the card `space.lg`
+                            // clear of the parent's top and bottom edges, matching the width. Its
+                            // own test is theCardKeepsAMarginFromAParentShorterThanItself, because
+                            // removing this line breaks no other assertion in the suite.
                             Modifier.heightIn(max = (maxHeight - space.lg * 2).coerceAtLeast(0.dp))
                         } else {
                             Modifier
