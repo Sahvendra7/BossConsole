@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.LocalContentColor
 import androidx.compose.material.ProvideTextStyle
 import androidx.compose.material.Surface
@@ -356,51 +359,126 @@ fun BossAlertDialog(
     contentColor: Color = Color.Unspecified,
     properties: DialogProperties = DialogProperties(),
 ) {
+    BossDialog(onDismissRequest = onDismissRequest, properties = properties) {
+        BossAlertCard(
+            buttons = buttons,
+            modifier = modifier,
+            title = title,
+            text = text,
+            shape = shape,
+            backgroundColor = backgroundColor,
+            contentColor = contentColor,
+        )
+    }
+}
+
+/**
+ * The card [BossAlertDialog] puts inside a dialog, split out so it can be measured.
+ *
+ * `BossAlertDialog` itself cannot be: on the path a test scene can host it routes to a platform
+ * dialog window, and such a window does not inherit the size of whatever composed it. The bugs
+ * below are both about a card that has LESS room than it wants, which is a state only reachable by
+ * constraining the parent — so the card is `internal` and `BossAlertCardLayoutTest` constrains it
+ * directly. The dialog around it stays untested here and pinned by `BossDialogRoutingTest`.
+ *
+ * **Width: [AlertWidth] is what an alert wants, not what it must have.** `.width(AlertWidth)` set
+ * the minimum as well as the maximum, so on the scrimmed path — where this Surface is measured
+ * against the app window rather than against a dialog window of its own — a window narrower than
+ * 400dp got a card it could not fit and clipped it at the edge. Reported against the Atlas plugin,
+ * whose panel slot is routinely narrower than that: a Row of actions inside a card that cannot
+ * shrink is measured first child to last, so the last one — the primary — was squeezed to zero
+ * width on a consent surface. Measured at 240dp, not inferred.
+ *
+ * `BoxWithConstraints` rather than `widthIn(max = AlertWidth)`: with only a maximum a Surface wraps
+ * its content, so every short alert in the app would suddenly be narrower than 400dp. Taking the
+ * smaller of what we want and what there is leaves the wide case byte-identical and changes only
+ * the case that was broken.
+ *
+ * **Height: the actions are what a short window used to lose, and it is the width bug again.** A
+ * Column measures its non-weighted children in order and offers each what the previous ones left,
+ * so in a window shorter than the content the body took what it wanted and the actions — measured
+ * last — were offered nothing. Measured in a 300dp frame, "Don't allow" came out **0dp tall** at
+ * y=276, exactly as the primary came out 0dp *wide* in a card too narrow for the action row. Not
+ * clipped, not pushed off the edge: squeezed to nothing by a sibling that was measured first, on a
+ * card whose whole job is to be agreed to or refused.
+ *
+ * The *body* is the part that should give way, so it takes the flexible space and scrolls while the
+ * title and the actions keep theirs.
+ *
+ * **`fill = false`, and the whole thing conditional on a bounded height, are both load-bearing,
+ * and both were measured rather than reasoned about.** `weight(1f)` alone fills its share, which
+ * would stretch every short dialog in the app to the window; `fill = false` lets the body stay its
+ * own height, so a card that fits is measured exactly as before.
+ *
+ * The `hasBoundedHeight` branch matters just as much. Given a 40-line body and no height bound —
+ * the shape of a dialog window that sizes to its content — this card measures 1116dp and renders
+ * the whole body inline. Applying the weight there anyway measures **156dp**, with the body
+ * scrolled down to roughly one line: a weighted child of an unbounded axis gets a share of almost
+ * nothing. And there is no bug to fix on that path in the first place, because a window that sizes
+ * to its content cannot clip it, so scrolling there is pure loss.
+ *
+ * Scrolling hides content with no affordance of its own, which is a real cost on a card that may be
+ * asking for consent. It is the lesser one — the alternative here is clipping, which hides the same
+ * content AND removes the actions — but a call site with a long body should still supply its own
+ * scrollbar inside [text], the way the update dialog's release notes do.
+ */
+@Composable
+internal fun BossAlertCard(
+    buttons: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    title: (@Composable () -> Unit)? = null,
+    text: (@Composable () -> Unit)? = null,
+    shape: Shape? = null,
+    backgroundColor: Color = Color.Unspecified,
+    contentColor: Color = Color.Unspecified,
+) {
     val colors = BossTheme.colors
     val space = BossTheme.space
-    BossDialog(onDismissRequest = onDismissRequest, properties = properties) {
-        // [AlertWidth] is what an alert WANTS, not what it must have.
-        //
-        // `.width(AlertWidth)` set the minimum as well as the maximum, so in the scrimmed
-        // in-window path — where this Surface is measured against the app window rather than
-        // against a dialog window of its own — a window narrower than 400dp got a card it could
-        // not fit, clipped at the edge. Reported against the Atlas plugin, whose panel slot is
-        // routinely narrower than that: a Row of actions inside a card that cannot shrink is
-        // measured first child to last, so the last one — the primary — was squeezed to zero
-        // width on a consent surface. Measured at 240dp, not inferred.
-        //
-        // BoxWithConstraints rather than `widthIn(max = AlertWidth)`: with only a maximum, a
-        // Surface wraps its content, so every short alert in the app would suddenly be narrower
-        // than 400dp. Taking the smaller of what we want and what there is leaves the wide case
-        // byte-identical and changes only the case that was broken.
-        BoxWithConstraints(contentAlignment = Alignment.Center) {
-            val available = (maxWidth - space.lg * 2).coerceAtLeast(0.dp)
-            Surface(
-                modifier =
-                    modifier
-                        .width(AlertWidth.coerceAtMost(available))
-                        .wrapContentHeight(),
-                shape = shape ?: BossTheme.radius.dialogShape,
-                color = backgroundColor.takeOrElse { colors.panel },
-                contentColor = contentColor.takeOrElse { colors.textPrimary },
-            ) {
-                Column(modifier = Modifier.padding(space.xl)) {
-                    if (title != null) {
-                        CompositionLocalProvider(LocalContentColor provides colors.textPrimary) {
-                            ProvideTextStyle(BossTheme.type.title, title)
-                        }
+    BoxWithConstraints(contentAlignment = Alignment.Center) {
+        val available = (maxWidth - space.lg * 2).coerceAtLeast(0.dp)
+        val bounded = constraints.hasBoundedHeight
+        Surface(
+            modifier =
+                modifier
+                    .width(AlertWidth.coerceAtMost(available))
+                    .then(
+                        if (bounded) {
+                            Modifier.heightIn(max = (maxHeight - space.lg * 2).coerceAtLeast(0.dp))
+                        } else {
+                            Modifier
+                        },
+                    ).wrapContentHeight(),
+            shape = shape ?: BossTheme.radius.dialogShape,
+            color = backgroundColor.takeOrElse { colors.panel },
+            contentColor = contentColor.takeOrElse { colors.textPrimary },
+        ) {
+            Column(modifier = Modifier.padding(space.xl)) {
+                if (title != null) {
+                    CompositionLocalProvider(LocalContentColor provides colors.textPrimary) {
+                        ProvideTextStyle(BossTheme.type.title, title)
                     }
-                    if (title != null && text != null) {
-                        Spacer(Modifier.height(space.md))
-                    }
-                    if (text != null) {
+                }
+                if (title != null && text != null) {
+                    Spacer(Modifier.height(space.md))
+                }
+                if (text != null) {
+                    Box(
+                        modifier =
+                            if (bounded) {
+                                Modifier
+                                    .weight(1f, fill = false)
+                                    .verticalScroll(rememberScrollState())
+                            } else {
+                                Modifier
+                            },
+                    ) {
                         CompositionLocalProvider(LocalContentColor provides colors.textSecondary) {
                             ProvideTextStyle(BossTheme.type.body, text)
                         }
                     }
-                    Spacer(Modifier.height(space.xl))
-                    buttons()
                 }
+                Spacer(Modifier.height(space.xl))
+                buttons()
             }
         }
     }
