@@ -1,6 +1,5 @@
 package ai.rever.boss.window
 
-import ai.rever.boss.services.editor.EditorAPIAccess
 import ai.rever.boss.BossAppWithAuth
 import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.displayName
@@ -23,6 +22,7 @@ import ai.rever.boss.plugin.ui.BossAlertDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.plugin.ui.BossThemeController
 import ai.rever.boss.plugin.ui.LocalHeavyweightOverlays
+import ai.rever.boss.services.editor.EditorAPIAccess
 import ai.rever.boss.services.terminal.TerminalAPIAccess
 import ai.rever.boss.updater.UpdateCoordinator
 import ai.rever.boss.utils.CLIInstaller

@@ -5,9 +5,9 @@ import ai.rever.boss.plugin.api.EditorTabPluginAPI
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
@@ -73,9 +73,9 @@ object EditorAPIAccess {
      */
     @Composable
     fun rememberAutoSaveEnabled(): State<Boolean>? {
-        val provider = rememberProvider() ?: return null
-        val enabled = remember(provider) { provider.autoSaveEnabled() } ?: return null
-        return enabled.collectAsState()
+        val provider = rememberProvider()
+        val enabled = remember(provider) { provider?.autoSaveEnabled() }
+        return enabled?.collectAsState()
     }
 
     /** Turns auto save on or off in the editor plugin. No-op when it is not installed. */
