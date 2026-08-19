@@ -7,6 +7,7 @@ import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
@@ -59,6 +60,27 @@ object EditorAPIAccess {
         val plugin = cachedDefaultPlugin ?: return null
         val registryVersion by plugin.apiRegistryVersion.collectAsState()
         return remember(registryVersion) { getProvider() }
+    }
+
+    // ==================== Auto Save ====================
+
+    /**
+     * Observable auto save state for menu rendering, or null when there is nothing to render a
+     * control for: no editor-tab plugin installed, or one that predates the setting.
+     *
+     * Callers should hide the control on null rather than showing an unchecked one, which would
+     * be indistinguishable from auto save being off and would do nothing when clicked.
+     */
+    @Composable
+    fun rememberAutoSaveEnabled(): State<Boolean>? {
+        val provider = rememberProvider() ?: return null
+        val enabled = remember(provider) { provider.autoSaveEnabled() } ?: return null
+        return enabled.collectAsState()
+    }
+
+    /** Turns auto save on or off in the editor plugin. No-op when it is not installed. */
+    fun setAutoSaveEnabled(enabled: Boolean) {
+        getProvider()?.setAutoSaveEnabled(enabled)
     }
 
     // ==================== Composable Bridges (Settings) ====================
