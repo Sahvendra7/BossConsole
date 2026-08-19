@@ -2454,6 +2454,90 @@ object FluckEngine {
         }
 
     /**
+     * Whether the native key interceptor has to serve zoom chords on this platform.
+     *
+     * Windows and Linux: yes, and it is the only layer that can. Under HARDWARE_ACCELERATED the
+     * native Chromium child window consumes the key, so neither the AWT keymap nor the plugin's
+     * Compose `onPreviewKeyEvent` ever sees one - the same reason Ctrl+R needed a case here.
+     *
+     * macOS: no. The chord reaches AWT there, which is why zoom was reported broken on Windows
+     * only, and the AWT keymap (`browser.zoom_in` and friends) plus the plugin's Compose handler
+     * already serve it. Claiming it here as well is the one configuration where two layers could
+     * both act on a single keypress, and the second zoom step would be indistinguishable from the
+     * user having pressed the key twice.
+     *
+     * If macOS keyboard zoom is ever found broken, this predicate is the thing to revisit: it
+     * would mean macOS delivers the chord to Chromium after all, and the native case should serve
+     * it there too.
+     */
+    private val interceptsZoomNatively: Boolean
+        get() = !SystemUtils.isMacOS
+
+    internal enum class BrowserZoomAction { IN, OUT, RESET }
+
+    /**
+     * The zoom action a main-modifier chord asks for, or null if it is not a zoom chord.
+     *
+     * JxBrowser 9.4.0 has no `KEY_CODE_EQUALS` and no `KEY_CODE_MINUS`. The main-row keys are
+     * [com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_OEM_PLUS] ('=' / '+') and
+     * [com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_OEM_MINUS] ('-' / '_'); the numpad keys are
+     * `KEY_CODE_ADD` and `KEY_CODE_SUBTRACT`. Reaching for the intuitive names does not fail to
+     * compile against a constant that exists under a different spelling - it silently fails to
+     * match at runtime, which is precisely the failure this function was added to remove, so
+     * `BrowserZoomKeyMappingTest` pins the mapping.
+     *
+     * Extracted as a pure function for the same reason [resolveBrowserKeyEventRoute] is: it is
+     * testable without a live `Browser`.
+     *
+     * [shiftDown] is a parameter because Ctrl+Shift+'=' is how many layouts spell Ctrl+'+', and
+     * Chrome zooms in on it. Shift is meaningless for zoom out and reset, which decline it.
+     */
+    internal fun resolveBrowserZoomAction(
+        keyCode: com.teamdev.jxbrowser.ui.KeyCode,
+        shiftDown: Boolean,
+    ): BrowserZoomAction? =
+        when (keyCode) {
+            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_OEM_PLUS,
+            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_ADD,
+            -> BrowserZoomAction.IN
+
+            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_OEM_MINUS,
+            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_SUBTRACT,
+            -> if (shiftDown) null else BrowserZoomAction.OUT
+
+            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_0,
+            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_NUMPAD0,
+            -> if (shiftDown) null else BrowserZoomAction.RESET
+
+            else -> null
+        }
+
+    /**
+     * Applies [action] to [browser], preferring [zoomTarget] when one wraps it.
+     *
+     * Going through the handle rather than calling `browser.zoom()` directly is what keeps the
+     * fluck browser's zoom-percent indicator in step: the indicator is driven by
+     * `BrowserHandle.addZoomListener`, and only the handle's own zoom methods notify those
+     * listeners. The legacy `BrowserFunctions.createBrowser` path has no handle and falls back to
+     * the raw API, where there are no listeners to notify anyway.
+     *
+     * isClosed-guarded like every other browser call in this file: this runs on a JxBrowser
+     * callback thread and can race a tab close.
+     */
+    private fun applyBrowserZoom(
+        browser: com.teamdev.jxbrowser.browser.Browser,
+        zoomTarget: BrowserHandle?,
+        action: BrowserZoomAction,
+    ) {
+        if (browser.isClosed) return
+        when (action) {
+            BrowserZoomAction.IN -> if (zoomTarget != null) zoomTarget.zoomIn() else browser.zoom().`in`()
+            BrowserZoomAction.OUT -> if (zoomTarget != null) zoomTarget.zoomOut() else browser.zoom().out()
+            BrowserZoomAction.RESET -> if (zoomTarget != null) zoomTarget.resetZoom() else browser.zoom().reset()
+        }
+    }
+
+    /**
      * Dismiss any open Swing popup menu when the user clicks inside the web page.
      *
      * A heavyweight [javax.swing.JPopupMenu] normally closes itself on a click elsewhere: Swing's
@@ -2552,10 +2636,14 @@ object FluckEngine {
      *
      * @param ownerWindowId stable owner used for focus gating and shortcut dispatch; null preserves
      * legacy behavior for the old unscoped browser helper.
+     * @param zoomTarget the handle wrapping [browser], when one exists. Zoom goes through it rather
+     * than through `browser.zoom()` so the plugin's zoom-percent indicator stays in step - see
+     * [applyBrowserZoom].
      */
     fun setupKeyboardInterceptor(
         browser: com.teamdev.jxbrowser.browser.Browser,
         ownerWindowId: String? = null,
+        zoomTarget: BrowserHandle? = null,
     ) {
         // Adopt the browser for find-in-page before the callback below can serve a find chord.
         // A browser created outside a BrowserHandleImpl reaches this too (the legacy
@@ -2630,6 +2718,34 @@ object FluckEngine {
                         if (!browser.isClosed) browser.navigation().reload()
                         return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response
                             .suppress()
+                    }
+
+                    // Zoom is BROWSER-scoped for the same reason reload directly above is: this
+                    // callback fires for the browser that received the key, so the browser is
+                    // already known and routing through the focused WINDOW could only make the
+                    // answer worse. On Windows that is not hypothetical - clicking a Chromium
+                    // native child window gives it OS focus without the click reaching Compose, so
+                    // the active split panel can still be the OTHER half. Sitting before the
+                    // shortcutWindowId gate also serves the legacy unowned browser, which that gate
+                    // has to drop.
+                    //
+                    // Without this, the chord reached nothing at all on Windows: under
+                    // HARDWARE_ACCELERATED the native surface consumes it, so neither the AWT
+                    // keymap nor the plugin's Compose handler ever sees a key event. Same failure
+                    // that made Ctrl+R need the case above. Skipped on macOS, where those layers do
+                    // get the chord - see interceptsZoomNatively.
+                    //
+                    // suppress() unconditionally, unlike the find chord below, which proceeds so a
+                    // site with its own find-in-page can pre-empt it: Chrome treats zoom as a
+                    // reserved accelerator pages cannot override, and suppressing is also what
+                    // stops Chromium applying its own built-in zoom on top of ours.
+                    if (interceptsZoomNatively) {
+                        val zoomAction = resolveBrowserZoomAction(keyCode, shiftDown = false)
+                        if (zoomAction != null) {
+                            applyBrowserZoom(browser, zoomTarget, zoomAction)
+                            return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response
+                                .suppress()
+                        }
                     }
                     if (shortcutWindowId != null) {
                         when (keyCode) {
@@ -2739,6 +2855,20 @@ object FluckEngine {
                     ) {
                         return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response
                             .suppress()
+                    }
+
+                    // Ctrl+Shift+'=' is how a great many layouts spell Ctrl+'+', and Chrome zooms
+                    // in on it. Browser-scoped and placed before the window gate for the same
+                    // reason as "find previous" above. Zoom out and reset decline shift, so only
+                    // this one chord is claimed here. macOS-exempt on the same grounds as the
+                    // unshifted case above.
+                    if (interceptsZoomNatively) {
+                        val shiftZoomAction = resolveBrowserZoomAction(keyCode, shiftDown = true)
+                        if (shiftZoomAction != null) {
+                            applyBrowserZoom(browser, zoomTarget, shiftZoomAction)
+                            return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response
+                                .suppress()
+                        }
                     }
                     if (shortcutWindowId != null) {
                         when (keyCode) {
