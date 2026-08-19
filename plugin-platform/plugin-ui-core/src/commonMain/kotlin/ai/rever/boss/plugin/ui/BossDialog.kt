@@ -283,7 +283,7 @@ internal fun ScrimmedModalContent(
 // ---------------------------------------------------------------------------
 
 /** Width of a BOSS alert card, matching the house confirmation dialog. */
-private val AlertWidth: Dp = 400.dp
+internal val AlertWidth: Dp = 400.dp
 
 /**
  * A title/text/buttons dialog in the BOSS design system, layered above the browser surface.
@@ -300,6 +300,11 @@ private val AlertWidth: Dp = 400.dp
  *
  * @param confirmButton The primary action. Rendered last, i.e. rightmost.
  * @param dismissButton The secondary action, rendered to the left of [confirmButton].
+ * @param text The body. **It may be measured with an unbounded height**, because the card gives the
+ * body the flexible space and scrolls it so a short window cannot squeeze the actions to nothing.
+ * A composable that refuses an unbounded main axis — a `LazyColumn`, or a nested `verticalScroll` —
+ * throws `IllegalStateException` unless it is capped, so give any such content a
+ * `Modifier.heightIn(max = …)`. This is the one thing about this card a caller has to know.
  * @param shape Card shape; null takes the design system's dialog radius.
  * @param backgroundColor Card fill; [Color.Unspecified] takes the theme's panel color.
  * @param contentColor Default content color; [Color.Unspecified] takes the theme's primary text.
@@ -346,6 +351,12 @@ fun BossAlertDialog(
  *
  * Mirrors Material 2's `buttons` overload. Use it when the actions are not a confirm/dismiss pair:
  * three buttons, a progress row, or no buttons at all.
+ *
+ * @param text The body. **It may be measured with an unbounded height**, because the card gives the
+ * body the flexible space and scrolls it so a short window cannot squeeze the actions to nothing.
+ * A composable that refuses an unbounded main axis — a `LazyColumn`, or a nested `verticalScroll` —
+ * throws `IllegalStateException` unless it is capped, so give any such content a
+ * `Modifier.heightIn(max = …)`. This is the one thing about this card a caller has to know.
  */
 @Composable
 fun BossAlertDialog(
@@ -410,6 +421,15 @@ fun BossAlertDialog(
  * would stretch every short dialog in the app to the window; `fill = false` lets the body stay its
  * own height, so a card that fits is measured exactly as before.
  *
+ * **There is a floor, and it is about 176dp.** Only the body flexes; the padding, the title and the
+ * two spacers are still measured before the actions. That chrome is `space.xl * 2` of padding plus a
+ * title line plus `space.md` plus `space.xl` plus Material's 36dp button minimum — so once the
+ * parent is under roughly 176dp there is nothing left to give the actions and they collapse again.
+ * Measured: full 36dp at a 180dp parent, 33dp at 173dp, 20dp at 160dp, **0dp at 140dp**, and the
+ * title itself goes at 80dp. Pinned by `theActionsSurviveTheShortestWindowThatCanHoldThem`, so the
+ * floor cannot move quietly. Going lower would mean shrinking the padding or dropping the title,
+ * which is a design decision rather than a layout fix, and a 140dp-tall dialog is arguably not one.
+ *
  * The `hasBoundedHeight` branch matters just as much. Given a 40-line body and no height bound —
  * the shape of a dialog window that sizes to its content — this card measures 1116dp and renders
  * the whole body inline. Applying the weight there anyway measures **156dp**, with the body
@@ -419,8 +439,17 @@ fun BossAlertDialog(
  *
  * Scrolling hides content with no affordance of its own, which is a real cost on a card that may be
  * asking for consent. It is the lesser one — the alternative here is clipping, which hides the same
- * content AND removes the actions — but a call site with a long body should still supply its own
- * scrollbar inside [text], the way the update dialog's release notes do.
+ * content AND removes the actions — but a call site with a long body should still bound and scroll
+ * it explicitly: `Modifier.heightIn(max = …).verticalScroll(…)`, plus a scrollbar of its own.
+ *
+ * Deliberately spelled out rather than pointing at the update dialog's release notes, which do this
+ * with `dialogScrollFence`: that lives in `composeApp` and is not on the plugin classpath, so a
+ * plugin author following that advice could not write it. (Moving the fence into this module would
+ * be reasonable — it is a `LayoutModifier` with no host dependency — but it is a separate change.)
+ *
+ * `verticalScroll` also applies `clipScrollableContainer`, so the body is now clipped in the scroll
+ * direction. Nothing in the host relied on content overflowing a [text] slot inline, but it is a
+ * second behaviour change riding along with the first.
  */
 @Composable
 internal fun BossAlertCard(
@@ -437,6 +466,9 @@ internal fun BossAlertCard(
     BoxWithConstraints(contentAlignment = Alignment.Center) {
         val available = (maxWidth - space.lg * 2).coerceAtLeast(0.dp)
         val bounded = constraints.hasBoundedHeight
+        // Hoisted rather than called inside the modifier branch below, so the scroll position
+        // survives a flip of `bounded` rather than being remembered under a different call site.
+        val bodyScroll = rememberScrollState()
         Surface(
             modifier =
                 modifier
@@ -467,7 +499,7 @@ internal fun BossAlertCard(
                             if (bounded) {
                                 Modifier
                                     .weight(1f, fill = false)
-                                    .verticalScroll(rememberScrollState())
+                                    .verticalScroll(bodyScroll)
                             } else {
                                 Modifier
                             },

@@ -15,6 +15,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
@@ -56,18 +57,25 @@ class BossAlertCardLayoutTest {
         rule.setContent {
             BossTheme {
                 // A short viewport is the whole point, so the frame is sized rather than filled.
+                // CARD is tagged separately and is what assertions compare against: the card is
+                // inset from the frame and centred in it, so an action row hanging below the card's
+                // own edge can still sit inside the frame.
                 Box(Modifier.size(width, height).testTag(FRAME)) {
-                    BossAlertCard(
-                        buttons = { TextButton(onClick = {}) { Text(actionLabel) } },
-                        title = { Text("Allow this?") },
-                        text = body,
-                    )
+                    Box(Modifier.testTag(CARD)) {
+                        BossAlertCard(
+                            buttons = { TextButton(onClick = {}) { Text(actionLabel) } },
+                            title = { Text("Allow this?") },
+                            text = body,
+                        )
+                    }
                 }
             }
         }
     }
 
     private fun boundsOf(label: String): DpRect = rule.onNodeWithText(label).getUnclippedBoundsInRoot()
+
+    private fun cardBounds(): DpRect = rule.onNodeWithTag(CARD).getUnclippedBoundsInRoot()
 
     private fun heightOf(label: String): Dp = boundsOf(label).run { bottom - top }
 
@@ -86,7 +94,7 @@ class BossAlertCardLayoutTest {
 
         assertTrue(
             heightOf(actionLabel) > 0.dp,
-            "\"$actionLabel\" measured ${heightOf(actionLabel)} tall — the body was measured " +
+            "\"$actionLabel\" measured ${heightOf(actionLabel)} tall - the body was measured " +
                 "first and left the actions nothing, so the card asks for consent with nothing " +
                 "to click",
         )
@@ -97,25 +105,13 @@ class BossAlertCardLayoutTest {
         // weight(1f) without fill = false would stretch this to the full 600dp. The guard is that
         // a short dialog is still its content's height, which is what every existing call site
         // looks like.
-        var tall = Dp.Unspecified
-        rule.setContent {
-            BossTheme {
-                Box(Modifier.size(400.dp, 600.dp)) {
-                    Box(Modifier.testTag(CARD)) {
-                        BossAlertCard(
-                            buttons = { TextButton(onClick = {}) { Text(actionLabel) } },
-                            title = { Text("Allow this?") },
-                            text = { Text("one short line") },
-                        )
-                    }
-                }
-            }
-        }
-        val card = rule.onNodeWithTag(CARD).getUnclippedBoundsInRoot()
-        tall = card.bottom - card.top
+        setCard(width = 400.dp, height = 600.dp) { Text("one short line") }
+
+        val card = cardBounds()
+        val tall = card.bottom - card.top
         assertTrue(
             tall < 300.dp,
-            "a one-line alert measured $tall tall in a 600dp frame — the body is filling its " +
+            "a one-line alert measured $tall tall in a 600dp frame - the body is filling its " +
                 "weighted share instead of wrapping, so every short dialog in the app just grew",
         )
     }
@@ -155,7 +151,7 @@ class BossAlertCardLayoutTest {
         val action = boundsOf(actionLabel)
         assertTrue(
             action.top > lastLine.top,
-            "the actions sit at ${action.top} and the body's last line at ${lastLine.top} — the " +
+            "the actions sit at ${action.top} and the body's last line at ${lastLine.top} - the " +
                 "body was given a weighted share of an unbounded axis and scrolled away under a " +
                 "parent that would have shown all of it",
         )
@@ -169,47 +165,74 @@ class BossAlertCardLayoutTest {
         // and neither assertion sees the other.
         setCard(width = 400.dp, height = 260.dp, body = { TallBody() })
 
-        val frame = rule.onNodeWithTag(FRAME).getUnclippedBoundsInRoot()
+        val card = cardBounds()
         listOf("Allow this?", actionLabel).forEach { label ->
             val b = boundsOf(label)
             assertTrue(b.bottom - b.top > 0.dp, "\"$label\" was squeezed to ${b.bottom - b.top}")
-            assertTrue(b.top >= frame.top, "\"$label\" starts ${frame.top - b.top} above the card")
-            assertTrue(b.bottom <= frame.bottom, "\"$label\" ends ${b.bottom - frame.bottom} below the card")
+            assertTrue(b.top >= card.top, "\"$label\" starts ${card.top - b.top} above the card")
+            assertTrue(b.bottom <= card.bottom, "\"$label\" ends ${b.bottom - card.bottom} below the card")
         }
     }
 
     @Test
-    fun `a narrow card shrinks and a roomy one does not`() {
-        // #214's property, still unpinned by a test in this repo: exactly AlertWidth where there is
-        // room for it, and the window's width where there is not.
-        listOf(240.dp to true, 900.dp to false).forEach { (frameWidth, shouldShrink) ->
-            rule.setContent {
-                BossTheme {
-                    Box(Modifier.size(frameWidth, 600.dp)) {
-                        Box(Modifier.testTag(CARD)) {
-                            BossAlertCard(
-                                buttons = { TextButton(onClick = {}) { Text(actionLabel) } },
-                                text = { Text("x") },
-                            )
-                        }
-                    }
-                }
-            }
-            val card = rule.onNodeWithTag(CARD).getUnclippedBoundsInRoot()
-            val cardWidth = card.right - card.left
-            if (shouldShrink) {
-                assertTrue(
-                    cardWidth < frameWidth && cardWidth > 0.dp,
-                    "a card in a $frameWidth frame measured $cardWidth — it did not shrink to fit",
-                )
-            } else {
-                assertEquals(
-                    400.dp,
-                    cardWidth,
-                    "a card in a $frameWidth frame measured $cardWidth rather than AlertWidth",
-                )
-            }
-        }
+    fun `a card narrower than it wants shrinks to fit`() {
+        // #214's property, previously unpinned by any test in this repo. Split from the roomy case
+        // rather than looped: two setContent calls in one test lean on desktop re-entrancy, and a
+        // failure would not say which iteration produced it.
+        setCard(width = 240.dp, height = 600.dp) { Text("x") }
+
+        val cardWidth = cardBounds().let { it.right - it.left }
+        assertTrue(
+            cardWidth < 240.dp && cardWidth > 0.dp,
+            "a card in a 240.dp frame measured $cardWidth - it did not shrink to fit",
+        )
+    }
+
+    @Test
+    fun `a card with room to spare is exactly AlertWidth`() {
+        setCard(width = 900.dp, height = 600.dp) { Text("x") }
+
+        val cardWidth = cardBounds().let { it.right - it.left }
+        assertEquals(
+            AlertWidth,
+            cardWidth,
+            "a card in a 900.dp frame measured $cardWidth rather than AlertWidth",
+        )
+    }
+
+    @Test
+    fun `the actions survive the shortest window that can hold them`() {
+        // The floor, pinned. Only the body flexes, so the padding, title and spacers are still
+        // measured before the actions: below roughly 176dp there is nothing left to give them.
+        // Measured - 36dp at 180dp, 33dp at 173dp, 20dp at 160dp, 0dp at 140dp - so this asserts
+        // the last height that fully works rather than pretending the floor is not there.
+        setCard(width = 400.dp, height = 180.dp) { TallBody() }
+
+        assertEquals(
+            36.dp,
+            heightOf(actionLabel),
+            "the actions measured ${heightOf(actionLabel)} at a 180.dp parent - the floor moved, " +
+                "and the fixed chrome above the body is what pushed it",
+        )
+    }
+
+    @Test
+    fun `the body scrolls rather than overflowing its box`() {
+        // The scrolling half of the trade, which nothing else here pins: dropping verticalScroll
+        // while keeping weight(1f, fill = false) leaves all the other assertions green, because the
+        // body's own Column would place its remaining lines outside the Box and overdraw the action
+        // row - actions still non-zero, still inside the card. That is arguably worse than the bug
+        // being fixed, and it is the exact behaviour the "scroll rather than clip" argument rests on.
+        setCard(width = 400.dp, height = 300.dp) { TallBody() }
+
+        val before = boundsOf(LAST_LINE).top
+        rule.onNodeWithText(LAST_LINE).performScrollTo()
+        val after = boundsOf(LAST_LINE).top
+        assertTrue(
+            after < before,
+            "scrolling to the body's last line moved it from $before to $after - the body is not " +
+                "scrollable, so its overflow is drawn over the actions instead of inside a viewport",
+        )
     }
 
     private companion object {
