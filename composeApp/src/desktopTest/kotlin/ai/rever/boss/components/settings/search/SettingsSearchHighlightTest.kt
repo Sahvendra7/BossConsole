@@ -1,5 +1,6 @@
 package ai.rever.boss.components.settings.search
 
+import ai.rever.boss.components.settings.keymap.EditableKeymapSettings
 import ai.rever.boss.components.settings.sections.PerformanceSettings
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertCountEquals
@@ -74,6 +75,44 @@ class SettingsSearchHighlightTest {
         }
 
         compose.onAllNodesWithTag(HIGHLIGHT_TEST_TAG).assertCountEquals(0)
+    }
+
+    /**
+     * The Shortcuts tab-switching chips highlight, which is why the highlight machinery lives in
+     * commonMain.
+     *
+     * While it sat in desktopMain this was impossible: `EditableKeymapSettings` is commonMain and
+     * could not reference the modifier at all, so these controls were findable by search and then
+     * did nothing when picked. Mounting the real page is the only way to see that, since the
+     * source-set boundary is invisible to any assertion about the index.
+     */
+    @Test
+    fun `a Shortcuts tab-switching chip highlights`() {
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalSettingsHighlight provides
+                    SettingsHighlight(group = null, label = "Positional", nonce = 1),
+            ) {
+                EditableKeymapSettings()
+            }
+        }
+
+        compose.onAllNodesWithTag(HIGHLIGHT_TEST_TAG).assertCountEquals(1)
+    }
+
+    /** The other chip, so the two are not matching each other's label. */
+    @Test
+    fun `the other tab-switching chip highlights on its own label`() {
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalSettingsHighlight provides
+                    SettingsHighlight(group = null, label = "Most recently used", nonce = 1),
+            ) {
+                EditableKeymapSettings()
+            }
+        }
+
+        compose.onAllNodesWithTag(HIGHLIGHT_TEST_TAG).assertCountEquals(1)
     }
 
     /**

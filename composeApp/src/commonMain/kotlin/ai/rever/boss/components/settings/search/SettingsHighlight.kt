@@ -17,6 +17,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 
 /**
+ * The control the search wants shown, identified the way a search entry identifies itself.
+ *
+ * [nonce] exists so that picking the same result twice is two events. Without it the second pick
+ * leaves the state equal to what it already was, the keyed effects below never re-run, and the
+ * window sits there having visibly done nothing - the same shape of bug `SettingsWindowState`
+ * already documents for `focusRequest`.
+ *
+ * This lives in **commonMain**, along with the modifiers below, because settings pages do too:
+ * `EditableKeymapSettings` is commonMain, and while this machinery sat in desktopMain its
+ * tab-switching controls could be found by search but never scrolled to or highlighted.
+ */
+data class SettingsHighlight(
+    val group: String?,
+    val label: String,
+    val nonce: Int,
+)
+
+/**
  * The `SettingsSection(title = ...)` a control is nested inside, or null at the top of a page.
  *
  * `compositionLocalOf`, not `staticCompositionLocalOf`: the static flavour invalidates its whole
@@ -38,6 +56,18 @@ internal val LocalSettingsHighlight = compositionLocalOf<SettingsHighlight?> { n
  * line in all 12 shared controls pushed `SettingsTextField` over detekt's function-length limit for
  * no reason a reader would ever guess from the diff.
  *
+ * Use [settingsSearchTarget] instead for anything that paints its own background.
+ */
+@Composable
+internal fun Modifier.settingsRowSurface(label: String): Modifier = searchTarget(label, surface = SurfaceColor)
+
+/**
+ * Marks the receiver as the search target named [label] without painting a surface.
+ *
+ * For controls that already draw their own background - a `SettingsSection` group header (which has
+ * always been transparent, and would put a coloured slab behind every heading if filled) and the
+ * Shortcuts tab-switching chips, whose fill carries their selected state.
+ *
  * **The control brings itself into view.** The obvious alternative - have the window record every
  * control's y-offset and scroll the container - has to solve a race it cannot see: on the frame the
  * section changes, the target does not exist yet, so the scroll runs against the outgoing section's
@@ -49,18 +79,7 @@ internal val LocalSettingsHighlight = compositionLocalOf<SettingsHighlight?> { n
  * came last.
  */
 @Composable
-internal fun Modifier.settingsRowSurface(label: String): Modifier = searchTarget(label, surface = SurfaceColor)
-
-/**
- * Marks a `SettingsSection` group header as the search target named [title], painting no surface.
- *
- * Separate from [settingsRowSurface] precisely because of the background: a group container has
- * always been transparent, and giving it a filled surface would put a panel-coloured slab behind
- * every heading and its whole body - a visible restyle of the entire Settings window smuggled in
- * behind a search feature.
- */
-@Composable
-internal fun Modifier.settingsGroupTarget(title: String): Modifier = searchTarget(title, surface = null)
+internal fun Modifier.settingsSearchTarget(label: String): Modifier = searchTarget(label, surface = null)
 
 @Composable
 private fun Modifier.searchTarget(
@@ -114,7 +133,7 @@ private fun Modifier.searchTarget(
     }
 }
 
-/** Carried by the single control the search is pointing at. See [settingsRowSurface]. */
+/** Carried by the single control the search is pointing at. See [settingsSearchTarget]. */
 internal const val HIGHLIGHT_TEST_TAG = "settings-search-highlight"
 
 /** Long enough to find the row with your eyes before it starts going. */

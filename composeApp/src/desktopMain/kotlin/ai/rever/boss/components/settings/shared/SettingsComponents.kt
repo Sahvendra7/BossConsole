@@ -1,8 +1,8 @@
 package ai.rever.boss.components.settings.shared
 
 import ai.rever.boss.components.settings.search.LocalSettingsGroup
-import ai.rever.boss.components.settings.search.settingsGroupTarget
 import ai.rever.boss.components.settings.search.settingsRowSurface
+import ai.rever.boss.components.settings.search.settingsSearchTarget
 import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
 import ai.rever.boss.components.settings.shared.SettingsTheme.BackgroundColor
 import ai.rever.boss.components.settings.shared.SettingsTheme.BorderColor
@@ -69,7 +69,7 @@ fun SettingsSection(
         // And it wraps the heading only, not the whole group. On the outer Column it would wash
         // every row in the section along with the title, which reads as "all of this matched"
         // rather than "this heading is what you asked for".
-        Column(modifier = Modifier.fillMaxWidth().settingsGroupTarget(title)) {
+        Column(modifier = Modifier.fillMaxWidth().settingsSearchTarget(title)) {
             Text(
                 text = title,
                 color = TextPrimary,

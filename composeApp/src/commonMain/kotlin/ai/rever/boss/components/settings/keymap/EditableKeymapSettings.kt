@@ -1,5 +1,6 @@
 package ai.rever.boss.components.settings.keymap
 
+import ai.rever.boss.components.settings.search.settingsSearchTarget
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.KeymapValidator
 import ai.rever.boss.keymap.lifecycle.ShortcutLifecycleManager
@@ -466,7 +467,11 @@ private fun TabSwitchModeChip(
                 .clip(RoundedCornerShape(6.dp))
                 .background(
                     if (isSelected) BossTheme.colors.signal.copy(alpha = 0.15f) else BossTheme.colors.ink,
-                ).border(
+                )
+                // After the chip's own fill, so the search wash paints over it rather than under,
+                // and inside the clip above so it takes the rounded corners.
+                .settingsSearchTarget(label)
+                .border(
                     width = 1.dp,
                     color = if (isSelected) BossTheme.colors.signal else BossTheme.colors.line,
                     shape = RoundedCornerShape(6.dp),

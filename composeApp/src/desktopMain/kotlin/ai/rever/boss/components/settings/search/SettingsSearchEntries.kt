@@ -371,16 +371,18 @@ private fun advancedEntries() =
  * Only the two tab-switching chips are static; the shortcut rows themselves are built at runtime
  * from the keymap plus plugin-contributed defaults, and the page has its own search box for those.
  *
- * Both chips are `highlightable = false` for a structural reason rather than a choice: they are
- * drawn by a local `TabSwitchModeChip` in **commonMain**, which cannot reference the highlight
- * modifier in desktopMain. Picking one of these results opens Shortcuts without a wash.
+ * Both chips highlight. That took moving the highlight machinery into commonMain, where the settings
+ * pages themselves live - while it sat in desktopMain, a commonMain page like this one could be
+ * indexed but never scrolled to. One caveat remains, from `LazyColumn` rather than from this index:
+ * bringing a target into view only works once it is composed, so a chip can be reached from a fresh
+ * visit to Shortcuts but not while the page is scrolled far down its shortcut list.
  */
 private fun keymapEntries() =
     section(SettingsSection.KEYMAP) {
         sectionLevel("shortcut", "hotkey", "binding", "keyboard", "preset", "conflict", "chord")
         ungrouped(
             "Positional",
-            highlightable = false,
+            highlightable = true,
             context = "Tab switching",
             "tab switching",
             "ctrl+tab",
@@ -390,7 +392,7 @@ private fun keymapEntries() =
         )
         ungrouped(
             "Most recently used",
-            highlightable = false,
+            highlightable = true,
             context = "Tab switching",
             "tab switching",
             "ctrl+tab",

@@ -13,20 +13,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 
 /**
- * The control the search wants shown, identified the way [SettingsSearchEntry] identifies itself.
- *
- * [nonce] exists so that picking the same result twice is two events. Without it the second pick
- * leaves the state equal to what it already was, the keyed effects below never re-run, and the
- * window sits there having visibly done nothing - the same shape of bug `SettingsWindowState`
- * already documents for `focusRequest`.
- */
-internal data class SettingsHighlight(
-    val group: String?,
-    val label: String,
-    val nonce: Int,
-)
-
-/**
  * The query, the ranked hits and the keyboard selection, in one holder.
  *
  * It exists because the two halves live in different composables and must not each keep their own
