@@ -72,9 +72,16 @@ internal val AlertWidth: Dp = 400.dp
  *    line only holds it `space.lg` clear of the parent's edges.
  *
  * **This fixes the squeeze where the card is measured against a parent, which is the scrimmed path**
- * (`ScrimmedModalContent` is a `fillMaxSize` Box, and that is where the report came from). On the
- * lightweight `Dialog` path it is inert by design, and the ceiling there is the *screen* rather than
- * the card: a tall card on a shorter display still puts its actions out of reach. Pre-existing.
+ * (`ScrimmedModalContent` is a `fillMaxSize` Box, and that is where the report came from).
+ *
+ * **On the lightweight `Dialog` path the answer is platform-dependent, not "inert".** That is
+ * measured, not assumed: a test asserting the body was NOT flexed there passed on macOS and Linux
+ * and failed on windows-latest, so that window hands its content an unbounded height on some
+ * platforms and a bounded one on others. Where it is unbounded the ceiling is the *screen* rather
+ * than the card, and a tall card on a shorter display still puts its actions out of reach -
+ * pre-existing, and not addressed here. Where it is bounded, this fix applies and the body scrolls.
+ * Either way the actions keep their height, which is the only invariant worth pinning; do not write
+ * a test that asserts which branch a platform takes.
  *
  * **There is a floor, about 176dp.** Only the body flexes, so padding, title and spacers are still
  * measured first. Measured: full-height actions at a 180dp parent, 20dp at 160dp, 0dp at 140dp, and

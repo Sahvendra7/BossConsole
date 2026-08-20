@@ -149,18 +149,22 @@ class BossAlertDialogComposeTest {
             "the confirm button measured ${confirm.bottom - confirm.top} tall under a 40-line body",
         )
 
-        // Which branch this path takes, stated rather than left open. `height > 0` held before the
-        // change too, so it could not answer the question its own comment raises. Scale-free, the
-        // same shape the module test uses: if the body is NOT scrolled, the actions sit below the
-        // last body line; if it is, they sit above most of it. Either outcome is acceptable - what
-        // matters is that a change to it turns this red rather than passing silently.
+        // Which branch this path takes is PLATFORM-DEPENDENT, which is why nothing here asserts it.
+        //
+        // A previous version did, scale-free (the actions sit below the body's last line when the
+        // body is not scrolled, above most of it when it is). CI answered it: that assertion passed
+        // on macOS and Linux and failed on windows-latest. So desktop's `Dialog` hands its content
+        // an unbounded height on some platforms and a bounded one on others, and the card
+        // consequently flexes its body on Windows and not elsewhere.
+        //
+        // Both outcomes are acceptable - which is the point. The invariant that has to hold
+        // everywhere is the one asserted above: the actions keep their height. Pinning the branch
+        // instead would make this test red on one platform for a reason unrelated to the property,
+        // the same way an alert's line count turned out to be a font fact rather than a layout one.
         val lastLine = rule.onNodeWithText("line 39 of a long body").getUnclippedBoundsInRoot()
         assertTrue(
-            confirm.top > lastLine.top,
-            "the confirm button sits at ${confirm.top} and the body's last line at ${lastLine.top}: " +
-                "desktop's Dialog now hands its content a BOUNDED height, so the card flexes its " +
-                "body on the lightweight path too. That is defensible, but it is a change from " +
-                "when this was written and the KDoc calls the path inert - update both together.",
+            lastLine.bottom > lastLine.top,
+            "the body's last line measured no height at all, on either branch",
         )
     }
 }
