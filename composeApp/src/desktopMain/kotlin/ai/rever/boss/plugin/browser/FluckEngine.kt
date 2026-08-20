@@ -2454,24 +2454,33 @@ object FluckEngine {
         }
 
     /**
-     * Whether the native key interceptor has to serve zoom chords on this platform.
+     * Whether the native key interceptor has to serve zoom chords in this configuration.
      *
-     * Windows and Linux: yes, and it is the only layer that can. Under HARDWARE_ACCELERATED the
-     * native Chromium child window consumes the key, so neither the AWT keymap nor the plugin's
-     * Compose `onPreviewKeyEvent` ever sees one - the same reason Ctrl+R needed a case here.
+     * Two conditions, because two different things can put the chord somewhere else.
      *
-     * macOS: no. The chord reaches AWT there, which is why zoom was reported broken on Windows
-     * only, and the AWT keymap (`browser.zoom_in` and friends) plus the plugin's Compose handler
-     * already serve it. Claiming it here as well is the one configuration where two layers could
-     * both act on a single keypress, and the second zoom step would be indistinguishable from the
-     * user having pressed the key twice.
+     * Rendering mode. Only HARDWARE_ACCELERATED gives Chromium a native child window that
+     * consumes the key before the JVM sees it, which is the whole reason this case exists - the
+     * same reason Ctrl+R needed one. Under OFF_SCREEN the chord arrives through AWT and Compose
+     * instead, so the AWT keymap and the plugin's `onPreviewKeyEvent` serve it and claiming it
+     * here as well risks a second zoom step. OFF_SCREEN is not hypothetical: it is reachable per
+     * install through BOSS_RENDERING_MODE or Settings > Browser Engine, so gating on the platform
+     * alone would leave anyone who flipped that setting exposed.
      *
-     * If macOS keyboard zoom is ever found broken, this predicate is the thing to revisit: it
-     * would mean macOS delivers the chord to Chromium after all, and the native case should serve
-     * it there too.
+     * Platform. macOS is exempt even under HARDWARE_ACCELERATED, because the chord reaches AWT
+     * there - which is why zoom was reported broken on Windows only - and the AWT keymap
+     * (`browser.zoom_in` and friends) plus the plugin's Compose handler already serve it.
+     *
+     * Both exemptions guard the same failure: two layers acting on one keypress, where the second
+     * zoom step is indistinguishable from the user having pressed the key twice.
+     *
+     * [JxBrowserConfig.renderingMode] is a `lazy` val, so this resolves once per process. That is
+     * the right granularity: changing the mode needs the engine rebuilt, so it cannot change under
+     * a running browser anyway.
      */
     private val interceptsZoomNatively: Boolean
-        get() = !SystemUtils.isMacOS
+        get() =
+            !SystemUtils.isMacOS &&
+                JxBrowserConfig.renderingMode == com.teamdev.jxbrowser.engine.RenderingMode.HARDWARE_ACCELERATED
 
     internal enum class BrowserZoomAction { IN, OUT, RESET }
 
