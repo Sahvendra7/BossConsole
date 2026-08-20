@@ -77,11 +77,26 @@ export async function authorizeNewPluginPublish(
   requestedOrgId?: string | null,
 ): Promise<PublishAuthz> {
   const resolution = await resolvePublishOrg(supabase, user, requestedOrgId)
-  if (!resolution.ok) return resolution
 
+  // Rule 1 is decided BEFORE the resolver's refusal is honoured, and the order is the whole point.
+  // `resolvePublishOrg` refuses an "explicit" organisation the caller cannot publish for, and
+  // explicit includes the one an API KEY is bound to - so checking the permission afterwards let an
+  // organisation's publish_policy veto a global publisher, which is exactly what rule 1 says it
+  // cannot do. Observed live: `boss-nilesh-key` is bound to `@boss`, whose policy is `admins`, and
+  // its owner holds `plugins.create` but is not a boss org admin - so every first-ever publish of a
+  // new pluginId 403'd while existing plugins (which never resolve an org) kept working.
   if (await userHasPermission(supabase, user, PLUGIN_CREATE_PERMISSION)) {
-    return { ok: true, orgId: resolution.orgId, orgScoped: false }
+    if (resolution.ok) return { ok: true, orgId: resolution.orgId, orgScoped: false }
+    // An organisation the caller NAMED and cannot publish for stays a refusal even here: silently
+    // recording the plugin somewhere else than they asked is the failure this file already refuses
+    // to make for org publishers, and being unrestricted is not a reason to guess.
+    if (requestedOrgId?.trim()) return resolution
+    // An organisation inherited from the key is not a request. Fall back to the default and let
+    // `plugins_default_org` decide, which is what a global publisher got before this gate existed.
+    return { ok: true, orgId: null, orgScoped: false }
   }
+
+  if (!resolution.ok) return resolution
 
   if (resolution.orgId === null) {
     switch (resolution.source) {

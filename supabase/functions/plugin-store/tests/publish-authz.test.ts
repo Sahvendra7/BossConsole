@@ -67,7 +67,8 @@ function user(extra: Partial<AuthResult> = {}): AuthResult {
   return { userId: USER, email: "a@b.test", isAdmin: false, jwtPermissions: [], ...extra }
 }
 
-const creator = () => user({ jwtPermissions: ["plugins.create"] })
+const creator = (extra: Partial<AuthResult> = {}) =>
+  user({ jwtPermissions: ["plugins.create"], ...extra })
 
 /** An active, non-system membership row. */
 const member = (id: string) => ({ id, is_system: false, status: "active" })
@@ -93,6 +94,37 @@ Deno.test("plugins.create still publishes to the BOSS store", async () => {
   const { client } = stub({ orgs: [] })
   const result = await authorizeNewPluginPublish(client, creator())
   assertEquals(allowed(result), { orgId: null, orgScoped: false })
+})
+
+Deno.test("plugins.create is not vetoed by the organisation its API KEY is bound to", async () => {
+  // The regression this file did not cover. Every release key is bound to an organisation, and
+  // `resolvePublishOrg` treats that binding as "explicit" - so when the binding is an org whose
+  // publish_policy does not admit the key's owner, the resolver refuses. Rule 1 says a
+  // plugins.create holder is unrestricted, so the refusal must not reach them.
+  //
+  // Live shape: boss-nilesh-key is bound to @boss (policy `admins`); its owner holds
+  // plugins.create but is not a boss org admin. Before the fix this 403'd, which blocked the
+  // first-ever publish of EVERY new pluginId while existing plugins kept working.
+  const { client } = stub({ canPublish: { [ORG_BOSS]: false } })
+  const result = await authorizeNewPluginPublish(client, creator({ apiKeyOrgId: ORG_BOSS }))
+  assertEquals(allowed(result), { orgId: null, orgScoped: false })
+})
+
+Deno.test("plugins.create keeps the organisation its key is bound to when that org admits it", async () => {
+  // The other half: the binding is still honoured as attribution when it is not a refusal, so a
+  // key bound to an org it may publish for records that org rather than falling back to boss.
+  const { client } = stub({ canPublish: { [ORG_MINE]: true } })
+  const result = await authorizeNewPluginPublish(client, creator({ apiKeyOrgId: ORG_MINE }))
+  assertEquals(allowed(result), { orgId: ORG_MINE, orgScoped: false })
+})
+
+Deno.test("plugins.create naming an organisation it may not publish for is STILL refused", async () => {
+  // Deliberately not widened to "unrestricted means anything goes". Being told no about an org you
+  // NAMED must not silently record the plugin somewhere else - the same reasoning the org-scoped
+  // path already uses. The distinction is request vs. inherited-from-key, not permission level.
+  const { client } = stub({ canPublish: { [ORG_OTHER]: false } })
+  const result = await authorizeNewPluginPublish(client, creator(), ORG_OTHER)
+  assertEquals(refused(result).status, 403)
 })
 
 Deno.test("plugins.create may name the system organisation explicitly", async () => {
