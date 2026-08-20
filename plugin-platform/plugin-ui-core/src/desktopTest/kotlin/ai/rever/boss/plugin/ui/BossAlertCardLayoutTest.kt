@@ -2,6 +2,7 @@ package ai.rever.boss.plugin.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -187,8 +188,8 @@ class BossAlertCardLayoutTest {
     @Test
     fun `a card narrower than it wants shrinks to fit`() {
         // #214's property, previously unpinned by any test in this repo. Split from the roomy case
-        // rather than looped: two setContent calls in one test lean on desktop re-entrancy, and a
-        // failure would not say which iteration produced it.
+        // rather than looped, because they are two independent properties: a failure in a loop
+        // would not say which width produced it.
         setCard(width = 240.dp, height = 600.dp) { Text("x") }
 
         val cardWidth = cardBounds().let { it.right - it.left }
@@ -221,6 +222,11 @@ class BossAlertCardLayoutTest {
         // The expected height is measured in a roomy frame rather than hardcoded to Material's 36dp
         // TextButton minimum: a spacing-token or type-scale change would otherwise turn this red
         // with the same message and a different cause.
+        //
+        // Two setCard calls here, where the width tests were deliberately split into one each. The
+        // difference is that these two measurements are the SAME property at two heights and the
+        // assertion compares them, so splitting would mean sharing state between tests; the width
+        // cases were two independent properties that only shared a loop.
         setCard(width = 400.dp, height = 600.dp) { Text("one short line") }
         val unconstrained = heightOf(actionLabel)
 
@@ -237,18 +243,76 @@ class BossAlertCardLayoutTest {
 
     @Test
     fun `the card keeps a margin from a parent shorter than itself`() {
+        // space.lg captured from the theme rather than hardcoded, for the same reason the floor test
+        // measures the button instead of writing 36dp: a spacing-token change should not turn this
+        // red with a message blaming the height cap.
+        var margin = Dp.Unspecified
         // The height cap's own test. Removing that .then(heightIn(...)) block breaks no other
         // assertion here - incoming constraints already stop the card exceeding its parent, so the
         // weight does the whole job of keeping the actions measurable. What the cap adds is this
         // margin, and without a test it reads like part of the fix.
-        setCard(width = 400.dp, height = 300.dp) { TallBody() }
+        rule.setContent {
+            BossTheme {
+                margin = BossTheme.space.lg
+                Box(Modifier.size(400.dp, 300.dp).testTag(FRAME)) {
+                    Box(Modifier.testTag(CARD)) {
+                        BossAlertCard(
+                            buttons = { TextButton(onClick = {}) { Text(actionLabel) } },
+                            title = { Text("Allow this?") },
+                            text = { TallBody() },
+                        )
+                    }
+                }
+            }
+        }
 
         val frame = rule.onNodeWithTag(FRAME).getUnclippedBoundsInRoot()
         val card = cardBounds()
+        val cardHeight = card.bottom - card.top
+        val frameHeight = frame.bottom - frame.top
+        // Height, not position. The cap's job is to leave `space.lg` at each end; WHERE the card
+        // then sits is the parent's business - the scrim centres it, this fixture's Box does not -
+        // so asserting card.top >= frame.top + margin measures the fixture, not the cap. An earlier
+        // version of this test did exactly that and failed against working code.
         assertTrue(
-            card.top >= frame.top && card.bottom <= frame.bottom - MARGIN + 1.dp,
-            "the card spans ${card.top}..${card.bottom} in a frame of ${frame.top}..${frame.bottom} " +
-                "- it is not holding $MARGIN clear of the parent's edges",
+            cardHeight <= frameHeight - margin * 2 + 1.dp && cardHeight > 0.dp,
+            "the card measured $cardHeight in a $frameHeight frame - that is not $margin clear of " +
+                "both of the parent's edges",
+        )
+    }
+
+    @Test
+    fun `a caller modifier that bounds the height gets the flexible body`() {
+        // Why the branch is read from the constraints the Column receives rather than the card's
+        // own: the caller's `modifier` sits between the two, so the two reads can disagree.
+        //
+        // Which way they can disagree is worth stating, because the first version of this test had
+        // it backwards. A caller modifier cannot REMOVE the bound in a way that matters - the card's
+        // own heightIn is applied after the caller's modifier, so it re-bounds anything the caller
+        // unbound. What a caller CAN do is bound a card whose parent did not: `Modifier.height(...)`
+        // under a scrolling parent. Read from the outside that is "unbounded, do not flex", and the
+        // actions are squeezed to nothing - the original bug, inside the guard. Read from the inside
+        // it flexes and they survive.
+        rule.setContent {
+            BossTheme {
+                Column(Modifier.width(400.dp).verticalScroll(rememberScrollState())) {
+                    Box(Modifier.testTag(CARD)) {
+                        BossAlertCard(
+                            modifier = Modifier.height(200.dp),
+                            buttons = { TextButton(onClick = {}) { Text(actionLabel) } },
+                            title = { Text("Allow this?") },
+                            text = { TallBody() },
+                        )
+                    }
+                }
+            }
+        }
+
+        assertTrue(
+            heightOf(actionLabel) > 0.dp,
+            "the actions measured ${heightOf(actionLabel)} in a card the CALLER bounded to 200.dp " +
+                "under an unbounded parent - the flex branch was decided by the card's incoming " +
+                "constraints instead of the ones its Column receives",
         )
     }
 
@@ -302,8 +366,6 @@ class BossAlertCardLayoutTest {
     private companion object {
         const val FRAME = "alert-frame"
         const val CARD = "alert-card"
-        val MARGIN = 16.dp
-
         const val BODY_LINES = 40
 
         fun bodyLine(i: Int) = "line $i of a long body"

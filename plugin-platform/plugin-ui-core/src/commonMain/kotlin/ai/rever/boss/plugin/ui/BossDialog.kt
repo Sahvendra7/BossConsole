@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin.ui
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.LocalContentColor
 import androidx.compose.material.ProvideTextStyle
@@ -282,9 +285,6 @@ internal fun ScrimmedModalContent(
 // Alert dialog
 // ---------------------------------------------------------------------------
 
-/** Width of a BOSS alert card, matching the house confirmation dialog. */
-internal val AlertWidth: Dp = 400.dp
-
 /**
  * A title/text/buttons dialog in the BOSS design system, layered above the browser surface.
  *
@@ -382,167 +382,6 @@ fun BossAlertDialog(
             backgroundColor = backgroundColor,
             contentColor = contentColor,
         )
-    }
-}
-
-/**
- * The card [BossAlertDialog] puts inside a dialog, split out so it can be measured.
- *
- * `BossAlertDialog` itself cannot be: on the path a test scene can host it routes to a platform
- * dialog window, and such a window does not inherit the size of whatever composed it. The bugs
- * below are both about a card that has LESS room than it wants, which is a state only reachable by
- * constraining the parent — so the card is `internal` and `BossAlertCardLayoutTest` constrains it
- * directly. The dialog around it stays untested here and pinned by `BossDialogRoutingTest`.
- *
- * **Width: [AlertWidth] is what an alert wants, not what it must have.** `.width(AlertWidth)` set
- * the minimum as well as the maximum, so on the scrimmed path — where this Surface is measured
- * against the app window rather than against a dialog window of its own — a window narrower than
- * 400dp got a card it could not fit and clipped it at the edge. Reported against the Atlas plugin,
- * whose panel slot is routinely narrower than that: a Row of actions inside a card that cannot
- * shrink is measured first child to last, so the last one — the primary — was squeezed to zero
- * width on a consent surface. Measured at 240dp, not inferred.
- *
- * `BoxWithConstraints` rather than `widthIn(max = AlertWidth)`: with only a maximum a Surface wraps
- * its content, so every short alert in the app would suddenly be narrower than 400dp. Taking the
- * smaller of what we want and what there is leaves the wide case byte-identical and changes only
- * the case that was broken.
- *
- * **Height: the actions are what a short window used to lose, and it is the width bug again.** A
- * Column measures its non-weighted children in order and offers each what the previous ones left,
- * so in a window shorter than the content the body took what it wanted and the actions — measured
- * last — were offered nothing. Measured in a 300dp frame, "Don't allow" came out **0dp tall** at
- * y=276, exactly as the primary came out 0dp *wide* in a card too narrow for the action row. Not
- * clipped, not pushed off the edge: squeezed to nothing by a sibling that was measured first, on a
- * card whose whole job is to be agreed to or refused.
- *
- * The *body* is the part that should give way, so it takes the flexible space and scrolls while the
- * title and the actions keep theirs.
- *
- * **`fill = false`, and the whole thing conditional on a bounded height, are both load-bearing,
- * and both were measured rather than reasoned about.** `weight(1f)` alone fills its share, which
- * would stretch every short dialog in the app to the window; `fill = false` lets the body stay its
- * own height, so a card that fits is measured exactly as before.
- *
- * **There is a floor, and it is about 176dp.** Only the body flexes; the padding, the title and the
- * two spacers are still measured before the actions. That chrome is `space.xl * 2` of padding plus a
- * title line plus `space.md` plus `space.xl` plus Material's 36dp button minimum — so once the
- * parent is under roughly 176dp there is nothing left to give the actions and they collapse again.
- * Measured: full 36dp at a 180dp parent, 33dp at 173dp, 20dp at 160dp, **0dp at 140dp**, and the
- * title itself goes at 80dp. Pinned by `theActionsSurviveTheShortestWindowThatCanHoldThem`, so the
- * floor cannot move quietly. Going lower would mean shrinking the padding or dropping the title,
- * which is a design decision rather than a layout fix, and a 140dp-tall dialog is arguably not one.
- *
- * The `hasBoundedHeight` branch matters just as much. Given a 40-line body and no height bound —
- * the shape of a dialog window that sizes to its content — this card measures 1116dp and renders
- * the whole body inline. Applying the weight there anyway measures **156dp**, with the body
- * scrolled down to roughly one line: a weighted child of an unbounded axis gets a share of almost
- * nothing. And there is no bug to fix on that path in the first place, because a window that sizes
- * to its content cannot clip it, so scrolling there is pure loss.
- *
- * **So this fixes the squeeze on the path where the card is measured against a parent, which is the
- * scrimmed one** — `ScrimmedModalContent` is a `fillMaxSize` Box, so the card is bounded by the
- * overlay window, and that is where the report came from. On the lightweight `Dialog` path the
- * change is inert by design, and the ceiling there is the *screen* rather than the card: a window
- * that sizes to its content cannot clip it, but a 1116dp card on a shorter display still puts its
- * actions where they cannot be reached. That is pre-existing and not addressed here.
- *
- * Scrolling hides content with no affordance of its own, which is a real cost on a card that may be
- * asking for consent. It is the lesser one — the alternative here is clipping, which hides the same
- * content AND removes the actions — but a call site with a long body should still bound and scroll
- * it explicitly: `Modifier.heightIn(max = …).verticalScroll(…)`, plus a scrollbar of its own.
- *
- * Deliberately spelled out rather than pointing at the update dialog's release notes, which do this
- * with `dialogScrollFence`: that lives in `composeApp` and is not on the plugin classpath, so a
- * plugin author following that advice could not write it. (Moving the fence into this module would
- * be reasonable — it is a `LayoutModifier` with no host dependency — but it is a separate change.)
- *
- * **An uncapped lazy list in [text] fails, and the failure mode is worse than an exception.**
- * Compose rejects an infinite main axis for a scrollable container, so the documented cap is not
- * advice, it is a requirement. Tried to pin the failure and could not: an uncapped `LazyColumn` in
- * the body **hung** a `createComposeRule` scene rather than throwing, twice, at 200 items and at
- * five. So the `@param` wording says "will not lay out" rather than naming an exception — the
- * requirement is verified, the exact failure is not. What is pinned is the other half:
- * `a capped lazy list in the body composes rather than throwing`.
- *
- * **A [text] slot that caps itself against its parent loses that reference point.** A cap written as
- * `min(myMax, constraints.maxHeight)` — which is what the host's own `dialogScrollFence` computes —
- * coerces against an infinite maximum here, so it always takes its full constant instead of
- * shrinking with a short window. The content stays reachable, because the outer scroll takes the
- * leftover, but it means two nested scroll regions rather than one. A slot that wants to shrink with
- * the card has to be told the height it may use rather than deriving it from its constraints.
- *
- * `verticalScroll` also applies `clipScrollableContainer`, so the body is now clipped in the scroll
- * direction. Nothing in the host relied on content overflowing a [text] slot inline, but it is a
- * second behaviour change riding along with the first.
- */
-@Composable
-internal fun BossAlertCard(
-    buttons: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-    title: (@Composable () -> Unit)? = null,
-    text: (@Composable () -> Unit)? = null,
-    shape: Shape? = null,
-    backgroundColor: Color = Color.Unspecified,
-    contentColor: Color = Color.Unspecified,
-) {
-    val colors = BossTheme.colors
-    val space = BossTheme.space
-    BoxWithConstraints(contentAlignment = Alignment.Center) {
-        val available = (maxWidth - space.lg * 2).coerceAtLeast(0.dp)
-        val bounded = constraints.hasBoundedHeight
-        // Hoisted rather than called inside the modifier branch below, so the scroll position
-        // survives a flip of `bounded` rather than being remembered under a different call site.
-        val bodyScroll = rememberScrollState()
-        Surface(
-            modifier =
-                modifier
-                    .width(AlertWidth.coerceAtMost(available))
-                    .then(
-                        if (bounded) {
-                            // The MARGIN, not the fix. Incoming constraints already stop the card
-                            // exceeding its parent, so the weight below does the whole job of
-                            // keeping the actions measurable; this only holds the card `space.lg`
-                            // clear of the parent's top and bottom edges, matching the width. Its
-                            // own test is theCardKeepsAMarginFromAParentShorterThanItself, because
-                            // removing this line breaks no other assertion in the suite.
-                            Modifier.heightIn(max = (maxHeight - space.lg * 2).coerceAtLeast(0.dp))
-                        } else {
-                            Modifier
-                        },
-                    ).wrapContentHeight(),
-            shape = shape ?: BossTheme.radius.dialogShape,
-            color = backgroundColor.takeOrElse { colors.panel },
-            contentColor = contentColor.takeOrElse { colors.textPrimary },
-        ) {
-            Column(modifier = Modifier.padding(space.xl)) {
-                if (title != null) {
-                    CompositionLocalProvider(LocalContentColor provides colors.textPrimary) {
-                        ProvideTextStyle(BossTheme.type.title, title)
-                    }
-                }
-                if (title != null && text != null) {
-                    Spacer(Modifier.height(space.md))
-                }
-                if (text != null) {
-                    Box(
-                        modifier =
-                            if (bounded) {
-                                Modifier
-                                    .weight(1f, fill = false)
-                                    .verticalScroll(bodyScroll)
-                            } else {
-                                Modifier
-                            },
-                    ) {
-                        CompositionLocalProvider(LocalContentColor provides colors.textSecondary) {
-                            ProvideTextStyle(BossTheme.type.body, text)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(space.xl))
-                buttons()
-            }
-        }
     }
 }
 
