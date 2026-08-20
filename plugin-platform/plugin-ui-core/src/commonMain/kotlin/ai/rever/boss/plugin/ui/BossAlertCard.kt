@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -35,6 +36,9 @@ import androidx.compose.ui.unit.dp
 // Its own file rather than living in BossDialog.kt: that file was already carrying the dialog
 // routing, the scrim, the popup and the anchor maths, and the card's own reasoning about measurement
 // is long enough that detekt's per-file function budget and per-function length both objected.
+
+/** Test tag on the body's scrollbar; see `BossAlertCardLayoutTest`. */
+internal const val BODY_SCROLLBAR_TAG = "alert-body-scrollbar"
 
 /** Width of a BOSS alert card, matching the house confirmation dialog. */
 internal val AlertWidth: Dp = 400.dp
@@ -147,6 +151,10 @@ internal fun BossAlertCard(
 /**
  * The card's body: the part that gives way when the card is shorter than its content.
  *
+ * The scrollbar is a raw `VerticalScrollbar` and does **not** honour the app-wide scrollbar
+ * settings that `plugin-scrollbar` owns - this module cannot depend on that one, so the
+ * inconsistency is deliberate rather than an oversight.
+ *
  * [canFlex] must come from the constraints the enclosing `Column` receives, not from the card's own
  * incoming constraints - the caller's `modifier` sits between the two, and a caller that removes the
  * height bound would otherwise get the weighted branch against an infinite axis, which is the
@@ -159,23 +167,33 @@ private fun ColumnScope.AlertBody(
     contentColor: Color,
 ) {
     val scroll = rememberScrollState()
-    Box(
-        modifier =
-            if (canFlex) {
-                Modifier.weight(1f, fill = false).verticalScroll(scroll)
-            } else {
-                Modifier
-            },
-    ) {
-        CompositionLocalProvider(LocalContentColor provides contentColor) {
-            ProvideTextStyle(BossTheme.type.body, text)
-        }
-        // The affordance the scroll would otherwise not have, drawn only when something is below the
-        // fold. matchParentSize so the scrollbar takes no part in sizing the body.
-        if (canFlex && scroll.maxValue in 1 until Int.MAX_VALUE) {
-            Box(Modifier.matchParentSize(), contentAlignment = Alignment.TopEnd) {
-                VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.fillMaxHeight())
+    val showScrollbar = canFlex && scroll.maxValue in 1 until Int.MAX_VALUE
+    // Two boxes, and which one owns which modifier is the whole point.
+    //
+    // The VIEWPORT owns the weight; the scroll lives in a child. Putting the scrollbar inside the
+    // scrolled subtree instead - as the first version of this did - makes it a sibling of the
+    // content in CONTENT space: `verticalScroll` measures its child against an infinite height, so
+    // that Box sizes to the content (~996dp for a 40-line body against a ~150dp viewport), and a
+    // `matchParentSize` scrollbar is then measured to the content height and translates upward as
+    // the user scrolls. Keeping the viewport and the scrollbar as siblings puts the scrollbar in
+    // viewport space, where a scrollbar belongs.
+    Box(modifier = if (canFlex) Modifier.weight(1f, fill = false) else Modifier) {
+        Box(modifier = if (canFlex) Modifier.verticalScroll(scroll) else Modifier) {
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                // A gutter while the scrollbar is showing, so it does not sit on top of the last
+                // few characters of every wrapped line.
+                Box(Modifier.padding(end = if (showScrollbar) BossTheme.space.md else 0.dp)) {
+                    ProvideTextStyle(BossTheme.type.body, text)
+                }
             }
+        }
+        if (showScrollbar) {
+            VerticalScrollbar(
+                rememberScrollbarAdapter(scroll),
+                // Tagged so a test can assert it is measured against the VIEWPORT and does not
+                // translate with the content; nothing else about it is observable.
+                Modifier.align(Alignment.CenterEnd).fillMaxHeight().testTag(BODY_SCROLLBAR_TAG),
+            )
         }
     }
 }

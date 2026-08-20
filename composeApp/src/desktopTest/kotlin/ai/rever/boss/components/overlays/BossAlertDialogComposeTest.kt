@@ -148,5 +148,19 @@ class BossAlertDialogComposeTest {
             (confirm.bottom - confirm.top) > 0.dp,
             "the confirm button measured ${confirm.bottom - confirm.top} tall under a 40-line body",
         )
+
+        // Which branch this path takes, stated rather than left open. `height > 0` held before the
+        // change too, so it could not answer the question its own comment raises. Scale-free, the
+        // same shape the module test uses: if the body is NOT scrolled, the actions sit below the
+        // last body line; if it is, they sit above most of it. Either outcome is acceptable - what
+        // matters is that a change to it turns this red rather than passing silently.
+        val lastLine = rule.onNodeWithText("line 39 of a long body").getUnclippedBoundsInRoot()
+        assertTrue(
+            confirm.top > lastLine.top,
+            "the confirm button sits at ${confirm.top} and the body's last line at ${lastLine.top}: " +
+                "desktop's Dialog now hands its content a BOUNDED height, so the card flexes its " +
+                "body on the lightweight path too. That is defensible, but it is a change from " +
+                "when this was written and the KDoc calls the path inert - update both together.",
+        )
     }
 }
