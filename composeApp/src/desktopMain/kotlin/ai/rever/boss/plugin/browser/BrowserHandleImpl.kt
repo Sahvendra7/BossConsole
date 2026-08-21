@@ -469,6 +469,25 @@ internal class BrowserHandleImpl(
     private val pageEventScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     /**
+     * Which document generation the page-event script has already been evaluated in.
+     *
+     * The api promises **one evaluation per document**, and this is what keeps it. Two paths reach
+     * the same document: the document-start hook, and the immediate injection when
+     * setPageEventScript is first called. Toggling a setting off and on while sitting on a login
+     * page is enough to run the second one twice in one document, which is two sets of the script's
+     * listeners and two posts per submit.
+     *
+     * The alternative was to make each script carry its own guard, which is what the contract used
+     * to ask for - unimplementable as stated, since the wrapper gives every evaluation a fresh
+     * function scope and the only slot shared across them is `window`. Keeping the count here means
+     * a script needs no window property, which is the whole point of handing the bridge over as a
+     * parameter.
+     */
+    @Volatile private var documentGeneration = 0L
+
+    @Volatile private var pageEventInjectedGeneration = -1L
+
+    /**
      * Bumped to re-attach the browser view after a committed document never drew. Read in
      * [Content], so it has to be Compose state rather than a plain field.
      *
@@ -948,6 +967,10 @@ internal class BrowserHandleImpl(
                     // the posting document, so it must be set before any script in the new document
                     // can post - which this handler is, since it fires on navigation completion.
                     lastCommittedMainFrameUrl = url
+                    // A new document, so the page-event script may be evaluated again. Same-document
+                    // navigations (pushState, fragment) keep the document and its listeners, so they
+                    // deliberately do not count.
+                    if (!event.isSameDocument) documentGeneration++
                     // Same-document navigations (pushState, fragment) keep the document, and the
                     // beacon is armed once per document and latches at painted. Probing one reads
                     // the "1" the ORIGINAL load left behind, which is not evidence about this
@@ -1590,8 +1613,40 @@ internal class BrowserHandleImpl(
      * Reads [pageEventScript] once into a local: it is @Volatile and an uninstall racing this would
      * otherwise inject the bridge and then evaluate null.
      */
+
+    /**
+     * Take this document's single page-event injection, or report that something already has.
+     *
+     * Synchronized rather than two @Volatile reads: the document-start hook and the immediate
+     * injection can arrive on different threads, and a read-then-write pair between them is exactly
+     * the double evaluation the contract promises does not happen.
+     */
+    private fun claimDocumentForInjection(): Boolean =
+        synchronized(this) {
+            val generation = documentGeneration
+            if (pageEventInjectedGeneration == generation) {
+                false
+            } else {
+                pageEventInjectedGeneration = generation
+                true
+            }
+        }
+
+    // Three guards, each a distinct "nothing to do here": no script installed, this document has
+    // already had its one evaluation, and no window to hand the bridge through. Collapsing them
+    // would hide which one fired, and each logs differently.
+    @Suppress("ReturnCount")
     private fun injectPageEventScript(frame: Frame) {
         val script = pageEventScript ?: return
+        // One evaluation per document, which the api contract promises. See documentGeneration.
+        if (!claimDocumentForInjection()) {
+            logger.debug(
+                LogCategory.BROWSER,
+                "Page event script already evaluated in this document",
+                mapOf("handleId" to id),
+            )
+            return
+        }
         // The bridge has to cross into JS through a window property - executeJavaScript takes source
         // and no arguments - but it does not have to STAY there, and a documented global is the
         // wrong shape for a channel whose payload is a password. PageEventScripts.injection hands it
@@ -1601,6 +1656,9 @@ internal class BrowserHandleImpl(
         val window = frame.executeJavaScript<JsObject>("window")
         if (window == null) {
             logger.debug(LogCategory.BROWSER, "Page event injection skipped - no window", mapOf("handleId" to id))
+            // The claim is released: nothing was evaluated, so the next attempt in this document
+            // (the document-start hook, or a later install) must be allowed to try.
+            synchronized(this) { pageEventInjectedGeneration = -1L }
             return
         }
         try {

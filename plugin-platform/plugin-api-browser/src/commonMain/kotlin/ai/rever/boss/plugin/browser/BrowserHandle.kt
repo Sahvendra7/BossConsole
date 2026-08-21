@@ -444,7 +444,12 @@ interface BrowserHandle {
      *   silently, and the loser gets no signal. Two plugins wanting page events on one tab is not
      *   supported today.
      * - Main frame only, as [executeJavaScript] is.
-     * - The host **does** re-inject into the document already loaded when this is first called.
+     * - The host **does** re-inject into the document already loaded when this is first called, and
+     *   evaluates [script] **exactly once per document** - so a script needs no cross-evaluation
+     *   guard. It could not easily have one: each evaluation gets a fresh function scope, so a
+     *   script-local flag is invisible to a second run, and the only slot shared across evaluations
+     *   is `window`, which is the detectability the parameter shape exists to remove. Replacing the
+     *   script does not retract the live generation from a document already running it.
      * - Either argument being null uninstalls. Callers should uninstall in their `dispose()`: the
      *   host retains [onEvent], whose class comes from the plugin's classloader, and the api layer
      *   is hot-swappable. The host clears its own reference when the browser goes away.
