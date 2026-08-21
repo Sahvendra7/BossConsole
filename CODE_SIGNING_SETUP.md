@@ -131,6 +131,28 @@ Two consequences worth keeping:
   KSP registration or the keypair alias is at fault rather than costing a release
   to find out.
 
+### Shipping a release when signing is broken
+
+`Verify MSI Signature` fails the release rather than publish an unsigned
+installer, which is right, but it means broken signing blocks every release. The
+deliberate way out is the `allow_unsigned_windows` workflow input on both
+`🚀 Release Build` and `🚀 BOSS Lite Release`:
+
+- **Off by default**, and it fails closed: a push-triggered release has no
+  `inputs` context at all, so the gate stays a gate. Only an explicit
+  `workflow_dispatch` (or a `workflow_call` that passes it) can set it.
+- It downgrades the hard failure to a workflow warning. It does not skip signing:
+  certsync and the sign attempt still run, so the run still carries the
+  diagnostics that say why signing failed.
+- **The release says so.** `create-release` reads the signature status the verify
+  steps measured and prepends a notice to the release body naming which installer
+  is unsigned and what its status was. That is driven by the measurement, not by
+  the input, so it also fires for a build with no signing secrets configured, and
+  it stays silent when the override was requested but signing actually worked.
+
+The error message on a blocked release names the input, so nobody has to find
+this page first.
+
 ### What gets signed
 
 | Artifact | Job | Signed |
