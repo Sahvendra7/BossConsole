@@ -104,20 +104,30 @@ data class PopupNavigation(
 }
 
 /**
- * The `window` property a page-event script posts through, to reach the plugin that installed it.
+ * The name a page-event script's bridge is bound to: a **function parameter in its own scope**, not
+ * a property on `window`.
  *
- * **The exact shape.** The host installs an OBJECT here with one method:
+ * The host wraps the script it is given and passes the bridge in, so the script just uses the name:
  *
  * ```
- * window.__bossPageEvent.emit(someJsonString);   // one String argument, returns undefined
+ * document.addEventListener('submit', function () {
+ *     __bossPageEvent.emit(JSON.stringify({ kind: 'submit' }));   // one String argument
+ * }, true);
  * ```
  *
- * Not a callable - `window.__bossPageEvent(json)` is a TypeError. It is a `@JsAccessible` host
- * object (`PageEventBridge`) exposed as a window property, and only `emit` is reachable.
+ * It is an OBJECT with a single `emit(string)` method, not a callable. **Nothing is left on
+ * `window`** - `window.__bossPageEvent` is `undefined`, and a script written against it gets a
+ * TypeError swallowed inside the wrapper, which is a channel that silently never fires.
  *
- * A `const val` on purpose, so the literal is compiled into both sides and there is no runtime
- * lookup to get wrong - which also means renaming it would be a compile error at no consumer and a
- * silently dead bridge at every one. See [BrowserHandle.setPageEventScript].
+ * Why a parameter: a documented global would be reachable by every script on the page, and for a
+ * channel whose first consumer posts a password that means a page could replace it and receive the
+ * payload, forge events into the plugin's sink, or detect BOSS by probing for the name. A binding in
+ * the script's own scope has none of those. The host does use a `window` slot to hand the object
+ * over, under a random per-injection name it deletes in the same evaluation - see `PageEventScripts`.
+ *
+ * A `const val`, so the literal is compiled into both sides and there is no runtime lookup to get
+ * wrong - which also means renaming it would be a compile error at no consumer and a silently dead
+ * bridge at every one. See [BrowserHandle.setPageEventScript].
  */
 const val PAGE_EVENT_BRIDGE = "__bossPageEvent"
 
@@ -403,9 +413,12 @@ interface BrowserHandle {
      * Install [script] into every main-frame document as its context is created, and deliver each
      * `window.`[PAGE_EVENT_BRIDGE]`.emit(json)` call it makes to [onEvent].
      *
-     * **The host injects; the caller decides what to look for.** The host puts the bridge object on
-     * `window` under [PAGE_EVENT_BRIDGE], evaluates [script], and forwards whatever string that
-     * script hands the bridge. It does not parse the JSON or know what any event means. That split
+     * **How the script is evaluated.** It is wrapped, and the bridge is passed in as a parameter
+     * named [PAGE_EVENT_BRIDGE] - `(function (__bossPageEvent) { your script })(bridge)`. So a
+     * top-level `return` is legal, and there is nothing to look for on `window`.
+     *
+     * **The host injects; the caller decides what to look for.** The host evaluates [script] and
+     * forwards whatever string it hands the bridge. It does not parse the JSON or know what any event means. That split
      * is the lesson of [fillCredentials] applied to reading instead of writing: a signature that
      * forces the *host* to decide which field matters gets the decision wrong on real pages,
      * because the plugin is the side that knows which box the user acted on.
@@ -415,11 +428,8 @@ interface BrowserHandle {
      * is still alive - a submit is followed by a navigation that destroys the JS context, so
      * anything latched in the page for a later read is racing its own teardown.
      *
-     * **The payload is untrusted.** [PAGE_EVENT_BRIDGE] is a fixed name on `window`, so any page
-     * script can post, can replace the property before [script] uses it, and can detect it.
-     * Consumers must capture the reference at document start, post through the captured one, and
-     * delete the property; and must attribute events by [url] rather than by anything inside the
-     * JSON. See the api jar's copy of this KDoc for the worked example.
+     * **Attribute events by [url], never by anything inside the JSON.** The payload is only as
+     * trustworthy as whatever wrote it, and [url] is read by the host from the posting document.
      *
      * Contract:
      * - [url] is the URL of the document that posted, read by the host at the moment of the call.
@@ -427,7 +437,12 @@ interface BrowserHandle {
      *   afterwards it cannot be overtaken by a navigation the event itself started.
      * - [onEvent] runs on a **JxBrowser thread**, inside the page's own event dispatch, and MUST
      *   NOT block. Exceptions are swallowed rather than unwinding the page's thread.
-     * - Ordered per document; reentrant across documents. No throttle and no size cap.
+     * - Ordered per document; reentrant across documents.
+     * - **The host bounds payload size and rate, and DROPS the excess rather than queueing it.** Do
+     *   not depend on the exact limits, and do not assume a burst arrives complete.
+     * - **Single owner per handle.** One script and one sink: a second caller replaces the first
+     *   silently, and the loser gets no signal. Two plugins wanting page events on one tab is not
+     *   supported today.
      * - Main frame only, as [executeJavaScript] is.
      * - The host **does** re-inject into the document already loaded when this is first called.
      * - Either argument being null uninstalls. Callers should uninstall in their `dispose()`: the

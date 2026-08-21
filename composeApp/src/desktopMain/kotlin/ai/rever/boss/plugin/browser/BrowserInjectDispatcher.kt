@@ -48,26 +48,42 @@ internal object BrowserInjectDispatcher {
      * injector receives each frame as its context is created (guard on `frame.isMain()`
      * if you only want the top frame). Injector exceptions are swallowed so one can't
      * break the page's JS thread or starve the others.
+     *
+     * @return true when this injector is registered. **False means it is not**, and a caller that
+     *   tracks "already registered" has to clear that flag or it will never ask again - leaving its
+     *   feature inert for the browser's whole life, and worse, letting the next feature to register
+     *   successfully claim the slot with only its own injector in it. Dropping the map entry here is
+     *   only half the recovery; the caller owns the other half, which is why this is not `Unit`.
      */
     fun register(
         browser: Browser,
         injector: (Frame) -> Unit,
-    ) {
-        synchronized(injectors) {
-            val existing = injectors[browser]
-            if (existing != null) {
-                existing.add(injector)
-                return
+    ): Boolean {
+        val alreadyClaimed =
+            synchronized(injectors) {
+                val existing = injectors[browser]
+                if (existing != null) {
+                    existing.add(injector)
+                    true
+                } else {
+                    injectors[browser] = mutableListOf(injector)
+                    false
+                }
             }
-            injectors[browser] = mutableListOf(injector)
-        }
-        // First injector for this browser → claim the single callback slot.
-        //
-        // On failure the entry has to come back OUT. Leaving it meant every later register() hit
-        // the early return above, so the slot was never claimed and every injector on that browser
-        // stayed inert for its whole lifetime - silently, since the warning below names a
-        // registration nobody was waiting on. The old ensureCoBrowseInjectCallback cleared its flag
-        // in the catch and retried; this is that recovery, restored.
+        if (alreadyClaimed) return true
+        return claimSlot(browser)
+    }
+
+    /**
+     * Claim the browser's single callback slot for the dispatcher's fan-out.
+     *
+     * Split from [register] only to keep one exit per function; the interesting part is the catch.
+     * On failure the map entry has to come back OUT and the caller has to be told. Leaving it meant
+     * every later `register` hit the already-claimed path above, so the slot was never claimed and
+     * every injector on that browser stayed inert for its whole lifetime - silently, since the
+     * warning here names a registration nobody was waiting on.
+     */
+    private fun claimSlot(browser: Browser): Boolean {
         try {
             browser.set(
                 InjectJsCallback::class.java,
@@ -88,9 +104,11 @@ internal object BrowserInjectDispatcher {
                     InjectJsCallback.Response.proceed()
                 },
             )
+            return true
         } catch (e: Throwable) {
             synchronized(injectors) { injectors.remove(browser) }
             logger.warn(LogCategory.BROWSER, "Failed to register shared InjectJsCallback", error = e)
+            return false
         }
     }
 

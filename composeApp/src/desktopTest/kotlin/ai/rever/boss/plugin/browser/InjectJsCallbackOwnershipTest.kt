@@ -26,10 +26,10 @@ import kotlin.test.assertTrue
  * If a genuinely new owner is ever wanted, this test is the place to argue with - do not simply
  * add a name to the allowlist.
  *
- * **Scope: `composeApp/src/desktopMain` only.** That is complete today because JxBrowser is confined
- * to this module - nothing else can hold a `Browser` to set a callback on. A future module that
- * takes a JxBrowser dependency would be silently outside this guard, so widen the walk if one
- * appears.
+ * **Scope: every Kotlin source in the repo**, not just `composeApp`. It was `composeApp/desktopMain`
+ * first, on the argument that JxBrowser is confined there - true today, and exactly the kind of
+ * "true today" that makes a guard quietly stop covering the thing it was written for. Walking the
+ * whole tree costs one extra second and cannot go stale.
  */
 class InjectJsCallbackOwnershipTest {
     private val allowedOwners = setOf("BrowserInjectDispatcher.kt")
@@ -39,9 +39,14 @@ class InjectJsCallbackOwnershipTest {
             .firstOrNull { File(it, "composeApp/build.gradle.kts").isFile }
 
     private fun desktopSources(root: File): List<File> =
-        File(root, "composeApp/src/desktopMain/kotlin")
-            .walkTopDown()
+        sequenceOf("composeApp/src", "plugin-platform", "modules", "server/src")
+            .map { File(root, it) }
+            .filter { it.isDirectory }
+            .flatMap { it.walkTopDown() }
             .filter { it.isFile && it.extension == "kt" }
+            // Build output holds generated copies of the same sources; scanning them doubles the
+            // walk and reports names that are not source files anyone can fix.
+            .filterNot { it.path.replace(File.separatorChar, '/').contains("/build/") }
             .toList()
 
     /**
@@ -59,7 +64,10 @@ class InjectJsCallbackOwnershipTest {
             .readText()
             .replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL), " ")
             .lines()
-            .joinToString(" ") { it.substringBefore("//") }
+            // Not substringBefore("//"): that cuts a line at the "//" inside "https://…" just as
+            // readily as at a comment, which is a false NEGATIVE in a guard whose entire value is
+            // catching one occurrence. The lookbehind keeps a scheme's slashes.
+            .joinToString(" ") { line -> line.split(Regex("(?<!:)//")).first() }
             .replace(Regex("\\s+"), " ")
 
     @Test
