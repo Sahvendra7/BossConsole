@@ -1516,10 +1516,15 @@ internal class BrowserHandleImpl(
      */
     override fun setPageEventScript(
         script: String?,
-        onEvent: ((String) -> Unit)?,
+        onEvent: ((url: String, json: String) -> Unit)?,
     ) {
         // Repoint the sink first: an injection that is about to happen must not fire into a stale
         // callback, and an uninstall must stop delivery even if a document-start hook is mid-flight.
+        //
+        // The URL the plugin is handed comes from here, never from the page's payload. Read at emit
+        // time, inside the page's own event dispatch, so it names the document that actually posted
+        // rather than whatever the tab navigated to next.
+        pageEventBridge.urlProvider = { runCatching { browser.url() }.getOrDefault("") }
         pageEventBridge.onEvent = onEvent
         pageEventScript = script
         if (script == null || onEvent == null) {
@@ -3009,6 +3014,8 @@ internal class BrowserHandleImpl(
         // sink belongs to a plugin that may itself be going away.
         pageEventScript = null
         pageEventBridge.onEvent = null
+        // The provider closes over `browser`, so it goes too rather than outliving the handle.
+        pageEventBridge.urlProvider = { "" }
         pageEventScope.cancel()
         // A pending frame-stall probe outlives the tab otherwise, and its next act is a blocking
         // executeJavaScript against a browser that is being torn down. shutdown() not

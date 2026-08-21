@@ -104,11 +104,20 @@ data class PopupNavigation(
 }
 
 /**
- * The name a page-event script calls to reach its plugin: `window.__bossPageEvent(json)`.
+ * The `window` property a page-event script posts through, to reach the plugin that installed it.
+ *
+ * **The exact shape.** The host installs an OBJECT here with one method:
+ *
+ * ```
+ * window.__bossPageEvent.emit(someJsonString);   // one String argument, returns undefined
+ * ```
+ *
+ * Not a callable - `window.__bossPageEvent(json)` is a TypeError. It is a `@JsAccessible` host
+ * object (`PageEventBridge`) exposed as a window property, and only `emit` is reachable.
  *
  * A `const val` on purpose, so the literal is compiled into both sides and there is no runtime
- * lookup to get wrong. The host installs a bridge object under this name before running the
- * script it was given; see [BrowserHandle.setPageEventScript].
+ * lookup to get wrong - which also means renaming it would be a compile error at no consumer and a
+ * silently dead bridge at every one. See [BrowserHandle.setPageEventScript].
  */
 const val PAGE_EVENT_BRIDGE = "__bossPageEvent"
 
@@ -392,37 +401,42 @@ interface BrowserHandle {
 
     /**
      * Install [script] into every main-frame document as its context is created, and deliver each
-     * `window.`[PAGE_EVENT_BRIDGE]`(json)` call it makes to [onEvent].
+     * `window.`[PAGE_EVENT_BRIDGE]`.emit(json)` call it makes to [onEvent].
      *
-     * **The host injects; the caller decides what to look for.** The host puts a bridge object on
+     * **The host injects; the caller decides what to look for.** The host puts the bridge object on
      * `window` under [PAGE_EVENT_BRIDGE], evaluates [script], and forwards whatever string that
-     * script hands the bridge. It does not parse the JSON, define an event vocabulary, or know what
-     * any event means. That split is the lesson of [fillCredentials] applied to reading instead of
-     * writing: a signature that forces the *host* to decide which field matters gets the decision
-     * wrong on real pages, because the plugin is the side that knows which box the user acted on.
+     * script hands the bridge. It does not parse the JSON or know what any event means. That split
+     * is the lesson of [fillCredentials] applied to reading instead of writing: a signature that
+     * forces the *host* to decide which field matters gets the decision wrong on real pages,
+     * because the plugin is the side that knows which box the user acted on.
      *
-     * **What this adds that [executeJavaScript] cannot do.** Not access - a plugin can already read
-     * any page content by evaluating a script and reading its return value, and this grants nothing
-     * beyond that. What is new is *timing*, in two ways a poll has no answer for:
+     * **What this adds that [executeJavaScript] cannot do** is timing, not access. [script] runs
+     * before the page's own scripts, and an event is delivered while the document that produced it
+     * is still alive - a submit is followed by a navigation that destroys the JS context, so
+     * anything latched in the page for a later read is racing its own teardown.
      *
-     * - **Document start.** [script] runs before the page's own scripts, so a listener it installs
-     *   sees events the page would otherwise consume first.
-     * - **A push.** An event can be delivered while the document that produced it is still alive.
-     *   A form submit is followed by a navigation that destroys the JS context, so anything latched
-     *   in the page for a later read is racing its own teardown.
+     * **The payload is untrusted.** [PAGE_EVENT_BRIDGE] is a fixed name on `window`, so any page
+     * script can post, can replace the property before [script] uses it, and can detect it.
+     * Consumers must capture the reference at document start, post through the captured one, and
+     * delete the property; and must attribute events by [url] rather than by anything inside the
+     * JSON. See the api jar's copy of this KDoc for the worked example.
      *
      * Contract:
-     * - [onEvent] is invoked on a **JxBrowser thread** and MUST NOT block. Do nothing beyond a
-     *   non-blocking enqueue; the work belongs on the caller's own dispatcher.
-     * - An exception thrown by [onEvent] is swallowed rather than propagated, because the thread it
-     *   would unwind is the page's.
-     * - Main frame only. A form inside a cross-origin iframe is out of reach here, exactly as it is
-     *   for [executeJavaScript].
-     * - [script] is evaluated once per document, and also injected into the document already loaded
-     *   so installation does not wait for the next navigation. Write it to be idempotent.
-     * - Calling this again replaces the previous script and callback. Passing `(null, null)`
-     *   uninstalls: no further events are delivered, though a script already evaluated in a live
-     *   document stays in that document until it navigates.
+     * - [url] is the URL of the document that posted, read by the host at the moment of the call.
+     *   Authoritative: a forged payload cannot lie about it, and unlike reading the handle's URL
+     *   afterwards it cannot be overtaken by a navigation the event itself started.
+     * - [onEvent] runs on a **JxBrowser thread**, inside the page's own event dispatch, and MUST
+     *   NOT block. Exceptions are swallowed rather than unwinding the page's thread.
+     * - Ordered per document; reentrant across documents. No throttle and no size cap.
+     * - Main frame only, as [executeJavaScript] is.
+     * - The host **does** re-inject into the document already loaded when this is first called.
+     * - Either argument being null uninstalls. Callers should uninstall in their `dispose()`: the
+     *   host retains [onEvent], whose class comes from the plugin's classloader, and the api layer
+     *   is hot-swappable. The host clears its own reference when the browser goes away.
+     * - Coexists with [startCoBrowseCapture]; the host multiplexes the single document-start hook,
+     *   so arming one does not switch off the other. Note the inverted posture: co-browse masks
+     *   what the user typed, while this channel exists to carry it. **The payload may be a
+     *   plaintext secret - do not log it.**
      * - A handle whose browser is gone does nothing, and never throws.
      *
      * **This copy is the one that runs.** `BrowserHandle` is host-compiled and served parent-first,
@@ -430,12 +444,14 @@ interface BrowserHandle {
      * from an older host. Consumers gate on `minBossVersion`, not `minApiVersion`.
      *
      * @param script JavaScript source to evaluate at document start, or null to uninstall.
-     * @param onEvent Receives each string the script passes to the bridge, or null to uninstall.
+     * @param onEvent Receives the posting document's URL and the string handed to the bridge, or
+     *   null to uninstall.
      */
     fun setPageEventScript(
         script: String?,
-        onEvent: ((String) -> Unit)?,
+        onEvent: ((url: String, json: String) -> Unit)?,
     ) {
+        // Default: no-op for hosts without the page-event channel.
     }
 
     // ============================================================
