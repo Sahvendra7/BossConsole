@@ -1,5 +1,12 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.plugin.loader.PluginApiLevelException
+import ai.rever.boss.plugin.loader.PluginBossVersionException
+import ai.rever.boss.utils.AppVersion
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 /**
  * A plugin the host refused to load because of a version floor, and what would actually fix it.
  *
@@ -155,3 +162,96 @@ fun remediesFor(
         ),
     )
 }
+
+/**
+ * The version-floor refusals this session has seen, so something can offer a way out.
+ *
+ * A process-wide object rather than state on `DynamicPluginManager`, for the same reason
+ * `PluginCrashRegistry` is one: the refusal happens during startup plugin loading, long before any
+ * window exists to hold it, and the dialog that acts on it is mounted by whichever window opens
+ * first. Passing it down would mean threading it through every construction path that can load a
+ * plugin.
+ *
+ * Keyed by plugin id, so a plugin refused on every restart accumulates one entry rather than one
+ * per attempt.
+ */
+object PluginVersionGateRegistry {
+    private val _gates = MutableStateFlow<Map<String, PluginVersionGate>>(emptyMap())
+
+    /** Refusals not yet dismissed or resolved, keyed by plugin id. */
+    val gates: StateFlow<Map<String, PluginVersionGate>> = _gates.asStateFlow()
+
+    fun record(gate: PluginVersionGate) {
+        _gates.value = _gates.value + (gate.pluginId to gate)
+    }
+
+    /**
+     * Forget the refusal for [pluginId].
+     *
+     * Called when a remedy has been applied AND when the user dismisses. Both, because a dialog
+     * that reappears on every recomposition for a problem the user has decided to live with is
+     * worse than the silence this replaced.
+     */
+    fun clear(pluginId: String) {
+        if (_gates.value.containsKey(pluginId)) {
+            _gates.value = _gates.value - pluginId
+        }
+    }
+
+    /** For tests. Nothing in the app should need to drop every refusal at once. */
+    internal fun reset() {
+        _gates.value = emptyMap()
+    }
+}
+
+/**
+ * Translate a load failure into a [PluginVersionGate], or null when it is not a version floor.
+ *
+ * Null for everything else on purpose. A corrupt jar, a missing main class or a binary
+ * incompatibility have no button that helps, and offering "Update BOSS" for them would send a user
+ * through a download and a restart to arrive at the same failure.
+ *
+ * The display name falls back to the plugin id: the manifest is unavailable here, because the
+ * refusal happens before the loader returns anything but the exception, and an id is a worse label
+ * than a name but a far better one than nothing.
+ */
+internal fun versionGateFor(error: Throwable?): PluginVersionGate? =
+    when (error) {
+        is PluginBossVersionException -> {
+            val id = error.pluginId
+            val required = error.requiredVersion
+            // Both, because a gate that cannot name what it needs cannot decide whether an
+            // available update would clear the floor, and would offer one blind.
+            if (id.isNullOrBlank() || required.isNullOrBlank()) {
+                null
+            } else {
+                PluginVersionGate.NeedsNewerHost(
+                    pluginId = id,
+                    displayName = id,
+                    required = required,
+                    current = error.currentVersion ?: AppVersion.currentVersionString(),
+                )
+            }
+        }
+
+        is PluginApiLevelException -> {
+            val id = error.pluginId
+            val required = error.requiredVersion
+            if (id.isNullOrBlank() || required.isNullOrBlank()) {
+                null
+            } else {
+                PluginVersionGate.NeedsNewerApi(
+                    pluginId = id,
+                    displayName = id,
+                    required = required,
+                    // The api layer is a plugin, so "installed" is the right word and there is no
+                    // build-time constant to fall back on the way there is for the app version.
+                    current = error.installedVersion ?: "unknown",
+                )
+            }
+        }
+
+        else -> {
+            null
+        }
+    }

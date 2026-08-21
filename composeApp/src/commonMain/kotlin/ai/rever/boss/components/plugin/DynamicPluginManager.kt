@@ -15,7 +15,9 @@ import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.api.PluginUnloadAware
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.loader.DynamicPluginLoaderImpl
+import ai.rever.boss.plugin.loader.PluginApiLevelException
 import ai.rever.boss.plugin.loader.PluginBinaryIncompatibilityException
+import ai.rever.boss.plugin.loader.PluginBossVersionException
 import ai.rever.boss.plugin.loader.PluginUnloadException
 import ai.rever.boss.plugin.sandbox.InProcessPluginSandbox
 import ai.rever.boss.plugin.sandbox.PluginErrorClassifier
@@ -922,6 +924,16 @@ class DynamicPluginManager(
                             notifyListeners { it.pluginLoadFailed(manifest, error) }
                             return@withLock Result.failure(error)
                         }
+
+                        // A version floor is the one load failure with a known fix, so record it
+                        // where something can offer one. Everything else stays a log line: a
+                        // corrupt jar or a missing main class has no button that helps.
+                        //
+                        // Before this, a floor refusal reached only the log, and from the user's
+                        // side the plugin simply stopped existing. For a systemPlugin that means a
+                        // feature vanished - fluck-browser IS the browser tab, so 1.2.22 requiring
+                        // BOSS 9.4.23 on a 9.4.22 host presented as "my browser is gone".
+                        versionGateFor(error)?.let(PluginVersionGateRegistry::record)
 
                         notifyListeners { it.pluginLoadFailed(null, error ?: Exception("Unknown error")) }
                         return@withLock Result.failure(error ?: Exception("Unknown error"))

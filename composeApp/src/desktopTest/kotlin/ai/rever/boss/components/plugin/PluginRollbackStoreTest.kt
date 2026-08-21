@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.plugin.loader.PluginSignatureSidecar
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -8,17 +9,20 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * The one kept file that turns "the plugin is gone" into a button.
  *
- * Every install path promotes over the target and deletes what it rejects, so without a snapshot the
- * previous jar does not exist anywhere by the time anyone discovers the new one will not load. These
- * pin the properties that make the copy usable rather than merely present.
+ * An update ends with `PluginJarReconciler.reconcilePluginDir`, which deletes every jar for a plugin
+ * except the highest version - so without a snapshot the version that worked does not exist anywhere
+ * by the time anyone discovers the new one will not load. These pin the properties that make the copy
+ * usable rather than merely present.
  */
 class PluginRollbackStoreTest {
+    private val pluginId = "com.example.rollback"
     private val dir = createTempDirectory("rollback").toFile()
 
     @AfterTest
@@ -30,6 +34,7 @@ class PluginRollbackStoreTest {
     private fun writeJar(
         name: String,
         version: String,
+        id: String = pluginId,
     ): File {
         val jar = File(dir, name)
         ZipOutputStream(jar.outputStream()).use { zip ->
@@ -38,7 +43,7 @@ class PluginRollbackStoreTest {
                 """
                 {
                   "manifestVersion": 1,
-                  "pluginId": "com.example.rollback",
+                  "pluginId": "$id",
                   "displayName": "Test Plugin",
                   "version": "$version",
                   "apiVersion": "1.0.0",
@@ -51,124 +56,202 @@ class PluginRollbackStoreTest {
         return jar
     }
 
-    private fun rollbackFile(jar: File) = File(jar.absolutePath + ".rollback")
-
     @Test
-    fun `a snapshot keeps the version that was there`() {
-        val jar = writeJar("p.jar", "1.2.21")
-        PluginRollbackStore.snapshot(jar.absolutePath)
-        assertTrue(rollbackFile(jar).isFile, "no rollback copy was kept")
-        assertEquals("1.2.21", PluginRollbackStore.availableVersion(jar.absolutePath))
+    fun `a snapshot records the version it kept`() {
+        val jar = writeJar("plugin-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, jar.absolutePath)
+        assertEquals("1.2.21", PluginRollbackStore.availableVersion(dir, pluginId))
     }
 
     @Test
-    fun `the copy survives the jar being replaced, which is the whole point`() {
-        val jar = writeJar("p.jar", "1.2.21")
-        PluginRollbackStore.snapshot(jar.absolutePath)
-        // What an install does next: promote new bytes over the target.
-        writeJar("p.jar", "1.2.22")
-        assertEquals("1.2.22", readVersion(jar))
-        assertEquals("1.2.21", PluginRollbackStore.availableVersion(jar.absolutePath))
+    fun `the source jar survives the snapshot`() {
+        // A copy, not a move. The caller may still be running from this jar, and an update that
+        // removed the live plugin in order to back it up would be absurd.
+        val jar = writeJar("plugin-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, jar.absolutePath)
+        assertTrue(jar.isFile, "the snapshot consumed the jar it was meant to copy")
     }
 
     @Test
-    fun `restoring puts the previous version back`() {
-        val jar = writeJar("p.jar", "1.2.21")
-        PluginRollbackStore.snapshot(jar.absolutePath)
-        writeJar("p.jar", "1.2.22")
-
-        assertEquals("1.2.21", PluginRollbackStore.restore(jar.absolutePath))
-        assertEquals("1.2.21", readVersion(jar))
+    fun `the kept copy survives a version-renaming update`() {
+        // THE case the first design could not handle. The host's update path downloads to a new
+        // filename and reconcile deletes the old one, so a rollback addressed by the old jar's path
+        // is unreachable afterwards. Keyed by plugin id, it is still there.
+        val old = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, old.absolutePath)
+        assertTrue(old.delete(), "could not simulate reconcile deleting the previous jar")
+        writeJar("com.example.rollback-1.2.22.jar", "1.2.22")
+        assertEquals("1.2.21", PluginRollbackStore.availableVersion(dir, pluginId))
     }
 
     @Test
-    fun `restoring keeps the copy, so a failed load can be retried`() {
-        // Moving instead of copying would consume the only good jar. A restore interrupted between
-        // the write and the load would then leave nothing to try again with - the exact position
-        // this whole mechanism exists to avoid.
-        val jar = writeJar("p.jar", "1.2.21")
-        PluginRollbackStore.snapshot(jar.absolutePath)
-        writeJar("p.jar", "1.2.22")
+    fun `a restore puts the kept version back and removes the broken one`() {
+        val old = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, old.absolutePath)
+        old.delete()
+        val broken = writeJar("com.example.rollback-1.2.22.jar", "1.2.22")
 
-        PluginRollbackStore.restore(jar.absolutePath)
-        assertTrue(rollbackFile(jar).isFile, "the rollback copy was consumed by the restore")
-        assertEquals("1.2.21", PluginRollbackStore.restore(jar.absolutePath), "not repeatable")
+        val restored = assertNotNull(PluginRollbackStore.restore(dir, pluginId, broken.absolutePath))
+        assertTrue(restored.isFile)
+        assertFalse(broken.isFile, "the version that would not load is still on disk")
+        // Two jars for one plugin id would give the directory scan a choice it cannot make, which
+        // is why the restore removes rather than overwrites.
+        val jars = dir.listFiles { f: File -> f.name.endsWith(".jar") }?.map { it.name } ?: emptyList()
+        assertEquals(listOf(restored.name), jars)
     }
 
     @Test
-    fun `snapshotting a path with nothing there is not an error`() {
-        // A first install has no previous jar. It must not fail, and must not leave a copy behind.
-        val absent = File(dir, "never-installed.jar")
-        PluginRollbackStore.snapshot(absent.absolutePath)
-        assertFalse(rollbackFile(absent).exists())
-        assertNull(PluginRollbackStore.availableVersion(absent.absolutePath))
+    fun `the kept copy is not consumed by a restore`() {
+        // A restore interrupted after this point must not have destroyed the only good jar, and a
+        // second attempt after a failed load has to be possible.
+        val old = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, old.absolutePath)
+        old.delete()
+        PluginRollbackStore.restore(dir, pluginId, null)
+        assertEquals("1.2.21", PluginRollbackStore.availableVersion(dir, pluginId))
     }
 
     @Test
-    fun `nothing to restore answers null rather than throwing`() {
-        val jar = writeJar("p.jar", "1.2.22")
-        assertNull(PluginRollbackStore.restore(jar.absolutePath))
-        assertEquals("1.2.22", readVersion(jar), "the jar was touched despite there being no copy")
+    fun `a restore onto the same path does not delete what it wrote`() {
+        // Reachable: restoring 1.2.21 while the broken jar happens to be named for 1.2.21 too,
+        // which is exactly what an in-place overwrite by the plugin-side updater leaves behind.
+        val jar = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, jar.absolutePath)
+        val restored = assertNotNull(PluginRollbackStore.restore(dir, pluginId, jar.absolutePath))
+        assertTrue(restored.isFile, "the restore deleted the file it had just written")
     }
 
     @Test
-    fun `the copy is not named like a jar, so the directory scan ignores it`() {
-        // Same reasoning as StoreMissingDependencyInstaller's `.jar.part`: a plugin directory scan
-        // picks up anything ending in .jar, and a stale copy loading as a second plugin would be a
-        // far stranger failure than the one this fixes.
-        val jar = writeJar("p.jar", "1.2.21")
-        PluginRollbackStore.snapshot(jar.absolutePath)
-        assertFalse(rollbackFile(jar).name.endsWith(".jar"), "the rollback copy is scannable")
+    fun `nothing is offered when no snapshot was taken`() {
+        assertNull(PluginRollbackStore.availableVersion(dir, pluginId))
+        assertNull(PluginRollbackStore.restore(dir, pluginId, null))
+    }
+
+    @Test
+    fun `a missing source jar is not an error`() {
+        // Reached on a first install, where there is nothing to keep. It must not throw and must
+        // not leave a half-written copy.
+        PluginRollbackStore.snapshot(dir, pluginId, File(dir, "absent.jar").absolutePath)
+        assertNull(PluginRollbackStore.availableVersion(dir, pluginId))
+    }
+
+    @Test
+    fun `an unreadable jar is not offered as a rollback`() {
+        // No version means the button cannot say what it will restore. Offering it blind is worse
+        // than not offering it.
+        val notAJar = File(dir, "corrupt.jar")
+        notAJar.writeText("this is not a zip")
+        PluginRollbackStore.snapshot(dir, pluginId, notAJar.absolutePath)
+        assertNull(PluginRollbackStore.availableVersion(dir, pluginId))
+    }
+
+    @Test
+    fun `a failed snapshot leaves the previous one in place`() {
+        // The earlier copy is correctly labelled with its OWN version, so restoring it lands on
+        // something older than ideal but working. Discarding it because a later snapshot could not
+        // be taken would trade a slightly-stale way back for none at all.
+        val good = writeJar("com.example.rollback-1.2.20.jar", "1.2.20")
+        PluginRollbackStore.snapshot(dir, pluginId, good.absolutePath)
+        assertEquals("1.2.20", PluginRollbackStore.availableVersion(dir, pluginId))
+
+        val corrupt = File(dir, "corrupt.jar")
+        corrupt.writeText("not a zip")
+        PluginRollbackStore.snapshot(dir, pluginId, corrupt.absolutePath)
         assertEquals(
-            listOf("p.jar"),
-            dir
-                .listFiles()
-                .orEmpty()
-                .map { it.name }
-                .filter { it.endsWith(".jar") },
+            "1.2.20",
+            PluginRollbackStore.availableVersion(dir, pluginId),
+            "a usable rollback was thrown away because a later snapshot failed",
         )
     }
 
     @Test
-    fun `discard removes the copy`() {
-        val jar = writeJar("p.jar", "1.2.21")
-        PluginRollbackStore.snapshot(jar.absolutePath)
-        PluginRollbackStore.discard(jar.absolutePath)
-        assertFalse(rollbackFile(jar).exists())
-        assertNull(PluginRollbackStore.availableVersion(jar.absolutePath))
+    fun `the signature sidecar travels with the copy and back`() {
+        // A jar whose signature file belongs to different bytes hard-fails the load, which is worse
+        // than being unsigned. So the sidecar has to follow the jar in both directions.
+        val old = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginSignatureSidecar.persist(old.absolutePath, "c2lnbmF0dXJlLTEuMi4yMQ==")
+        PluginRollbackStore.snapshot(dir, pluginId, old.absolutePath)
+        old.delete()
+
+        val restored = assertNotNull(PluginRollbackStore.restore(dir, pluginId, null))
+        assertEquals(
+            "c2lnbmF0dXJlLTEuMi4yMQ==",
+            PluginSignatureSidecar.read(restored.absolutePath),
+            "the restored jar lost the signature that verifies it",
+        )
     }
 
-    private fun readVersion(jar: File): String? =
-        runCatching {
-            ai.rever.boss.plugin.loader.PluginManifestReader
-                .readFromJar(jar.absolutePath)
-                .version
-        }.getOrNull()
-
     @Test
-    fun `the kept version is recorded, not read back out of the copy`() {
-        // The trap worth pinning, because the two requirements are in direct conflict:
-        // PluginManifestReader.readFromJar throws "File is not a JAR" for any path not ending in
-        // .jar, and the .rollback suffix exists precisely so this file is NOT scannable as one. So
-        // the version has to be captured while the live jar is still there, and a naive
-        // "read it back from the copy" answers null for every rollback that exists.
-        val jar = writeJar("p.jar", "1.2.21")
-        PluginRollbackStore.snapshot(jar.absolutePath)
+    fun `an unsigned rollback does not inherit the signature it is replacing`() {
+        // The sidecar on disk belongs to the version being rolled back FROM. Leaving it beside the
+        // restored bytes fails the load outright, so it has to be deleted rather than kept.
+        val old = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, old.absolutePath)
+        old.delete()
+        val restoredName = "com_example_rollback-1.2.21.jar"
+        PluginSignatureSidecar.persist(File(dir, restoredName).absolutePath, "d3Jvbmctc2lnbmF0dXJl")
+
+        val restored = assertNotNull(PluginRollbackStore.restore(dir, pluginId, null))
         assertNull(
-            readVersion(rollbackFile(jar)),
-            "the copy is readable as a jar, so the suffix is not doing its job",
+            PluginSignatureSidecar.read(restored.absolutePath),
+            "the restored jar kept a signature belonging to different bytes",
         )
-        assertEquals("1.2.21", PluginRollbackStore.availableVersion(jar.absolutePath))
     }
 
     @Test
-    fun `a copy whose version could not be recorded is not offered`() {
-        // Offered blind, a rollback button cannot say what it will install - and a jar whose
-        // manifest is unreadable is not something to restore on a guess.
-        val jar = File(dir, "broken.jar")
-        jar.writeText("not a zip")
-        PluginRollbackStore.snapshot(jar.absolutePath)
-        assertTrue(rollbackFile(jar).isFile, "the bytes were not kept")
-        assertNull(PluginRollbackStore.availableVersion(jar.absolutePath))
+    fun `the kept jar is not visible to a plugin directory scan`() {
+        // A copy the scan can see is a second installed plugin with the same id. It lives in a
+        // dot-prefixed subdirectory for exactly this reason.
+        val jar = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, jar.absolutePath)
+        val topLevelJars = dir.listFiles { f: File -> f.isFile && f.name.endsWith(".jar") }?.map { it.name }
+        assertEquals(listOf(jar.name), topLevelJars, "the rollback copy is loadable as a plugin")
+    }
+
+    @Test
+    fun `a plugin id that would escape the directory is sanitized`() {
+        // The KEY is sanitized, not the manifest. `PluginManifestReader` rejects an id with a path
+        // separator outright, so such an id cannot arrive inside a jar - but snapshot takes the id
+        // from its caller, which reads it off an exception or an installed.json entry rather than a
+        // validated manifest. So the filename is defended here regardless.
+        val escaping = "../../etc/evil"
+        val jar = writeJar("escape.jar", "1.0.0")
+        PluginRollbackStore.snapshot(dir, escaping, jar.absolutePath)
+        assertEquals("1.0.0", PluginRollbackStore.availableVersion(dir, escaping))
+        val rollbackDir = File(dir, ".rollback")
+        assertTrue(
+            rollbackDir.listFiles()?.all { it.canonicalFile.parentFile == rollbackDir.canonicalFile } ?: false,
+            "a snapshot wrote outside the rollback directory",
+        )
+        assertFalse(
+            File(dir.parentFile.parentFile, "etc").exists(),
+            "the traversal in the plugin id reached the filesystem",
+        )
+    }
+
+    @Test
+    fun `discard removes everything the offer depends on`() {
+        val jar = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginSignatureSidecar.persist(jar.absolutePath, "c2ln")
+        PluginRollbackStore.snapshot(dir, pluginId, jar.absolutePath)
+        PluginRollbackStore.discard(dir, pluginId)
+        assertNull(PluginRollbackStore.availableVersion(dir, pluginId))
+        assertNull(PluginRollbackStore.restore(dir, pluginId, null))
+    }
+
+    @Test
+    fun `a second snapshot replaces the first`() {
+        // One generation deep, on purpose: a history is a directory of multi-megabyte jars nobody
+        // prunes, and recovery only needs the state immediately before the change that broke it.
+        val first = writeJar("com.example.rollback-1.2.20.jar", "1.2.20")
+        PluginRollbackStore.snapshot(dir, pluginId, first.absolutePath)
+        val second = writeJar("com.example.rollback-1.2.21.jar", "1.2.21")
+        PluginRollbackStore.snapshot(dir, pluginId, second.absolutePath)
+        assertEquals("1.2.21", PluginRollbackStore.availableVersion(dir, pluginId))
+        assertEquals(
+            1,
+            File(dir, ".rollback").listFiles { f: File -> f.name.endsWith(".jar") }?.size,
+            "the rollback directory is accumulating jars",
+        )
     }
 }
