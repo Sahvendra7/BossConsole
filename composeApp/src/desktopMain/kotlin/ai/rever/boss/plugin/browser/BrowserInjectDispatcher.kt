@@ -19,10 +19,20 @@ import java.util.WeakHashMap
  *
  * This dispatcher claims the slot once per browser and fans each document-start event
  * out to every registered injector. **Every** document-start injector must go through
- * [register] instead of `browser.set(InjectJsCallback…)`, or the clobber returns.
- * (No injector is registered on main right now — the former WebAuthn shim was removed
- * when JxBrowser 9.3.0 gained native macOS Touch ID — but the co-browse branch
- * depends on this seam.)
+ * [register] instead of setting the callback directly, or the clobber returns.
+ *
+ * Three injectors register today: [FluckEngine]'s find-key probe (every frame),
+ * [BrowserHandleImpl]'s co-browse recorder, and its page-event script. That is not a
+ * hypothetical list - it is why `InjectJsCallbackOwnershipTest` exists. The co-browse
+ * recorder used to call `browser.set` directly, and since the find-key probe registers
+ * here when the browser is created, **starting a tab share replaced the dispatcher's
+ * callback and silently stopped the find-chord probe being injected for the rest of that
+ * tab's life.** No error, no log line; Cmd+F simply stopped noticing that a page wanted
+ * to serve its own find bar.
+ *
+ * An injector switches itself off by making its own body inert (each one checks the state
+ * it depends on), never by removing the callback - that would take the slot away from the
+ * others.
  */
 internal object BrowserInjectDispatcher {
     private val logger = BossLogger.forComponent("BrowserInjectDispatcher")

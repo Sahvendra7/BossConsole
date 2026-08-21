@@ -103,6 +103,15 @@ data class PopupNavigation(
     }
 }
 
+/**
+ * The name a page-event script calls to reach its plugin: `window.__bossPageEvent(json)`.
+ *
+ * A `const val` on purpose, so the literal is compiled into both sides and there is no runtime
+ * lookup to get wrong. The host installs a bridge object under this name before running the
+ * script it was given; see [BrowserHandle.setPageEventScript].
+ */
+const val PAGE_EVENT_BRIDGE = "__bossPageEvent"
+
 interface BrowserHandle {
     /**
      * Unique identifier for this browser handle.
@@ -376,6 +385,58 @@ interface BrowserHandle {
         password: String,
         fillBoth: Boolean = true,
     ): Boolean = false
+
+    // ============================================================
+    // PAGE EVENT CHANNEL
+    // ============================================================
+
+    /**
+     * Install [script] into every main-frame document as its context is created, and deliver each
+     * `window.`[PAGE_EVENT_BRIDGE]`(json)` call it makes to [onEvent].
+     *
+     * **The host injects; the caller decides what to look for.** The host puts a bridge object on
+     * `window` under [PAGE_EVENT_BRIDGE], evaluates [script], and forwards whatever string that
+     * script hands the bridge. It does not parse the JSON, define an event vocabulary, or know what
+     * any event means. That split is the lesson of [fillCredentials] applied to reading instead of
+     * writing: a signature that forces the *host* to decide which field matters gets the decision
+     * wrong on real pages, because the plugin is the side that knows which box the user acted on.
+     *
+     * **What this adds that [executeJavaScript] cannot do.** Not access - a plugin can already read
+     * any page content by evaluating a script and reading its return value, and this grants nothing
+     * beyond that. What is new is *timing*, in two ways a poll has no answer for:
+     *
+     * - **Document start.** [script] runs before the page's own scripts, so a listener it installs
+     *   sees events the page would otherwise consume first.
+     * - **A push.** An event can be delivered while the document that produced it is still alive.
+     *   A form submit is followed by a navigation that destroys the JS context, so anything latched
+     *   in the page for a later read is racing its own teardown.
+     *
+     * Contract:
+     * - [onEvent] is invoked on a **JxBrowser thread** and MUST NOT block. Do nothing beyond a
+     *   non-blocking enqueue; the work belongs on the caller's own dispatcher.
+     * - An exception thrown by [onEvent] is swallowed rather than propagated, because the thread it
+     *   would unwind is the page's.
+     * - Main frame only. A form inside a cross-origin iframe is out of reach here, exactly as it is
+     *   for [executeJavaScript].
+     * - [script] is evaluated once per document, and also injected into the document already loaded
+     *   so installation does not wait for the next navigation. Write it to be idempotent.
+     * - Calling this again replaces the previous script and callback. Passing `(null, null)`
+     *   uninstalls: no further events are delivered, though a script already evaluated in a live
+     *   document stays in that document until it navigates.
+     * - A handle whose browser is gone does nothing, and never throws.
+     *
+     * **This copy is the one that runs.** `BrowserHandle` is host-compiled and served parent-first,
+     * so the boss-plugin-api jar's copy is shadowed and its no-op default is what a caller gets
+     * from an older host. Consumers gate on `minBossVersion`, not `minApiVersion`.
+     *
+     * @param script JavaScript source to evaluate at document start, or null to uninstall.
+     * @param onEvent Receives each string the script passes to the bridge, or null to uninstall.
+     */
+    fun setPageEventScript(
+        script: String?,
+        onEvent: ((String) -> Unit)?,
+    ) {
+    }
 
     // ============================================================
     // CLIPBOARD OPERATIONS

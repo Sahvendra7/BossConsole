@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.callback.CreatePopupCallback
-import com.teamdev.jxbrowser.browser.callback.InjectJsCallback
 import com.teamdev.jxbrowser.browser.callback.OpenPopupCallback
 import com.teamdev.jxbrowser.browser.callback.ShowContextMenuCallback
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
@@ -432,6 +431,22 @@ internal class BrowserHandleImpl(
 
     // Main-thread scope for injection/teardown (rrweb inject + executeJavaScript run on Main).
     private val coBrowseScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // --- Page event channel (setPageEventScript) ---
+    // The plugin-supplied document-start script, or null when uninstalled. Read by the injector
+    // on the JxBrowser thread, so @Volatile rather than a plain field.
+    @Volatile private var pageEventScript: String? = null
+
+    // Page→plugin bridge injected onto window.__bossPageEvent; its onEvent is repointed per call.
+    private val pageEventBridge = PageEventBridge()
+
+    // True once the document-start injector is registered. Left registered after an uninstall for
+    // the same reason co-browse does: re-registering is a race, and the injector is inert while
+    // pageEventScript is null.
+    @Volatile private var pageEventInjectRegistered = false
+
+    // Main-thread scope for the one immediate injection into the already-loaded document.
+    private val pageEventScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     /**
      * Bumped to re-attach the browser view after a committed document never drew. Read in
@@ -1040,6 +1055,11 @@ internal class BrowserHandleImpl(
                 coBrowseCapturing = false
                 coBrowseSink = null
                 coBrowseBridge.onEvent = null
+                // Same for the page event channel. dispose() clears this too, but a browser can
+                // close without one (a crashed renderer, an engine recycle), and a sink still
+                // pointing at a plugin is the half that matters.
+                pageEventScript = null
+                pageEventBridge.onEvent = null
             }
     }
 
@@ -1477,6 +1497,93 @@ internal class BrowserHandleImpl(
     }
 
     // ============================================================
+    // PAGE EVENT CHANNEL
+    // ============================================================
+
+    /**
+     * Install a plugin-supplied document-start script and forward what it emits.
+     *
+     * The host's whole job here is transport. It puts [pageEventBridge] on `window` under
+     * [PAGE_EVENT_BRIDGE], evaluates the script, and hands each emitted string to the caller's
+     * sink; it does not parse the payload or know what an event means. The caller wrote the script,
+     * so the caller owns every rule about what is worth reporting - the same division the
+     * `fillCredentials` removal settled for writing.
+     *
+     * Two things make this more than `executeJavaScript` in a loop: the script runs before the
+     * page's own scripts, and an event is delivered while the document that produced it still
+     * exists. A submit is followed by a navigation that destroys the JS context, so a value latched
+     * in the page for a later poll to collect is racing its own teardown.
+     */
+    override fun setPageEventScript(
+        script: String?,
+        onEvent: ((String) -> Unit)?,
+    ) {
+        // Repoint the sink first: an injection that is about to happen must not fire into a stale
+        // callback, and an uninstall must stop delivery even if a document-start hook is mid-flight.
+        pageEventBridge.onEvent = onEvent
+        pageEventScript = script
+        if (script == null || onEvent == null) {
+            // Nothing to uninstall from the live document: the bridge is now inert, and whatever
+            // was already evaluated there goes away with the document. Deliberately NOT clearing
+            // the registration - the injector reads pageEventScript and is inert while it is null.
+            pageEventBridge.onEvent = null
+            pageEventScript = null
+            return
+        }
+        if (!isValid) return
+        ensurePageEventInjector()
+        // The injector only fires for FUTURE contexts, so the page already loaded would be skipped
+        // until its next navigation. Same reason startCoBrowseCapture injects immediately.
+        pageEventScope.launch {
+            try {
+                browser.mainFrame().ifPresent { frame -> injectPageEventScript(frame) }
+            } catch (e: Exception) {
+                logger.warn(
+                    LogCategory.BROWSER,
+                    "Page event immediate injection failed",
+                    mapOf("handleId" to id),
+                    error = e,
+                )
+            }
+        }
+    }
+
+    /**
+     * Put the bridge on [frame]'s window and evaluate the caller's script. Main thread only.
+     *
+     * Reads [pageEventScript] once into a local: it is @Volatile and an uninstall racing this would
+     * otherwise inject the bridge and then evaluate null.
+     */
+    private fun injectPageEventScript(frame: Frame) {
+        val script = pageEventScript ?: return
+        try {
+            val window = frame.executeJavaScript<JsObject>("window")
+            window?.putProperty(PAGE_EVENT_BRIDGE, pageEventBridge)
+            frame.executeJavaScript<Any?>(script)
+        } catch (e: Exception) {
+            // Never logged with the script body: a page-event script is written by a plugin and
+            // may legitimately name fields the user typed into.
+            logger.warn(LogCategory.BROWSER, "Page event script injection failed", mapOf("handleId" to id), error = e)
+        }
+    }
+
+    /**
+     * Claim a document-start slot once, through [BrowserInjectDispatcher] rather than
+     * `browser.set(InjectJsCallback…)`. JxBrowser has exactly one such slot per browser and a
+     * second `set` silently replaces the first, so going direct here would switch off the
+     * co-browse recorder (or be switched off by it, depending on which registered last).
+     */
+    private fun ensurePageEventInjector() {
+        if (pageEventInjectRegistered) return
+        pageEventInjectRegistered = true
+        BrowserInjectDispatcher.register(browser) { frame ->
+            if (pageEventScript != null && frame.isMain) {
+                injectPageEventScript(frame)
+            }
+        }
+    }
+
+    // ============================================================
     // CO-BROWSE / TAB SHARING (DOM state-sync)
     // ============================================================
 
@@ -1502,28 +1609,22 @@ internal class BrowserHandleImpl(
      * Register the script-context-creation hook once. It re-injects the recorder
      * into every future main-frame navigation while capture is active, and is
      * inert otherwise (gated by [coBrowseCapturing]). Left registered after
-     * [stopCoBrowseCapture] to avoid re-register races; removed in [dispose].
+     * [stopCoBrowseCapture] to avoid re-register races.
+     *
+     * Goes through [BrowserInjectDispatcher] rather than `browser.set(InjectJsCallback…)`.
+     * JxBrowser allows exactly ONE such callback per browser and a second `set` silently
+     * replaces the first, so with two features wanting document-start injection - this
+     * recorder and [setPageEventScript] - whichever registered second used to switch the
+     * other off. Sharing a tab would have silently stopped credential capture in it, or
+     * the reverse depending on order, with no error anywhere.
      */
     private fun ensureCoBrowseInjectCallback() {
         if (coBrowseInjectRegistered) return
         coBrowseInjectRegistered = true
-        try {
-            browser.set(
-                InjectJsCallback::class.java,
-                InjectJsCallback { params ->
-                    try {
-                        if (coBrowseCapturing && params.frame().isMain) {
-                            injectCoBrowseRecorder(params.frame())
-                        }
-                    } catch (e: Exception) {
-                        logger.warn(LogCategory.BROWSER, "InjectJsCallback failed", error = e)
-                    }
-                    InjectJsCallback.Response.proceed()
-                },
-            )
-        } catch (e: Exception) {
-            coBrowseInjectRegistered = false
-            logger.warn(LogCategory.BROWSER, "Failed to register InjectJsCallback", error = e)
+        BrowserInjectDispatcher.register(browser) { frame ->
+            if (coBrowseCapturing && frame.isMain) {
+                injectCoBrowseRecorder(frame)
+            }
         }
     }
 
@@ -2904,6 +3005,11 @@ internal class BrowserHandleImpl(
         coBrowseSink = null
         coBrowseBridge.onEvent = null
         coBrowseScope.cancel()
+        // Same for the page event channel: a disposed tab must not deliver another event, and the
+        // sink belongs to a plugin that may itself be going away.
+        pageEventScript = null
+        pageEventBridge.onEvent = null
+        pageEventScope.cancel()
         // A pending frame-stall probe outlives the tab otherwise, and its next act is a blocking
         // executeJavaScript against a browser that is being torn down. shutdown() not
         // shutdownNow(), for the same reason as the context-menu executor: a round-trip already
@@ -2918,13 +3024,14 @@ internal class BrowserHandleImpl(
         // exit, and interrupting it would buy nothing.
         contextMenuScope.cancel()
         contextMenuExecutor.shutdown()
-        if (coBrowseInjectRegistered) {
-            try {
-                browser.remove(InjectJsCallback::class.java)
-            } catch (_: Exception) {
-            }
-            coBrowseInjectRegistered = false
-        }
+        // The document-start callback is NOT removed here. It belongs to
+        // [BrowserInjectDispatcher] now, which owns the browser's single slot on behalf of every
+        // registered injector, so removing it would tear down another feature's hook as a side
+        // effect of this handle's teardown. Nothing leaks by leaving it: the browser is being
+        // closed, and the dispatcher keys its registry weakly so the entry clears when the
+        // Browser is collected. Both injectors are inert anyway once the state they read is null,
+        // and the registration flags stay SET on purpose: isValid is already false here, so nothing
+        // can register a second hook against a dead handle either.
 
         // Unsubscribe from all events
         subscriptions.forEach { it.unsubscribe() }
