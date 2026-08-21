@@ -85,7 +85,9 @@ build an unsigned MSI.
 - **Format**: Base64-encoded PKCS#12 (`.p12`) file
 - **Description**: KeyLocker client authentication certificate. The workflow
   decodes it to `Certificate_pkcs12.p12` and passes it as `SM_CLIENT_CERT_FILE`.
-- **How to generate**: `base64 -i Certificate_pkcs12.p12 | pbcopy`
+- **How to generate** (macOS): `base64 -i Certificate_pkcs12.p12 | pbcopy`
+- **How to generate** (Windows):
+  `[Convert]::ToBase64String([IO.File]::ReadAllBytes('Certificate_pkcs12.p12')) | Set-Clipboard`
 
 #### `CODE_SIGNING_CLIENT_CERT_PASSWORD`
 - **Format**: Plain text password
@@ -101,9 +103,9 @@ build an unsigned MSI.
 
 | Artifact | Job | Signed |
 |----------|-----|--------|
-| `BOSS-<version>.msi` (x64) | `build-windows` | Yes, and the job fails if the MSI comes out unsigned while credentials are present |
+| `BOSS-<version>.msi` (x64) | `build-windows` | Yes. The job fails if credentials were present and the MSI comes out `NotSigned` or `HashMismatch`; any other non-`Valid` status is a warning |
 | `BOSS-<version>.msi` (arm64) | `build-windows-arm64` | Best effort, see below |
-| Bundled branded Chromium binaries | `build-chromium-branding` | No |
+| Bundled branded Chromium binaries (Windows) | `build-chromium-branding` | No, `signCommand` is stripped unconditionally on the Windows legs |
 | `BOSS.exe` inside the MSI | jpackage | No |
 
 The MSI is signed as a container, so SmartScreen is satisfied at install time,
@@ -114,8 +116,9 @@ but the binaries inside the installed tree carry no signature of their own.
 on the `windows-11-arm` runner. Every signing step in that job is
 `continue-on-error: true`: if the tooling cannot run, the job still uploads the
 unsigned MSI instead of dropping the ARM64 asset from the release. The
-`Verify MSI Signature (Windows ARM64)` step then emits a workflow warning, so an
-unsigned ARM64 build is visible in the run summary rather than silent.
+`Verify MSI Signature (Windows ARM64)` step then emits a workflow warning and
+writes the signature status into the run summary, so an unsigned ARM64 build is
+visible rather than silent on a job that is green by design.
 
 ## Setting Up GitHub Secrets
 

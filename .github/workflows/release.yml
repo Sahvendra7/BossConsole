@@ -1323,12 +1323,19 @@ jobs:
           if ($sig.SignerCertificate) {
             Write-Host "Signer: $($sig.SignerCertificate.Subject)"
           }
-          if ($sig.Status -eq 'NotSigned') {
-            if ('${{ steps.check-secret.outputs.can_sign }}' -eq 'true') {
-              Write-Host "::error::MSI is unsigned even though signing credentials were present"
+          if ($sig.Status -ne 'Valid') {
+            if ('${{ steps.check-secret.outputs.can_sign }}' -ne 'true') {
+              Write-Host "::warning::Windows MSI is UNSIGNED, status $($sig.Status) (no CODE_SIGNING_* secrets configured)"
+            } elseif ($sig.Status -eq 'NotSigned' -or $sig.Status -eq 'HashMismatch') {
+              # Credentials were present and smctl exited 0, yet no usable
+              # signature is on the file. That is the silent case worth blocking.
+              Write-Host "::error::MSI signature is $($sig.Status) even though signing credentials were present"
               exit 1
+            } else {
+              # NotTrusted / UnknownError and friends: the signature may be fine
+              # and the runner's trust store or parser may not be. Loud, not fatal.
+              Write-Host "::warning::MSI signature status is $($sig.Status), expected Valid"
             }
-            Write-Host "::warning::Windows MSI is UNSIGNED (no CODE_SIGNING_* secrets configured)"
           }
 
       - name: 📊 Verify Build Artifacts
@@ -1492,17 +1499,20 @@ jobs:
             exit 1
           }
 
+      # PowerShell, like every other step in this job: this one is not gated and
+      # not continue-on-error, so a shell that fails to resolve here would cost
+      # the release its ARM64 asset entirely.
       - name: Check if signing secret is available (Windows ARM64)
         id: check-secret
-        run: |
-          if [ -n "$CERT_HOST" ]; then
-            echo "can_sign=true" >> $GITHUB_OUTPUT
-          else
-            echo "can_sign=false" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
+        shell: powershell
         env:
           CERT_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+        run: |
+          if ($env:CERT_HOST) {
+            echo "can_sign=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "can_sign=false" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Find MSI File (Windows ARM64)
         id: find-msi
@@ -1522,6 +1532,7 @@ jobs:
 
       - name: Decode Client Certificate (Windows ARM64)
         if: ${{ steps.check-secret.outputs.can_sign == 'true' && steps.find-msi.outputs.msi-path != '' }}
+        continue-on-error: true
         shell: powershell
         run: |
           try {
@@ -1531,6 +1542,20 @@ jobs:
             Write-Host "Client cert decoded successfully to $certPath"
           } catch {
             Write-Host "Error decoding client cert: $_"
+            exit 1
+          }
+
+      - name: Verify Client Cert File Exists (Windows ARM64)
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' && steps.find-msi.outputs.msi-path != '' }}
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $certPath = "${{ runner.temp }}\Certificate_pkcs12.p12"
+          if (Test-Path $certPath) {
+            Write-Host "[OK] Cert file exists at $certPath"
+            Write-Host "File size: $((Get-Item $certPath).Length) bytes"
+          } else {
+            Write-Host "[ERROR] Cert file MISSING at $certPath"
             exit 1
           }
 
@@ -1579,7 +1604,7 @@ jobs:
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
       - name: Check SMKSP Log (Windows ARM64 diagnostics)
-        if: always()  # Runs even if signing fails
+        if: ${{ always() && steps.check-secret.outputs.can_sign == 'true' }}  # Runs even if signing fails
         shell: powershell
         run: |
           $logPath = "$env:USERPROFILE\.signingmanager\logs\smksp.log"
@@ -1590,8 +1615,13 @@ jobs:
             Write-Host "SMKSP log not found."
           }
 
+      # continue-on-error: GitHub prepends $ErrorActionPreference = 'stop' to
+      # powershell steps, so a throwing cmdlet here would abort the job before
+      # the upload and cost the release its ARM64 asset. Reporting must never do
+      # that in a job whose whole signing path is best effort.
       - name: 🔏 Verify MSI Signature (Windows ARM64)
         if: ${{ steps.find-msi.outputs.msi-path != '' }}
+        continue-on-error: true
         shell: powershell
         run: |
           $msiPath = "${{ steps.find-msi.outputs.msi-path }}"
@@ -1600,9 +1630,15 @@ jobs:
           if ($sig.SignerCertificate) {
             Write-Host "Signer: $($sig.SignerCertificate.Subject)"
           }
-          if ($sig.Status -eq 'NotSigned') {
-            Write-Host "::warning::Windows ARM64 MSI is UNSIGNED - DigiCert KeyLocker signing did not run or failed on the ARM runner"
+          if ($sig.Status -ne 'Valid') {
+            Write-Host "::warning::Windows ARM64 MSI signature is $($sig.Status), expected Valid - DigiCert KeyLocker signing did not run or failed on the ARM runner"
           }
+          # A warning annotation is easy to miss on a job that is green by
+          # design, so put the verdict in the run summary too. Explicit UTF-8
+          # without BOM: Windows PowerShell's >> writes UTF-16, which the
+          # summary renders as mojibake.
+          $line = "### Windows ARM64 MSI signature: $($sig.Status)`n"
+          [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $line, (New-Object System.Text.UTF8Encoding($false)))
 
       - name: 📊 Verify Build Artifacts (Windows ARM64)
         shell: powershell
