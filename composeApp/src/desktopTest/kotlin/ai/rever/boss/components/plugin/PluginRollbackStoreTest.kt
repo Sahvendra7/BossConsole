@@ -210,23 +210,47 @@ class PluginRollbackStoreTest {
 
     @Test
     fun `a plugin id that would escape the directory is sanitized`() {
-        // The KEY is sanitized, not the manifest. `PluginManifestReader` rejects an id with a path
-        // separator outright, so such an id cannot arrive inside a jar - but snapshot takes the id
-        // from its caller, which reads it off an exception or an installed.json entry rather than a
-        // validated manifest. So the filename is defended here regardless.
-        val escaping = "../../etc/evil"
-        val jar = writeJar("escape.jar", "1.0.0")
-        PluginRollbackStore.snapshot(dir, escaping, jar.absolutePath)
-        assertEquals("1.0.0", PluginRollbackStore.availableVersion(dir, escaping))
-        val rollbackDir = File(dir, ".rollback")
-        assertTrue(
-            rollbackDir.listFiles()?.all { it.canonicalFile.parentFile == rollbackDir.canonicalFile } ?: false,
-            "a snapshot wrote outside the rollback directory",
-        )
-        assertFalse(
-            File(dir.parentFile.parentFile, "etc").exists(),
-            "the traversal in the plugin id reached the filesystem",
-        )
+        // The KEY is sanitized, not the manifest. `PluginManifestReader` rejects an id containing a
+        // path separator outright, so such an id cannot arrive inside a jar - but snapshot takes the
+        // id from its caller, which reads it off an exception or an installed.json entry rather than
+        // a validated manifest. So the filename is defended here regardless.
+        //
+        // This runs in its OWN nested sandbox, and that is the whole point. Two earlier versions of
+        // this test passed against unsanitized code:
+        //
+        // - asserting that `/etc` does not exist tested the machine, not this code, and on Linux
+        //   the temp directory sits two levels below the root so `/etc` exists whatever happens;
+        // - walking only the plugin directory missed the escape entirely, because an escape by
+        //   definition writes OUTSIDE it - and `File.copyTo` calls `mkdirs()` on the destination's
+        //   parent, so `..\/..\/etc/evil.jar` really does land two directories up.
+        //
+        // The nesting is deep enough to absorb the `../..` in the id, and the sandbox is private so
+        // a diff of it is not noise from other processes the way a diff of /tmp would be.
+        val sandbox = createTempDirectory("rollback-sandbox").toFile()
+        try {
+            val plugins = File(sandbox, "nested/plugins")
+            assertTrue(plugins.mkdirs(), "could not create the nested plugin directory")
+            val jar = File(plugins, "escape.jar")
+            writeJar("escape.jar", "1.0.0").copyTo(jar, overwrite = true)
+
+            val escaping = "../../etc/evil"
+            val before = sandbox.walkTopDown().map { it.canonicalPath }.toSet()
+
+            PluginRollbackStore.snapshot(plugins, escaping, jar.absolutePath)
+
+            assertEquals("1.0.0", PluginRollbackStore.availableVersion(plugins, escaping))
+            val rollbackDir = File(plugins, ".rollback").canonicalFile
+            val created = sandbox.walkTopDown().map { it.canonicalPath }.toSet() - before
+            assertTrue(created.isNotEmpty(), "the snapshot wrote nothing, so this proves nothing")
+            created.forEach { path ->
+                assertTrue(
+                    path.startsWith(rollbackDir.path),
+                    "a snapshot escaped the rollback directory: $path",
+                )
+            }
+        } finally {
+            sandbox.deleteRecursively()
+        }
     }
 
     @Test
