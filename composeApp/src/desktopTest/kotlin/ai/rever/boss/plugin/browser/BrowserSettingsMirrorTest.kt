@@ -70,6 +70,18 @@ class BrowserSettingsMirrorTest {
     }
 
     @Test
+    fun `the persisted defaults agree with the in-memory ones`() {
+        // BrowserSettingsData and BrowserSettings each declare these defaults as their own literal,
+        // with nothing tying them together. A mismatch does not fail anywhere: it flips the default
+        // the first time settings are written and read back, which looks like the user's own choice.
+        val persisted = BrowserSettingsData()
+        assertEquals(BrowserSettings.suggestPasswords, persisted.suggestPasswords)
+        assertEquals(BrowserSettings.offerToSavePasswords, persisted.offerToSavePasswords)
+        assertEquals(BrowserSettings.discretePasswordFill, persisted.discretePasswordFill)
+        assertEquals(BrowserSettings.showShareButton, persisted.showShareButton)
+    }
+
+    @Test
     fun `the two password-manager settings default to on`() {
         assertEquals("true", System.getProperty(BrowserSettings.SUGGEST_PASSWORDS_PROP))
         assertEquals("true", System.getProperty(BrowserSettings.OFFER_TO_SAVE_PASSWORDS_PROP))

@@ -5,22 +5,28 @@ import com.teamdev.jxbrowser.js.JsAccessible
 /**
  * Page to plugin bridge for [BrowserHandleImpl.setPageEventScript].
  *
- * An instance is injected onto every main-frame `window` under `PAGE_EVENT_BRIDGE`
- * (`window.__bossPageEvent`) immediately before the plugin's own script is evaluated, so a listener
- * that script installs can hand an event straight back.
+ * The instance is handed to the plugin's script as a parameter, not left on `window`: see
+ * [BrowserHandleImpl.injectPageEventScript], which passes it in and deletes the slot it arrived
+ * through. So in the normal case the only code holding a reference is the script itself.
  *
  * Unlike [CoBrowseBridge], which serves one known feature, this carries a payload the host does not
  * interpret at all: the plugin supplies the script, so the plugin decides what an event is and what
  * its JSON means.
  *
- * **The URL is the host's contribution, and the reason [urlProvider] exists.** The bridge is a
- * public property on `window`, so any script on the page can post - what reaches the plugin is
- * untrusted input, and a URL written into the JSON is whatever the poster chose. So the host reads
- * the posting document's URL itself, here, at the moment of the call. That is also strictly better
- * than the plugin reading the handle's URL after the fact: [emit] runs inside the page's own event
- * dispatch, before the navigation a submit triggers can commit, so the answer is the document that
- * actually posted rather than whatever the tab has moved on to. The first consumer uses it to decide
- * which site a password gets stored against.
+ * **The URL is the host's contribution, and the reason [urlProvider] exists.** A URL written into
+ * the JSON is only as trustworthy as whatever wrote it, so the host reads the posting document's URL
+ * itself, here, at the moment of the call. That is also strictly better than the plugin reading the
+ * handle's URL afterwards: [emit] runs inside the page's own event dispatch, before the navigation a
+ * submit triggers can commit, so the answer is the document that actually posted rather than
+ * whatever the tab has moved on to. The first consumer uses it to decide which site a password gets
+ * stored against.
+ *
+ * **Bounded, like [BrowserInteractionBridge] and for the same reason.** Non-blocking is not free:
+ * every accepted string is an allocation in the host JVM and an item into whatever queue the sink
+ * feeds. The script is not necessarily the only caller either - it holds the only reference in the
+ * normal case, but a script that leaks it, or a page that wins the injection race on an
+ * already-running document, can call this too. Over-sized payloads and over-rate bursts are
+ * DROPPED rather than queued, because the alternative to dropping is unbounded growth.
  *
  * IMPORTANT, and the same constraint [CoBrowseBridge] documents: [emit] runs on a JxBrowser thread
  * and inside the page's own event dispatch. [onEvent] MUST be non-blocking - the caller enqueues and
@@ -34,17 +40,62 @@ internal class PageEventBridge(
      * serves every document this browser loads, so the value has to be read per call.
      */
     @Volatile var urlProvider: () -> String = { "" },
+    /** Injected so the rate limit is testable without sleeping. */
+    private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
+    private var windowStartMs = 0L
+    private var windowCount = 0
+
     @JsAccessible
     fun emit(json: String) {
         try {
-            val sink = onEvent ?: return
-            // Read before the sink runs, and defensively: a throwing url read must not lose the
-            // event, and an empty URL is something the consumer can recognise and refuse.
-            val url = runCatching { urlProvider() }.getOrDefault("")
-            sink(url, json)
+            val sink = onEvent
+            // Size is checked before the rate budget on purpose: rejecting an over-sized payload
+            // must not consume it, or a page could spend the whole window on strings that were
+            // never going to be forwarded and starve the ones that would have been.
+            if (sink != null && json.length <= MAX_PAYLOAD_CHARS && allow()) {
+                // The url is read defensively: a throwing provider must not lose the event, and an
+                // empty URL is something the consumer can recognise and refuse.
+                sink(runCatching { urlProvider() }.getOrDefault(""), json)
+            }
         } catch (_: Throwable) {
-            // Never propagate into the page's JS thread.
+            // Never propagate into the page's JS thread. Note this swallows CancellationException
+            // too, exactly as CoBrowseBridge does - a sink must not rely on cancellation escaping.
         }
+    }
+
+    /**
+     * Fixed-window counter, synchronized because [emit] is reentrant across documents.
+     *
+     * A fixed window rather than a token bucket for the same reason [BrowserInteractionBridge] uses
+     * one: the worst case is 2x the nominal rate across a window boundary, which is irrelevant next
+     * to the unbounded case it replaces, and it costs two fields.
+     */
+    private fun allow(): Boolean =
+        synchronized(this) {
+            val now = clock()
+            if (now - windowStartMs !in 0 until RATE_WINDOW_MS) {
+                windowStartMs = now
+                windowCount = 0
+            }
+            if (windowCount >= MAX_EVENTS_PER_WINDOW) return@synchronized false
+            windowCount++
+            true
+        }
+
+    companion object {
+        /**
+         * Generous next to any real event - the first consumer posts a credential pair - and small
+         * enough that a page cannot allocate its way through the host heap one call at a time.
+         * Matches [BrowserInteractionBridge.MAX_PAYLOAD_CHARS].
+         */
+        const val MAX_PAYLOAD_CHARS = 64 * 1024
+
+        /**
+         * A submit-driven channel needs single digits per second; this leaves room for a burst
+         * (three listeners can fire for one Enter keypress) without leaving the rate open.
+         */
+        const val MAX_EVENTS_PER_WINDOW = 60
+        const val RATE_WINDOW_MS = 1_000L
     }
 }

@@ -62,6 +62,12 @@ internal object BrowserInjectDispatcher {
             injectors[browser] = mutableListOf(injector)
         }
         // First injector for this browser → claim the single callback slot.
+        //
+        // On failure the entry has to come back OUT. Leaving it meant every later register() hit
+        // the early return above, so the slot was never claimed and every injector on that browser
+        // stayed inert for its whole lifetime - silently, since the warning below names a
+        // registration nobody was waiting on. The old ensureCoBrowseInjectCallback cleared its flag
+        // in the catch and retried; this is that recovery, restored.
         try {
             browser.set(
                 InjectJsCallback::class.java,
@@ -83,7 +89,27 @@ internal object BrowserInjectDispatcher {
                 },
             )
         } catch (e: Throwable) {
+            synchronized(injectors) { injectors.remove(browser) }
             logger.warn(LogCategory.BROWSER, "Failed to register shared InjectJsCallback", error = e)
         }
+    }
+
+    /**
+     * Drop every injector registered for [browser], and release the slot.
+     *
+     * For a browser that is closing. Called from `BrowserHandleImpl.dispose`, because the weak keys
+     * above do **not** collect this on their own: a `WeakHashMap` value strongly references
+     * anything it captures, and both registered injectors are lambdas that close over their
+     * `BrowserHandleImpl` (or, in FluckEngine's case, the browser itself) - which holds the key. The
+     * entry therefore pins a whole handle per closed tab. Classic `WeakHashMap` footgun, and the
+     * reason this method exists rather than a comment claiming the map handles it.
+     *
+     * `browser.remove(InjectJsCallback…)` is deliberately NOT called here, and
+     * `InjectJsCallbackOwnershipTest` forbids it: the slot is shared, so unclaiming it on one
+     * handle's teardown would disable every other injector on that browser. Dropping the entry is
+     * enough - the callback that remains has nothing left to fan out to, and the browser is closing.
+     */
+    fun unregister(browser: Browser) {
+        synchronized(injectors) { injectors.remove(browser) }
     }
 }

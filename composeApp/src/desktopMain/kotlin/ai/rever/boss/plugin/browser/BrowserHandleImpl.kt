@@ -443,7 +443,11 @@ internal class BrowserHandleImpl(
     // True once the document-start injector is registered. Left registered after an uninstall for
     // the same reason co-browse does: re-registering is a race, and the injector is inert while
     // pageEventScript is null.
-    @Volatile private var pageEventInjectRegistered = false
+    //
+    // AtomicBoolean, not @Volatile: @Volatile makes each read fresh but not the read-then-write
+    // pair, so two concurrent setPageEventScript calls could both register and every document would
+    // then be injected twice.
+    private val pageEventInjectRegistered = AtomicBoolean(false)
 
     // Main-thread scope for the one immediate injection into the already-loaded document.
     private val pageEventScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -1518,24 +1522,29 @@ internal class BrowserHandleImpl(
         script: String?,
         onEvent: ((url: String, json: String) -> Unit)?,
     ) {
-        // Repoint the sink first: an injection that is about to happen must not fire into a stale
-        // callback, and an uninstall must stop delivery even if a document-start hook is mid-flight.
-        //
+        if (script == null || onEvent == null) {
+            // Uninstall, and in this order deliberately: clearing the SCRIPT first makes the path
+            // monotonic. Clearing the sink first left a window in which pageEventScript was still
+            // non-null, so a document-start injection landing there would evaluate the plugin's
+            // script into a fresh page against an inert bridge - a listener that can never report.
+            //
+            // Nothing is retracted from a document that is already live: whatever was evaluated
+            // there goes away with the document. The registration is deliberately left in place -
+            // the injector reads pageEventScript and is inert while it is null.
+            pageEventScript = null
+            pageEventBridge.onEvent = null
+            return
+        }
+        // Guard BEFORE the assignments: a dead handle must not end up holding a plugin's closure.
+        if (!isValid) return
         // The URL the plugin is handed comes from here, never from the page's payload. Read at emit
         // time, inside the page's own event dispatch, so it names the document that actually posted
         // rather than whatever the tab navigated to next.
         pageEventBridge.urlProvider = { runCatching { browser.url() }.getOrDefault("") }
+        // Sink before script: the reverse order would let a document-start injection evaluate the
+        // new script and post into the previous callback.
         pageEventBridge.onEvent = onEvent
         pageEventScript = script
-        if (script == null || onEvent == null) {
-            // Nothing to uninstall from the live document: the bridge is now inert, and whatever
-            // was already evaluated there goes away with the document. Deliberately NOT clearing
-            // the registration - the injector reads pageEventScript and is inert while it is null.
-            pageEventBridge.onEvent = null
-            pageEventScript = null
-            return
-        }
-        if (!isValid) return
         ensurePageEventInjector()
         // The injector only fires for FUTURE contexts, so the page already loaded would be skipped
         // until its next navigation. Same reason startCoBrowseCapture injects immediately.
@@ -1562,9 +1571,41 @@ internal class BrowserHandleImpl(
     private fun injectPageEventScript(frame: Frame) {
         val script = pageEventScript ?: return
         try {
+            // The bridge has to cross into JS through a window property - executeJavaScript takes
+            // source and no arguments - but it does not have to STAY there, and a documented global
+            // is the wrong shape for a channel whose payload is a password. So:
+            //
+            //  1. put it under a name no page can guess,
+            //  2. hand it to the script as a parameter, in ONE evaluation,
+            //  3. delete the slot in that same evaluation.
+            //
+            // A page therefore has nothing to replace (interception), nothing to call (forgery) and
+            // nothing to probe for (fingerprinting). The random name is what closes the last gap:
+            // steps 1 and 2 are separate IPC calls, so on a document that is ALREADY running page
+            // script there is a window between them - a fixed name would be readable in it.
+            val slot = "__bossPageEventSlot" + UUID.randomUUID().toString().replace("-", "")
             val window = frame.executeJavaScript<JsObject>("window")
-            window?.putProperty(PAGE_EVENT_BRIDGE, pageEventBridge)
-            frame.executeJavaScript<Any?>(script)
+            if (window == null) {
+                logger.debug(LogCategory.BROWSER, "Page event injection skipped - no window", mapOf("handleId" to id))
+                return
+            }
+            window.putProperty(slot, pageEventBridge)
+            // try/finally in the page, so a script that throws still gets the slot removed rather
+            // than leaving the bridge reachable for the rest of the document's life.
+            frame.executeJavaScript<Any?>(
+                """
+                (function () {
+                    var bridge = window.$slot;
+                    try { delete window.$slot; } catch (e) { window.$slot = undefined; }
+                    try {
+                        (function ($PAGE_EVENT_BRIDGE) {
+                $script
+                        })(bridge);
+                    } catch (e) {
+                    }
+                })();
+                """.trimIndent(),
+            )
         } catch (e: Exception) {
             // Never logged with the script body: a page-event script is written by a plugin and
             // may legitimately name fields the user typed into.
@@ -1579,8 +1620,7 @@ internal class BrowserHandleImpl(
      * co-browse recorder (or be switched off by it, depending on which registered last).
      */
     private fun ensurePageEventInjector() {
-        if (pageEventInjectRegistered) return
-        pageEventInjectRegistered = true
+        if (!pageEventInjectRegistered.compareAndSet(false, true)) return
         BrowserInjectDispatcher.register(browser) { frame ->
             if (pageEventScript != null && frame.isMain) {
                 injectPageEventScript(frame)
@@ -3031,14 +3071,17 @@ internal class BrowserHandleImpl(
         // exit, and interrupting it would buy nothing.
         contextMenuScope.cancel()
         contextMenuExecutor.shutdown()
-        // The document-start callback is NOT removed here. It belongs to
-        // [BrowserInjectDispatcher] now, which owns the browser's single slot on behalf of every
-        // registered injector, so removing it would tear down another feature's hook as a side
-        // effect of this handle's teardown. Nothing leaks by leaving it: the browser is being
-        // closed, and the dispatcher keys its registry weakly so the entry clears when the
-        // Browser is collected. Both injectors are inert anyway once the state they read is null,
-        // and the registration flags stay SET on purpose: isValid is already false here, so nothing
-        // can register a second hook against a dead handle either.
+        // Drop this browser's injectors, WITHOUT unclaiming the shared callback slot - that slot
+        // belongs to BrowserInjectDispatcher on behalf of every registered injector, and removing
+        // it here would tear down another feature's hook as a side effect of this teardown.
+        //
+        // An earlier version of this comment claimed nothing leaked because the dispatcher keys its
+        // registry weakly. That was wrong: a WeakHashMap value strongly references whatever it
+        // captures, and these injectors are lambdas closing over `this` - which holds the key. So
+        // the entry pinned a whole BrowserHandleImpl per closed tab. unregister() is the fix.
+        BrowserInjectDispatcher.unregister(browser)
+        // The registration flags stay SET on purpose: isValid is already false here, so nothing can
+        // register a second hook against a dead handle either.
 
         // Unsubscribe from all events
         subscriptions.forEach { it.unsubscribe() }

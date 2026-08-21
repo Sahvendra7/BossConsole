@@ -25,6 +25,11 @@ import kotlin.test.assertTrue
  *
  * If a genuinely new owner is ever wanted, this test is the place to argue with - do not simply
  * add a name to the allowlist.
+ *
+ * **Scope: `composeApp/src/desktopMain` only.** That is complete today because JxBrowser is confined
+ * to this module - nothing else can hold a `Browser` to set a callback on. A future module that
+ * takes a JxBrowser dependency would be silently outside this guard, so widen the walk if one
+ * appears.
  */
 class InjectJsCallbackOwnershipTest {
     private val allowedOwners = setOf("BrowserInjectDispatcher.kt")
