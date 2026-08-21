@@ -411,7 +411,11 @@ interface BrowserHandle {
 
     /**
      * Install [script] into every main-frame document as its context is created, and deliver each
-     * `window.`[PAGE_EVENT_BRIDGE]`.emit(json)` call it makes to [onEvent].
+     * [PAGE_EVENT_BRIDGE]`.emit(json)` call it makes to [onEvent].
+     *
+     * [PAGE_EVENT_BRIDGE] is a **parameter passed to the script**, not a property on `window` - see
+     * its KDoc. Writing `window.__bossPageEvent.emit(...)` gets `undefined`, a TypeError the wrapper
+     * swallows, and a channel that silently never fires.
      *
      * **How the script is evaluated.** It is wrapped, and the bridge is passed in as a parameter
      * named [PAGE_EVENT_BRIDGE] - `(function (__bossPageEvent) { your script })(bridge)`. So a
@@ -444,12 +448,18 @@ interface BrowserHandle {
      *   silently, and the loser gets no signal. Two plugins wanting page events on one tab is not
      *   supported today.
      * - Main frame only, as [executeJavaScript] is.
-     * - The host **does** re-inject into the document already loaded when this is first called, and
-     *   evaluates [script] **exactly once per document** - so a script needs no cross-evaluation
-     *   guard. It could not easily have one: each evaluation gets a fresh function scope, so a
-     *   script-local flag is invisible to a second run, and the only slot shared across evaluations
-     *   is `window`, which is the detectability the parameter shape exists to remove. Replacing the
-     *   script does not retract the live generation from a document already running it.
+     * - The host **does** re-inject into the document already loaded when this is first called, so
+     *   a caller does not wait for the next navigation.
+     * - **[script] may therefore be evaluated more than once in one document, and must tolerate
+     *   that.** Reinstalling while a page is open evaluates it again in that page, and replacing a
+     *   script does not retract the previous generation from a document already running it - the old
+     *   listeners stay, and their events arrive at the new sink.
+     *
+     *   A guard in the script cannot fix this: each evaluation gets a fresh function scope, so a
+     *   script-local flag is invisible to the next run, and the only slot shared across evaluations
+     *   is `window` - which is the detectability the parameter shape exists to remove. Tolerating
+     *   duplicates is the cheaper side of that trade for an event-driven consumer: two identical
+     *   events cost a conflated channel nothing.
      * - Either argument being null uninstalls. Callers should uninstall in their `dispose()`: the
      *   host retains [onEvent], whose class comes from the plugin's classloader, and the api layer
      *   is hot-swappable. The host clears its own reference when the browser goes away.

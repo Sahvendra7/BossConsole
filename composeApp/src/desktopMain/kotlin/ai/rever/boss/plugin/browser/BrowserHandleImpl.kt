@@ -468,24 +468,22 @@ internal class BrowserHandleImpl(
     // Main-thread scope for the one immediate injection into the already-loaded document.
     private val pageEventScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    /**
-     * Which document generation the page-event script has already been evaluated in.
+    /*
+     * Why there is NO "inject once per document" counter here, though there was one for a while.
      *
-     * The api promises **one evaluation per document**, and this is what keeps it. Two paths reach
-     * the same document: the document-start hook, and the immediate injection when
-     * setPageEventScript is first called. Toggling a setting off and on while sitting on a login
-     * page is enough to run the second one twice in one document, which is two sets of the script's
-     * listeners and two posts per submit.
+     * It was a documentGeneration bumped in NavigationFinished and claimed at injection. It did not
+     * work, and the trace is worth keeping because the idea is an obvious one to have again:
+     * NavigationFinished is where _isLoading = false is set, so it fires AFTER the new document's
+     * script context exists and after the document-start injection into it. The counter therefore
+     * advanced BETWEEN the two injections that can reach one document - the document-start one, and
+     * the immediate one when a caller (re)installs a script - so the second was always allowed. It
+     * dressed up "no guarantee" as a guarantee, and three repos documented it.
      *
-     * The alternative was to make each script carry its own guard, which is what the contract used
-     * to ask for - unimplementable as stated, since the wrapper gives every evaluation a fresh
-     * function scope and the only slot shared across them is `window`. Keeping the count here means
-     * a script needs no window property, which is the whole point of handing the bridge over as a
-     * parameter.
+     * What is true instead: a script may be evaluated MORE than once in a document, so it has to
+     * tolerate that. Tolerating is cheap for a submit-driven consumer (two identical events, into a
+     * conflated channel); enforcing was not, because the only guard shared across evaluations is a
+     * window property, which is the detectability the parameter shape exists to remove.
      */
-    @Volatile private var documentGeneration = 0L
-
-    @Volatile private var pageEventInjectedGeneration = -1L
 
     /**
      * Bumped to re-attach the browser view after a committed document never drew. Read in
@@ -967,10 +965,6 @@ internal class BrowserHandleImpl(
                     // the posting document, so it must be set before any script in the new document
                     // can post - which this handler is, since it fires on navigation completion.
                     lastCommittedMainFrameUrl = url
-                    // A new document, so the page-event script may be evaluated again. Same-document
-                    // navigations (pushState, fragment) keep the document and its listeners, so they
-                    // deliberately do not count.
-                    if (!event.isSameDocument) documentGeneration++
                     // Same-document navigations (pushState, fragment) keep the document, and the
                     // beacon is armed once per document and latches at painted. Probing one reads
                     // the "1" the ORIGINAL load left behind, which is not evidence about this
@@ -1107,6 +1101,14 @@ internal class BrowserHandleImpl(
                 // pointing at a plugin is the half that matters.
                 pageEventScript = null
                 pageEventBridge.onEvent = null
+                pageEventBridge.urlProvider = { "" }
+                // And drop the injectors HERE, not only in dispose(). This handler sets
+                // disposed = true, and dispose() returns on its first line when that is already
+                // set - so for a browser that closed on its own (crashed renderer, engine recycle)
+                // dispose() never reaches its unregister call, and the entry pins this handle for
+                // the rest of the session. That is the leak the unregister was added to fix,
+                // arriving through the one path that skips it.
+                BrowserInjectDispatcher.unregister(browser)
             }
     }
 
@@ -1550,9 +1552,11 @@ internal class BrowserHandleImpl(
     /**
      * Install a plugin-supplied document-start script and forward what it emits.
      *
-     * The host's whole job here is transport. It puts [pageEventBridge] on `window` under
-     * [PAGE_EVENT_BRIDGE], evaluates the script, and hands each emitted string to the caller's
-     * sink; it does not parse the payload or know what an event means. The caller wrote the script,
+     * The host's whole job here is transport. It hands [pageEventBridge] to the caller's script as
+     * a parameter named [PAGE_EVENT_BRIDGE] - see [PageEventScripts.injection], which passes it in
+     * and takes the hand-over slot back off `window` in the same evaluation - and gives each
+     * emitted string to the caller's sink. It does not parse the payload or know what an event
+     * means. The caller wrote the script,
      * so the caller owns every rule about what is worth reporting - the same division the
      * `fillCredentials` removal settled for writing.
      *
@@ -1607,46 +1611,14 @@ internal class BrowserHandleImpl(
         }
     }
 
-    /**
-     * Put the bridge on [frame]'s window and evaluate the caller's script. Main thread only.
-     *
-     * Reads [pageEventScript] once into a local: it is @Volatile and an uninstall racing this would
-     * otherwise inject the bridge and then evaluate null.
-     */
-
-    /**
-     * Take this document's single page-event injection, or report that something already has.
-     *
-     * Synchronized rather than two @Volatile reads: the document-start hook and the immediate
-     * injection can arrive on different threads, and a read-then-write pair between them is exactly
-     * the double evaluation the contract promises does not happen.
-     */
-    private fun claimDocumentForInjection(): Boolean =
-        synchronized(this) {
-            val generation = documentGeneration
-            if (pageEventInjectedGeneration == generation) {
-                false
-            } else {
-                pageEventInjectedGeneration = generation
-                true
-            }
-        }
-
-    // Three guards, each a distinct "nothing to do here": no script installed, this document has
-    // already had its one evaluation, and no window to hand the bridge through. Collapsing them
-    // would hide which one fired, and each logs differently.
+    // Main thread only. Reads pageEventScript once into a local: it is @Volatile, and an uninstall
+    // racing this would otherwise hand over the bridge and then evaluate null.
+    //
+    // Two guards, each a distinct "nothing to do here": no script installed, and no window to hand
+    // the bridge through. They log differently, so collapsing them would hide which one fired.
     @Suppress("ReturnCount")
     private fun injectPageEventScript(frame: Frame) {
         val script = pageEventScript ?: return
-        // One evaluation per document, which the api contract promises. See documentGeneration.
-        if (!claimDocumentForInjection()) {
-            logger.debug(
-                LogCategory.BROWSER,
-                "Page event script already evaluated in this document",
-                mapOf("handleId" to id),
-            )
-            return
-        }
         // The bridge has to cross into JS through a window property - executeJavaScript takes source
         // and no arguments - but it does not have to STAY there, and a documented global is the
         // wrong shape for a channel whose payload is a password. PageEventScripts.injection hands it
@@ -1656,9 +1628,6 @@ internal class BrowserHandleImpl(
         val window = frame.executeJavaScript<JsObject>("window")
         if (window == null) {
             logger.debug(LogCategory.BROWSER, "Page event injection skipped - no window", mapOf("handleId" to id))
-            // The claim is released: nothing was evaluated, so the next attempt in this document
-            // (the document-start hook, or a later install) must be allowed to try.
-            synchronized(this) { pageEventInjectedGeneration = -1L }
             return
         }
         try {
