@@ -135,6 +135,21 @@ jobs:
         with:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
+      # This was the only job running ./gradlew without them, so every release
+      # fetched the Gradle distribution and resolved from cold here - 166s of
+      # serial latency ahead of all five platform builds, measured on run
+      # 32446645832. Same actions and pins as every other job in this workflow.
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v5.6.0
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
+
       - name: 🔄 Increment Version (Manual Trigger)
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
         env:
@@ -197,8 +212,19 @@ jobs:
             echo "Setting prerelease suffix: ${RELEASE_TYPE}.${PRERELEASE_NUM}"
             ./gradlew setPrereleaseSuffix -Psuffix="${RELEASE_TYPE}.${PRERELEASE_NUM}" -PskipGitCheck=true
           else
-            # Ensure we clear any existing prerelease suffix for stable releases
-            ./gradlew clearPrereleaseSuffix -PskipGitCheck=true
+            # Ensure we clear any existing prerelease suffix for stable releases.
+            # ClearPrereleaseSuffixTask returns immediately when the suffix is
+            # already blank, so on a stable-after-stable release this Gradle run
+            # is a no-op - and a second configuration pass over 30+ modules is
+            # the most expensive no-op in the release. incrementVersion does not
+            # touch the suffix, so reading the file here sees the same value the
+            # task would. A missing key means nothing to clear either.
+            CURRENT_SUFFIX="$(grep '^app.prerelease.suffix=' version.properties | cut -d'=' -f2- || true)"
+            if [[ -n "$CURRENT_SUFFIX" ]]; then
+              ./gradlew clearPrereleaseSuffix -PskipGitCheck=true
+            else
+              echo "ℹ️ No prerelease suffix to clear - skipping the Gradle run"
+            fi
           fi
 
           # Get the new version
@@ -404,9 +430,8 @@ jobs:
         run: |
           echo "🔧 Setting up build environment for ${{ matrix.platform }}"
           echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
-          
-          # Verify version consistency
-          ./gradlew showVersion
+          # No ./gradlew here: "Verify Built Version" below is the real check,
+          # and it reads the generated VersionConstants rather than this file.
 
       # macOS specific setup
       - name: 🍎 Setup macOS Environment
@@ -707,9 +732,8 @@ jobs:
         run: |
           echo "🔧 Setting up build environment for Linux AMD64"
           echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
-
-          # Verify version consistency
-          ./gradlew showVersion
+          # No ./gradlew here: "Verify Built Version" below is the real check,
+          # and it reads the generated VersionConstants rather than this file.
 
       - name: 🔍 Get JxBrowser Version
         run: |
@@ -895,9 +919,8 @@ jobs:
         run: |
           echo "🔧 Setting up build environment for Linux ARM64"
           echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
-
-          # Verify version consistency
-          ./gradlew showVersion
+          # No ./gradlew here: "Verify Built Version" below is the real check,
+          # and it reads the generated VersionConstants rather than this file.
 
       - name: 📦 Install Linux Packaging Dependencies
         run: |
@@ -1097,9 +1120,8 @@ jobs:
         run: |
           echo "🔧 Setting up build environment for Windows"
           echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
-
-          # Verify version consistency
-          ./gradlew showVersion
+          # No ./gradlew here: "Verify Built Version" below is the real check,
+          # and it reads the generated VersionConstants rather than this file.
 
       - name: 🔍 Get JxBrowser Version
         shell: bash
@@ -1452,7 +1474,8 @@ jobs:
         run: |
           Write-Host "Setting up build environment for Windows ARM64"
           Write-Host "Version: ${{ needs.prepare-version.outputs.version }}"
-          ./gradlew showVersion
+          # No ./gradlew here: "Verify Built Version" below is the real check,
+          # and it reads the generated VersionConstants rather than this file.
 
       - name: 🔍 Get JxBrowser Version
         shell: powershell
