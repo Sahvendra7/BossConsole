@@ -1565,23 +1565,25 @@ internal class BrowserHandleImpl(
      * exists. A submit is followed by a navigation that destroys the JS context, so a value latched
      * in the page for a later poll to collect is racing its own teardown.
      */
+    override val supportsPageEventScript: Boolean get() = true
+
+    override fun clearPageEventScript() {
+        // In this order deliberately: clearing the SCRIPT first makes the path monotonic. Clearing
+        // the sink first left a window in which pageEventScript was still non-null, so a
+        // document-start injection landing there would evaluate the plugin's script into a fresh
+        // page against an inert bridge - a listener that can never report.
+        //
+        // Nothing is retracted from a document that is already live: whatever was evaluated there
+        // goes away with the document. The dispatcher registration is deliberately left in place -
+        // the injector reads pageEventScript and is inert while it is null.
+        pageEventScript = null
+        pageEventBridge.onEvent = null
+    }
+
     override fun setPageEventScript(
-        script: String?,
-        onEvent: ((url: String, json: String) -> Unit)?,
+        script: String,
+        onEvent: (url: String, payload: String) -> Unit,
     ) {
-        if (script == null || onEvent == null) {
-            // Uninstall, and in this order deliberately: clearing the SCRIPT first makes the path
-            // monotonic. Clearing the sink first left a window in which pageEventScript was still
-            // non-null, so a document-start injection landing there would evaluate the plugin's
-            // script into a fresh page against an inert bridge - a listener that can never report.
-            //
-            // Nothing is retracted from a document that is already live: whatever was evaluated
-            // there goes away with the document. The registration is deliberately left in place -
-            // the injector reads pageEventScript and is inert while it is null.
-            pageEventScript = null
-            pageEventBridge.onEvent = null
-            return
-        }
         // Guard BEFORE the assignments: a dead handle must not end up holding a plugin's closure.
         if (!isValid) return
         // The URL the plugin is handed comes from here, never from the page's payload. Read at emit

@@ -131,6 +131,15 @@ data class PopupNavigation(
  */
 const val PAGE_EVENT_BRIDGE = "__bossPageEvent"
 
+/**
+ * The method a page-event script calls on its bridge: `__bossPageEvent.emit(payload)`.
+ *
+ * A constant for the same reason [PAGE_EVENT_BRIDGE] is: the name appears only inside a JavaScript
+ * string, so renaming it host-side is a compile error at no consumer, and every already-built plugin
+ * would post into a method that no longer exists with nothing in any log.
+ */
+const val PAGE_EVENT_EMIT = "emit"
+
 interface BrowserHandle {
     /**
      * Unique identifier for this browser handle.
@@ -460,9 +469,9 @@ interface BrowserHandle {
      *   is `window` - which is the detectability the parameter shape exists to remove. Tolerating
      *   duplicates is the cheaper side of that trade for an event-driven consumer: two identical
      *   events cost a conflated channel nothing.
-     * - Either argument being null uninstalls. Callers should uninstall in their `dispose()`: the
-     *   host retains [onEvent], whose class comes from the plugin's classloader, and the api layer
-     *   is hot-swappable. The host clears its own reference when the browser goes away.
+     * - [clearPageEventScript] uninstalls. Callers should do so in their `dispose()`: the host
+     *   retains [onEvent], whose class comes from the plugin's classloader, and the api layer is
+     *   hot-swappable. The host clears its own reference when the browser goes away.
      * - Coexists with [startCoBrowseCapture]; the host multiplexes the single document-start hook,
      *   so arming one does not switch off the other. Note the inverted posture: co-browse masks
      *   what the user typed, while this channel exists to carry it. **The payload may be a
@@ -473,16 +482,39 @@ interface BrowserHandle {
      * so the boss-plugin-api jar's copy is shadowed and its no-op default is what a caller gets
      * from an older host. Consumers gate on `minBossVersion`, not `minApiVersion`.
      *
-     * @param script JavaScript source to evaluate at document start, or null to uninstall.
-     * @param onEvent Receives the posting document's URL and the string handed to the bridge, or
-     *   null to uninstall.
+     * @param script JavaScript source to evaluate at document start.
+     * @param onEvent Receives the posting document's URL and the string handed to the bridge.
      */
     fun setPageEventScript(
-        script: String?,
-        onEvent: ((url: String, json: String) -> Unit)?,
+        script: String,
+        onEvent: (url: String, payload: String) -> Unit,
     ) {
-        // Default: no-op for hosts without the page-event channel.
+        // Default: no-op for hosts without the page-event channel. See supportsPageEventScript,
+        // which is how a caller tells that silence apart from a host that delivered nothing.
     }
+
+    /**
+     * Uninstall what [setPageEventScript] installed.
+     *
+     * Its own verb rather than a nullable pair, matching [startCoBrowseCapture] /
+     * [stopCoBrowseCapture]. A script already evaluated in a live document is not retracted; it
+     * stops being able to reach anything. **Call this from `dispose()`**: the host retains the
+     * callback, whose class comes from the plugin's classloader.
+     */
+    fun clearPageEventScript() {
+        // Default: no-op.
+    }
+
+    /**
+     * Whether this handle implements the page-event channel at all.
+     *
+     * False where [setPageEventScript] is the no-op default. Same shape as
+     * `FileSystemDataProvider.supportsHiddenEntries` and `BookmarkDataProvider.supportsBulkAdd`, and
+     * for the same reason: silence otherwise covers an older host, a host-side drop, and the user
+     * doing nothing, and a consumer that cannot separate the first has to treat its feature as
+     * best-effort.
+     */
+    val supportsPageEventScript: Boolean get() = false
 
     // ============================================================
     // CLIPBOARD OPERATIONS
