@@ -1289,6 +1289,40 @@ jobs:
           SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
+      # The missing step, and the reason every MSI since the signing secrets landed
+      # on 2026-07-21 came out unsigned: `smctl sign` shells out to signtool, which
+      # looks for the certificate in the Windows certificate store, and nothing had
+      # ever put it there. DigiCert's own pipeline guidance is to run certsync as
+      # the first step of every signing job. Without it smctl prints
+      # "signCommand command for file <path> FAILED" and exits 0, so the release
+      # shipped an unsigned installer under a green build.
+      #
+      # healthcheck / ksp list / keypair ls come along because smctl gives no
+      # reason for a signing failure. If certsync is not the whole story, the next
+      # run says which of the credential, the KSP registration or the keypair alias
+      # is wrong, instead of costing another release to find out.
+      #
+      # continue-on-error: this step is diagnostics plus a precondition, and the
+      # authoritative verdict is "Verify MSI Signature" reading the file itself. A
+      # certsync failure should let the sign attempt proceed and be judged there.
+      - name: Sync KeyLocker Certificate to the Windows Store
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
+        continue-on-error: true
+        run: |
+          rem smctl exits 0 whether a subcommand works or not, and cmd keeps going
+          rem after a failure, so all four run and the log carries every answer.
+          smctl healthcheck
+          smctl windows ksp list
+          smctl keypair ls
+          smctl windows certsync --keypair-alias="%KEYPAIR_ALIAS%"
+        shell: cmd
+        env:
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+          SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+          KEYPAIR_ALIAS: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}
+
       - name: Sign Windows MSI with DigiCert KeyLocker
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         run: |
@@ -1588,6 +1622,25 @@ jobs:
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
           SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+
+      # Same certsync precondition as the x64 job above; see the comment there.
+      - name: Sync KeyLocker Certificate to the Windows Store (Windows ARM64)
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' && steps.install-digicert.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          rem smctl exits 0 whether a subcommand works or not, and cmd keeps going
+          rem after a failure, so all four run and the log carries every answer.
+          smctl healthcheck
+          smctl windows ksp list
+          smctl keypair ls
+          smctl windows certsync --keypair-alias="%KEYPAIR_ALIAS%"
+        shell: cmd
+        env:
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+          SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+          KEYPAIR_ALIAS: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}
 
       - name: Sign Windows ARM64 MSI with DigiCert KeyLocker
         if: ${{ steps.check-secret.outputs.can_sign == 'true' && steps.install-digicert.outcome == 'success' }}

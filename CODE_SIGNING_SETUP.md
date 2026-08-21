@@ -99,6 +99,38 @@ build an unsigned MSI.
 - **Description**: Alias of the signing keypair in KeyLocker, passed to
   `smctl sign --keypair-alias`
 
+### `certsync` is not optional, and `smctl sign` lies about failing
+
+`smctl sign` shells out to `signtool`, which looks for the certificate in the
+**Windows certificate store**. Nothing puts it there for you, so every signing
+job has to run this first:
+
+```
+smctl windows certsync --keypair-alias="<alias>"
+```
+
+Without it `smctl` prints
+
+```
+signCommand command for file <path> FAILED
+```
+
+and **exits 0**. That combination is why the x64 MSI came out unsigned in every
+release from the day the secrets were added (2026-07-21) to 9.4.24 while the
+`Sign Windows MSI with DigiCert KeyLocker` step reported success: nothing in the
+job looked at the file, and the exit code said everything was fine.
+
+Two consequences worth keeping:
+
+- **Never trust the sign step's exit code.** `Verify MSI Signature` reads
+  `Get-AuthenticodeSignature` off the artifact and is the only authoritative
+  answer. It is what caught this.
+- **`smctl` gives no reason for a signing failure**, so the signing jobs also run
+  `smctl healthcheck`, `smctl windows ksp list` and `smctl keypair ls` next to
+  certsync. When signing breaks again, the run says whether the credential, the
+  KSP registration or the keypair alias is at fault rather than costing a release
+  to find out.
+
 ### What gets signed
 
 | Artifact | Job | Signed |
@@ -143,8 +175,13 @@ security find-identity -v -p codesigning
 # Test DigiCert KeyLocker connection
 smctl healthcheck
 
-# List the keypairs the API key can reach (confirms CODE_SIGNING_KEYPAIR_ALIAS)
+# Confirm the KSP is registered and the API key can reach the keypair
+smctl windows ksp list
 smctl keypair ls
+
+# Put the certificate in the Windows store. Signing fails without this, and
+# fails by printing FAILED and exiting 0.
+smctl windows certsync --keypair-alias="<alias>"
 
 # Build, then sign the MSI the same way CI does
 ./gradlew packageMsi
@@ -194,8 +231,14 @@ powershell -Command "Get-AuthenticodeSignature 'composeApp/build/compose/binarie
   the `Check if signing secret is available` step set `can_sign=false`
 - **KeyLocker connection fails**: Check API credentials and host
 - **Certificate not accessible**: Verify KeyLocker setup and permissions
-- **MSI signing fails**: Check the keypair alias and DigiCert service status; the
-  `Check SMKSP Log` step prints the tail of `%USERPROFILE%\.signingmanager\logs\smksp.log`
+- **MSI signing fails**: read the `Sync KeyLocker Certificate to the Windows Store`
+  step first - `healthcheck` covers the credential, `ksp list` the KSP registration,
+  `keypair ls` the alias, and a failing `certsync` means signtool will not find a
+  certificate. The `Check SMKSP Log` step prints the tail of
+  `%USERPROFILE%\.signingmanager\logs\smksp.log`, though "log not found" is normal
+  when the failure happened before the KSP was ever loaded
+- **`signCommand ... FAILED` but the step is green**: expected, `smctl sign` exits 0
+  regardless. `Verify MSI Signature` is what fails the job
 - **ARM64 MSI unsigned**: Expected if the x64 client tools cannot run under
   emulation on the ARM runner; the run emits a warning and ships the MSI anyway
 
