@@ -139,13 +139,23 @@ jobs:
       # fetched the Gradle distribution and resolved from cold here - 166s of
       # serial latency ahead of all five platform builds, measured on run
       # 32446645832. Same actions and pins as every other job in this workflow.
+      #
+      # Gated to the two events that actually run Gradle. "Increment Version"
+      # below is this job's only ./gradlew call and carries the same condition,
+      # so on a `push:` tag release these would be pure added latency: a JDK
+      # install, a Gradle Home cache restore, and - because setup-gradle's post
+      # step runs before the job is marked complete, and `needs:` waits on job
+      # completion - a cache save too, all at the head of the critical path that
+      # all five platform builds queue behind.
       - name: ☕ Setup JDK
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
         uses: actions/setup-java@v5.6.0
         with:
           java-version: '17'
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
@@ -213,12 +223,16 @@ jobs:
             ./gradlew setPrereleaseSuffix -Psuffix="${RELEASE_TYPE}.${PRERELEASE_NUM}" -PskipGitCheck=true
           else
             # Ensure we clear any existing prerelease suffix for stable releases.
-            # ClearPrereleaseSuffixTask returns immediately when the suffix is
-            # already blank, so on a stable-after-stable release this Gradle run
-            # is a no-op - and a second configuration pass over 30+ modules is
-            # the most expensive no-op in the release. incrementVersion does not
-            # touch the suffix, so reading the file here sees the same value the
-            # task would. A missing key means nothing to clear either.
+            # ClearPrereleaseSuffixTask returns before it writes anything when the
+            # suffix is already blank: all four of its writes - app.prerelease.suffix,
+            # app.version, app.release.channel and app.build.date - sit after that
+            # early return, so skipping the run when the suffix is blank changes
+            # nothing on disk. The guard is exact, not approximately exact.
+            #
+            # Worth skipping because a second Gradle configuration pass over 30+
+            # modules is the most expensive no-op in the release. incrementVersion
+            # does not touch the suffix, so reading the file here sees the same
+            # value the task would. A missing key means nothing to clear either.
             CURRENT_SUFFIX="$(grep '^app.prerelease.suffix=' version.properties | cut -d'=' -f2- || true)"
             if [[ -n "$CURRENT_SUFFIX" ]]; then
               ./gradlew clearPrereleaseSuffix -PskipGitCheck=true
