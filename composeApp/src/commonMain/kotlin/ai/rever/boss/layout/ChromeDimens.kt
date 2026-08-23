@@ -40,9 +40,16 @@ enum class ChromeDensity {
  * @property bottomBarHeight The status bar.
  * @property stripWidth One icon rail's width. Floored by the icon buttons — see [MIN_STRIP_WIDTH].
  * @property panelTopBarHeight A `SidePanel` header. Note this is *not* part of the main panel's
- *   budget — a browser tab in the main panel never pays it (see `ChromeMetrics`).
- * @property dividerThickness The hairline between stacked bars. `Divider`'s own default, named here
- *   so the budget can account for it.
+ *   budget - a browser tab in the main panel never pays it (see `ChromeMetrics`).
+ * @property dividerThickness The hairline between stacked bars, and the width of the `VDivider` each
+ *   icon strip draws down its inner edge. `Divider`'s own default, named here so the budget can
+ *   account for it.
+ * @property panelBorderThickness Width of the ring every main panel reserves for its active-panel
+ *   border. The border is drawn at this width and the content inset by the same amount, so a child
+ *   Compose cannot draw over - a foreign native surface such as the HARDWARE_ACCELERATED browser -
+ *   has nowhere to cover it from. Smaller padding than border leaves a sliver the browser paints
+ *   over; larger leaves a visible gap inside the border. Not density-scaled: it answers to a
+ *   rendering artifact, not to taste, and 1.dp is invisible while 3.dp is a frame.
  */
 data class ChromeDimens(
     val titleBarHeight: Dp,
@@ -52,6 +59,7 @@ data class ChromeDimens(
     val stripWidth: Dp,
     val panelTopBarHeight: Dp,
     val dividerThickness: Dp = 1.dp,
+    val panelBorderThickness: Dp = 2.dp,
 ) {
     companion object {
         /**
@@ -65,13 +73,21 @@ data class ChromeDimens(
 
         /**
          * The floor for [tabBarHeight]: `NEW_TAB_BUTTON_SIZE` is 32.dp, so anything under 36 leaves
-         * the "+" button less than 2.dp of breathing room on each side.
+         * the "+" button less than 2.dp of breathing room on each side. `ChromeMetricsTest` pins
+         * this against that constant rather than trusting the arithmetic in this sentence.
          */
         val MIN_TAB_BAR = 36.dp
 
         /**
-         * The floor for [stripWidth]: `SidebarIconRail.RowPitch` is a 32.dp button plus padding, so
-         * a rail narrower than 36 starts squeezing the buttons against its edges.
+         * The floor for [stripWidth]: the rail's icon buttons are 32.dp square
+         * (`SidebarSlotContainer`), so a rail narrower than 36 squeezes them against its edges.
+         *
+         * Deliberately *not* `SidebarIconRail.RowPitch`, which an earlier version of this comment
+         * cited. That is a *vertical* pitch - "32dp button + 8dp vertical padding" - and says
+         * nothing about how wide the rail has to be. It happens to be 40 as well, which is exactly
+         * what makes citing it here a trap for whoever changes one and reads the other. The button
+         * size it is really floored by is a literal at its call site, so there is no constant to
+         * pin it to.
          */
         val MIN_STRIP_WIDTH = 36.dp
 

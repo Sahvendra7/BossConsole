@@ -1,5 +1,6 @@
 package ai.rever.boss.layout
 
+import ai.rever.boss.components.window_panel.components.main_window_panels.NEW_TAB_BUTTON_SIZE
 import ai.rever.boss.focusmode.FocusModeSettings
 import ai.rever.boss.window.WindowAppearanceSettings
 import androidx.compose.ui.unit.dp
@@ -30,23 +31,51 @@ class ChromeMetricsTest {
 
     private val focusOff = FocusModeSettings(enabled = false)
 
-    @Test
-    fun `shipped macOS defaults cost 142dp and leave the page 84 percent`() {
-        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOff)
+    private val comfortable = ChromeDimens.Comfortable
 
-        // 27 title (26+1) + 41 top (40+1) + 43 tab (42+1) + 31 bottom (30+1)
-        assertEquals(142.dp, budget.vertical)
-        assertEquals(80.dp, budget.horizontal)
-        assertEquals(0.847f, budget.verticalFractionOf(airHeight), absoluteTolerance = 0.001f)
-        assertEquals(0.946f, budget.horizontalFractionOf(airWidth), absoluteTolerance = 0.001f)
+    /** Border ring plus content inset, off both axes, in every configuration. */
+    private val ring = comfortable.panelBorderThickness * 2
+
+    /** Everything a preference can switch off, switched off. */
+    private val leanest =
+        WindowAppearanceSettings(
+            showTitleBar = false,
+            showTopBar = false,
+            showBottomBar = false,
+            showLeftStrip = false,
+            showRightStrip = false,
+        )
+
+    @Test
+    fun `shipped macOS defaults cost 146dp and leave the page 84 percent`() {
+        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOff, comfortable)
+
+        // 27 title (26+1) + 41 top (40+1) + 43 tab (42+1) + 31 bottom (30+1) + 4 ring
+        assertEquals(146.dp, budget.vertical)
+        // 41 per strip (40+1 divider) + 4 ring
+        assertEquals(86.dp, budget.horizontal)
+        assertEquals(0.843f, budget.verticalFractionOf(airHeight), absoluteTolerance = 0.001f)
+        assertEquals(0.941f, budget.horizontalFractionOf(airWidth), absoluteTolerance = 0.001f)
     }
 
     @Test
     fun `Windows and Linux defaults save the title row`() {
-        val budget = ChromeMetrics.mainPanelBudget(nonMacDefaults, focusOff)
+        val budget = ChromeMetrics.mainPanelBudget(nonMacDefaults, focusOff, comfortable)
 
-        assertEquals(115.dp, budget.vertical)
-        assertEquals(80.dp, budget.horizontal)
+        assertEquals(119.dp, budget.vertical)
+        assertEquals(86.dp, budget.horizontal)
+    }
+
+    @Test
+    fun `the panel border ring is charged in every configuration`() {
+        // BossMainPanel draws it whether or not the panel is active, and no preference switches it
+        // off, so it is the one part of the budget that is always present. Omitting it understated
+        // every figure here by 4dp on each axis until the review of #240 caught it.
+        val leanestPossible =
+            ChromeMetrics.mainPanelBudget(leanest, focusOff, comfortable)
+
+        assertTrue(leanestPossible.vertical >= ring)
+        assertEquals(ring, leanestPossible.horizontal)
     }
 
     @Test
@@ -55,7 +84,7 @@ class ChromeMetricsTest {
         val compact = ChromeMetrics.mainPanelBudget(macDefaults, focusOff, ChromeDimens.Compact)
 
         assertEquals(20.dp, comfortable.vertical - compact.vertical)
-        // 8 off each strip.
+        // 4 off each strip, 8 across both.
         assertEquals(8.dp, comfortable.horizontal - compact.horizontal)
     }
 
@@ -70,11 +99,11 @@ class ChromeMetricsTest {
                 hideBottomBar = true,
             )
 
-        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOn)
+        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOn, comfortable)
 
         // Title row survives: it answers to the appearance preference, not to focus mode.
-        assertEquals(27.dp + 43.dp, budget.vertical)
-        assertEquals(0.dp, budget.horizontal)
+        assertEquals(27.dp + 43.dp + ring, budget.vertical)
+        assertEquals(ring, budget.horizontal)
     }
 
     @Test
@@ -89,53 +118,38 @@ class ChromeMetricsTest {
             )
 
         assertEquals(
-            ChromeMetrics.mainPanelBudget(macDefaults, focusOff),
-            ChromeMetrics.mainPanelBudget(macDefaults, idle),
+            ChromeMetrics.mainPanelBudget(macDefaults, focusOff, comfortable),
+            ChromeMetrics.mainPanelBudget(macDefaults, idle, comfortable),
         )
     }
 
     @Test
     fun `a hidden bar costs nothing even with focus mode off`() {
-        val leanest =
-            WindowAppearanceSettings(
-                showTitleBar = false,
-                showTopBar = false,
-                showBottomBar = false,
-                showLeftStrip = false,
-                showRightStrip = false,
-            )
+        val budget = ChromeMetrics.mainPanelBudget(leanest, focusOff, comfortable)
 
-        val budget = ChromeMetrics.mainPanelBudget(leanest, focusOff)
-
-        // The tab bar has no switch, so this is the floor the current architecture can reach.
-        assertEquals(43.dp, budget.vertical)
-        assertEquals(0.dp, budget.horizontal)
-        assertTrue(budget.verticalFractionOf(airHeight) > 0.95f)
+        // The tab bar has no switch, so this plus the ring is the floor the architecture can reach.
+        assertEquals(43.dp + ring, budget.vertical)
+        assertEquals(ring, budget.horizontal)
+        assertTrue(budget.verticalFractionOf(airHeight) > 0.94f)
     }
 
     @Test
     fun `the tab bar is never free`() {
         // Whatever else is switched off, a tabbed browser keeps its tab row.
         ChromeDensity.entries.forEach { density ->
-            val budget =
-                ChromeMetrics.mainPanelBudget(
-                    WindowAppearanceSettings(
-                        showTitleBar = false,
-                        showTopBar = false,
-                        showBottomBar = false,
-                        showLeftStrip = false,
-                        showRightStrip = false,
-                    ),
-                    focusOff,
-                    ChromeDimens.of(density),
-                )
-            assertEquals(ChromeDimens.of(density).tabBarHeight + 1.dp, budget.vertical, "density $density")
+            val dimens = ChromeDimens.of(density)
+            val budget = ChromeMetrics.mainPanelBudget(leanest, focusOff, dimens)
+            assertEquals(
+                dimens.tabBarHeight + dimens.dividerThickness + dimens.panelBorderThickness * 2,
+                budget.vertical,
+                "density $density",
+            )
         }
     }
 
     @Test
     fun `a degenerate window size reports zero rather than dividing by zero`() {
-        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOff)
+        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOff, comfortable)
 
         assertEquals(0f, budget.verticalFractionOf(0.dp))
         assertEquals(0f, budget.horizontalFractionOf((-10).dp))
@@ -143,9 +157,38 @@ class ChromeMetricsTest {
 
     @Test
     fun `chrome taller than the window clamps to zero rather than going negative`() {
-        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOff)
+        val budget = ChromeMetrics.mainPanelBudget(macDefaults, focusOff, comfortable)
 
         assertEquals(0f, budget.verticalFractionOf(100.dp))
+    }
+
+    @Test
+    fun `comfortable reproduces the literals it replaced`() {
+        // The 146dp aggregate above catches a regression but reports a total; this names the field
+        // that moved, and is the most direct statement of PR A's no-op claim.
+        assertEquals(
+            ChromeDimens(
+                titleBarHeight = 26.dp,
+                topBarHeight = 40.dp,
+                tabBarHeight = 42.dp,
+                bottomBarHeight = 30.dp,
+                stripWidth = 40.dp,
+                panelTopBarHeight = 28.dp,
+            ),
+            ChromeDimens.Comfortable,
+        )
+    }
+
+    @Test
+    fun `the tab bar floor really clears the new-tab button`() {
+        // MIN_TAB_BAR's KDoc derives itself from NEW_TAB_BUTTON_SIZE in prose. Bump that constant
+        // and the prose is quietly wrong with a green suite, so pin the relationship instead - the
+        // same discipline SidebarBottomActionsLayoutTest applies to the rail metrics.
+        assertTrue(
+            ChromeDimens.MIN_TAB_BAR >= NEW_TAB_BUTTON_SIZE + 4.dp,
+            "MIN_TAB_BAR ${ChromeDimens.MIN_TAB_BAR} leaves the ${NEW_TAB_BUTTON_SIZE} new-tab " +
+                "button less than 2dp a side",
+        )
     }
 
     @Test

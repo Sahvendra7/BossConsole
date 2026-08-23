@@ -279,7 +279,15 @@ internal fun BossAppScaffold(
 
     // Renders nothing; reports what the chrome costs the page when BOSS_CHROME_BUDGET is set.
     // Here rather than inside a bar so it still reports with every bar switched off.
-    ChromeBudgetReadout(appearance = appearance, focusMode = focusModeSettings)
+    //
+    // Anything that provides LocalChromeDimens must sit ABOVE this call. Provide it lower - between
+    // here and the bars - and the readout reports Comfortable while the bars draw Compact, which is
+    // exactly the drift ChromeMetrics exists to make impossible.
+    ChromeBudgetReadout(
+        windowId = state.windowId,
+        appearance = appearance,
+        focusMode = focusModeSettings,
+    )
 
     with(state.draggablePanelComponent) {
         Box(
