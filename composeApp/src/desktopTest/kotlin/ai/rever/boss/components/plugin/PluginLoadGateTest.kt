@@ -13,9 +13,9 @@ import kotlin.test.assertTrue
  * only trace was one ERROR line in `~/.boss/logs`. Each case below is a position a user was actually
  * in that day.
  */
-class PluginVersionGateTest {
+class PluginLoadGateTest {
     private val hostGate =
-        PluginVersionGate.NeedsNewerHost(
+        PluginLoadGate.NeedsNewerHost(
             pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
             displayName = "Fluck Browser",
             required = "9.4.23",
@@ -23,7 +23,7 @@ class PluginVersionGateTest {
         )
 
     private val apiGate =
-        PluginVersionGate.NeedsNewerApi(
+        PluginLoadGate.NeedsNewerApi(
             pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
             displayName = "Fluck Browser",
             required = "1.0.83",
@@ -42,7 +42,7 @@ class PluginVersionGateTest {
     }
 
     private fun remedies(
-        gate: PluginVersionGate,
+        gate: PluginLoadGate,
         hostUpdate: String? = null,
         apiUpdate: String? = null,
         revertTo: String? = null,
@@ -51,10 +51,10 @@ class PluginVersionGateTest {
     @Test
     fun `a host update that clears the floor is offered first`() {
         val out = remedies(hostGate, hostUpdate = "9.4.23", revertTo = "1.2.21")
-        assertEquals(PluginVersionRemedy.UpdateHost("9.4.23"), out.first())
+        assertEquals(PluginLoadRemedy.UpdateHost("9.4.23"), out.first())
         // Going forward beats going back when both are possible, but going back stays on offer -
         // a user mid-task should not have to restart the app to get their browser back.
-        assertEquals(PluginVersionRemedy.RevertPlugin("1.2.21"), out.last())
+        assertEquals(PluginLoadRemedy.RevertPlugin("1.2.21"), out.last())
     }
 
     @Test
@@ -63,7 +63,7 @@ class PluginVersionGateTest {
         // that lands below the floor costs the user a download and a restart and leaves the plugin
         // exactly as missing as before.
         val out = remedies(hostGate, hostUpdate = "9.4.22", revertTo = "1.2.21")
-        assertEquals(listOf(PluginVersionRemedy.RevertPlugin("1.2.21")), out)
+        assertEquals(listOf(PluginLoadRemedy.RevertPlugin("1.2.21")), out)
     }
 
     @Test
@@ -71,13 +71,13 @@ class PluginVersionGateTest {
         // The actual position on the day: 9.4.23 did not exist yet, because the plugin released
         // ahead of the host it required.
         val out = remedies(hostGate, hostUpdate = null, revertTo = "1.2.21")
-        assertEquals(listOf(PluginVersionRemedy.RevertPlugin("1.2.21")), out)
+        assertEquals(listOf(PluginLoadRemedy.RevertPlugin("1.2.21")), out)
     }
 
     @Test
     fun `with nothing published and nothing kept, say why rather than showing an empty dialog`() {
         val out = remedies(hostGate)
-        val nothing = assertIs<PluginVersionRemedy.NothingAvailable>(out.single())
+        val nothing = assertIs<PluginLoadRemedy.NothingAvailable>(out.single())
         assertTrue(nothing.reason.contains("9.4.23"), "the reason does not name what is needed")
         assertTrue(nothing.reason.contains("9.4.22"), "the reason does not name what is installed")
     }
@@ -88,13 +88,13 @@ class PluginVersionGateTest {
         // plugin, so this is resolvable in seconds without a restart - sending the user to download
         // a whole application update for it would be wrong even when one exists.
         val out = remedies(apiGate, hostUpdate = "9.9.9", apiUpdate = "1.0.83")
-        assertEquals(listOf<PluginVersionRemedy>(PluginVersionRemedy.UpdateApi("1.0.83")), out)
+        assertEquals(listOf<PluginLoadRemedy>(PluginLoadRemedy.UpdateApi("1.0.83")), out)
     }
 
     @Test
     fun `an api update below the floor is not offered either`() {
         val out = remedies(apiGate, apiUpdate = "1.0.82", revertTo = "1.2.21")
-        assertEquals(listOf(PluginVersionRemedy.RevertPlugin("1.2.21")), out)
+        assertEquals(listOf(PluginLoadRemedy.RevertPlugin("1.2.21")), out)
     }
 
     @Test
@@ -103,7 +103,7 @@ class PluginVersionGateTest {
         // Reading it as strict would refuse the exact release built to fix the problem.
         assertTrue(satisfies("9.4.23", "9.4.23"))
         val out = remedies(hostGate, hostUpdate = "9.4.23")
-        assertEquals(listOf<PluginVersionRemedy>(PluginVersionRemedy.UpdateHost("9.4.23")), out)
+        assertEquals(listOf<PluginLoadRemedy>(PluginLoadRemedy.UpdateHost("9.4.23")), out)
     }
 
     @Test

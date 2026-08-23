@@ -12,14 +12,14 @@ import kotlin.test.assertTrue
  * test cannot reach: a composable mounted in a window's dialog host, an `actual` bridge that talks
  * to `PluginStoreSetup`, a startup registration in `main`, and a catch block inside the plugin
  * manager's load lock. The decisions themselves are tested properly in
- * [VersionGateTranslationTest], [PluginVersionRemedyLabelTest] and [PluginRollbackStoreTest].
+ * [VersionGateTranslationTest], [PluginLoadRemedyLabelTest] and [PluginRollbackStoreTest].
  *
  * Each join was a silent failure on its own: without the snapshot there is nothing to revert to,
  * without the record no dialog appears, without the registration the dialog has no remedies, and
  * without the mount none of it is on screen. All four together are what turns one ERROR line in
  * `~/.boss/logs` into a button.
  */
-class VersionGateWiringTest {
+class LoadGateWiringTest {
     private fun source(relative: String): String {
         val root =
             generateSequence(File("").absoluteFile) { it.parentFile }
@@ -34,7 +34,7 @@ class VersionGateWiringTest {
         val manager =
             source("composeApp/src/commonMain/kotlin/ai/rever/boss/components/plugin/DynamicPluginManager.kt")
         assertTrue(
-            manager.contains("versionGateFor(error)?.let(PluginVersionGateRegistry::record)"),
+            manager.contains("loadGateFor(error)?.let(PluginLoadGateRegistry::record)"),
             "a refused plugin is back to vanishing with only a log line",
         )
     }
@@ -45,7 +45,7 @@ class VersionGateWiringTest {
         // pass on the string alone.
         val manager =
             source("composeApp/src/commonMain/kotlin/ai/rever/boss/components/plugin/DynamicPluginManager.kt")
-        val tail = manager.substringAfter("versionGateFor(error)?.let(PluginVersionGateRegistry::record)")
+        val tail = manager.substringAfter("loadGateFor(error)?.let(PluginLoadGateRegistry::record)")
         assertTrue(
             tail.contains("return@withLock Result.failure(error ?: Exception(\"Unknown error\"))"),
             "the refusal is recorded after the load failure has already returned",
@@ -82,7 +82,7 @@ class VersionGateWiringTest {
         // gate recorded before this runs sits in the registry with nothing able to act on it.
         val main = source("composeApp/src/desktopMain/kotlin/ai/rever/boss/main.kt")
         assertTrue(
-            main.contains("PluginVersionRemedyAccess") && main.contains("DesktopPluginVersionRemedyResolver"),
+            main.contains("PluginLoadRemedyAccess") && main.contains("DesktopPluginLoadRemedyResolver"),
             "the dialog would render with no remedies because nothing populated the holder",
         )
     }
@@ -90,9 +90,9 @@ class VersionGateWiringTest {
     @Test
     fun `the dialog is mounted in the app dialog host`() {
         val dialogs = source("composeApp/src/commonMain/kotlin/ai/rever/boss/app/BossAppDialogs.kt")
-        assertTrue(dialogs.contains("PluginVersionGateHost("), "the recovery dialog is never shown")
+        assertTrue(dialogs.contains("PluginLoadGateHost("), "the recovery dialog is never shown")
         assertTrue(
-            dialogs.contains("remedyResolver = PluginVersionRemedyAccess.current()"),
+            dialogs.contains("remedyResolver = PluginLoadRemedyAccess.current()"),
             "the mounted dialog is not connected to the desktop resolver",
         )
     }

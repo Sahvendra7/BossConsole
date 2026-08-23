@@ -9,15 +9,15 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 
 /**
- * Resolves what can be offered for a [PluginVersionGate], and carries out the choice.
+ * Resolves what can be offered for a [PluginLoadGate], and carries out the choice.
  *
  * [remediesFor] decides *what* to offer and is deliberately pure. This is the other half: the three
  * facts it needs, and the actions behind each button. Kept separate so the decision stays testable
  * without an updater, a store or a plugins directory - and so this file can be read as "what does
  * each button actually do", which is the question a reviewer will have.
  */
-internal object PluginVersionGateRecovery {
-    private val logger = BossLogger.forComponent("PluginVersionGateRecovery")
+internal object PluginLoadGateRecovery {
+    private val logger = BossLogger.forComponent("PluginLoadGateRecovery")
 
     /**
      * Whether [candidate] meets [required], by the loader's own rule.
@@ -86,20 +86,20 @@ internal object PluginVersionGateRecovery {
      * the gate so the dialog can stay open with the reason and the remaining options.
      */
     suspend fun apply(
-        gate: PluginVersionGate,
-        remedy: PluginVersionRemedy,
+        gate: PluginLoadGate,
+        remedy: PluginLoadRemedy,
         manager: DynamicPluginManager,
     ): Result<String> =
         when (remedy) {
-            is PluginVersionRemedy.UpdateHost -> updateHost(remedy)
+            is PluginLoadRemedy.UpdateHost -> updateHost(remedy)
 
-            is PluginVersionRemedy.UpdateApi -> updateApi(gate, remedy, manager)
+            is PluginLoadRemedy.UpdateApi -> updateApi(gate, remedy, manager)
 
-            is PluginVersionRemedy.RevertPlugin -> revert(gate, remedy, manager)
+            is PluginLoadRemedy.RevertPlugin -> revert(gate, remedy, manager)
 
             // Not reachable from a button: the dialog renders this as a sentence. Handled rather
             // than thrown so a future caller cannot turn it into a crash.
-            is PluginVersionRemedy.NothingAvailable -> Result.failure(IllegalStateException(remedy.reason))
+            is PluginLoadRemedy.NothingAvailable -> Result.failure(IllegalStateException(remedy.reason))
         }
 
     /**
@@ -109,7 +109,7 @@ internal object PluginVersionGateRecovery {
      * so clearing it would remove the only explanation of why the plugin is missing during the
      * window between downloading and restarting.
      */
-    private suspend fun updateHost(remedy: PluginVersionRemedy.UpdateHost): Result<String> {
+    private suspend fun updateHost(remedy: PluginLoadRemedy.UpdateHost): Result<String> {
         val updater = UpdateManager.instance
         val info =
             (updater.updateState.value as? UpdateState.UpdateAvailable)?.updateInfo
@@ -128,8 +128,8 @@ internal object PluginVersionGateRecovery {
      * its second chance without the user doing anything else.
      */
     private suspend fun updateApi(
-        gate: PluginVersionGate,
-        remedy: PluginVersionRemedy.UpdateApi,
+        gate: PluginLoadGate,
+        remedy: PluginLoadRemedy.UpdateApi,
         manager: DynamicPluginManager,
     ): Result<String> {
         val store =
@@ -150,7 +150,7 @@ internal object PluginVersionGateRecovery {
                 load = { path -> manager.installPlugin(path).map { true } },
             )
         return result.map {
-            PluginVersionGateRegistry.clear(gate.pluginId)
+            PluginLoadGateRegistry.clear(gate.pluginId)
             "Plugin API updated to ${remedy.availableVersion}."
         }
     }
@@ -162,8 +162,8 @@ internal object PluginVersionGateRecovery {
      * download, no restart, and the plugin is present again when it returns.
      */
     private suspend fun revert(
-        gate: PluginVersionGate,
-        remedy: PluginVersionRemedy.RevertPlugin,
+        gate: PluginLoadGate,
+        remedy: PluginLoadRemedy.RevertPlugin,
         manager: DynamicPluginManager,
     ): Result<String> {
         val pluginDir = PluginStoreSetup.getPluginDir()
@@ -182,7 +182,7 @@ internal object PluginVersionGateRecovery {
         return manager
             .installPlugin(restored.absolutePath)
             .map { info ->
-                PluginVersionGateRegistry.clear(gate.pluginId)
+                PluginLoadGateRegistry.clear(gate.pluginId)
                 "${info.manifest.displayName} is back on version ${remedy.toVersion}."
             }.onFailure { e ->
                 logger.error(
@@ -218,30 +218,30 @@ private fun refusedJarFor(
         }
 
 /**
- * The desktop half of [PluginVersionRemedyResolver], wired to the real updater, store and disk.
+ * The desktop half of [PluginLoadRemedyResolver], wired to the real updater, store and disk.
  *
- * A thin adapter over [PluginVersionGateRecovery] so the host composable in `commonMain` can be
+ * A thin adapter over [PluginLoadGateRecovery] so the host composable in `commonMain` can be
  * mounted without knowing any of that exists.
  */
-object DesktopPluginVersionRemedyResolver : PluginVersionRemedyResolver {
-    override suspend fun resolve(gate: PluginVersionGate): List<PluginVersionRemedy> =
+object DesktopPluginLoadRemedyResolver : PluginLoadRemedyResolver {
+    override suspend fun resolve(gate: PluginLoadGate): List<PluginLoadRemedy> =
         remediesFor(
             gate = gate,
-            hostUpdate = PluginVersionGateRecovery.hostUpdateVersion(),
+            hostUpdate = PluginLoadGateRecovery.hostUpdateVersion(),
             // Only asked for the gate it can fix. An api lookup for a host-version refusal is a
             // store request whose answer nothing would read.
             apiUpdate =
                 when (gate) {
-                    is PluginVersionGate.NeedsNewerApi -> PluginVersionGateRecovery.apiUpdateVersion()
-                    is PluginVersionGate.NeedsNewerHost -> null
+                    is PluginLoadGate.NeedsNewerApi -> PluginLoadGateRecovery.apiUpdateVersion()
+                    is PluginLoadGate.NeedsNewerHost -> null
                 },
-            revertTo = PluginVersionGateRecovery.revertVersion(gate.pluginId),
-            satisfies = PluginVersionGateRecovery::satisfies,
+            revertTo = PluginLoadGateRecovery.revertVersion(gate.pluginId),
+            satisfies = PluginLoadGateRecovery::satisfies,
         )
 
     override suspend fun apply(
-        gate: PluginVersionGate,
-        remedy: PluginVersionRemedy,
+        gate: PluginLoadGate,
+        remedy: PluginLoadRemedy,
         manager: DynamicPluginManager,
-    ): Result<String> = PluginVersionGateRecovery.apply(gate, remedy, manager)
+    ): Result<String> = PluginLoadGateRecovery.apply(gate, remedy, manager)
 }

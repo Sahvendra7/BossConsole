@@ -33,16 +33,24 @@ import kotlinx.coroutines.flow.asStateFlow
  * files - so the question "what should we offer the user" is answerable in a test.
  */
 
-/** Which floor the plugin failed, and the two versions involved. */
-sealed interface PluginVersionGate {
+/**
+ * Why the host refused the plugin.
+ *
+ * `required` and `current` sit on [VersionFloor] rather than up here so a future refusal that is
+ * not a version comparison has no pair of numbers to invent.
+ */
+sealed interface PluginLoadGate {
     val pluginId: String
     val displayName: String
 
-    /** What the plugin asks for. */
-    val required: String
+    /** A refusal that compares what the plugin asks for against what this build provides. */
+    sealed interface VersionFloor : PluginLoadGate {
+        /** What the plugin asks for. */
+        val required: String
 
-    /** What this build has. */
-    val current: String
+        /** What this build has. */
+        val current: String
+    }
 
     /** The plugin needs a newer BOSS. Fixed by updating the app, or by going back a plugin version. */
     data class NeedsNewerHost(
@@ -50,7 +58,7 @@ sealed interface PluginVersionGate {
         override val displayName: String,
         override val required: String,
         override val current: String,
-    ) : PluginVersionGate
+    ) : VersionFloor
 
     /**
      * The plugin needs a newer plugin API layer.
@@ -65,11 +73,11 @@ sealed interface PluginVersionGate {
         override val displayName: String,
         override val required: String,
         override val current: String,
-    ) : PluginVersionGate
+    ) : VersionFloor
 }
 
-/** Something the user can do about a [PluginVersionGate], with enough detail to label a button. */
-sealed interface PluginVersionRemedy {
+/** Something the user can do about a [PluginLoadGate], with enough detail to label a button. */
+sealed interface PluginLoadRemedy {
     /**
      * Update the application. Only offered when an update is actually available AND high enough -
      * "Update BOSS" that lands on a version still below the floor is worse than no button, because
@@ -77,12 +85,12 @@ sealed interface PluginVersionRemedy {
      */
     data class UpdateHost(
         val availableVersion: String,
-    ) : PluginVersionRemedy
+    ) : PluginLoadRemedy
 
     /** Install a newer api plugin from the store. */
     data class UpdateApi(
         val availableVersion: String,
-    ) : PluginVersionRemedy
+    ) : PluginLoadRemedy
 
     /**
      * Go back to the plugin version that was working.
@@ -93,7 +101,7 @@ sealed interface PluginVersionRemedy {
      */
     data class RevertPlugin(
         val toVersion: String,
-    ) : PluginVersionRemedy
+    ) : PluginLoadRemedy
 
     /**
      * Nothing can be offered, and the reason is worth showing.
@@ -104,7 +112,7 @@ sealed interface PluginVersionRemedy {
      */
     data class NothingAvailable(
         val reason: String,
-    ) : PluginVersionRemedy
+    ) : PluginLoadRemedy
 }
 
 /**
@@ -118,43 +126,43 @@ sealed interface PluginVersionRemedy {
  *   arithmetic is how the two drift into disagreeing about the same pair of numbers.
  */
 fun remediesFor(
-    gate: PluginVersionGate,
+    gate: PluginLoadGate,
     hostUpdate: String?,
     apiUpdate: String?,
     revertTo: String?,
     satisfies: (required: String, candidate: String) -> Boolean,
-): List<PluginVersionRemedy> {
-    val remedies = mutableListOf<PluginVersionRemedy>()
+): List<PluginLoadRemedy> {
+    val remedies = mutableListOf<PluginLoadRemedy>()
     when (gate) {
-        is PluginVersionGate.NeedsNewerHost -> {
+        is PluginLoadGate.NeedsNewerHost -> {
             // Only when it would actually clear the floor. An update to 9.4.22 does not help a
             // plugin asking for 9.4.23, and offering it wastes a restart to end up here again.
             hostUpdate?.takeIf { satisfies(gate.required, it) }?.let {
-                remedies += PluginVersionRemedy.UpdateHost(it)
+                remedies += PluginLoadRemedy.UpdateHost(it)
             }
         }
 
-        is PluginVersionGate.NeedsNewerApi -> {
+        is PluginLoadGate.NeedsNewerApi -> {
             apiUpdate?.takeIf { satisfies(gate.required, it) }?.let {
-                remedies += PluginVersionRemedy.UpdateApi(it)
+                remedies += PluginLoadRemedy.UpdateApi(it)
             }
         }
     }
     // Always last, and always offered when it exists: it is the remedy that needs nothing published
     // and no restart, so it is the one that works when everything else is unavailable. Last rather
     // than first because going forward is better than going back when both are possible.
-    revertTo?.let { remedies += PluginVersionRemedy.RevertPlugin(it) }
+    revertTo?.let { remedies += PluginLoadRemedy.RevertPlugin(it) }
 
     if (remedies.isNotEmpty()) return remedies
     return listOf(
-        PluginVersionRemedy.NothingAvailable(
+        PluginLoadRemedy.NothingAvailable(
             when (gate) {
-                is PluginVersionGate.NeedsNewerHost -> {
+                is PluginLoadGate.NeedsNewerHost -> {
                     "This needs BOSS ${gate.required}. You have ${gate.current}, " +
                         "no update is available yet, and no earlier version of the plugin was kept."
                 }
 
-                is PluginVersionGate.NeedsNewerApi -> {
+                is PluginLoadGate.NeedsNewerApi -> {
                     "This needs plugin API ${gate.required}. You have ${gate.current}, " +
                         "the store has nothing newer, and no earlier version of the plugin was kept."
                 }
@@ -175,13 +183,13 @@ fun remediesFor(
  * Keyed by plugin id, so a plugin refused on every restart accumulates one entry rather than one
  * per attempt.
  */
-object PluginVersionGateRegistry {
-    private val _gates = MutableStateFlow<Map<String, PluginVersionGate>>(emptyMap())
+object PluginLoadGateRegistry {
+    private val _gates = MutableStateFlow<Map<String, PluginLoadGate>>(emptyMap())
 
     /** Refusals not yet dismissed or resolved, keyed by plugin id. */
-    val gates: StateFlow<Map<String, PluginVersionGate>> = _gates.asStateFlow()
+    val gates: StateFlow<Map<String, PluginLoadGate>> = _gates.asStateFlow()
 
-    fun record(gate: PluginVersionGate) {
+    fun record(gate: PluginLoadGate) {
         _gates.value = _gates.value + (gate.pluginId to gate)
     }
 
@@ -205,7 +213,7 @@ object PluginVersionGateRegistry {
 }
 
 /**
- * Translate a load failure into a [PluginVersionGate], or null when it is not a version floor.
+ * Translate a load failure into a [PluginLoadGate], or null when it is not a version floor.
  *
  * Null for everything else on purpose. A corrupt jar, a missing main class or a binary
  * incompatibility have no button that helps, and offering "Update BOSS" for them would send a user
@@ -215,7 +223,7 @@ object PluginVersionGateRegistry {
  * refusal happens before the loader returns anything but the exception, and an id is a worse label
  * than a name but a far better one than nothing.
  */
-internal fun versionGateFor(error: Throwable?): PluginVersionGate? =
+internal fun loadGateFor(error: Throwable?): PluginLoadGate? =
     when (error) {
         is PluginBossVersionException -> {
             val id = error.pluginId
@@ -225,7 +233,7 @@ internal fun versionGateFor(error: Throwable?): PluginVersionGate? =
             if (id.isNullOrBlank() || required.isNullOrBlank()) {
                 null
             } else {
-                PluginVersionGate.NeedsNewerHost(
+                PluginLoadGate.NeedsNewerHost(
                     pluginId = id,
                     displayName = id,
                     required = required,
@@ -240,7 +248,7 @@ internal fun versionGateFor(error: Throwable?): PluginVersionGate? =
             if (id.isNullOrBlank() || required.isNullOrBlank()) {
                 null
             } else {
-                PluginVersionGate.NeedsNewerApi(
+                PluginLoadGate.NeedsNewerApi(
                     pluginId = id,
                     displayName = id,
                     required = required,

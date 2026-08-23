@@ -933,7 +933,7 @@ class DynamicPluginManager(
                         // side the plugin simply stopped existing. For a systemPlugin that means a
                         // feature vanished - fluck-browser IS the browser tab, so 1.2.22 requiring
                         // BOSS 9.4.23 on a 9.4.22 host presented as "my browser is gone".
-                        versionGateFor(error)?.let(PluginVersionGateRegistry::record)
+                        loadGateFor(error)?.let(PluginLoadGateRegistry::record)
 
                         notifyListeners { it.pluginLoadFailed(null, error ?: Exception("Unknown error")) }
                         return@withLock Result.failure(error ?: Exception("Unknown error"))
