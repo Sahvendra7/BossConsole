@@ -19,8 +19,9 @@ class PerformanceIndicatorTextTest {
         footprintMB: Float? = 2.1f * gb,
         systemUsedMB: Float? = 70f * gb,
         systemTotalMB: Float? = 128f * gb,
-        heapFallback: String = "296MB/2.0GB",
-    ) = memoryIndicatorText(activeBrowserMB, footprintMB, systemUsedMB, systemTotalMB, heapFallback)
+        heapUsedMB: Float = 296f,
+        heapMaxMB: Float = 2f * gb,
+    ) = memoryIndicatorText(activeBrowserMB, footprintMB, systemUsedMB, systemTotalMB, heapUsedMB, heapMaxMB)
 
     // region the active browser figure
 

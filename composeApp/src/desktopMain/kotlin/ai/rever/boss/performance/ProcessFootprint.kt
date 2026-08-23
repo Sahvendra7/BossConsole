@@ -54,6 +54,11 @@ import java.util.concurrent.TimeUnit
  * answers "what is BOSS holding"; the colour answers "is this machine in trouble". Conflating
  * them would inherit this bias into the alerting.
  */
+// Over detekt's 11-function threshold by one. Suppressed rather than paid for by exiling a
+// member to file scope, which is what an earlier revision did: it left `retainLive` as a
+// module-wide symbol whose name no longer said what it retained, for no reason a reader of this
+// file could see.
+@Suppress("TooManyFunctions")
 object ProcessFootprint {
     private val logger = BossLogger.forComponent("ProcessFootprint")
 
@@ -180,6 +185,20 @@ object ProcessFootprint {
      * frame. Null before the sampler's first successful read.
      */
     fun lastReading(): Reading? = cached
+
+    /**
+     * The owned-pid map carried into this tick, with the dead dropped.
+     *
+     * Dropping by liveness is what makes a departed process stop counting without any rescan: a
+     * closed browser tab's renderer is gone from `livePids` and therefore gone from the total on
+     * the very next tick. A full rescan starts from nothing instead, since it is about to
+     * reclassify everything anyway.
+     */
+    internal fun retainLive(
+        owned: Map<Long, Owner>,
+        livePids: Set<Long>,
+        fullRescan: Boolean,
+    ): Map<Long, Owner> = if (fullRescan) emptyMap() else owned.filterKeys { it in livePids }
 
     /**
      * Which pids need their command line read this tick.
@@ -408,17 +427,3 @@ object ProcessFootprint {
             }
         }.getOrNull()
 }
-
-/**
- * The owned-pid map carried into this tick, with the dead dropped.
- *
- * Dropping by liveness is what makes a departed process stop counting without any rescan: a
- * closed browser tab's renderer is gone from `livePids` and therefore gone from the total on
- * the very next tick. A full rescan starts from nothing instead, since it is about to
- * reclassify everything anyway.
- */
-internal fun retainLive(
-    owned: Map<Long, ProcessFootprint.Owner>,
-    livePids: Set<Long>,
-    fullRescan: Boolean,
-): Map<Long, ProcessFootprint.Owner> = if (fullRescan) emptyMap() else owned.filterKeys { it in livePids }

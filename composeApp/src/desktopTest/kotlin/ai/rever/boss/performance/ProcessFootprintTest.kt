@@ -138,14 +138,14 @@ class ProcessFootprintTest {
     fun `a departed process stops counting on the very next tick`() {
         // A closed tab's renderer must drop out without waiting for any rescan.
         val owned = mapOf(1L to ProcessFootprint.Owner.HOST, 42L to ProcessFootprint.Owner.BROWSER)
-        val retained = retainLive(owned, setOf(1L), fullRescan = false)
+        val retained = ProcessFootprint.retainLive(owned, setOf(1L), fullRescan = false)
         assertEquals(mapOf(1L to ProcessFootprint.Owner.HOST), retained)
     }
 
     @Test
     fun `a full rescan starts from nothing`() {
         val owned = mapOf(1L to ProcessFootprint.Owner.HOST)
-        assertEquals(emptyMap(), retainLive(owned, setOf(1L), fullRescan = true))
+        assertEquals(emptyMap(), ProcessFootprint.retainLive(owned, setOf(1L), fullRescan = true))
     }
 
     // endregion

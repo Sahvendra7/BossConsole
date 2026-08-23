@@ -29,6 +29,13 @@ import androidx.compose.runtime.DisposableEffect
  * room the machine has left, and it is the one driving the colour - see `MemoryPressure` for the
  * thresholds and why they are shared with the memory-pressure watchdog.
  *
+ * The tab figure is biased in **both** directions and the two do not cancel. On macOS and
+ * Windows a renderer's RSS counts the whole shared Chromium framework, so it over-states the
+ * page; Linux `Pss` divides shared pages honestly. Against that, a page is not one process:
+ * cross-origin iframes are their own renderers under site isolation, and the GPU and network
+ * services hold page-attributable memory too, none of which is counted here. For a heavy site
+ * with third-party embeds - the case this figure exists for - it can materially under-state.
+ *
  * Each half degrades independently: an unreadable footprint leaves the machine pair, an
  * unreadable machine leaves the footprint, and losing both falls back to the old heap ratio,
  * which is always available.
@@ -37,7 +44,7 @@ import androidx.compose.runtime.DisposableEffect
 fun PerformanceIndicator(
     snapshot: PerformanceSnapshot?,
     health: PerformanceHealth,
-    activeBrowserBytes: Long,
+    activeBrowserBytes: Long = 0L,
     onClick: () -> Unit,
 ) {
     // Before the null-return below, deliberately. Whole-process sampling is gated on this being
@@ -64,10 +71,8 @@ fun PerformanceIndicator(
             footprintMB = if (memory.footprintKnown) memory.footprintMB else null,
             systemUsedMB = memory.systemUsedBytes.takeIf { it > 0L }?.let { it / (1024f * 1024f) },
             systemTotalMB = memory.systemTotalBytes.takeIf { it > 0L }?.let { it / (1024f * 1024f) },
-            heapFallback =
-                FormatUtils.formatMegabytes(memory.heapUsedMB, compact = true) +
-                    "/" +
-                    FormatUtils.formatMegabytes(memory.heapMaxMB, compact = true),
+            heapUsedMB = memory.heapUsedMB,
+            heapMaxMB = memory.heapMaxMB,
         )
     val cpuText = "${snapshot.cpu.processLoadPercent.toInt()}%"
 
@@ -86,12 +91,18 @@ fun PerformanceIndicator(
  * reader, and `SystemMemory` returns 0 for "unknown" on purpose rather than throwing, so both
  * inputs really can be absent at runtime and neither may be rendered as a zero.
  */
+@Suppress("LongParameterList")
+// Six, one over detekt's threshold. Collapsing the heap pair into a pre-formatted string was
+// tried and was worse in two ways: the caller then built that string on every recomposition to
+// use it only in the all-unknown branch, and the test for it degenerated into asserting a
+// literal against a default that was the same literal, so it could no longer fail.
 internal fun memoryIndicatorText(
     activeBrowserMB: Float?,
     footprintMB: Float?,
     systemUsedMB: Float?,
     systemTotalMB: Float?,
-    heapFallback: String,
+    heapUsedMB: Float,
+    heapMaxMB: Float,
 ): String {
     val footprint = footprintMB?.let { FormatUtils.formatMegabytes(it, compact = true) }
     val machine =
@@ -128,7 +139,9 @@ internal fun memoryIndicatorText(
         }
 
         else -> {
-            heapFallback
+            FormatUtils.formatMegabytes(heapUsedMB, compact = true) +
+                "/" +
+                FormatUtils.formatMegabytes(heapMaxMB, compact = true)
         }
     }
 }

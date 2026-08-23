@@ -20,8 +20,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-private val panelLogger = BossLogger.forComponent("PerformanceState")
-
 /** The plugin that draws the Performance panel the status-bar indicator opens. */
 internal const val PERFORMANCE_PLUGIN_ID = "ai.rever.boss.plugin.dynamic.performance"
 
@@ -37,6 +35,12 @@ private const val HOST_ID = "ai.rever.boss.host"
  * Desktop implementation of PerformanceState.
  * Uses PerformanceMonitor and PerformanceSettingsManager to provide state.
  */
+@Suppress("TooManyFunctions")
+// Over detekt's 11-function threshold. Suppressed rather than answered by moving whichever
+// member was easiest to move: the eviction that bought silence here also duplicated the logger
+// and put an unrelated function at file scope in a diff about renderer memory. If this object is
+// genuinely doing too much, the split worth making is a real one - the panel-plugin plumbing out
+// of a class about performance state - not one chosen by a lint threshold.
 actual object PerformanceState {
     private val logger = BossLogger.forComponent("PerformanceState")
     private val scope = CoroutineScope(Dispatchers.Main)
@@ -75,8 +79,12 @@ actual object PerformanceState {
     /**
      * Three lookups, none of which blocks or touches IPC.
      *
-     * `activeIn` reads two concurrent maps; `lastKnownRendererPid` is a volatile load pushed at
-     * navigation time; `lastReading` returns the sampler's last result without taking a new one.
+     * `activeIn` filters every registered entry and evaluates `isValid` on each - disposed,
+     * connection-dead, engine generation, `browser.isClosed` - so it is a handful of atomic reads
+     * per open browser surface rather than the two map lookups an earlier draft of this comment
+     * claimed. Still non-blocking, which is the property that matters here.
+     * `lastKnownRendererPid` is a volatile load pushed at navigation time; `lastReading` returns
+     * the sampler's last result without taking a new one.
      * That matters because the caller is a Compose pass - `ProcessFootprint.current()` would have
      * been wrong here, since it spawns `ps` once its TTL expires.
      *
@@ -87,6 +95,36 @@ actual object PerformanceState {
      * A dead pid resolves to unknown for free: `ProcessFootprint` drops departed pids from its
      * map each tick, so a lookup for one simply misses.
      */
+
+    /**
+     * Offer to install the panel's plugin when it is absent, returning whether it did.
+     *
+     * The status-bar indicator is drawn by the host, but the panel it opens is a plugin. Without
+     * this, clicking the indicator on an install that lacks that plugin emitted a panel event
+     * nothing was listening for: no panel, no dialog, no log line. A control that does nothing
+     * and says nothing is indistinguishable from a broken one.
+     *
+     * Reuses the install-time dependency prompt rather than adding a second dialog, so the offer
+     * comes with a working Install button. Both entry points are guarded, not just the toggle -
+     * the View menu reaches [openPerformancePanel] and would otherwise keep the silent failure.
+     *
+     * Fails **open**: with no active manager there is nothing to ask and nothing to install, so
+     * the panel event is emitted as before. A wiring gap must not be able to make the indicator
+     * unclickable on an install where the plugin is present.
+     */
+    private fun offerToInstallPanel(): Boolean {
+        val prompt =
+            DynamicPluginManager
+                .anyActiveManager()
+                ?.let { MissingDependencyReporter.installerFor(it) }
+                ?.let { performancePanelPrompt(it) }
+                ?: return false
+
+        logger.info(LogCategory.UI, "Performance panel requested but its plugin is not installed")
+        PluginDependencyEventBus.report(prompt)
+        return true
+    }
+
     actual fun activeBrowserBytes(windowId: String): Long {
         val pid =
             (ActiveBrowserRegistry.activeIn(windowId) as? BrowserHandleImpl)
@@ -180,33 +218,4 @@ internal fun performancePanelPrompt(installer: MissingDependencyInstaller): Miss
         // A click, so it is asked again even after the offer was dismissed once.
         userInitiated = true,
     )
-}
-
-/**
- * Offer to install the panel's plugin when it is absent, returning whether it did.
- *
- * The status-bar indicator is drawn by the host, but the panel it opens is a plugin. Without
- * this, clicking the indicator on an install that lacks that plugin emitted a panel event
- * nothing was listening for: no panel, no dialog, no log line. A control that does nothing
- * and says nothing is indistinguishable from a broken one.
- *
- * Reuses the install-time dependency prompt rather than adding a second dialog, so the offer
- * comes with a working Install button. Both entry points are guarded, not just the toggle -
- * the View menu reaches [openPerformancePanel] and would otherwise keep the silent failure.
- *
- * Fails **open**: with no active manager there is nothing to ask and nothing to install, so
- * the panel event is emitted as before. A wiring gap must not be able to make the indicator
- * unclickable on an install where the plugin is present.
- */
-private fun offerToInstallPanel(): Boolean {
-    val prompt =
-        DynamicPluginManager
-            .anyActiveManager()
-            ?.let { MissingDependencyReporter.installerFor(it) }
-            ?.let { performancePanelPrompt(it) }
-            ?: return false
-
-    panelLogger.info(LogCategory.UI, "Performance panel requested but its plugin is not installed")
-    PluginDependencyEventBus.report(prompt)
-    return true
 }

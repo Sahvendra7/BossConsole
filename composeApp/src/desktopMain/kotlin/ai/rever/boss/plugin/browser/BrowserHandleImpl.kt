@@ -588,7 +588,7 @@ internal class BrowserHandleImpl(
      * hole: a dead renderer's pid can be recycled by another Chromium helper of ours, and a stale
      * entry would then charge that process's memory to this tab, again plausibly.
      */
-    @Volatile private var rendererPid: Int? = null
+    private val rendererPid = RendererPid()
 
     /**
      * The renderer pid as of the last main-frame commit, or null when unknown.
@@ -597,7 +597,7 @@ internal class BrowserHandleImpl(
      * the first commit and after the renderer goes away, and callers must render it as absent
      * rather than as a zero.
      */
-    internal fun lastKnownRendererPid(): Int? = rendererPid
+    internal fun lastKnownRendererPid(): Int? = rendererPid.value
 
     /**
      * Whether this view is genuinely on screen: composed **and** in a window that is showing and
@@ -1095,10 +1095,24 @@ internal class BrowserHandleImpl(
                         visitTracker.leftTrackablePage(host)
                     }
 
+                    // One `mainFrame()` serving both the pid capture and the injection, so the
+                    // capture costs no round trip of its own.
+                    //
+                    // The capture sits OUTSIDE the URL gate below, and before the injection
+                    // rather than after it, because both of those are ways to keep a stale pid.
+                    // Injection is skipped for about:blank, so a tab navigating from a heavy
+                    // site to the dashboard would otherwise keep pointing at the old document's
+                    // renderer; and injection can throw partway, which would leave the previous
+                    // value in place. Either produces the "wrong number that looks right" the
+                    // whole design is built to avoid. Refreshing on every commit makes the only
+                    // failure mode "unknown".
+                    val frame = browser.mainFrame().orElse(null)
+                    rendererPid.onCommit(frame?.let { runCatching { it.renderProcess().pid() }.getOrNull() })
+
                     // Skip injection for about:blank pages (used for dashboard display)
                     // Only inject into actual web pages
-                    if (url.isNotEmpty() && url != "about:blank") {
-                        injectPageHelpers()
+                    if (frame != null && url.isNotEmpty() && url != "about:blank") {
+                        injectPageHelpers(frame)
                     }
                 }
             }
@@ -1170,10 +1184,14 @@ internal class BrowserHandleImpl(
                 }
             }
 
-        // Renderer gone. Forgetting the pid here is what keeps the status strip honest: Chromium
-        // recycles pids, so a retained one can later belong to a different helper of ours and
-        // that process's memory would be reported as this tab's - a wrong number that looks
-        // right. A fresh pid arrives on the next commit; until then the figure is absent.
+        // Renderer gone. Forgetting the pid here keeps the strip honest: Chromium recycles pids,
+        // so a retained one can later belong to a different helper of ours and that process's
+        // memory would be reported as this tab's.
+        //
+        // This covers *unexpected* death - a crash or a kill - not the ordinary process swap of
+        // a cross-site navigation, which fires no such event. The swap is covered by the commit
+        // that follows it, which is why the capture had to be moved out of the URL-gated
+        // injection path: between the two, every way the renderer can change is accounted for.
         subscriptions +=
             browser.on(RenderProcessTerminated::class.java) { event ->
                 logger.debug(
@@ -1181,7 +1199,7 @@ internal class BrowserHandleImpl(
                     "Renderer terminated",
                     mapOf("handleId" to id, "exitCode" to event.exitCode(), "status" to event.status().name),
                 )
-                rendererPid = null
+                rendererPid.onGone()
             }
 
         // Browser closed
@@ -1189,7 +1207,7 @@ internal class BrowserHandleImpl(
             browser.on(BrowserClosed::class.java) {
                 logger.debug(LogCategory.BROWSER, "Browser closed", mapOf("handleId" to id))
                 disposed.set(true)
-                rendererPid = null
+                rendererPid.onGone()
                 // Stop streaming: the underlying page is gone.
                 coBrowseCapturing = false
                 coBrowseSink = null
@@ -1593,8 +1611,8 @@ internal class BrowserHandleImpl(
      * target natively (see [setupContextMenuHandler]), and the trackers this used to
      * install could only ever answer for the main frame.
      */
-    private fun injectPageHelpers() {
-        browser.mainFrame().ifPresent { frame ->
+    private fun injectPageHelpers(frame: Frame) {
+        run {
             try {
                 // Inject Cmd+Click / Ctrl+Click handler for opening links in new tabs
                 frame.executeJavaScript<Unit>(BrowserJavaScripts.injectCmdClickHandler)
@@ -1603,11 +1621,6 @@ internal class BrowserHandleImpl(
                 FormFieldDetector.injectFormDetectionScript(createLockedBrowser())
 
                 injectInteractionCollector(frame)
-
-                // Free: the frame is already in hand, and both remaining hops are field reads.
-                // Re-derived on every commit rather than cached as a Frame, for the stale-pid
-                // reason spelled out on [rendererPid].
-                rendererPid = runCatching { frame.renderProcess().pid() }.getOrNull()
 
                 logger.debug(LogCategory.BROWSER, "Page helpers injected", mapOf("handleId" to id))
             } catch (e: Exception) {
@@ -3226,8 +3239,8 @@ internal class BrowserHandleImpl(
     }
 
     override fun dispose() {
-        rendererPid = null
         if (!disposed.compareAndSet(false, true)) return
+        rendererPid.onGone()
         // Shut the interaction bridge FIRST. Its only gate is this authority, and the
         // collector flushes on `pagehide` — which is precisely when this runs. Closing the
         // tracker first left a window between the two statements in which a batch arriving on
