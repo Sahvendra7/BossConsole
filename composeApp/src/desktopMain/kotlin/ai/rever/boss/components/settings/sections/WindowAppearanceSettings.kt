@@ -36,9 +36,9 @@ fun WindowAppearanceSettings() {
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SettingsSection(title = "Title Bar") {
+        SettingsSection(title = "App Name") {
             SettingsToggle(
-                label = "Show Title Bar",
+                label = "Show App Name",
                 checked = settings.showTitleBar,
                 onCheckedChange = { enabled ->
                     coroutineScope.launch {
@@ -47,7 +47,7 @@ fun WindowAppearanceSettings() {
                         )
                     }
                 },
-                description = "Display the \"Boss Console\" title bar at the top of the window",
+                description = "Show \"Boss Console\" at the start of the top bar",
             )
 
             SettingsInfoRow(

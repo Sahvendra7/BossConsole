@@ -30,6 +30,7 @@ fun ComponentContext.BossAppWithAuth(
     windowId: String,
     isFirstWindow: Boolean = false,
     panelRegistry: ai.rever.boss.components.registery.PanelRegistry,
+    isFullscreen: Boolean = false,
     onToggleMaximize: (() -> Unit)? = null,
 ) {
     val authState by AuthService.authState.collectAsState()
@@ -177,6 +178,7 @@ fun ComponentContext.BossAppWithAuth(
                 windowId = windowId,
                 isFirstWindow = isFirstWindow,
                 panelRegistry = panelRegistry,
+                isFullscreen = isFullscreen,
                 onToggleMaximize = onToggleMaximize,
             )
         }

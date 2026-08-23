@@ -6,6 +6,7 @@ import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.WindowAppearanceSettings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
@@ -75,14 +76,16 @@ fun ChromeBudgetReadout(
     windowId: String?,
     appearance: WindowAppearanceSettings,
     focusMode: FocusModeSettings,
+    isFullscreen: Boolean,
 ) {
     if (!readoutEnabled) return
 
     val dimens = BossChrome.dimens
-    val budget = ChromeMetrics.mainPanelBudget(appearance, focusMode, dimens)
+    val osName = remember { System.getProperty("os.name") ?: "" }
+    val budget = ChromeMetrics.mainPanelBudget(appearance, focusMode, dimens, osName, isFullscreen)
 
-    // containerSize is the window's content area in px; on macOS that includes the area the traffic
-    // lights are drawn over, which is exactly the space the title row is reserving.
+    // containerSize is the window's content area in px; on macOS that includes the strip the traffic
+    // lights are drawn over, which is the space the topmost row has to keep clear.
     val containerSize = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current
     val windowHeight = with(density) { containerSize.height.toDp() }

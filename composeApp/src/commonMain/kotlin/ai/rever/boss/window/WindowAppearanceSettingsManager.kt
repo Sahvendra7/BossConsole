@@ -19,8 +19,8 @@ expect object WindowAppearanceSettingsManager {
 
     /**
      * Get default settings for the current platform
-     * macOS: showTitleBar = true
-     * Linux/Windows: showTitleBar = false
+     * macOS: showTitleBar = true (the OS draws no visible window title there)
+     * Linux/Windows: showTitleBar = false (the OS title bar already names the window)
      */
     fun getDefaultSettings(): WindowAppearanceSettings
 }

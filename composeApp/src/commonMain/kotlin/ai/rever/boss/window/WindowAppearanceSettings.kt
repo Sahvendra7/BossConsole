@@ -8,8 +8,18 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class WindowAppearanceSettings(
     /**
-     * Whether to show the Boss Console title bar
-     * Default: true on macOS, false on Linux/Windows
+     * Whether the window names the app in its top bar.
+     *
+     * This used to switch a 26dp row of its own on and off, whose only content was a centered
+     * "Boss Console" label. The row is gone - the top bar is the window's topmost row now and
+     * carries the macOS traffic-light inset itself - so the same preference moved to the label
+     * inside that bar. A stored `true` still means "show me the name", which is why this did not
+     * need the `FocusModeSettings.decodeWithDefaults` treatment: no stored value changes meaning.
+     *
+     * Still default true on macOS and false elsewhere, and for the same reason as before: macOS
+     * hides the native window title (`apple.awt.windowTitleVisible`), so without this the app does
+     * not name itself anywhere in its own window. Windows and Linux keep a real OS title bar that
+     * already does.
      */
     val showTitleBar: Boolean = true,
     /**
