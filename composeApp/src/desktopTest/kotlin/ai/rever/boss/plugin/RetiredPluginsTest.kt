@@ -112,8 +112,8 @@ class RetiredPluginsTest {
                 announce = { announced += it },
             )
 
-        assertEquals(listOf(OLD), RetiredPlugins.sweep({ null }, listOf(retirement), hooks))
-        assertEquals(emptyList(), RetiredPlugins.sweep({ null }, listOf(retirement), hooks))
+        assertEquals(listOf(OLD), RetiredPlugins.sweep({ null }, { true }, listOf(retirement), hooks))
+        assertEquals(emptyList(), RetiredPlugins.sweep({ null }, { true }, listOf(retirement), hooks))
         assertEquals(listOf(OLD), removed, "the second sweep removed it again")
     }
 
@@ -186,6 +186,7 @@ class RetiredPluginsTest {
         val result =
             RetiredPlugins.sweep(
                 restoredAtNextLaunch = { null },
+                purgeArtifacts = { true },
                 retirements = listOf(retirement, second),
                 hooks =
                     RetiredPlugins.Hooks(
@@ -224,6 +225,7 @@ class RetiredPluginsTest {
 
         RetiredPlugins.sweep(
             restoredAtNextLaunch = { null },
+            purgeArtifacts = { true },
             retirements = listOf(retirement, second),
             hooks =
                 RetiredPlugins.Hooks(
@@ -235,6 +237,63 @@ class RetiredPluginsTest {
         )
 
         assertEquals(listOf("Old Panel and Second Panel are now part of New Panel"), announced)
+    }
+
+    @Test
+    fun `a jar that cannot be removed leaves the row alone and announces nothing`() {
+        // Dropping the row while a jar survives is worse than doing nothing: DefaultPlugin's
+        // directory scan runs later in the same launch and installs any jar the manager does not
+        // know about, so the panel returns in the session the user was told it left - and a fresh
+        // row on load means the next launch sweeps and announces again, forever.
+        val result =
+            sweep(
+                installed = mapOf(OLD to entry(OLD), NEW to entry(NEW, version = "1.2.17")),
+                purgeArtifacts = { false },
+            )
+
+        assertEquals(emptyList(), result)
+        assertTrue(removed.isEmpty(), "the row was dropped while the jar was still there")
+        assertTrue(announced.isEmpty(), "announced a removal that did not happen")
+    }
+
+    @Test
+    fun `two removals with different replacements are each attributed correctly`() {
+        // noticeFor only exists for the multi-removal case, which is exactly the case where the
+        // replacements can differ - and joining the names while taking the first replacement told
+        // the user their panel moved somewhere it did not.
+        val second =
+            RetiredPlugins.Retirement(
+                pluginId = "ai.rever.boss.plugin.dynamic.secondold",
+                displayName = "Second Panel",
+                replacementId = "ai.rever.boss.plugin.dynamic.othernew",
+                replacementDisplayName = "Other Panel",
+                minReplacementVersion = "2.0.0",
+            )
+        val installed =
+            mapOf(
+                OLD to entry(OLD),
+                second.pluginId to entry(second.pluginId),
+                NEW to entry(NEW, version = "1.2.17"),
+                second.replacementId to entry(second.replacementId, version = "2.0.0"),
+            )
+
+        RetiredPlugins.sweep(
+            restoredAtNextLaunch = { null },
+            purgeArtifacts = { true },
+            retirements = listOf(retirement, second),
+            hooks =
+                RetiredPlugins.Hooks(
+                    installed = { installed[it] },
+                    jarExists = { true },
+                    remove = { id, _ -> removed += id },
+                    announce = { announced += it },
+                ),
+        )
+
+        assertEquals(
+            listOf("Old Panel is now part of New Panel; Second Panel is now part of Other Panel"),
+            announced,
+        )
     }
 
     @Test
@@ -257,14 +316,28 @@ class RetiredPluginsTest {
         )
     }
 
+    @Test
+    fun `every retirement is also filtered out of what the store offers`() {
+        // Two source sets, two lists: RetiredPlugins (desktopMain) uninstalls what is on disk,
+        // RetiredPluginIds (commonMain) is what the wizard and the home grid refuse to offer. A
+        // retirement added to one and not the other leaves the plugin installable, swept away at
+        // the next launch, and installable again - which is the loop the filter exists to stop.
+        assertEquals(
+            RetiredPlugins.ALL.map { it.pluginId }.toSet(),
+            ai.rever.boss.components.plugin.RetiredPluginIds.ALL,
+        )
+    }
+
     private fun sweep(
         installed: Map<String, PluginPersistence.InstalledPluginEntry>,
         jarExists: Boolean = true,
         restoredAtNextLaunch: (String) -> String? = { null },
+        purgeArtifacts: (String) -> Boolean = { true },
         remove: (String, String) -> Unit = { id, _ -> removed += id },
     ): List<String> =
         RetiredPlugins.sweep(
             restoredAtNextLaunch = restoredAtNextLaunch,
+            purgeArtifacts = purgeArtifacts,
             retirements = listOf(retirement),
             hooks =
                 RetiredPlugins.Hooks(

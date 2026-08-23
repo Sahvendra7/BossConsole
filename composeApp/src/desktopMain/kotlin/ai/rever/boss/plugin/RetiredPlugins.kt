@@ -71,6 +71,10 @@ object RetiredPlugins {
             PluginPersistence.getInstalledPlugin(id)
         },
         val jarExists: (String) -> Boolean = { path -> path.isNotBlank() && File(path).isFile },
+        /**
+         * Drops the `installed.json` row (and the sidecar for the recorded path). Called only
+         * after `purgeArtifacts` confirmed the jars are gone - see [retire].
+         */
         val remove: (String, String) -> Unit = { id, jarPath -> PluginArtifactCleanup.remove(id, jarPath) },
         /** Called once per sweep, with every removal in one message. See [noticeFor]. */
         val announce: (String) -> Unit = { message -> StatusMessageManager.showMessage(message, NOTICE_MS) },
@@ -94,6 +98,7 @@ object RetiredPlugins {
      */
     internal fun sweep(
         restoredAtNextLaunch: (String) -> String?,
+        purgeArtifacts: (String) -> Boolean,
         retirements: List<Retirement> = ALL,
         hooks: Hooks = Hooks(),
     ): List<String> {
@@ -101,7 +106,7 @@ object RetiredPlugins {
         // ids already removed, which the caller logs.
         val removed =
             retirements.filter { retirement ->
-                runCatching { retire(retirement, restoredAtNextLaunch, hooks) }
+                runCatching { retire(retirement, restoredAtNextLaunch, purgeArtifacts, hooks) }
                     .onFailure { error ->
                         logger.warn(
                             LogCategory.SYSTEM,
@@ -122,12 +127,30 @@ object RetiredPlugins {
         return removed.map { it.pluginId }
     }
 
-    /** "X is now part of Y", or "X and Y are now part of Z" once there is more than one. */
-    private fun noticeFor(removed: List<Retirement>): String {
-        val names = removed.joinToString(" and ") { it.displayName }
-        val verb = if (removed.size == 1) "is" else "are"
-        return "$names $verb now part of ${removed.first().replacementDisplayName}"
-    }
+    /**
+     * One line for the whole sweep: "X is now part of Y", or "X and Y are now part of Z".
+     *
+     * **Grouped by replacement.** The function only exists for the multi-removal case, and that
+     * is exactly the case where two retirements can point at *different* replacements - joining
+     * the names and taking `first().replacementDisplayName` told the user their panel moved
+     * somewhere it did not. Latent while `ALL` has one entry, which is why it needs a test
+     * rather than a reading.
+     */
+    private fun noticeFor(removed: List<Retirement>): String =
+        removed
+            .groupBy { it.replacementDisplayName }
+            .entries
+            .joinToString("; ") { (replacement, group) ->
+                val names = group.map { it.displayName }
+                val joined =
+                    if (names.size == 1) {
+                        names.first()
+                    } else {
+                        // "A, B and C" rather than "A and B and C".
+                        names.dropLast(1).joinToString(", ") + " and " + names.last()
+                    }
+                "$joined ${if (group.size == 1) "is" else "are"} now part of $replacement"
+            }
 
     // Guard clauses, each logging a different reason. Same call as replacementIsReady below and
     // as VersionFloor.kt itself: a reader asking "why is the old panel still there" needs to know
@@ -136,6 +159,7 @@ object RetiredPlugins {
     private fun retire(
         retirement: Retirement,
         restoredAtNextLaunch: (String) -> String?,
+        purgeArtifacts: (String) -> Boolean,
         hooks: Hooks,
     ): Boolean {
         val entry = hooks.installed(retirement.pluginId) ?: return false
@@ -150,6 +174,21 @@ object RetiredPlugins {
             return false
         }
         if (!replacementIsReady(retirement, hooks)) return false
+
+        // The jars go first, and the row is only dropped once they are actually gone. Dropping
+        // the row while a jar survives is worse than doing nothing: DefaultPlugin's directory
+        // scan runs later in the *same* launch and installs any jar the manager does not know
+        // about, so the panel comes back in the session the user was just told it left, a fresh
+        // row is written on load, and every launch after that sweeps and announces again. See
+        // purgeJarsFor.
+        if (!purgeArtifacts(retirement.pluginId)) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Keeping a retired plugin: its jar could not be removed, so its row is left alone",
+                mapOf("pluginId" to retirement.pluginId, "jarPath" to entry.jarPath),
+            )
+            return false
+        }
 
         hooks.remove(retirement.pluginId, entry.jarPath)
         logger.info(

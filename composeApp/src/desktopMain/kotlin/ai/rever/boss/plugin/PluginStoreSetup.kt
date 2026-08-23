@@ -1357,34 +1357,29 @@ object PluginStoreSetup {
                 //     plugin should never register a panel or an MCP tool on a machine
                 //     where its replacement is present, and after reconcile because
                 //     installed.json's jarPath is only trustworthy once that has run.
-                // Both sources that would put a retired plugin back: a bundled jar is
-                // re-copied at step 1 and a system plugin re-downloaded at step 2, both of which
-                // have already run by the time the sweep does - so uninstalling one is a
-                // copy-then-delete loop on every launch. Asked here rather than inside
-                // RetiredPlugins, so that object needs neither the manager nor the
-                // system-plugin service.
+                // Both guards the sweep needs from the filesystem, as named functions in
+                // RetiredPluginArtifacts rather than lambdas nothing can test - a typo in either
+                // silently disables a guard instead of failing.
                 val restoredAtNextLaunch = { pluginId: String ->
-                    val bundledVeto =
-                        PluginRemoval.removalVeto(
-                            pluginId,
-                            dynamicPluginManager.getBundledPluginsDirectory(),
-                        )
-                    when {
-                        bundledVeto != null -> {
-                            bundledVeto
-                        }
-
-                        systemPlugins.any { it.pluginId == pluginId } -> {
-                            "is a system plugin and would be reinstalled at the next launch"
-                        }
-
-                        else -> {
-                            null
-                        }
-                    }
+                    restoredAtNextLaunchReason(
+                        pluginId = pluginId,
+                        bundledVeto =
+                            PluginRemoval.removalVeto(
+                                pluginId,
+                                dynamicPluginManager.getBundledPluginsDirectory(),
+                            ),
+                        systemPluginIds = systemPlugins.map { it.pluginId }.toSet(),
+                    )
+                }
+                val purgeArtifacts = { pluginId: String ->
+                    purgeJarsFor(
+                        pluginId = pluginId,
+                        pluginDir = _pluginDir,
+                        manifestIdOf = { readPluginManifest(it)?.pluginId },
+                    )
                 }
 
-                runCatching { RetiredPlugins.sweep(restoredAtNextLaunch) }
+                runCatching { RetiredPlugins.sweep(restoredAtNextLaunch, purgeArtifacts) }
                     .onSuccess { removed ->
                         if (removed.isNotEmpty()) {
                             logger.info(
