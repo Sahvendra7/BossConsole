@@ -28,6 +28,7 @@ import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.focusmode.FocusModeSettings
 import ai.rever.boss.handleTabDropResult
+import ai.rever.boss.layout.ChromeBudgetReadout
 import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
 import ai.rever.boss.plugin.api.LocalProjectPath
 import ai.rever.boss.plugin.api.LocalSplitViewOperations
@@ -275,6 +276,10 @@ internal fun BossAppScaffold(
                 onSignOut = { state.showLogoutDialog = true },
             )
         }
+
+    // Renders nothing; reports what the chrome costs the page when BOSS_CHROME_BUDGET is set.
+    // Here rather than inside a bar so it still reports with every bar switched off.
+    ChromeBudgetReadout(appearance = appearance, focusMode = focusModeSettings)
 
     with(state.draggablePanelComponent) {
         Box(
