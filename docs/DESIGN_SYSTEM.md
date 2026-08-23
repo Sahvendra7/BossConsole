@@ -49,6 +49,7 @@ a theme is one `BossAppTheme` plus one list entry.
 | **Operator** | `operator` | dark | The original amber-on-ink identity |
 | **Daylight** | `daylight` | light | Clean light theme |
 | **Clean** | `clean` | dark | Neutral charcoal, steel-blue accent |
+| **NVIDIA** | `nvidia` | dark | NVIDIA green `#76B900` on black - the [nvidia.com](https://www.nvidia.com/en-us/) look |
 
 The choice is explicit and persisted (`~/.boss/app-theme-settings.json`); the OS
 theme setting is never consulted.

@@ -6,8 +6,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * Persisted host theme preference. `appThemeId` matches a [BossThemes] id
- * ("blueprint", "blueprint-light", "operator", "daylight", "clean"). Stored at
- * ~/.boss/app-theme-settings.json.
+ * ("blueprint", "blueprint-light", "operator", "daylight", "clean", "nvidia").
+ * Stored at ~/.boss/app-theme-settings.json.
  *
  * Note that `BossConsoleRust` reads and writes this same file, so its
  * `ThemeId::DEFAULT` must stay in lockstep with [BossThemes.DEFAULT_ID] - a
