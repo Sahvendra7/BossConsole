@@ -1352,6 +1352,30 @@ object PluginStoreSetup {
                 //     created below, so this has to precede all plugin loads.
                 dynamicPluginManager.initializeApiLayer(_pluginDir)
 
+                // 3c. Uninstall plugins another plugin has taken over. Here rather than
+                //     anywhere later because it must precede step 4's read: a retired
+                //     plugin should never register a panel or an MCP tool on a machine
+                //     where its replacement is present, and after reconcile because
+                //     installed.json's jarPath is only trustworthy once that has run.
+                runCatching { RetiredPlugins.sweep() }
+                    .onSuccess { removed ->
+                        if (removed.isNotEmpty()) {
+                            logger.info(
+                                LogCategory.SYSTEM,
+                                "Uninstalled retired plugins",
+                                mapOf("pluginIds" to removed.joinToString(",")),
+                            )
+                        }
+                    }.onFailure { e ->
+                        // Never fatal: failing to tidy up an obsolete plugin must not stop
+                        // every other plugin from loading.
+                        logger.warn(
+                            LogCategory.SYSTEM,
+                            "Retired-plugin sweep failed",
+                            mapOf("error" to (e.message ?: "unknown")),
+                        )
+                    }
+
                 // 4. Read persisted plugins (including bundled ones now in plugin dir)
                 PluginPersistence.getInstalledPlugins()
             }
