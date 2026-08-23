@@ -1357,7 +1357,34 @@ object PluginStoreSetup {
                 //     plugin should never register a panel or an MCP tool on a machine
                 //     where its replacement is present, and after reconcile because
                 //     installed.json's jarPath is only trustworthy once that has run.
-                runCatching { RetiredPlugins.sweep() }
+                // Both sources that would put a retired plugin back: a bundled jar is
+                // re-copied at step 1 and a system plugin re-downloaded at step 2, both of which
+                // have already run by the time the sweep does - so uninstalling one is a
+                // copy-then-delete loop on every launch. Asked here rather than inside
+                // RetiredPlugins, so that object needs neither the manager nor the
+                // system-plugin service.
+                val restoredAtNextLaunch = { pluginId: String ->
+                    val bundledVeto =
+                        PluginRemoval.removalVeto(
+                            pluginId,
+                            dynamicPluginManager.getBundledPluginsDirectory(),
+                        )
+                    when {
+                        bundledVeto != null -> {
+                            bundledVeto
+                        }
+
+                        systemPlugins.any { it.pluginId == pluginId } -> {
+                            "is a system plugin and would be reinstalled at the next launch"
+                        }
+
+                        else -> {
+                            null
+                        }
+                    }
+                }
+
+                runCatching { RetiredPlugins.sweep(restoredAtNextLaunch) }
                     .onSuccess { removed ->
                         if (removed.isNotEmpty()) {
                             logger.info(

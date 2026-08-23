@@ -238,6 +238,52 @@ deletes the jar it rejected - so an entry-only check made Retry close the dialog
 success with nothing installed, and silenced the prompt for every other dependent of that
 plugin. The check is an entry whose `jarPath` still exists.
 
+## Retiring a plugin into another one
+
+`RetiredPlugins.sweep()` uninstalls a plugin whose job another plugin has taken over. It runs at
+step 3c of `PluginStoreSetup.loadPersistedPlugins` - after `PluginJarReconciler`, so
+`installed.json`'s `jarPath` is trustworthy, and before step 4 reads it, so a retired plugin never
+registers a panel or an MCP tool on a machine where its replacement is present. It is `internal`
+and **startup-only**: `PluginArtifactCleanup.remove` deletes the jar without unloading anything,
+which is safe only before any plugin has loaded (`PluginRemoval` spells out the alternative -
+`NoClassDefFoundError` from code that is still running).
+
+There is no "already done" flag. The sweep keys on the plugin being installed, and removing the
+`installed.json` row is what makes the next launch a no-op.
+
+**It fails closed at every step, and each step is a bug someone would otherwise ship.** A wrong
+"yes" deletes a panel the user still needs, so all of these mean "not yet, wait for a launch that
+can prove it":
+
+| Refusal | Why |
+|---|---|
+| replacement not installed | the user would have no panel at all for what the retired one did |
+| replacement disabled | `setPluginEnabled` and a for-lack-of-access install both leave the row and the jar in place |
+| replacement's jar missing | `installPlugin` records a DISABLED entry for a plugin it then rejected and deleted |
+| replacement's version unparseable or absent | see below |
+| replacement older than `minReplacementVersion` | that version has not absorbed the retired plugin's work yet |
+| the retired plugin would be restored anyway | a bundled or system plugin is re-copied at step 1 or re-downloaded at step 2, so removing it is a copy-then-delete loop on every launch, notice included |
+
+**`satisfiesVersionFloor` cannot be used alone here.** It returns `true` for anything
+`SemanticVersion.parse` rejects - `dev`, `v1.2.17`, `1.2.x`, a trailing `-` or `+` - by design,
+because for gating an *update* an ungated update beats a wrongly gated one. The consequence here
+runs the other way, and a locally built or side-loaded jar whose manifest version is not strict
+semver is exactly the case that would delete the user's only secrets panel. So the version is
+parsed explicitly first; `plugin-dependency` is on composeApp's classpath for that one call
+(`plugin-updater` has it as `implementation`, so it is not transitive).
+
+**The restore veto is asked at the call site, not inside `RetiredPlugins`**, which keeps that
+object free of both the manager and the system-plugin service. It combines
+`PluginRemoval.removalVeto` (the bundled dir) with `PluginStoreSetup.systemPlugins` (the remote
+`system_plugins` table merged over the built-in fallback). `ALL` is a list someone will append to
+without reading the change that added it, so this is a runtime guard rather than a comment.
+
+**One notice per sweep, not per retirement.** `StatusMessageManager.showMessage` cancels the
+previous message, so announcing in the loop would show only the last removal - and the sweep is
+one-shot, so a missed notice means a panel vanished with no explanation ever. Each retirement's
+removal is also wrapped individually, so one failure cannot drop the rest or lose the ids already
+removed.
+
 ## Configuration
 
 Create `local.properties`:

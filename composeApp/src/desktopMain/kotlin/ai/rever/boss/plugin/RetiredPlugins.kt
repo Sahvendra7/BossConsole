@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin
 
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
+import ai.rever.boss.plugin.dependency.SemanticVersion
 import ai.rever.boss.plugin.updater.satisfiesVersionFloor
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -71,25 +72,84 @@ object RetiredPlugins {
         },
         val jarExists: (String) -> Boolean = { path -> path.isNotBlank() && File(path).isFile },
         val remove: (String, String) -> Unit = { id, jarPath -> PluginArtifactCleanup.remove(id, jarPath) },
+        /** Called once per sweep, with every removal in one message. See [noticeFor]. */
         val announce: (String) -> Unit = { message -> StatusMessageManager.showMessage(message, NOTICE_MS) },
     )
 
     /**
      * Uninstalls every retired plugin whose replacement is installed and new enough.
      *
+     * **Startup only, before any plugin is loaded.** [PluginArtifactCleanup.remove] deletes the
+     * jar without unloading anything, which is safe at step 3c of
+     * `PluginStoreSetup.loadPersistedPlugins` and nowhere else: pulling a jar out from under a
+     * live classloader is how you get `NoClassDefFoundError` from code that is still running.
+     * `internal` so the only caller stays inside this module.
+     *
+     * @param restoredAtNextLaunch why [pluginId] would come back on its own, or null if it
+     *   would not. A bundled or system plugin is re-copied or re-downloaded before this sweep
+     *   runs (steps 1 and 2), so uninstalling one turns into a copy-then-delete loop on every
+     *   launch, with the status-bar notice firing each time. See `PluginRemoval.removalVeto`,
+     *   which exists for the same hazard on the interactive path.
      * @return the plugin ids actually removed, for the caller to log.
      */
-    fun sweep(
+    internal fun sweep(
+        restoredAtNextLaunch: (String) -> String?,
         retirements: List<Retirement> = ALL,
         hooks: Hooks = Hooks(),
-    ): List<String> = retirements.filter { retire(it, hooks) }.map { it.pluginId }
+    ): List<String> {
+        // Per retirement, so one entry whose removal throws cannot drop the rest - or lose the
+        // ids already removed, which the caller logs.
+        val removed =
+            retirements.filter { retirement ->
+                runCatching { retire(retirement, restoredAtNextLaunch, hooks) }
+                    .onFailure { error ->
+                        logger.warn(
+                            LogCategory.SYSTEM,
+                            "Could not uninstall a retired plugin",
+                            mapOf(
+                                "pluginId" to retirement.pluginId,
+                                "error" to (error.message ?: "unknown"),
+                            ),
+                        )
+                    }.getOrDefault(false)
+            }
 
+        // One message for the whole sweep, not one per retirement: showMessage cancels the
+        // previous one, so announcing in the loop would show only the last.
+        if (removed.isNotEmpty()) {
+            hooks.announce(noticeFor(removed))
+        }
+        return removed.map { it.pluginId }
+    }
+
+    /** "X is now part of Y", or "X and Y are now part of Z" once there is more than one. */
+    private fun noticeFor(removed: List<Retirement>): String {
+        val names = removed.joinToString(" and ") { it.displayName }
+        val verb = if (removed.size == 1) "is" else "are"
+        return "$names $verb now part of ${removed.first().replacementDisplayName}"
+    }
+
+    // Guard clauses, each logging a different reason. Same call as replacementIsReady below and
+    // as VersionFloor.kt itself: a reader asking "why is the old panel still there" needs to know
+    // which check fired, and folding them into one condition collapses three answers into one.
+    @Suppress("ReturnCount")
     private fun retire(
         retirement: Retirement,
+        restoredAtNextLaunch: (String) -> String?,
         hooks: Hooks,
     ): Boolean {
-        val entry = hooks.installed(retirement.pluginId)
-        if (entry == null || !replacementIsReady(retirement, hooks)) return false
+        val entry = hooks.installed(retirement.pluginId) ?: return false
+
+        val wouldComeBack = restoredAtNextLaunch(retirement.pluginId)
+        if (wouldComeBack != null) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Keeping a retired plugin: it would be restored anyway",
+                mapOf("pluginId" to retirement.pluginId, "reason" to wouldComeBack),
+            )
+            return false
+        }
+        if (!replacementIsReady(retirement, hooks)) return false
 
         hooks.remove(retirement.pluginId, entry.jarPath)
         logger.info(
@@ -100,9 +160,6 @@ object RetiredPlugins {
                 "replacedBy" to retirement.replacementId,
             ),
         )
-        // Said out loud, because a panel the user has had since their first run disappearing
-        // with no explanation reads as a bug - or as lost secrets.
-        hooks.announce("${retirement.displayName} is now part of ${retirement.replacementDisplayName}")
         return true
     }
 
@@ -136,6 +193,18 @@ object RetiredPlugins {
             )
             return false
         }
+        if (!replacement.enabled) {
+            // The user can disable Secret Manager from the Toolbox, and installPlugin also
+            // records a DISABLED entry for a plugin hidden for lack of access - both leave the
+            // row and the jar in place. `enabled` is the only signal available here, since
+            // nothing has loaded yet.
+            logger.info(
+                LogCategory.SYSTEM,
+                "Keeping a retired plugin: its replacement is installed but disabled",
+                mapOf("pluginId" to retirement.pluginId, "replacementId" to retirement.replacementId),
+            )
+            return false
+        }
         if (!hooks.jarExists(replacement.jarPath)) {
             logger.warn(
                 LogCategory.SYSTEM,
@@ -145,8 +214,14 @@ object RetiredPlugins {
             return false
         }
         val version = replacement.installedVersion
+        // Parsed explicitly, because satisfiesVersionFloor answers TRUE for anything
+        // SemanticVersion cannot read - "dev", "v1.2.17", "1.2.x", a trailing "-" or "+" - by
+        // design: for update gating an ungated update beats a wrongly gated one. Here the
+        // consequence runs the other way, and a locally built or side-loaded jar whose manifest
+        // version is not strict semver is exactly the case that would lose both panels.
         val newEnough =
-            !version.isNullOrBlank() &&
+            version != null &&
+                SemanticVersion.parse(version) != null &&
                 satisfiesVersionFloor(required = retirement.minReplacementVersion, installed = version)
         if (!newEnough) {
             logger.info(

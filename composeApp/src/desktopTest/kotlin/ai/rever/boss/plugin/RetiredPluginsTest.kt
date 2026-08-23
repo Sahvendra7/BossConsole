@@ -112,9 +112,129 @@ class RetiredPluginsTest {
                 announce = { announced += it },
             )
 
-        assertEquals(listOf(OLD), RetiredPlugins.sweep(listOf(retirement), hooks))
-        assertEquals(emptyList(), RetiredPlugins.sweep(listOf(retirement), hooks))
+        assertEquals(listOf(OLD), RetiredPlugins.sweep({ null }, listOf(retirement), hooks))
+        assertEquals(emptyList(), RetiredPlugins.sweep({ null }, listOf(retirement), hooks))
         assertEquals(listOf(OLD), removed, "the second sweep removed it again")
+    }
+
+    @Test
+    fun `keeps it when the replacement's version cannot be parsed`() {
+        // satisfiesVersionFloor answers TRUE for anything SemanticVersion cannot read, by
+        // design: for gating an update, ungated beats wrongly gated. Here the consequence runs
+        // the other way, and these are the shapes a locally built or side-loaded jar actually
+        // has. Without the explicit parse each of them deletes the user's only secrets panel.
+        listOf("dev", "v1.2.17", "1.2.x", "1.0.0-", "1.0.0+", "latest").forEach { version ->
+            removed.clear()
+            announced.clear()
+
+            val result = sweep(installed = mapOf(OLD to entry(OLD), NEW to entry(NEW, version = version)))
+
+            assertEquals(emptyList(), result, "retired against an unparseable version '$version'")
+            assertTrue(removed.isEmpty(), "removed against an unparseable version '$version'")
+        }
+    }
+
+    @Test
+    fun `keeps it when the replacement is installed but disabled`() {
+        // Two ways to get here, both real: the user disabled Secret Manager from the Toolbox, or
+        // installPlugin recorded a DISABLED entry for a plugin hidden for lack of access. Both
+        // leave the row and the jar in place, so without this the sweep deletes the retired
+        // panel and the replacement is not running either.
+        val result =
+            sweep(installed = mapOf(OLD to entry(OLD), NEW to entry(NEW, version = "1.2.17", enabled = false)))
+
+        assertEquals(emptyList(), result)
+        assertTrue(removed.isEmpty())
+    }
+
+    @Test
+    fun `keeps it when it would be restored at the next launch`() {
+        // A bundled jar is re-copied at step 1 and a system plugin re-downloaded at step 2, both
+        // before this sweep runs - so uninstalling one is a copy-then-delete loop on every
+        // launch, with the notice firing each time. `ALL` is a list someone will append to
+        // without reading the PR that added it.
+        val result =
+            sweep(
+                installed = mapOf(OLD to entry(OLD), NEW to entry(NEW, version = "1.2.17")),
+                restoredAtNextLaunch = { "ships with BOSS and would be restored at the next launch" },
+            )
+
+        assertEquals(emptyList(), result)
+        assertTrue(removed.isEmpty())
+        assertTrue(announced.isEmpty(), "announced a removal that did not happen")
+    }
+
+    @Test
+    fun `a retirement whose removal throws does not stop the others`() {
+        // sweep() logs and carries on: one entry failing must not drop the rest, or lose the ids
+        // already removed - which the caller logs.
+        val second =
+            RetiredPlugins.Retirement(
+                pluginId = "ai.rever.boss.plugin.dynamic.secondold",
+                displayName = "Second Panel",
+                replacementId = NEW,
+                replacementDisplayName = "New Panel",
+                minReplacementVersion = "1.2.17",
+            )
+        val installed =
+            mapOf(
+                OLD to entry(OLD),
+                second.pluginId to entry(second.pluginId),
+                NEW to entry(NEW, version = "1.2.17"),
+            )
+
+        val result =
+            RetiredPlugins.sweep(
+                restoredAtNextLaunch = { null },
+                retirements = listOf(retirement, second),
+                hooks =
+                    RetiredPlugins.Hooks(
+                        installed = { installed[it] },
+                        jarExists = { true },
+                        remove = { id, _ ->
+                            if (id == OLD) error("disk is on fire") else removed += id
+                        },
+                        announce = { announced += it },
+                    ),
+            )
+
+        assertEquals(listOf(second.pluginId), result)
+        assertEquals(listOf(second.pluginId), removed)
+    }
+
+    @Test
+    fun `two removals are announced in one message`() {
+        // StatusMessageManager.showMessage cancels the previous message, so announcing per
+        // retirement would show only the last - and the sweep is one-shot, so a missed notice
+        // means the panel vanished with no explanation ever.
+        val second =
+            RetiredPlugins.Retirement(
+                pluginId = "ai.rever.boss.plugin.dynamic.secondold",
+                displayName = "Second Panel",
+                replacementId = NEW,
+                replacementDisplayName = "New Panel",
+                minReplacementVersion = "1.2.17",
+            )
+        val installed =
+            mapOf(
+                OLD to entry(OLD),
+                second.pluginId to entry(second.pluginId),
+                NEW to entry(NEW, version = "1.2.17"),
+            )
+
+        RetiredPlugins.sweep(
+            restoredAtNextLaunch = { null },
+            retirements = listOf(retirement, second),
+            hooks =
+                RetiredPlugins.Hooks(
+                    installed = { installed[it] },
+                    jarExists = { true },
+                    remove = { id, _ -> removed += id },
+                    announce = { announced += it },
+                ),
+        )
+
+        assertEquals(listOf("Old Panel and Second Panel are now part of New Panel"), announced)
     }
 
     @Test
@@ -140,14 +260,17 @@ class RetiredPluginsTest {
     private fun sweep(
         installed: Map<String, PluginPersistence.InstalledPluginEntry>,
         jarExists: Boolean = true,
+        restoredAtNextLaunch: (String) -> String? = { null },
+        remove: (String, String) -> Unit = { id, _ -> removed += id },
     ): List<String> =
         RetiredPlugins.sweep(
+            restoredAtNextLaunch = restoredAtNextLaunch,
             retirements = listOf(retirement),
             hooks =
                 RetiredPlugins.Hooks(
                     installed = { installed[it] },
                     jarExists = { jarExists },
-                    remove = { id, _ -> removed += id },
+                    remove = remove,
                     announce = { announced += it },
                 ),
         )
@@ -155,9 +278,11 @@ class RetiredPluginsTest {
     private fun entry(
         pluginId: String,
         version: String? = "1.0.0",
+        enabled: Boolean = true,
     ) = PluginPersistence.InstalledPluginEntry(
         pluginId = pluginId,
         jarPath = "/plugins/$pluginId.jar",
+        enabled = enabled,
         installedVersion = version,
     )
 
