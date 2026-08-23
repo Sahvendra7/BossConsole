@@ -48,7 +48,7 @@
     <ID>CyclomaticComplexMethod:BossAppEventBusEffects.kt$@Composable internal fun BossAppEventBusEffects(state: BossAppState)</ID>
     <ID>CyclomaticComplexMethod:BossAppMenuActionEffects.kt$@Composable internal fun BossAppMenuActionEffects( state: BossAppState, reveal: FocusModeRevealState, )</ID>
     <ID>CyclomaticComplexMethod:BossAppStartupEffects.kt$@Composable internal fun BossAppStartupEffects(state: BossAppState)</ID>
-    <ID>CyclomaticComplexMethod:BossAppWithAuth.kt$@Composable fun ComponentContext.BossAppWithAuth( windowId: String, isFirstWindow: Boolean = false, panelRegistry: ai.rever.boss.components.registery.PanelRegistry, onToggleMaximize: (() -&gt; Unit)? = null, )</ID>
+    <ID>CyclomaticComplexMethod:BossAppWithAuth.kt$@Composable fun ComponentContext.BossAppWithAuth( windowId: String, isFirstWindow: Boolean = false, panelRegistry: ai.rever.boss.components.registery.PanelRegistry, isFullscreen: Boolean = false, onToggleMaximize: (() -&gt; Unit)? = null, )</ID>
     <ID>CyclomaticComplexMethod:BossDraggableComponent.kt$BossDraggableComponent$fun stopDragging()</ID>
     <ID>CyclomaticComplexMethod:BossDraggableComponent.kt$BossDraggableComponent$private fun updateHoverTarget()</ID>
     <ID>CyclomaticComplexMethod:BossMainWindowPanel.kt$@Composable fun BossTabsComponent.BossMainPanelContent(modifier: Modifier)</ID>
@@ -211,9 +211,9 @@
     <ID>LongMethod:BossAppDialogs.kt$@Composable internal fun BossAppDialogs(state: BossAppState)</ID>
     <ID>LongMethod:BossAppEventBusEffects.kt$@Composable internal fun BossAppEventBusEffects(state: BossAppState)</ID>
     <ID>LongMethod:BossAppMenuActionEffects.kt$@Composable internal fun BossAppMenuActionEffects( state: BossAppState, reveal: FocusModeRevealState, )</ID>
-    <ID>LongMethod:BossAppScaffold.kt$@Composable internal fun BossAppScaffold( state: BossAppState, reveal: FocusModeRevealState, focusModeSettings: FocusModeSettings, revealOffsetDp: Dp, appearance: WindowAppearanceSettings, onToggleMaximize: (() -&gt; Unit)?, )</ID>
+    <ID>LongMethod:BossAppScaffold.kt$@Composable internal fun BossAppScaffold( state: BossAppState, reveal: FocusModeRevealState, focusModeSettings: FocusModeSettings, revealOffsetDp: Dp, appearance: WindowAppearanceSettings, isFullscreen: Boolean, onToggleMaximize: (() -&gt; Unit)?, )</ID>
     <ID>LongMethod:BossAppStartupEffects.kt$@Composable internal fun BossAppStartupEffects(state: BossAppState)</ID>
-    <ID>LongMethod:BossAppWithAuth.kt$@Composable fun ComponentContext.BossAppWithAuth( windowId: String, isFirstWindow: Boolean = false, panelRegistry: ai.rever.boss.components.registery.PanelRegistry, onToggleMaximize: (() -&gt; Unit)? = null, )</ID>
+    <ID>LongMethod:BossAppWithAuth.kt$@Composable fun ComponentContext.BossAppWithAuth( windowId: String, isFirstWindow: Boolean = false, panelRegistry: ai.rever.boss.components.registery.PanelRegistry, isFullscreen: Boolean = false, onToggleMaximize: (() -&gt; Unit)? = null, )</ID>
     <ID>LongMethod:BossBottomBar.kt$@Composable fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null)</ID>
     <ID>LongMethod:BossDraggableComponent.kt$BossDraggableComponent$fun stopDragging()</ID>
     <ID>LongMethod:BossMainWindowPanel.kt$@Composable fun BossTabsComponent.BossMainPanel( modifier: Modifier = Modifier, splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null, currentPanelId: String? = null, tabDragComponent: TabDraggableComponent? = null, onTabDropResult: (TabDropResult) -&gt; Unit = {}, /** * Whether this panel draws its own tab bar. * * False in LEFT position, where `SplitViewPanel` draws one bar for the whole window and this * panel's tabs are a group inside it. The panel keeps everything else it owns - its border * ring, its focus handling, `LocalIsPanelActive` - because none of that was ever the bar's. */ showTabBar: Boolean = true, )</ID>

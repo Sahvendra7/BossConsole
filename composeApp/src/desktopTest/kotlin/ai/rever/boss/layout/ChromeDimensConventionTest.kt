@@ -112,7 +112,12 @@ class ChromeDimensConventionTest {
             "VDivider is back to a literal width, so the strips' hairlines are charged but not drawn",
         )
 
-        listOf("BossTopBar.kt", "BossBottomBar.kt", "BossMainWindowPanel.kt").forEach { name ->
+        listOf(
+            "BossTopBar.kt",
+            "BossBottomBar.kt",
+            "BossMainWindowPanel.kt",
+            "TrafficLightStrip.kt",
+        ).forEach { name ->
             assertTrue(
                 sources
                     .single { it.name == name }

@@ -77,10 +77,11 @@ fun PasskeyBrowserScreen(
                 .fillMaxSize()
                 .background(BossTheme.colors.panel),
     ) {
-        // Title Bar - matches BossTitleBar, and reads the same metric so it keeps matching. The
-        // literals here were copied from those bars; once ChromeDimens owns them, a copy is a copy
-        // that drifts the first time a density other than Comfortable is selected.
-        HorizontalBar(height = BossChrome.dimens.titleBarHeight) {
+        // This screen keeps a title row of its own: it is a standalone auth surface, not the main
+        // window, so the row the main window dropped is still the right shape here. It reads the
+        // metrics rather than the literals it used to copy from BossTitleBar, because a copy drifts
+        // the first time a density other than Comfortable is selected.
+        HorizontalBar(height = BossChrome.dimens.trafficLightStripHeight) {
             Text(
                 text = "Boss Console",
                 color = BossTheme.colors.textPrimary,

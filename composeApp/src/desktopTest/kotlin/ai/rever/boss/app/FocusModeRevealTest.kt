@@ -34,10 +34,11 @@ class FocusModeRevealTest {
     /**
      * Mount the reveal for [settings] and settle it, past the 2s hide grace period.
      *
-     * Note what this does and does not prove: `shown` starts false, so a hidden edge
-     * reads false whether or not the effects ran. The load-bearing assertions are the
-     * `assertTrue` ones - an edge focus mode does not clear has to be actively turned
-     * back on by [EdgeRevealEffects]. The hover path is covered separately below.
+     * Note what this does and does not prove: `shown` is *seeded* from the same `hides(edge)`
+     * the effects read, so a hidden edge reads false whether or not the effects ran. The
+     * load-bearing assertions are the `assertTrue` ones - an edge focus mode does not clear
+     * has to come back on. The hover path is covered separately below, and the seed itself
+     * by `the state is seeded so frame one matches where the effects settle`.
      */
     private fun revealFor(settings: FocusModeSettings): FocusModeRevealState {
         lateinit var state: FocusModeRevealState
@@ -48,6 +49,40 @@ class FocusModeRevealTest {
         rule.mainClock.advanceTimeBy(GRACE_PERIOD_MS)
         rule.waitForIdle()
         return state
+    }
+
+    @Test
+    fun `the state is seeded so frame one matches where the effects settle`() {
+        // No compose rule on purpose: the point is the value before any effect has run. A
+        // LaunchedEffect body runs after the composition that launched it, so an unseeded `false`
+        // drew every window's first frame with all four bars missing. Invisible while only the bars
+        // keyed off it; visible once the macOS traffic-light strip started standing in for an absent
+        // top bar, because the strip appeared on frame one and was removed immediately after.
+        val focusOnTopOnly =
+            FocusModeSettings(
+                enabled = true,
+                hideTopBar = true,
+                hideLeftSidebar = false,
+                hideRightSidebar = false,
+                hideBottomBar = false,
+            )
+
+        val seeded = FocusModeRevealState { edge -> !focusOnTopOnly.hides(edge) }
+
+        assertFalse(seeded.showTopBar, "the cleared edge should start cleared, not appear then vanish")
+        assertTrue(seeded.showLeftSidebar)
+        assertTrue(seeded.showRightSidebar)
+        assertTrue(seeded.showBottomBar)
+    }
+
+    @Test
+    fun `an unconfigured state shows every edge`() {
+        val state = FocusModeRevealState()
+
+        assertTrue(state.showTopBar)
+        assertTrue(state.showLeftSidebar)
+        assertTrue(state.showRightSidebar)
+        assertTrue(state.showBottomBar)
     }
 
     @Test

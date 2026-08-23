@@ -29,12 +29,13 @@ enum class ChromeDensity {
  * to turn and no way to state what the chrome costs. Read them through [BossChrome].dimens.
  *
  * Host chrome only. This deliberately does not live in `plugin-ui-core` alongside
- * `BossTheme.colors` / `BossTheme.space`: plugins never draw the title bar, the tab bar or the icon
+ * `BossTheme.colors` / `BossTheme.space`: plugins never draw the top bar, the tab bar or the icon
  * strips, and that module carries binary-compatibility constraints for dynamically loaded plugins
  * that host layout tokens have no business touching.
  *
- * @property titleBarHeight The "Boss Console" row. On macOS this is also what keeps window content
- *   clear of the traffic lights, since the window sets `fullWindowContent` — see [MIN_TITLE_BAR].
+ * @property trafficLightStripHeight The bare strip that stands in for the topmost row on macOS when
+ *   no window-wide bar is on screen, keeping content clear of the traffic lights — see
+ *   [MIN_TRAFFIC_LIGHT_STRIP] and `WindowTopChrome`.
  * @property topBarHeight The action bar (workspace controls, run bar, search, settings).
  * @property tabBarHeight The main panel's tab row. Floored by the new-tab button — see [MIN_TAB_BAR].
  * @property bottomBarHeight The status bar.
@@ -52,7 +53,7 @@ enum class ChromeDensity {
  *   rendering artifact, not to taste, and 1.dp is invisible while 3.dp is a frame.
  */
 data class ChromeDimens(
-    val titleBarHeight: Dp,
+    val trafficLightStripHeight: Dp,
     val topBarHeight: Dp,
     val tabBarHeight: Dp,
     val bottomBarHeight: Dp,
@@ -63,13 +64,14 @@ data class ChromeDimens(
 ) {
     companion object {
         /**
-         * The shipped title bar height, and the floor for it.
+         * The height the traffic lights need, and the floor for the strip that reserves it.
          *
-         * macOS draws the traffic lights over the top-left of the content (the window sets
-         * `apple.awt.fullWindowContent`), so this row is what they sit in. 26.dp is what has
-         * shipped; going below it risks the buttons overlapping whatever is drawn beneath.
+         * macOS draws them over the top-left of the content (the window sets
+         * `apple.awt.fullWindowContent`), so something has to hold this much room. 26.dp is what the
+         * old title row held and what has shipped; below it the buttons start overlapping whatever
+         * is drawn beneath.
          */
-        val MIN_TITLE_BAR = 26.dp
+        val MIN_TRAFFIC_LIGHT_STRIP = 26.dp
 
         /**
          * The floor for [topBarHeight]: the bar is built from icon-only `BossActionButton`s at
@@ -104,7 +106,7 @@ data class ChromeDimens(
         /** Today's shipped metrics. Changing these changes the app's default look. */
         val Comfortable =
             ChromeDimens(
-                titleBarHeight = 26.dp,
+                trafficLightStripHeight = 26.dp,
                 topBarHeight = 40.dp,
                 tabBarHeight = 42.dp,
                 bottomBarHeight = 30.dp,
@@ -115,13 +117,13 @@ data class ChromeDimens(
         /**
          * As tight as the existing content allows, for short screens.
          *
-         * Every value here is at or above the floor its content imposes ([MIN_TITLE_BAR],
-         * [MIN_TAB_BAR], [MIN_STRIP_WIDTH]); the title bar cannot shrink at all, since the shipped
-         * height is already its floor. Worth ~20.dp of window height over [Comfortable].
+         * Every value here is at or above the floor its content imposes ([MIN_TRAFFIC_LIGHT_STRIP],
+         * [MIN_TAB_BAR], [MIN_STRIP_WIDTH]); the traffic-light strip cannot shrink at all, since the
+         * buttons set its height. Worth ~20.dp of window height over [Comfortable].
          */
         val Compact =
             ChromeDimens(
-                titleBarHeight = MIN_TITLE_BAR,
+                trafficLightStripHeight = MIN_TRAFFIC_LIGHT_STRIP,
                 topBarHeight = MIN_TOP_BAR,
                 tabBarHeight = MIN_TAB_BAR,
                 bottomBarHeight = 24.dp,
@@ -132,7 +134,7 @@ data class ChromeDimens(
         /** Roomier, for a large display where the height is not the scarce resource. */
         val Spacious =
             ChromeDimens(
-                titleBarHeight = 28.dp,
+                trafficLightStripHeight = 28.dp,
                 topBarHeight = 44.dp,
                 tabBarHeight = 46.dp,
                 bottomBarHeight = 34.dp,

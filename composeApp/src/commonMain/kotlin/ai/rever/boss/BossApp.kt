@@ -42,6 +42,7 @@ fun ComponentContext.BossApp(
     windowId: String,
     isFirstWindow: Boolean = false,
     panelRegistry: PanelRegistry,
+    isFullscreen: Boolean = false,
     onToggleMaximize: (() -> Unit)? = null,
 ) {
     val state =
@@ -71,6 +72,7 @@ fun ComponentContext.BossApp(
                 focusModeSettings = focusModeSettings,
                 revealOffsetDp = with(LocalDensity.current) { focusModeSettings.revealOffsetPx.toDp() },
                 appearance = windowAppearanceSettings,
+                isFullscreen = isFullscreen,
                 onToggleMaximize = onToggleMaximize,
             )
 
