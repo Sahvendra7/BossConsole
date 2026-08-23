@@ -134,6 +134,14 @@ private fun PluginLoadGateBody(
                     is PluginLoadGate.NeedsNewerApi -> {
                         "It needs plugin API ${gate.required} or later. The installed API layer is ${gate.current}."
                     }
+
+                    is PluginLoadGate.SignatureRejected -> {
+                        // Says what is wrong with the FILE, not with a version, and does not
+                        // accuse: the ordinary cause is a jar replaced by hand during development,
+                        // not an attack. The verifier's own reason is shown below.
+                        "The installed file does not match the signature the store recorded for " +
+                            "it, so it was not loaded."
+                    }
                 },
             fontSize = 13.sp,
             color = BossTheme.colors.textSecondary,
@@ -276,7 +284,15 @@ private fun NoRemedyAvailable(
 internal fun remedyLabel(remedy: PluginLoadRemedy): String =
     when (remedy) {
         is PluginLoadRemedy.UpdateHost -> "Update BOSS to ${remedy.availableVersion}"
+
         is PluginLoadRemedy.UpdateApi -> "Update the plugin API to ${remedy.availableVersion}"
+
         is PluginLoadRemedy.RevertPlugin -> "Go back to version ${remedy.toVersion}"
+
+        // "Reinstall" rather than "Update", even when the store's version is higher: the point is
+        // replacing bytes that cannot be trusted, and a user told they are updating would not
+        // understand why it was offered for a plugin they never chose to change.
+        is PluginLoadRemedy.ReinstallFromStore -> "Reinstall version ${remedy.version} from the store"
+
         is PluginLoadRemedy.NothingAvailable -> remedy.reason
     }

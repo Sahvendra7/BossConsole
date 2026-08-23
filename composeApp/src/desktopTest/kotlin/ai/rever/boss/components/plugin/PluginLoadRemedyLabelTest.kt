@@ -51,9 +51,12 @@ class PluginLoadRemedyLabelTest {
         val remedies =
             remediesFor(
                 gate = gate,
-                hostUpdate = "9.4.22",
-                apiUpdate = null,
-                revertTo = null,
+                options =
+                    RemedyOptions(
+                        hostUpdate = "9.4.22",
+                        apiUpdate = null,
+                        revertTo = null,
+                    ),
                 satisfies = PluginLoadGateRecovery::satisfies,
             )
         assertTrue(
@@ -68,9 +71,12 @@ class PluginLoadRemedyLabelTest {
         val remedies =
             remediesFor(
                 gate = gate,
-                hostUpdate = "9.4.23",
-                apiUpdate = null,
-                revertTo = "1.2.21",
+                options =
+                    RemedyOptions(
+                        hostUpdate = "9.4.23",
+                        apiUpdate = null,
+                        revertTo = "1.2.21",
+                    ),
                 satisfies = PluginLoadGateRecovery::satisfies,
             )
         assertEquals(
@@ -92,9 +98,12 @@ class PluginLoadRemedyLabelTest {
         val remedies =
             remediesFor(
                 gate = gate,
-                hostUpdate = null,
-                apiUpdate = null,
-                revertTo = "1.2.21",
+                options =
+                    RemedyOptions(
+                        hostUpdate = null,
+                        apiUpdate = null,
+                        revertTo = "1.2.21",
+                    ),
                 satisfies = PluginLoadGateRecovery::satisfies,
             )
         assertEquals(listOf(PluginLoadRemedy.RevertPlugin("1.2.21")), remedies)
@@ -107,11 +116,23 @@ class PluginLoadRemedyLabelTest {
         val remedies =
             remediesFor(
                 gate = gate,
-                hostUpdate = "9.9.9",
-                apiUpdate = "1.0.83",
-                revertTo = null,
+                options =
+                    RemedyOptions(
+                        hostUpdate = "9.9.9",
+                        apiUpdate = "1.0.83",
+                        revertTo = null,
+                    ),
                 satisfies = PluginLoadGateRecovery::satisfies,
             )
         assertEquals(listOf(PluginLoadRemedy.UpdateApi("1.0.83")), remedies)
+    }
+
+    @Test
+    fun `the reinstall label names the version and says reinstall`() {
+        val label = remedyLabel(PluginLoadRemedy.ReinstallFromStore("1.9.21"))
+        assertTrue(label.contains("1.9.21"), "the button does not say what it installs: $label")
+        // "Reinstall", not "Update": the user never chose to change this plugin, and calling it an
+        // update would leave them wondering why one was offered.
+        assertTrue(label.startsWith("Reinstall"), "reads as an update rather than a repair: $label")
     }
 }

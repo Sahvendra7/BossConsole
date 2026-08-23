@@ -72,6 +72,24 @@ internal object PluginLoadGateRecovery {
         return lookup.getOrNull()?.version?.takeIf { it.isNotBlank() }
     }
 
+    /**
+     * The version the store publishes for [pluginId], or null when it cannot be asked.
+     *
+     * The REMOTE repository, not `repositoryManager`: the manager merges in the local copy, which
+     * for a signature refusal is the very file that cannot be trusted - so asking it would answer
+     * with the version already on disk and offer to reinstall the artifact we are rejecting.
+     */
+    suspend fun storeVersion(pluginId: String): String? {
+        val store = PluginStoreSetup.remoteRepository ?: return null
+        // Both failure shapes: getPlugin returns Result.failure rather than throwing, so
+        // runCatching alone would report success with a null inside it.
+        val lookup = runCatching { store.getPlugin(pluginId) }.getOrElse { Result.failure(it) }
+        lookup.exceptionOrNull()?.let { e ->
+            logger.warn(LogCategory.SYSTEM, "Could not ask the store for a replacement: ${e.message}")
+        }
+        return lookup.getOrNull()?.version?.takeIf { it.isNotBlank() }
+    }
+
     /** The version kept aside for [pluginId], or null when nothing was kept. */
     fun revertVersion(pluginId: String): String? =
         runCatching {
@@ -96,6 +114,8 @@ internal object PluginLoadGateRecovery {
             is PluginLoadRemedy.UpdateApi -> updateApi(gate, remedy, manager)
 
             is PluginLoadRemedy.RevertPlugin -> revert(gate, remedy, manager)
+
+            is PluginLoadRemedy.ReinstallFromStore -> reinstallFromStore(gate, remedy, manager)
 
             // Not reachable from a button: the dialog renders this as a sentence. Handled rather
             // than thrown so a future caller cannot turn it into a crash.
@@ -152,6 +172,67 @@ internal object PluginLoadGateRecovery {
         return result.map {
             PluginLoadGateRegistry.clear(gate.pluginId)
             "Plugin API updated to ${remedy.availableVersion}."
+        }
+    }
+
+    /**
+     * Fetch the artifact the store signed and load that instead.
+     *
+     * Two things make this different from [updateApi], which otherwise does the same shape of work.
+     *
+     * FIRST, the unload is lenient. A refused plugin never loaded, so the ordinary
+     * `uninstallPlugin(force = true)` fails - and [StoreVersionInstaller.install] treats a failed
+     * unload as fatal and returns before downloading anything. That dead end is exactly what this
+     * remedy exists to break, so "there was nothing to unload" is success here. It is still
+     * ATTEMPTED, because a good older jar may well be loaded while the newer file on disk is the
+     * refused one.
+     *
+     * SECOND, the refused jar is deleted afterwards. The install writes a version-named file, which
+     * for a store version different from the refused one is a different name - leaving two jars
+     * declaring one pluginId in the directory. The startup scan can pick either, so the next launch
+     * could come back refused again with nothing on screen to explain why. The stale `.sig` goes
+     * too: a sidecar describing a file that no longer exists is the state that hard-fails a load.
+     *
+     * Cleanup happens only after a SUCCESSFUL install, and never touches the jar that is now
+     * loaded. A failed install leaves everything exactly as it was, which keeps the gate honest -
+     * the plugin is still broken and the dialog still says so.
+     */
+    private suspend fun reinstallFromStore(
+        gate: PluginLoadGate,
+        remedy: PluginLoadRemedy.ReinstallFromStore,
+        manager: DynamicPluginManager,
+    ): Result<String> {
+        val store =
+            PluginStoreSetup.remoteRepository
+                ?: return Result.failure(IllegalStateException("The plugin store is not available."))
+        val dir = PluginStoreSetup.getPluginDir()
+        val installer = StoreVersionInstaller(pluginDir = { dir })
+        val result =
+            installer.install(
+                store = store,
+                request =
+                    StoreVersionRequest(
+                        pluginId = gate.pluginId,
+                        version = remedy.version,
+                        sourceUrl = null,
+                        // Nothing is running for this plugin, so there is no jar to keep out of the
+                        // way. Naming one would ask the installer to protect a file that is not in
+                        // use and, worse, to restore it if the swap failed - putting the refused
+                        // bytes back as if they were a working build.
+                        runningJarPath = null,
+                    ),
+                unload = { id ->
+                    runCatching { manager.uninstallPlugin(id, force = true) }
+                    // Deliberately unconditional. See the KDoc: a refused plugin has nothing to
+                    // unload, and reporting that as a failure would abort the install.
+                    Result.success(Unit)
+                },
+                load = { path -> manager.installPlugin(path).map { true } },
+            )
+        return result.map { installedVersion ->
+            dropRefusedArtifacts(dir, gate.pluginId, keep = manager.getPluginInfo(gate.pluginId)?.jarPath)
+            PluginLoadGateRegistry.clear(gate.pluginId)
+            "${gate.displayName} reinstalled at version $installedVersion."
         }
     }
 
@@ -218,6 +299,41 @@ private fun refusedJarFor(
         }
 
 /**
+ * Delete every jar declaring [pluginId] except [keep], and each one's `.sig` sidecar.
+ *
+ * `keep` is the jar the plugin is loaded from after a successful reinstall. Null means the install
+ * reported success but the manager has no record of it - a state we should not act on, so nothing
+ * is deleted: removing files while unsure which one is live is how a working plugin disappears.
+ *
+ * Sidecars go with their jar. A `.sig` whose jar is gone is harmless on its own (nothing reads it),
+ * but leaving one behind that a LATER install of the same filename would inherit is the
+ * present-but-wrong signature that hard-fails a load - the exact failure being recovered from here.
+ */
+private fun dropRefusedArtifacts(
+    pluginDir: java.io.File,
+    pluginId: String,
+    keep: String?,
+) {
+    if (keep == null) return
+    val keepPath = runCatching { java.io.File(keep).absolutePath }.getOrNull() ?: return
+    val jars =
+        pluginDir
+            .listFiles { f: java.io.File -> f.isFile && f.name.endsWith(".jar") }
+            ?.filter { jar ->
+                jar.absolutePath != keepPath &&
+                    runCatching {
+                        ai.rever.boss.plugin.loader.PluginManifestReader
+                            .readFromJar(jar.absolutePath)
+                            .pluginId
+                    }.getOrNull() == pluginId
+            }.orEmpty()
+    for (jar in jars) {
+        runCatching { jar.delete() }
+        runCatching { java.io.File("${jar.absolutePath}.sig").delete() }
+    }
+}
+
+/**
  * The desktop half of [PluginLoadRemedyResolver], wired to the real updater, store and disk.
  *
  * A thin adapter over [PluginLoadGateRecovery] so the host composable in `commonMain` can be
@@ -227,15 +343,39 @@ object DesktopPluginLoadRemedyResolver : PluginLoadRemedyResolver {
     override suspend fun resolve(gate: PluginLoadGate): List<PluginLoadRemedy> =
         remediesFor(
             gate = gate,
-            hostUpdate = PluginLoadGateRecovery.hostUpdateVersion(),
-            // Only asked for the gate it can fix. An api lookup for a host-version refusal is a
-            // store request whose answer nothing would read.
-            apiUpdate =
-                when (gate) {
-                    is PluginLoadGate.NeedsNewerApi -> PluginLoadGateRecovery.apiUpdateVersion()
-                    is PluginLoadGate.NeedsNewerHost -> null
-                },
-            revertTo = PluginLoadGateRecovery.revertVersion(gate.pluginId),
+            options =
+                RemedyOptions(
+                    hostUpdate = PluginLoadGateRecovery.hostUpdateVersion(),
+                    // Each lookup is asked only for the gate it can fix: a store request whose
+                    // answer nothing would read is a round trip spent on nothing.
+                    apiUpdate =
+                        when (gate) {
+                            is PluginLoadGate.NeedsNewerApi -> PluginLoadGateRecovery.apiUpdateVersion()
+                            else -> null
+                        },
+                    revertTo =
+                        when (gate) {
+                            // Never for a signature refusal: signatureRemedies would ignore it,
+                            // and reading the rollback store is pointless work.
+                            is PluginLoadGate.VersionFloor -> {
+                                PluginLoadGateRecovery.revertVersion(gate.pluginId)
+                            }
+
+                            else -> {
+                                null
+                            }
+                        },
+                    storeVersion =
+                        when (gate) {
+                            is PluginLoadGate.SignatureRejected -> {
+                                PluginLoadGateRecovery.storeVersion(gate.pluginId)
+                            }
+
+                            else -> {
+                                null
+                            }
+                        },
+                ),
             satisfies = PluginLoadGateRecovery::satisfies,
         )
 

@@ -58,9 +58,37 @@ class LoadGateTranslationTest {
     }
 
     @Test
+    fun `a signature refusal produces a gate`() {
+        // It used to produce null, on the grounds that no button helps. One does: fetching the
+        // artifact the store signed. Without this the plugin vanished with only a log line - and
+        // when the plugin is the Toolbox, so did the only way to reinstall it.
+        val gate = loadGateFor(PluginSignatureException("bad signature", "com.example.plugin"))
+        val rejected = assertIs<PluginLoadGate.SignatureRejected>(gate)
+        assertEquals("com.example.plugin", rejected.pluginId)
+        // The verifier's own words, not ours: "No trusted key verified the signature" is what a
+        // hand-replaced jar produces and is the most use to whoever reports it.
+        assertEquals("bad signature", rejected.reason)
+    }
+
+    @Test
+    fun `a signature refusal with no plugin id produces no gate`() {
+        // Nothing can be offered for a refusal we cannot name - there is no id to ask the store
+        // about, so a "Reinstall" button would have no argument.
+        assertNull(loadGateFor(PluginSignatureException("bad signature", null)))
+    }
+
+    @Test
+    fun `a blank reason falls back rather than rendering an empty line`() {
+        // The constructor takes a non-null String, so the reachable degenerate case is blank
+        // rather than null - and a blank one would print a heading with nothing under it.
+        val gate = loadGateFor(PluginSignatureException("   ", "com.example.plugin"))
+        val rejected = assertIs<PluginLoadGate.SignatureRejected>(gate)
+        assertTrue(rejected.reason.isNotBlank(), "an empty reason would render a blank line")
+    }
+
+    @Test
     fun `other load failures produce no gate`() {
         // Each of these is a real failure with no button that helps.
-        assertNull(loadGateFor(PluginSignatureException("bad signature", "com.example.plugin")))
         assertNull(loadGateFor(PluginBinaryIncompatibilityException("incompatible", "com.example.plugin")))
         assertNull(loadGateFor(PluginLoadException("no main class", "com.example.plugin")))
         assertNull(loadGateFor(IllegalStateException("something else")))

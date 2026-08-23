@@ -46,7 +46,7 @@ class PluginLoadGateTest {
         hostUpdate: String? = null,
         apiUpdate: String? = null,
         revertTo: String? = null,
-    ) = remediesFor(gate, hostUpdate, apiUpdate, revertTo, satisfies)
+    ) = remediesFor(gate, RemedyOptions(hostUpdate, apiUpdate, revertTo), satisfies)
 
     @Test
     fun `a host update that clears the floor is offered first`() {
@@ -127,4 +127,86 @@ class PluginLoadGateTest {
             }
         }
     }
+
+    @Test
+    fun `a signature refusal is offered the store copy`() {
+        val remedies =
+            remediesFor(
+                gate = signatureGate(),
+                options =
+                    RemedyOptions(
+                        hostUpdate = "9.9.9",
+                        apiUpdate = "1.0.99",
+                        revertTo = "1.0.0",
+                        storeVersion = "1.9.21",
+                    ),
+                satisfies = { _, _ -> true },
+            )
+        // ONLY the reinstall, despite a host update, an api update and a kept jar all being
+        // available. None of them fixes bytes that do not match their signature, and offering
+        // three buttons that cannot work is worse than one that can.
+        assertEquals(listOf(PluginLoadRemedy.ReinstallFromStore("1.9.21")), remedies)
+    }
+
+    @Test
+    fun `a signature refusal is never offered a revert`() {
+        // The remedy that "always applies" for a version floor must NOT apply here: the kept jar
+        // is a different version, not a correctly-signed copy of this one, so it would swap one
+        // unverifiable artifact for another.
+        val remedies =
+            remediesFor(
+                gate = signatureGate(),
+                options =
+                    RemedyOptions(
+                        hostUpdate = null,
+                        apiUpdate = null,
+                        revertTo = "1.0.0",
+                        storeVersion = null,
+                    ),
+                satisfies = { _, _ -> true },
+            )
+        assertTrue(
+            remedies.none { it is PluginLoadRemedy.RevertPlugin },
+            "a revert cannot fix a signature mismatch: $remedies",
+        )
+    }
+
+    @Test
+    fun `an unreachable store says so rather than offering nothing`() {
+        val remedies =
+            remediesFor(
+                gate = signatureGate(),
+                options =
+                    RemedyOptions(
+                        hostUpdate = "9.9.9",
+                        apiUpdate = "1.0.99",
+                        revertTo = "1.0.0",
+                        storeVersion = null,
+                    ),
+                satisfies = { _, _ -> true },
+            )
+        val only = assertIs<PluginLoadRemedy.NothingAvailable>(remedies.single())
+        assertTrue(only.reason.isNotBlank())
+    }
+
+    @Test
+    fun `the store copy is offered even at the version already on disk`() {
+        // No floor to clear, so `satisfies` is irrelevant - refusing here on a version comparison
+        // would decline to replace tampered bytes with the ones the store vouched for.
+        val remedies =
+            remediesFor(
+                gate = signatureGate(),
+                options = RemedyOptions(storeVersion = "1.9.20"),
+                // Would veto every candidate if it were consulted.
+                satisfies = { _, _ -> false },
+            )
+        assertEquals(listOf(PluginLoadRemedy.ReinstallFromStore("1.9.20")), remedies)
+    }
+
+    private fun signatureGate() =
+        PluginLoadGate.SignatureRejected(
+            pluginId = "ai.rever.boss.plugin.dynamic.pluginmanager",
+            displayName = "Toolbox",
+            reason = "No trusted key verified the signature",
+        )
 }
