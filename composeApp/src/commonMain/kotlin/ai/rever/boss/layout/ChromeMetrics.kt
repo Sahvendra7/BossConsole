@@ -34,9 +34,10 @@ data class ChromeBudget(
  * The chrome budget for a browser tab in the main panel.
  *
  * Exists because "the browser feels cramped" is otherwise unfalsifiable: there was no way to say
- * from inside the app that the page gets 84.7% of the window, so any change here could only be
- * argued rather than shown. The unit test pins the shipped defaults, so adding or resizing a bar
- * without accounting for it fails a test rather than quietly costing a user another 30dp.
+ * from inside the app what share of the window the page gets, so any change here could only be
+ * argued rather than shown. The unit test pins the shipped defaults - 115dp of chrome, 87.6% of a
+ * 13" MacBook Air left for the page - so adding or resizing a bar without accounting for it fails a
+ * test rather than quietly costing a user another 30dp.
  *
  * Mirrors what `BossAppScaffold` actually draws, and is derived from the same two settings objects
  * it gates on, so the two cannot drift apart silently.
@@ -48,6 +49,11 @@ object ChromeMetrics {
      * "Steady state" means no hover-reveal: a bar that focus mode is clearing counts as absent even
      * though sweeping the window edge brings it back temporarily. That is the honest number for
      * "how much room does the page get while I am reading it".
+     *
+     * [osName] and [isFullscreen] are only consulted for the macOS traffic-light reservation, which
+     * is the one piece of vertical chrome that depends on the platform rather than on a preference.
+     * Neither is defaulted, for the same reason [dimens] is not: a caller that guessed wrong about
+     * the platform would get a plausible number with nothing to catch it.
      *
      * Deliberately **excludes**:
      * - `BossPanelTopBar` (`panelTopBarHeight`) - that is a `SidePanel` header. A browser tab in the
@@ -67,10 +73,12 @@ object ChromeMetrics {
         appearance: WindowAppearanceSettings,
         focusMode: FocusModeSettings,
         dimens: ChromeDimens,
+        osName: String,
+        isFullscreen: Boolean,
     ): ChromeBudget {
         val divider = dimens.dividerThickness
 
-        // Each bar carries its own divider: BossTitleBar and BossTopBar draw a trailing one,
+        // Each bar carries its own divider: BossTopBar and TrafficLightStrip draw a trailing one,
         // BossBottomBar a leading one, and BossMainPanel draws one under the tab bar.
         //
         // The panel's border ring is charged first because it is the one piece of this that no
@@ -79,11 +87,16 @@ object ChromeMetrics {
         // it is twice the thickness off each axis and a browser tab never gets it back.
         var vertical = dimens.panelBorderThickness * 2
 
-        // Not gated on focus mode: the title row answers only to the appearance preference, since
-        // on macOS it is what keeps content clear of the traffic lights.
-        if (appearance.showTitleBar) vertical += dimens.titleBarHeight + divider
+        val topBarOnScreen = appearance.showTopBar && !focusMode.hides(FocusModeEdge.TOP)
 
-        if (appearance.showTopBar && !focusMode.hides(FocusModeEdge.TOP)) {
+        // `showTitleBar` costs nothing now: it shows the app name inside the top bar rather than
+        // standing a row of its own up. What can still cost a row is the traffic-light reservation,
+        // and only on macOS with no window-wide bar on top to carry the inset instead.
+        if (WindowTopChrome.needsReservationStrip(osName, isFullscreen, topBarOnScreen)) {
+            vertical += dimens.trafficLightStripHeight + divider
+        }
+
+        if (topBarOnScreen) {
             vertical += dimens.topBarHeight + divider
         }
 

@@ -1,8 +1,8 @@
 package ai.rever.boss.app
 
 import ai.rever.boss.components.bars.horizontal.BossBottomBar
-import ai.rever.boss.components.bars.horizontal.BossTitleBar
 import ai.rever.boss.components.bars.horizontal.BossTopBar
+import ai.rever.boss.components.bars.horizontal.TrafficLightStrip
 import ai.rever.boss.components.bars.isBarVisible
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
@@ -29,6 +29,7 @@ import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.focusmode.FocusModeSettings
 import ai.rever.boss.handleTabDropResult
 import ai.rever.boss.layout.ChromeBudgetReadout
+import ai.rever.boss.layout.WindowTopChrome
 import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
 import ai.rever.boss.plugin.api.LocalProjectPath
 import ai.rever.boss.plugin.api.LocalSplitViewOperations
@@ -229,6 +230,7 @@ internal fun BossAppScaffold(
     focusModeSettings: FocusModeSettings,
     revealOffsetDp: Dp,
     appearance: WindowAppearanceSettings,
+    isFullscreen: Boolean,
     onToggleMaximize: (() -> Unit)?,
 ) {
     val coroutineScope = state.coroutineScope
@@ -277,6 +279,15 @@ internal fun BossAppScaffold(
             )
         }
 
+    // Whether the top bar is on screen, and therefore which row is the window's topmost. Read once:
+    // the AnimatedVisibility below and the traffic-light reservation have to agree, or macOS draws
+    // the window buttons over a tab.
+    val topBarOnScreen = appearance.showTopBar && reveal.showTopBar
+    val osName = remember { System.getProperty("os.name") ?: "" }
+    val trafficLightInset = WindowTopChrome.leadingInset(osName, isFullscreen)
+    val needsTrafficLightStrip =
+        WindowTopChrome.needsReservationStrip(osName, isFullscreen, topBarOnScreen)
+
     // Renders nothing; reports what the chrome costs the page when BOSS_CHROME_BUDGET is set.
     // Here rather than inside a bar so it still reports with every bar switched off.
     //
@@ -287,6 +298,7 @@ internal fun BossAppScaffold(
         windowId = state.windowId,
         appearance = appearance,
         focusMode = focusModeSettings,
+        isFullscreen = isFullscreen,
     )
 
     with(state.draggablePanelComponent) {
@@ -299,43 +311,23 @@ internal fun BossAppScaffold(
         ) {
             // Use Box to allow overlaying the drag ghost
             Column(modifier = Modifier.fillMaxSize()) {
-                // Title bar - conditionally shown based on settings
-                // Default: hidden on Linux/Windows, shown on macOS
-                if (appearance.showTitleBar) {
-                    BossTitleBar(
-                        onToggleMaximize = onToggleMaximize,
-                    )
+                // No title row: the top bar is the window's topmost row and carries the
+                // traffic-light inset itself. This strip only stands in when the top bar is off or
+                // focus mode has cleared it - see WindowTopChrome.needsReservationStrip.
+                //
+                // Animated on the same 250ms tween as the top bar below, and inversely to it, so
+                // the two heights cross over instead of the strip snapping in while the bar is
+                // still shrinking. Snapping cost a 27dp jump on every focus-mode transition.
+                AnimatedVisibility(
+                    visible = needsTrafficLightStrip,
+                    enter = expandVertically(expandFrom = Alignment.Top, animationSpec = tween(durationMillis = 250)),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top, animationSpec = tween(durationMillis = 250)),
+                ) {
+                    TrafficLightStrip(onToggleMaximize = onToggleMaximize)
                 }
 
-                // Update banner - always visible (even in focus mode)
                 val updateHandle = state.updateHandle
                 val updateState by updateHandle.updateState.collectAsState()
-                // Every action runs on the manager's scope, never this window's
-                // rememberCoroutineScope(): that scope dies with the composition, so
-                // closing the window mid-install used to cancel the install (leaving
-                // UpdateState on Installing) and could drop a persisted dismissal.
-                UpdateBanner(
-                    updateState = updateState,
-                    onCheckForUpdates = {
-                        // Manual retry: bypass per-version dismissal
-                        updateHandle.checkForUpdatesInBackground(force = true)
-                    },
-                    onDownloadUpdate = { updateInfo ->
-                        updateHandle.downloadUpdateInBackground(updateInfo)
-                    },
-                    onInstallUpdate = { downloadPath ->
-                        updateHandle.installUpdateInBackground(downloadPath)
-                    },
-                    onDismiss = {
-                        val currentState = updateState
-                        if (currentState is UpdateState.UpdateAvailable) {
-                            // Persist dismissal so this version doesn't re-prompt
-                            updateHandle.dismissVersionInBackground(currentState.updateInfo.latestVersion)
-                        } else {
-                            updateHandle.resetState()
-                        }
-                    },
-                )
 
                 // Update dialog - dismissible prompt for a new app version,
                 // rendered by exactly one window (ownership is reactive)
@@ -361,7 +353,7 @@ internal fun BossAppScaffold(
                 // off outright by the appearance preference. Both have to agree for a bar to show:
                 // focus mode is the transient posture, the preference is the standing choice.
                 AnimatedVisibility(
-                    visible = appearance.showTopBar && reveal.showTopBar,
+                    visible = topBarOnScreen,
                     enter =
                         expandVertically(
                             expandFrom = Alignment.Top,
@@ -413,9 +405,45 @@ internal fun BossAppScaffold(
                             onCloneProject = {
                                 state.showCloneProjectDialog = true
                             },
+                            showAppName = appearance.showTitleBar,
+                            leadingInset = trafficLightInset,
+                            onToggleMaximize = onToggleMaximize,
                         )
                     }
                 }
+
+                // Below the top bar, not above it. On macOS the window buttons are drawn over
+                // whatever the topmost row is, and this banner starts its icon and text at the
+                // leading edge - so above the top bar it collects the buttons on top of its own
+                // content, and the top bar's inset is one row too low to help. It is a
+                // notification rather than chrome, so under the bar reads at least as well.
+                // Update banner - always visible (even in focus mode)
+                // Every action runs on the manager's scope, never this window's
+                // rememberCoroutineScope(): that scope dies with the composition, so
+                // closing the window mid-install used to cancel the install (leaving
+                // UpdateState on Installing) and could drop a persisted dismissal.
+                UpdateBanner(
+                    updateState = updateState,
+                    onCheckForUpdates = {
+                        // Manual retry: bypass per-version dismissal
+                        updateHandle.checkForUpdatesInBackground(force = true)
+                    },
+                    onDownloadUpdate = { updateInfo ->
+                        updateHandle.downloadUpdateInBackground(updateInfo)
+                    },
+                    onInstallUpdate = { downloadPath ->
+                        updateHandle.installUpdateInBackground(downloadPath)
+                    },
+                    onDismiss = {
+                        val currentState = updateState
+                        if (currentState is UpdateState.UpdateAvailable) {
+                            // Persist dismissal so this version doesn't re-prompt
+                            updateHandle.dismissVersionInBackground(currentState.updateInfo.latestVersion)
+                        } else {
+                            updateHandle.resetState()
+                        }
+                    },
+                )
 
                 Row(
                     modifier = Modifier.weight(1f),
