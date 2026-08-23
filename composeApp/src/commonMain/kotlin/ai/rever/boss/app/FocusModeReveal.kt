@@ -38,10 +38,23 @@ import kotlinx.coroutines.delay
  * - [shown]: debounced visibility with a grace period, so the bar doesn't flicker
  *   while the mouse travels from the strip onto the revealed content
  */
-internal class FocusModeEdgeRevealState {
+internal class FocusModeEdgeRevealState(
+    shownInitially: Boolean = true,
+) {
     var hoveringStrip by mutableStateOf(false)
     var hoverRevealed by mutableStateOf(false)
-    var shown by mutableStateOf(false)
+
+    /**
+     * Seeded rather than starting `false`.
+     *
+     * [EdgeRevealEffects] sets this from `hidden` on its first run, but a `LaunchedEffect` body runs
+     * *after* the composition that launched it, so starting `false` meant every window's first frame
+     * drew with all four bars absent and then filled them in. That was invisible while the only
+     * thing keying off it was the bars themselves; it stopped being invisible once the macOS
+     * traffic-light strip began standing in whenever the top bar is away, because the strip would
+     * appear on frame one and be removed immediately after.
+     */
+    var shown by mutableStateOf(shownInitially)
 
     /** Hover on the revealed bar itself, which holds it open. */
     val interactionSource = MutableInteractionSource()
@@ -53,8 +66,11 @@ internal class FocusModeEdgeRevealState {
  * The named `show*` / `*InteractionSource` accessors are what the scaffold and the
  * menu actions bind to; [get] is the per-edge view the effects and strips use.
  */
-internal class FocusModeRevealState {
-    private val edges = FocusModeEdge.entries.associateWith { FocusModeEdgeRevealState() }
+internal class FocusModeRevealState(
+    shownInitially: (FocusModeEdge) -> Boolean = { true },
+) {
+    private val edges =
+        FocusModeEdge.entries.associateWith { FocusModeEdgeRevealState(shownInitially(it)) }
 
     operator fun get(edge: FocusModeEdge): FocusModeEdgeRevealState = edges.getValue(edge)
 
@@ -98,7 +114,10 @@ internal class FocusModeRevealState {
  */
 @Composable
 internal fun rememberFocusModeReveal(settings: FocusModeSettings): FocusModeRevealState {
-    val state = remember { FocusModeRevealState() }
+    // Seeded from the settings as they are on first composition, so frame one already matches what
+    // the effects below would settle on. Only the seed is captured; every later change flows through
+    // EdgeRevealEffects.
+    val state = remember { FocusModeRevealState { edge -> !settings.hides(edge) } }
     FocusModeEdge.entries.forEach { edge ->
         EdgeRevealEffects(
             edge = state[edge],

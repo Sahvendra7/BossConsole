@@ -292,9 +292,11 @@ private fun themeEntries() =
 
 private fun windowAppearanceEntries() =
     section(SettingsSection.WINDOW_APPEARANCE) {
-        group("Title Bar")
-        setting("Show Title Bar", "Title Bar", "window", "chrome", "decoration")
-        setting("Platform Default", "Title Bar")
+        group("App Name")
+        // "title bar" stays a keyword: that is what this control was called until the row it
+        // switched became a label in the top bar, and it is what someone will still search for.
+        setting("Show App Name", "App Name", "title bar", "window", "chrome", "decoration")
+        setting("Platform Default", "App Name")
         group("Tab Bar")
         setting("Tab Sizing", "Tab Bar", "shrink to fit", "fixed width", "tabs")
         group("Bars")
