@@ -112,6 +112,18 @@ object ProcessFootprint {
         val browserBytes: Long,
         val pluginBytes: Long,
         val processCount: Int,
+        /**
+         * Bytes per owned pid, so one process can be reported on its own.
+         *
+         * Carried on the reading rather than kept as separate mutable state next to it, which
+         * would let a caller pair the sums from one sample with the per-pid map from another -
+         * a torn read that would surface as a tab figure exceeding the total it sits inside.
+         * Here the two cannot disagree, because they are the same object.
+         *
+         * The measurement already happens for every pid on every sample, so the detail is free:
+         * no extra `ps`, no second cadence.
+         */
+        val bytesByPid: Map<Long, Long> = emptyMap(),
     ) {
         val totalBytes: Long get() = hostBytes + browserBytes + pluginBytes
     }
@@ -160,6 +172,16 @@ object ProcessFootprint {
     }
 
     /**
+     * The last reading, without ever taking one.
+     *
+     * Deliberately distinct from [current]: that refreshes when its TTL has expired, and doing so
+     * spawns `ps`. This is for readers on paths that must never block - a Compose pass drawing the
+     * status strip - where triggering a subprocess would be a serious bug rather than a slow
+     * frame. Null before the sampler's first successful read.
+     */
+    fun lastReading(): Reading? = cached
+
+    /**
      * Which pids need their command line read this tick.
      *
      * Pure, so the incremental rule is testable without a process table. Everything on a full
@@ -171,20 +193,6 @@ object ProcessFootprint {
         knownPids: Set<Long>,
         fullRescan: Boolean,
     ): Set<Long> = if (fullRescan) livePids else livePids - knownPids
-
-    /**
-     * The owned-pid map carried into this tick, with the dead dropped.
-     *
-     * Dropping by liveness is what makes a departed process stop counting without any rescan: a
-     * closed browser tab's renderer is gone from `livePids` and therefore gone from the total on
-     * the very next tick. A full rescan starts from nothing instead, since it is about to
-     * reclassify everything anyway.
-     */
-    internal fun retainLive(
-        owned: Map<Long, Owner>,
-        livePids: Set<Long>,
-        fullRescan: Boolean,
-    ): Map<Long, Owner> = if (fullRescan) emptyMap() else owned.filterKeys { it in livePids }
 
     private fun read(nowMs: Long): Reading? =
         runCatching {
@@ -245,7 +253,7 @@ object ProcessFootprint {
                     Owner.PLUGIN -> plugin += bytes
                 }
             }
-            Reading(host, browser, plugin, memory.size)
+            Reading(host, browser, plugin, memory.size, memory)
         }.onFailure {
             logger.debug(LogCategory.SYSTEM, "Footprint reading failed: ${it.message}")
         }.getOrNull()
@@ -400,3 +408,17 @@ object ProcessFootprint {
             }
         }.getOrNull()
 }
+
+/**
+ * The owned-pid map carried into this tick, with the dead dropped.
+ *
+ * Dropping by liveness is what makes a departed process stop counting without any rescan: a
+ * closed browser tab's renderer is gone from `livePids` and therefore gone from the total on
+ * the very next tick. A full rescan starts from nothing instead, since it is about to
+ * reclassify everything anyway.
+ */
+internal fun retainLive(
+    owned: Map<Long, ProcessFootprint.Owner>,
+    livePids: Set<Long>,
+    fullRescan: Boolean,
+): Map<Long, ProcessFootprint.Owner> = if (fullRescan) emptyMap() else owned.filterKeys { it in livePids }

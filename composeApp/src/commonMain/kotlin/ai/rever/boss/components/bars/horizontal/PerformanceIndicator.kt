@@ -37,6 +37,7 @@ import androidx.compose.runtime.DisposableEffect
 fun PerformanceIndicator(
     snapshot: PerformanceSnapshot?,
     health: PerformanceHealth,
+    activeBrowserBytes: Long,
     onClick: () -> Unit,
 ) {
     // Before the null-return below, deliberately. Whole-process sampling is gated on this being
@@ -59,11 +60,14 @@ fun PerformanceIndicator(
     val memory = snapshot.memory
     val memoryText =
         memoryIndicatorText(
+            activeBrowserMB = activeBrowserBytes.takeIf { it > 0L }?.let { it / (1024f * 1024f) },
             footprintMB = if (memory.footprintKnown) memory.footprintMB else null,
             systemUsedMB = memory.systemUsedBytes.takeIf { it > 0L }?.let { it / (1024f * 1024f) },
             systemTotalMB = memory.systemTotalBytes.takeIf { it > 0L }?.let { it / (1024f * 1024f) },
-            heapUsedMB = memory.heapUsedMB,
-            heapMaxMB = memory.heapMaxMB,
+            heapFallback =
+                FormatUtils.formatMegabytes(memory.heapUsedMB, compact = true) +
+                    "/" +
+                    FormatUtils.formatMegabytes(memory.heapMaxMB, compact = true),
         )
     val cpuText = "${snapshot.cpu.processLoadPercent.toInt()}%"
 
@@ -83,11 +87,11 @@ fun PerformanceIndicator(
  * inputs really can be absent at runtime and neither may be rendered as a zero.
  */
 internal fun memoryIndicatorText(
+    activeBrowserMB: Float?,
     footprintMB: Float?,
     systemUsedMB: Float?,
     systemTotalMB: Float?,
-    heapUsedMB: Float,
-    heapMaxMB: Float,
+    heapFallback: String,
 ): String {
     val footprint = footprintMB?.let { FormatUtils.formatMegabytes(it, compact = true) }
     val machine =
@@ -97,13 +101,26 @@ internal fun memoryIndicatorText(
             null
         }
 
-    return when {
-        footprint != null && machine != null -> {
-            "$footprint · $machine"
+    // Nested in brackets rather than listed as a third peer, because it is literally a subset:
+    // that renderer is one of the Chromium processes already summed into the footprint. Shown
+    // beside it, a reader could add the two and get a number that means nothing.
+    //
+    // Only ever alongside a known footprint. A tab figure with no total to sit inside is not a
+    // smaller version of this feature, it is a number with no referent.
+    val withBrowser =
+        if (footprint != null && activeBrowserMB != null) {
+            "$footprint (${FormatUtils.formatMegabytes(activeBrowserMB, compact = true)} tab)"
+        } else {
+            footprint
         }
 
-        footprint != null -> {
-            footprint
+    return when {
+        withBrowser != null && machine != null -> {
+            "$withBrowser · $machine"
+        }
+
+        withBrowser != null -> {
+            withBrowser
         }
 
         machine != null -> {
@@ -111,9 +128,7 @@ internal fun memoryIndicatorText(
         }
 
         else -> {
-            FormatUtils.formatMegabytes(heapUsedMB, compact = true) +
-                "/" +
-                FormatUtils.formatMegabytes(heapMaxMB, compact = true)
+            heapFallback
         }
     }
 }

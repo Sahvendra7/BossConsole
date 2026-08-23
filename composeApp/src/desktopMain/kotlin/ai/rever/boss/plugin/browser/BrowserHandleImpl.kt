@@ -47,6 +47,7 @@ import com.teamdev.jxbrowser.browser.callback.OpenPopupCallback
 import com.teamdev.jxbrowser.browser.callback.ShowContextMenuCallback
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
 import com.teamdev.jxbrowser.browser.event.FaviconChanged
+import com.teamdev.jxbrowser.browser.event.RenderProcessTerminated
 import com.teamdev.jxbrowser.browser.event.TitleChanged
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.event.Subscription
@@ -567,6 +568,36 @@ internal class BrowserHandleImpl(
      * Null until [Content] resolves one, and treated as "assume showing" while it is.
      */
     @Volatile private var frameStallHostWindow: Window? = null
+
+    /**
+     * OS pid of the Chromium renderer serving the last committed main-frame document, or null.
+     *
+     * Pushed at the events where it can change rather than pulled when someone asks, because the
+     * pull costs a blocking round trip and the push costs nothing. Of the chain
+     * `mainFrame -> renderProcess -> pid`, only `mainFrame()` is IPC; the other two are field
+     * reads. Capturing during [injectPageHelpers], which already holds the frame, therefore adds
+     * no round trip at all, and the reader gets a plain volatile load it can make from anywhere
+     * including a Compose layout pass.
+     *
+     * **Only the Int is kept, never the `Frame` or the `RenderProcess`.** Holding either across a
+     * navigation is a trap: `FrameImpl.renderProcess()` and `RenderProcess.pid()` carry no
+     * `checkNotClosed`, so a stale frame does not throw - it silently answers with the *previous*
+     * renderer's pid, which is a wrong number that looks entirely right.
+     *
+     * Cleared on renderer death, browser close and dispose. That is what closes the pid-reuse
+     * hole: a dead renderer's pid can be recycled by another Chromium helper of ours, and a stale
+     * entry would then charge that process's memory to this tab, again plausibly.
+     */
+    @Volatile private var rendererPid: Int? = null
+
+    /**
+     * The renderer pid as of the last main-frame commit, or null when unknown.
+     *
+     * Never blocks and never touches IPC - see [rendererPid]. Unknown is the honest answer before
+     * the first commit and after the renderer goes away, and callers must render it as absent
+     * rather than as a zero.
+     */
+    internal fun lastKnownRendererPid(): Int? = rendererPid
 
     /**
      * Whether this view is genuinely on screen: composed **and** in a window that is showing and
@@ -1139,11 +1170,26 @@ internal class BrowserHandleImpl(
                 }
             }
 
+        // Renderer gone. Forgetting the pid here is what keeps the status strip honest: Chromium
+        // recycles pids, so a retained one can later belong to a different helper of ours and
+        // that process's memory would be reported as this tab's - a wrong number that looks
+        // right. A fresh pid arrives on the next commit; until then the figure is absent.
+        subscriptions +=
+            browser.on(RenderProcessTerminated::class.java) { event ->
+                logger.debug(
+                    LogCategory.BROWSER,
+                    "Renderer terminated",
+                    mapOf("handleId" to id, "exitCode" to event.exitCode(), "status" to event.status().name),
+                )
+                rendererPid = null
+            }
+
         // Browser closed
         subscriptions +=
             browser.on(BrowserClosed::class.java) {
                 logger.debug(LogCategory.BROWSER, "Browser closed", mapOf("handleId" to id))
                 disposed.set(true)
+                rendererPid = null
                 // Stop streaming: the underlying page is gone.
                 coBrowseCapturing = false
                 coBrowseSink = null
@@ -1557,6 +1603,11 @@ internal class BrowserHandleImpl(
                 FormFieldDetector.injectFormDetectionScript(createLockedBrowser())
 
                 injectInteractionCollector(frame)
+
+                // Free: the frame is already in hand, and both remaining hops are field reads.
+                // Re-derived on every commit rather than cached as a Frame, for the stale-pid
+                // reason spelled out on [rendererPid].
+                rendererPid = runCatching { frame.renderProcess().pid() }.getOrNull()
 
                 logger.debug(LogCategory.BROWSER, "Page helpers injected", mapOf("handleId" to id))
             } catch (e: Exception) {
@@ -3175,6 +3226,7 @@ internal class BrowserHandleImpl(
     }
 
     override fun dispose() {
+        rendererPid = null
         if (!disposed.compareAndSet(false, true)) return
         // Shut the interaction bridge FIRST. Its only gate is this authority, and the
         // collector flushes on `pagehide` — which is precisely when this runs. Closing the

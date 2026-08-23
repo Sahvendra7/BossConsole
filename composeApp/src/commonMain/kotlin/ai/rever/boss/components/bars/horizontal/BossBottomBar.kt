@@ -239,9 +239,19 @@ fun BossRightBottomBar() {
     if (showIndicator) {
         val snapshot = PerformanceState.currentSnapshot()
         val health = PerformanceState.currentHealth()
+        // Resolved here rather than in the sampler because it is per window: this strip should
+        // show the browser in THIS window, and a single sampled value would show one window's tab
+        // in the other's. Keyed on the snapshot so it is read once per sample rather than once
+        // per recomposition - all three lookups behind it are cheap, but the 15 s cadence should
+        // be explicit rather than incidental.
+        val activeBrowserBytes =
+            remember(snapshot, windowId) {
+                windowId?.let { PerformanceState.activeBrowserBytes(it) } ?: 0L
+            }
         PerformanceIndicator(
             snapshot = snapshot,
             health = health,
+            activeBrowserBytes = activeBrowserBytes,
             onClick = { PerformanceState.togglePerformancePanel() },
         )
     }
