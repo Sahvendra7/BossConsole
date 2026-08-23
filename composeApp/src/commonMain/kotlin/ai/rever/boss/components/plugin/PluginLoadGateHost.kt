@@ -11,7 +11,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 
 /**
- * Shows a [PluginLoadGateDialog] for the first unresolved version-floor refusal, if any.
+ * Shows a [PluginLoadGateDialog] for the first unresolved load refusal, if any.
  *
  * Self-contained: it reads [PluginLoadGateRegistry] rather than taking state from the caller, so
  * mounting it is one line and no state class grows a field. That matches where the refusal comes

@@ -8,31 +8,34 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * A plugin the host refused to load because of a version floor, and what would actually fix it.
- *
- * **Why this exists.** `DynamicPluginLoader` refuses a plugin whose `minBossVersion` or
- * `minApiVersion` exceeds what this build provides, which is correct - running it would fail at some
- * arbitrary call site instead. But the refusal only reached an ERROR line in the log, so from the
- * user's side a plugin simply stopped existing. That is bad for any plugin and worse for a
- * `systemPlugin`: fluck-browser is the browser tab, so the observable symptom of a version floor was
- * "my browser is gone", with the reason available only to someone reading `~/.boss/logs`.
- *
- * It happened for real. fluck-browser 1.2.22 shipped requiring BOSS 9.4.23 while 9.4.22 was the
- * current release, and every host that took the plugin update lost its browser tab:
- *
- * ```
- * PluginBossVersionException: Plugin requires BOSS version 9.4.23 or later,
- *                             but current version is 9.4.22
- * ```
- *
- * Recovering meant knowing that the jar had been overwritten in place, finding the previous release,
- * and putting it back by hand. None of that is reasonable to expect, and all of it is knowable from
- * the exception the loader already throws.
- *
- * This models the refusal and the ways out. It is deliberately pure - no store, no updater, no
- * files - so the question "what should we offer the user" is answerable in a test.
- */
+// A plugin the host refused to load, and what would actually fix it.
+//
+// WHY THIS EXISTS. `DynamicPluginLoader` refuses a plugin it cannot safely run - a version floor
+// this build does not meet, or a jar whose bytes do not match its recorded signature. Both
+// refusals are correct. But they only reached an ERROR line in the log, so from the user's side a
+// plugin simply stopped existing. That is bad for any plugin and worse for a `systemPlugin`.
+//
+// Both have happened for real.
+//
+// fluck-browser 1.2.22 shipped requiring BOSS 9.4.23 while 9.4.22 was current, and every host that
+// took the update lost its browser tab - fluck-browser IS the browser tab, so the symptom was "my
+// browser is gone":
+//
+//     PluginBossVersionException: Plugin requires BOSS version 9.4.23 or later,
+//                                 but current version is 9.4.22
+//
+// And a Toolbox jar replaced by hand, while its `.jar.sig` still signed the previous bytes:
+//
+//     Plugin signature verification failed - plugin will NOT load and will keep being
+//     rejected until it is reinstalled or removed
+//
+// The second is the worse shape: the Toolbox is how a plugin gets reinstalled, so the way out
+// vanished with it. Recovering either meant knowing which jar had been overwritten and putting a
+// file back by hand - not reasonable to expect, and all of it knowable from the exception the
+// loader already throws.
+//
+// This models the refusals and the ways out. It is deliberately pure - no store, no updater, no
+// files - so "what should we offer the user" is answerable in a test.
 
 /**
  * Why the host refused the plugin.
@@ -265,7 +268,7 @@ private fun versionFloorRemedies(
 }
 
 /**
- * The version-floor refusals this session has seen, so something can offer a way out.
+ * The load refusals this session has seen, so something can offer a way out.
  *
  * A process-wide object rather than state on `DynamicPluginManager`, for the same reason
  * `PluginCrashRegistry` is one: the refusal happens during startup plugin loading, long before any
@@ -306,9 +309,9 @@ object PluginLoadGateRegistry {
 }
 
 /**
- * Translate a load failure into a [PluginLoadGate], or null when it is not a version floor.
+ * Translate a load failure into a [PluginLoadGate], or null when nothing can be offered for it.
  *
- * Null for everything else on purpose. A corrupt jar, a missing main class or a binary
+ * Null for everything without a fix, on purpose. A corrupt jar, a missing main class or a binary
  * incompatibility have no button that helps, and offering "Update BOSS" for them would send a user
  * through a download and a restart to arrive at the same failure.
  *

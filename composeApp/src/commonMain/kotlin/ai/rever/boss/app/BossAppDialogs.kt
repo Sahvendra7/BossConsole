@@ -759,7 +759,8 @@ internal fun BossAppDialogs(state: BossAppState) {
         )
     }
 
-    // A plugin the host refused for a version floor. Before this the refusal reached only the log
+    // A plugin the host refused - a version floor, or bytes that do not match their recorded
+    // signature. Before this the refusal reached only the log
     // and the plugin simply stopped existing, which for a systemPlugin reads as a feature
     // disappearing - fluck-browser IS the browser tab.
     PluginLoadGateHost(

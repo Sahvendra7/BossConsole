@@ -1,12 +1,19 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.plugin.KeyedDetachedJobs
 import ai.rever.boss.plugin.PluginStoreSetup
 import ai.rever.boss.plugin.api.Version
 import ai.rever.boss.plugin.loader.ApiClassLoader
+import ai.rever.boss.plugin.loader.PluginManifestReader
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.updater.UpdateState
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 
 /**
  * Resolves what can be offered for a [PluginLoadGate], and carries out the choice.
@@ -17,7 +24,30 @@ import ai.rever.boss.utils.logging.LogCategory
  * each button actually do", which is the question a reviewer will have.
  */
 internal object PluginLoadGateRecovery {
-    private val logger = BossLogger.forComponent("PluginLoadGateRecovery")
+    internal val logger = BossLogger.forComponent("PluginLoadGateRecovery")
+
+    /**
+     * Remedies run DETACHED from the window that asked, and coalesced per plugin id.
+     *
+     * AGENTS.md states the rule for the missing-dependency installer, and it applies here for the
+     * same two reasons now that a remedy downloads:
+     *
+     *  - The dialog is driven from a window's `rememberCoroutineScope`, so closing that window
+     *    mid-download would abort the install. `StoreVersionInstaller` cleans up its `.part` file
+     *    through `getOrElse`, which does NOT run for a CancellationException - so the partial
+     *    download would be orphaned. Worse, a cancellation between `unload` and `load` leaves the
+     *    plugin unloaded with a promoted jar and no `installed.json` entry.
+     *  - `PluginLoadGateRegistry.gates` is a StateFlow and the dialog host is per-window, so every
+     *    open window renders this modal for the same gate with a live button. Two clicks would
+     *    otherwise race two installs on the same `.part` and target paths.
+     *
+     * A process-wide scope, matching PluginLoadGateRegistry: the refusal is recorded during startup
+     * plugin loading, long before any window exists to own it.
+     */
+    private val detachedRemedies =
+        KeyedDetachedJobs<String, Result<String>>(
+            CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        )
 
     /**
      * Whether [candidate] meets [required], by the loader's own rule.
@@ -58,37 +88,7 @@ internal object PluginLoadGateRecovery {
      * A live lookup, unlike the host update, because nothing polls the api plugin's version in the
      * background - and unlike an app update it costs one request rather than a download.
      */
-    suspend fun apiUpdateVersion(): String? {
-        // The remote repository directly, not `repositoryManager`. The manager merges local and
-        // remote, and the LOCAL copy is the api jar already installed - so asking it would answer
-        // with the version that is failing to satisfy the floor.
-        val store = PluginStoreSetup.remoteRepository ?: return null
-        // Both failure shapes: `getPlugin` returns `Result.failure` rather than throwing, so
-        // runCatching alone would report success with a null inside it.
-        val lookup = runCatching { store.getPlugin(ApiClassLoader.API_PLUGIN_ID) }.getOrElse { Result.failure(it) }
-        lookup.exceptionOrNull()?.let { e ->
-            logger.warn(LogCategory.SYSTEM, "Could not ask the store for the api version: ${e.message}")
-        }
-        return lookup.getOrNull()?.version?.takeIf { it.isNotBlank() }
-    }
-
-    /**
-     * The version the store publishes for [pluginId], or null when it cannot be asked.
-     *
-     * The REMOTE repository, not `repositoryManager`: the manager merges in the local copy, which
-     * for a signature refusal is the very file that cannot be trusted - so asking it would answer
-     * with the version already on disk and offer to reinstall the artifact we are rejecting.
-     */
-    suspend fun storeVersion(pluginId: String): String? {
-        val store = PluginStoreSetup.remoteRepository ?: return null
-        // Both failure shapes: getPlugin returns Result.failure rather than throwing, so
-        // runCatching alone would report success with a null inside it.
-        val lookup = runCatching { store.getPlugin(pluginId) }.getOrElse { Result.failure(it) }
-        lookup.exceptionOrNull()?.let { e ->
-            logger.warn(LogCategory.SYSTEM, "Could not ask the store for a replacement: ${e.message}")
-        }
-        return lookup.getOrNull()?.version?.takeIf { it.isNotBlank() }
-    }
+    suspend fun apiUpdateVersion(): String? = publishedVersion(ApiClassLoader.API_PLUGIN_ID, "the api version")
 
     /** The version kept aside for [pluginId], or null when nothing was kept. */
     fun revertVersion(pluginId: String): String? =
@@ -104,6 +104,26 @@ internal object PluginLoadGateRecovery {
      * the gate so the dialog can stay open with the reason and the remaining options.
      */
     suspend fun apply(
+        gate: PluginLoadGate,
+        remedy: PluginLoadRemedy,
+        manager: DynamicPluginManager,
+    ): Result<String> =
+        detachedRemedies.run(
+            key = gate.pluginId,
+            onDetachedFailure = { cause ->
+                // The caller is gone, so this is the only trace left of how the remedy ended.
+                logger.error(
+                    LogCategory.SYSTEM,
+                    "A plugin load remedy failed after the window that started it went away",
+                    mapOf("pluginId" to gate.pluginId),
+                    error = cause,
+                )
+            },
+        ) {
+            applyNow(gate, remedy, manager)
+        }
+
+    private suspend fun applyNow(
         gate: PluginLoadGate,
         remedy: PluginLoadRemedy,
         manager: DynamicPluginManager,
@@ -206,6 +226,9 @@ internal object PluginLoadGateRecovery {
             PluginStoreSetup.remoteRepository
                 ?: return Result.failure(IllegalStateException("The plugin store is not available."))
         val dir = PluginStoreSetup.getPluginDir()
+        // The bytes the loader refused, found by manifest rather than by name. Passed as
+        // `runningJarPath` below, which is what keeps the install from writing over it.
+        val refused = refusedJarFor(dir, gate.pluginId)?.absolutePath
         val installer = StoreVersionInstaller(pluginDir = { dir })
         val result =
             installer.install(
@@ -215,11 +238,26 @@ internal object PluginLoadGateRecovery {
                         pluginId = gate.pluginId,
                         version = remedy.version,
                         sourceUrl = null,
-                        // Nothing is running for this plugin, so there is no jar to keep out of the
-                        // way. Naming one would ask the installer to protect a file that is not in
-                        // use and, worse, to restore it if the swap failed - putting the refused
-                        // bytes back as if they were a working build.
-                        runningJarPath = null,
+                        // The REFUSED jar, even though nothing is running from it. Not naming it
+                        // looked defensible - there is no live plugin to protect - and it was
+                        // wrong twice over.
+                        //
+                        // `targetFor` only avoids a name collision when this is non-null, so a
+                        // null made the download target `<pluginId>_<version>.jar` unconditionally.
+                        // That is a name this same path writes, so a plugin previously installed
+                        // from the store and then replaced by hand resolves to the SAME file - and
+                        // `activate` discards the target when the load fails, deleting the plugin's
+                        // only jar. `installed.json` then points at nothing, the next launch fails
+                        // with not-found instead of a signature error, `loadGateFor` returns null,
+                        // and no dialog is ever shown again: the silent disappearance this whole
+                        // change removes, made permanent.
+                        //
+                        // The restore-on-failure worry was also unfounded. `restore` calls `load`,
+                        // and loading the refused jar fails verification exactly as it did at
+                        // startup - so it cannot put bad bytes back into service. It only leaves
+                        // them on disk, which is what makes the gate fire again next launch and is
+                        // the outcome we want from a failed repair.
+                        runningJarPath = refused,
                     ),
                 unload = { id ->
                     runCatching { manager.uninstallPlugin(id, force = true) }
@@ -299,37 +337,109 @@ private fun refusedJarFor(
         }
 
 /**
+ * How long a store lookup may hold the dialog back before we give up and show the offline copy.
+ *
+ * Well under the client's own 30s request timeout, on purpose: the user is looking at a missing
+ * plugin, and a few seconds of nothing is the most this may cost them.
+ */
+private const val STORE_LOOKUP_TIMEOUT_MS = 6_000L
+
+/**
+ * The version the store publishes for [pluginId], or null when it cannot be asked.
+ *
+ * THE REMOTE REPOSITORY, not `repositoryManager`, and that is the whole correctness of both
+ * callers. The manager merges local and remote, and the local copy is the jar already
+ * installed - for an api floor that is the version failing to satisfy it, and for a signature
+ * refusal it is the very file that cannot be trusted. Either way the merged answer is the one
+ * we must not act on.
+ */
+private suspend fun publishedVersion(
+    pluginId: String,
+    what: String,
+): String? {
+    val store = PluginStoreSetup.remoteRepository ?: return null
+    // BOUNDED, because the dialog does not render until this returns. The CIO client allows a
+    // 30s requestTimeout, and this whole change exists to stop a refusal being invisible - so
+    // an unreachable store must not replace a silent failure with half a minute of nothing.
+    // Timing out reads as "could not be asked", which is already a state with sensible copy.
+    val lookup =
+        withTimeoutOrNull(STORE_LOOKUP_TIMEOUT_MS) {
+            // Both failure shapes: `getPlugin` returns `Result.failure` rather than throwing,
+            // so runCatching alone would report success with a null inside it.
+            runCatching { store.getPlugin(pluginId) }.getOrElse { Result.failure(it) }
+        }
+    // Null covers two different outcomes, and each gets its own line so the log distinguishes
+    // "the store is slow" from "the store said no".
+    if (lookup == null) PluginLoadGateRecovery.logger.warn(LogCategory.SYSTEM, "Timed out asking the store for $what")
+    lookup?.exceptionOrNull()?.let { e ->
+        PluginLoadGateRecovery.logger.warn(LogCategory.SYSTEM, "Could not ask the store for $what: ${e.message}")
+    }
+    return lookup?.getOrNull()?.version?.takeIf { it.isNotBlank() }
+}
+
+/** The version the store serves for [pluginId], for the signature-reinstall remedy. */
+internal suspend fun storeVersion(pluginId: String): String? = publishedVersion(pluginId, "a replacement copy")
+
+/**
  * Delete every jar declaring [pluginId] except [keep], and each one's `.sig` sidecar.
  *
  * `keep` is the jar the plugin is loaded from after a successful reinstall. Null means the install
- * reported success but the manager has no record of it - a state we should not act on, so nothing
- * is deleted: removing files while unsure which one is live is how a working plugin disappears.
+ * reported success but the manager has no record of it - a state we should not act on, so nothing is
+ * deleted: removing files while unsure which one is live is how a working plugin disappears.
  *
  * Sidecars go with their jar. A `.sig` whose jar is gone is harmless on its own (nothing reads it),
- * but leaving one behind that a LATER install of the same filename would inherit is the
- * present-but-wrong signature that hard-fails a load - the exact failure being recovered from here.
+ * but leaving one that a LATER install of the same filename would inherit is the present-but-wrong
+ * signature that hard-fails a load - the exact failure being recovered from here.
+ *
+ * LOGGED, both outcomes. Deleting a jar that failed signature verification is worth a record on its
+ * own, and a delete can fail from a lingering handle - not exotic on Windows in a directory of jars
+ * that were just loaded and unloaded. When it does, the two-jars-one-pluginId state this exists to
+ * prevent survives, and silence would be the only trace.
+ *
+ * `internal` so it can be tested against a temp directory. It reaches the filesystem directly
+ * rather than through [StoreVersionHooks], which is the seam the installer uses - the asymmetry is
+ * deliberate for now, since the hooks interface is shaped around one target jar rather than a sweep.
  */
-private fun dropRefusedArtifacts(
-    pluginDir: java.io.File,
+internal fun dropRefusedArtifacts(
+    pluginDir: File,
     pluginId: String,
     keep: String?,
 ) {
     if (keep == null) return
-    val keepPath = runCatching { java.io.File(keep).absolutePath }.getOrNull() ?: return
+    val keepPath = runCatching { File(keep).absolutePath }.getOrNull() ?: return
     val jars =
         pluginDir
-            .listFiles { f: java.io.File -> f.isFile && f.name.endsWith(".jar") }
+            .listFiles { f: File -> f.isFile && f.name.endsWith(".jar") }
             ?.filter { jar ->
                 jar.absolutePath != keepPath &&
                     runCatching {
-                        ai.rever.boss.plugin.loader.PluginManifestReader
-                            .readFromJar(jar.absolutePath)
-                            .pluginId
+                        PluginManifestReader.readFromJar(jar.absolutePath).pluginId
                     }.getOrNull() == pluginId
             }.orEmpty()
     for (jar in jars) {
-        runCatching { jar.delete() }
-        runCatching { java.io.File("${jar.absolutePath}.sig").delete() }
+        val sidecar = File("${jar.absolutePath}.sig")
+        val jarGone = runCatching { jar.delete() }.getOrDefault(false)
+        val sidecarGone = runCatching { !sidecar.exists() || sidecar.delete() }.getOrDefault(false)
+        if (jarGone && sidecarGone) {
+            PluginLoadGateRecovery.logger.info(
+                LogCategory.SYSTEM,
+                "Removed a plugin jar that failed signature verification",
+                mapOf("pluginId" to pluginId, "jarPath" to jar.absolutePath),
+            )
+        } else {
+            // Not fatal - the reinstall already succeeded and the good jar is loaded - but the
+            // leftover is what a later startup scan could pick instead, so say so.
+            PluginLoadGateRecovery.logger.warn(
+                LogCategory.SYSTEM,
+                "Could not remove the refused plugin jar; a later startup may pick it up",
+                mapOf(
+                    "pluginId" to pluginId,
+                    "jarPath" to jar.absolutePath,
+                    "jarDeleted" to jarGone.toString(),
+                    "sidecarDeleted" to sidecarGone.toString(),
+                ),
+            )
+        }
     }
 }
 
@@ -345,9 +455,16 @@ object DesktopPluginLoadRemedyResolver : PluginLoadRemedyResolver {
             gate = gate,
             options =
                 RemedyOptions(
-                    hostUpdate = PluginLoadGateRecovery.hostUpdateVersion(),
                     // Each lookup is asked only for the gate it can fix: a store request whose
-                    // answer nothing would read is a round trip spent on nothing.
+                    // answer nothing would read is a round trip spent on nothing. hostUpdate is a
+                    // state read rather than a request, so it costs nothing - but it is gated too,
+                    // because signatureRemedies ignores it and an ungated read here would make the
+                    // comment above false for one of the three.
+                    hostUpdate =
+                        when (gate) {
+                            is PluginLoadGate.NeedsNewerHost -> PluginLoadGateRecovery.hostUpdateVersion()
+                            else -> null
+                        },
                     apiUpdate =
                         when (gate) {
                             is PluginLoadGate.NeedsNewerApi -> PluginLoadGateRecovery.apiUpdateVersion()
@@ -368,7 +485,7 @@ object DesktopPluginLoadRemedyResolver : PluginLoadRemedyResolver {
                     storeVersion =
                         when (gate) {
                             is PluginLoadGate.SignatureRejected -> {
-                                PluginLoadGateRecovery.storeVersion(gate.pluginId)
+                                storeVersion(gate.pluginId)
                             }
 
                             else -> {
