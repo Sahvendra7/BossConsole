@@ -232,15 +232,45 @@ private fun lightMaterial(s: BossColorScheme): Colors =
     )
 
 object BossThemes {
+    /**
+     * The **class** default, and no longer any platform's first run.
+     *
+     * Since macOS and Linux moved to [UNIX_DEFAULT_ID] and Windows to
+     * [WINDOWS_DEFAULT_ID], nothing in [defaultIdFor] returns this. It survives
+     * because it still answers two questions neither platform constant does:
+     * what a settings file that omits `appThemeId` means (someone who chose
+     * Blueprint under the old `encodeDefaults = false` writer), and what
+     * [byId] falls back to for an id this build does not know.
+     *
+     * Which is exactly why it must NOT be re-pointed when a platform default
+     * moves: doing so would silently re-skin everyone whose stored choice was
+     * written as `{}`, on every platform at once.
+     */
     const val DEFAULT_ID = "blueprint"
 
     /**
-     * What Windows opens with. Blueprint Light rather than Daylight: it is the
-     * light half of the same identity [DEFAULT_ID] names, so the two platforms
-     * differ in value and not in brand, and Daylight carries a known contrast
-     * defect (its amber signal sits at 2.63:1 on its own near-white floor, under
-     * the 3:1 floor for UI components) that has no business being anyone's
-     * out-of-the-box look. `BossThemesRegistryTest` records that debt.
+     * What macOS and Linux open with.
+     *
+     * A first run on either now lands on the NVIDIA identity rather than on
+     * Blueprint. Only a first run reaches this - see [defaultIdFor] for which
+     * absences count as "has never chosen".
+     */
+    const val UNIX_DEFAULT_ID = "nvidia"
+
+    /**
+     * What Windows opens with. Blueprint Light rather than Daylight because
+     * Daylight carries a known contrast defect (its amber signal sits at 2.63:1
+     * on its own near-white floor, under the 3:1 floor for UI components) that
+     * has no business being anyone's out-of-the-box look;
+     * `BossThemesRegistryTest` records that debt.
+     *
+     * Note that Windows and [UNIX_DEFAULT_ID] now differ in **brand**, not just
+     * in value, which was not true while both halves were Blueprint. That is
+     * deliberate and it is forced: NVIDIA has no light half to reach for.
+     * `#76b900` is 2.4:1 on white, and darkening it far enough to clear the 3:1
+     * component floor stops it being the brand green - so pairing a light
+     * Windows default with the NVIDIA identity is not something a palette can
+     * fix. Windows keeps the identity that does have both halves.
      */
     const val WINDOWS_DEFAULT_ID = "blueprint-light"
 
@@ -319,11 +349,19 @@ object BossThemes {
      * CI leg. Callers resolve `isWindows` themselves: this module is
      * commonMain and has no business reading system properties.
      *
-     * [DEFAULT_ID] deliberately stays the *class* default. It is what an
-     * existing settings file means when it omits `appThemeId`, and only a
-     * first run with no file at all resolves through here.
+     * **Only a first run with no file at all resolves through here**, and that
+     * is the whole safety margin of a default move. `AppThemeSettingsManager`
+     * writes the settings file solely from `select()`, so the file's existence
+     * is the record that someone chose. A user who has never opened the picker
+     * has no file and *is* re-skinned by a change here - which is the intent -
+     * while a user who chose Blueprint keeps it, because their file names it
+     * (or, under the old writer, says `{}`, which resolves through
+     * [DEFAULT_ID] rather than through this).
+     *
+     * macOS and Linux share a branch because the boolean does: if they ever
+     * need to differ, this takes a platform enum rather than a second flag.
      */
-    fun defaultIdFor(isWindows: Boolean): String = if (isWindows) WINDOWS_DEFAULT_ID else DEFAULT_ID
+    fun defaultIdFor(isWindows: Boolean): String = if (isWindows) WINDOWS_DEFAULT_ID else UNIX_DEFAULT_ID
 }
 
 /**
