@@ -38,6 +38,7 @@ import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.model.TabSwitchMode
+import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.plugin.api.LocalIsPanelActive
 import ai.rever.boss.plugin.api.TabComponentWithUI
 import ai.rever.boss.plugin.api.TabEvent
@@ -353,7 +354,7 @@ fun BossTabsComponent.BossMainTabBar(
     val dropTarget = tabDragComponent?.dropTarget
 
     HorizontalBar(
-        height = 42.dp,
+        height = BossChrome.dimens.tabBarHeight,
         backgroundColor = BossTheme.colors.panel,
     ) {
         HorizontalBarRow(
