@@ -65,7 +65,7 @@ class BarContextMenuMappingTest {
 
     @Test
     fun `the title bar is not one of these and is left untouched`() {
-        // showTitleBar is the pre-existing flag for a different strip (the 26dp OS-style title bar),
+        // showTitleBar is the pre-existing flag for something else entirely (the app name in the top bar),
         // and it deliberately has no ChromeBar member - it is not right-clickable and its toggle
         // already lives in Settings. Hiding every bar here must not switch it off as a side effect.
         val allHidden =

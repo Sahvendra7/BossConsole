@@ -36,6 +36,7 @@ import ai.rever.boss.window.Project
 import ai.rever.boss.window.WindowGitState
 import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.window.selectProjectInWindow
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
@@ -50,8 +51,12 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.icons.FeatherIcons
@@ -76,11 +81,41 @@ fun BossDraggableComponent.BossTopBar(
     onSignOut: () -> Unit,
     onNewProject: (() -> Unit)? = null,
     onCloneProject: (() -> Unit)? = null,
+    showAppName: Boolean = false,
+    leadingInset: Dp = 0.dp,
+    onToggleMaximize: (() -> Unit)? = null,
 ) {
     val items = rememberBarContextMenuItems(ChromeBar.TOP)
 
-    HorizontalBar(modifier = Modifier.contextMenu(items = items), height = BossChrome.dimens.topBarHeight) {
-        HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
+    // Keyed on Unit below with the callback read through here, not keyed on the callback itself:
+    // onToggleMaximize is a lambda capturing the AWT window, and this bar recomposes on git, run and
+    // workspace state. Keying on it would restart the gesture coroutine each time and reset a
+    // double-tap mid-gesture. The deleted BossTitleBar keyed on Unit for the same reason.
+    val toggleMaximize by rememberUpdatedState(onToggleMaximize)
+
+    HorizontalBar(
+        modifier =
+            Modifier
+                .contextMenu(items = items)
+                // This bar is the window's topmost row, so a double-tap on it should zoom the
+                // window the way a title bar does - which is where this gesture used to live.
+                // Attached to the bar, not to a spacer: the controls inside consume their own
+                // presses first, so it only fires on the bar's empty space.
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = { toggleMaximize?.invoke() },
+                    )
+                },
+        height = BossChrome.dimens.topBarHeight,
+    ) {
+        // The traffic lights subsume the old fixed indent on macOS; off macOS, and in fullscreen,
+        // the bar keeps the leading padding it has always had.
+        HorizontalBarRow(
+            modifier = Modifier.fillMaxHeight().padding(start = maxOf(LEADING_PADDING, leadingInset)),
+        ) {
+            if (showAppName) {
+                AppNameLabel()
+            }
             BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject, onCloneProject)
             Spacer(modifier = Modifier.weight(1f))
             // Run/debug controls (Issue #91 / #321)
@@ -91,6 +126,31 @@ fun BossDraggableComponent.BossTopBar(
     }
     Divider(color = BossTheme.colors.line, thickness = BossChrome.dimens.dividerThickness)
 }
+
+/**
+ * The window's own name, shown at the head of the top bar.
+ *
+ * This is all that is left of `BossTitleBar`, which spent a 26dp row and a divider on it. macOS
+ * hides the native window title (`apple.awt.windowTitleVisible` is false), so on that platform the
+ * app would otherwise not name itself anywhere in its own window - which is why the preference
+ * defaults on there and off where the OS draws a real title bar.
+ */
+@Composable
+private fun AppNameLabel() {
+    Text(
+        text = APP_NAME,
+        color = BossTheme.colors.textPrimary,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        modifier = Modifier.padding(end = 12.dp),
+    )
+}
+
+/** Kept from the pre-merge top bar so nothing moves on the platforms with no traffic lights. */
+private val LEADING_PADDING = 36.dp
+
+private const val APP_NAME = "Boss Console"
 
 @Composable
 fun Logo(name: String) {

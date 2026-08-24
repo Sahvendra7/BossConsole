@@ -988,6 +988,10 @@ fun ApplicationScope.BossWindow(
                     windowId = windowState.id,
                     isFirstWindow = isFirstWindow,
                     panelRegistry = panelRegistry,
+                    // Compose's placement, the same signal the fullscreen menu item drives. A click
+                    // on the green button does not update it, and that staleness is deliberately
+                    // tolerated: see WindowTopChrome.leadingInset for which way it fails.
+                    isFullscreen = isFullScreen,
                     onToggleMaximize = {
                         // Capture state before EDT dispatch to avoid race condition with rapid double-clicks
                         val shouldMaximize = window.extendedState != Frame.MAXIMIZED_BOTH
