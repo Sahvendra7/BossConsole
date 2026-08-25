@@ -22,22 +22,30 @@ data class WindowAppearanceSettings(
      * The scaffold requires both to agree, so a bar shows when this is true and focus mode is not
      * currently clearing it.
      *
-     * The other three default to `true` on every platform, which is what made them safe to add to
-     * an existing settings file: the manager decodes with `ignoreUnknownKeys`, so an absent key
-     * reads back as "shown" and nobody's chrome disappeared on upgrade.
+     * **All four are off by default**, so a window opens as its content plus the vertical tab bar
+     * and nothing else. That is only a sane default because there is now somewhere for what those
+     * bars carried to go: the tab bar's foot holds Sign Out, Settings, Tools and Search (see
+     * `focusQuickActionsPlacement`), and the Tools launcher reaches every plugin panel the strips
+     * used to hold (see `toolLauncherPlacement`). Before those existed, hiding both strips made
+     * plugins unreachable and hiding the top bar took Sign Out with it.
      *
-     * THIS one no longer does. The top bar is off by default now, so a file written before the
-     * key existed would decode as hidden and lose a bar its owner never asked to lose. That is
-     * what [settingsVersion] and [WindowAppearanceMigrations] are for: the migration decides
-     * deliberately, once, instead of a decode default deciding silently.
+     * The **decode default is what moves an existing install**, and that works here because the
+     * settings file is written without defaults: a value equal to the default is never stored, so
+     * a file that does not mention a bar picks the new default up. [WindowAppearanceMigrations]
+     * exists for the case a decode default cannot express, not for this one.
+     *
+     * Known limit of that, stated because it is invisible: a user who deliberately turned a strip
+     * *on* while `true` was the default has nothing written for it either, so they are
+     * indistinguishable from someone who never touched it and their strip goes away too. No
+     * migration can tell those apart - the information was never recorded.
      */
     val showTopBar: Boolean = false,
     /** Whether the status bar at the bottom of the window is on screen. See [showTopBar]. */
-    val showBottomBar: Boolean = true,
+    val showBottomBar: Boolean = false,
     /** Whether the left icon strip is on screen. See [showTopBar]. */
-    val showLeftStrip: Boolean = true,
+    val showLeftStrip: Boolean = false,
     /** Whether the right icon strip is on screen. See [showTopBar]. */
-    val showRightStrip: Boolean = true,
+    val showRightStrip: Boolean = false,
     /**
      * How tabs in the main (top) tab bar are sized.
      * Default: SHRINK_TO_FIT (Safari behaviour)

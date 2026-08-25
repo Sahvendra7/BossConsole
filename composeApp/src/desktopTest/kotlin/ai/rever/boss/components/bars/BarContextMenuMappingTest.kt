@@ -18,18 +18,18 @@ import kotlin.test.assertTrue
  */
 class BarContextMenuMappingTest {
     @Test
-    fun `every bar but the top one starts visible`() {
-        // The three strips default to shown, which is what makes those fields safe to add to an
-        // existing settings file: the manager decodes with ignoreUnknownKeys, so an absent key
-        // means "shown" and an upgrade cannot silently strip a user's chrome.
+    fun `every bar starts hidden`() {
+        // A window now opens as its content plus the vertical tab bar and nothing else.
         //
-        // The TOP bar is the exception and deliberately so - see WindowAppearanceMigrations, which
-        // is what moves existing files rather than letting a decode default do it silently.
+        // That is only safe because of where the bars' contents went: the tab bar's foot carries
+        // Sign Out, Settings, Tools and Search, and the Tools launcher reaches every plugin panel
+        // the strips used to hold. Before those existed this default made plugins unreachable and
+        // took Sign Out off screen with the top bar, so if either is ever removed, this default
+        // has to move back with it.
         val defaults = WindowAppearanceSettings()
 
-        assertFalse(defaults.isBarVisible(ChromeBar.TOP), "the top bar now defaults to hidden")
-        ChromeBar.entries.filter { it != ChromeBar.TOP }.forEach { bar ->
-            assertTrue(defaults.isBarVisible(bar), "${bar.name} should default to visible")
+        ChromeBar.entries.forEach { bar ->
+            assertFalse(defaults.isBarVisible(bar), "${bar.name} should default to hidden")
         }
     }
 

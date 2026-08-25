@@ -820,7 +820,7 @@ fun BossTopRightBar(
     onSignOut: () -> Unit,
     /**
      * The tools launcher, when both icon strips are switched off so there is no strip to hold it
-     * - see `toolLauncherPlacement`. Rendered immediately before Settings, the same position it
+     * - see `toolLauncherPlacement`. Rendered between Settings and Search, the same position it
      * takes in the floating cluster and the tab bar's footer, so the group reads the same wherever
      * it is drawn.
      */
@@ -850,21 +850,21 @@ fun BossTopRightBar(
 
     // Global search button (Issue #92)
     BossActionButton(
-        imageVector = Icons.Outlined.Search,
-        text = "Search",
-        hintText = QuickActionHints.SEARCH,
-    ) {
-        onShowSearch?.invoke()
-    }
-
-    toolLauncher?.invoke()
-
-    BossActionButton(
         imageVector = Icons.Outlined.Settings,
         text = "Settings",
         hintText = QuickActionHints.SETTINGS,
     ) {
         onShowSettings?.invoke()
+    }
+
+    toolLauncher?.invoke()
+
+    BossActionButton(
+        imageVector = Icons.Outlined.Search,
+        text = "Search",
+        hintText = QuickActionHints.SEARCH,
+    ) {
+        onShowSearch?.invoke()
     }
 
     // The confirmation itself is raised by BossAppScaffold, which owns the flag: the focus-mode

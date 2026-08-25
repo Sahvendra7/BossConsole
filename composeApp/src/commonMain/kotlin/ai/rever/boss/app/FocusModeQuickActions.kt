@@ -278,10 +278,14 @@ internal const val FOCUS_QUICK_ACTION_COUNT = 3
 /**
  * Settings, Search and Sign Out as three separate composables, in the order both hosts want them.
  *
- * One definition, two layouts. The **order carries the same intent on both axes**: Sign Out first,
- * so the destructive action is the one furthest from the window corner - leftmost in the floating
- * row, topmost in the bottom-anchored rail column - rather than the one sitting in it. That is also
- * the order `BossTopRightBar` uses, which is where these three live when the top bar is up.
+ * One definition, three layouts, in the order Sign Out, Settings, Tools, Search.
+ *
+ * The **order carries the same intent on every axis**: Sign Out first, so the destructive action
+ * is the one furthest from the window corner - leftmost in the floating row and in the tab bar's
+ * footer, topmost in the bottom-anchored rail column - rather than the one sitting in it. Settings
+ * and Tools sit together after it because both are "go and configure or open something", and
+ * Search ends the row as the one that opens a field rather than a place. `BossTopRightBar` uses
+ * the same order, which is where these live when the top bar is up.
  *
  * A list rather than a composable that lays them out, because the two hosts disagree about more
  * than the axis: the rail has to reserve its own height from the *count* before it renders anything
@@ -297,8 +301,8 @@ internal fun focusQuickActionButtons(
     onSignOut: () -> Unit,
     /**
      * The tools launcher, when both icon strips are switched off and there is no strip to put it
-     * in - see `toolLauncherPlacement`. Rendered immediately before Settings, so the two
-     * app-level controls sit together and Sign Out stays furthest from the corner.
+     * in - see `toolLauncherPlacement`. Rendered between Settings and Search, so the two things
+     * that open a place sit together and Sign Out stays furthest from the corner.
      *
      * It can never be non-null in the [FocusQuickActionsPlacement.RIGHT_RAIL] flavour: that
      * placement needs a right strip, and the launcher only reaches this group when BOTH strips are
@@ -323,23 +327,23 @@ internal fun focusQuickActionButtons(
         },
         {
             BossActionButton(
-                imageVector = Icons.Outlined.Search,
-                text = "Search",
-                modifier = modifier,
-                hintText = QuickActionHints.SEARCH,
-                hintDirection = hintDirection,
-                onClick = onShowSearch,
-            )
-        },
-        toolLauncher,
-        {
-            BossActionButton(
                 imageVector = Icons.Outlined.Settings,
                 text = "Settings",
                 modifier = modifier,
                 hintText = QuickActionHints.SETTINGS,
                 hintDirection = hintDirection,
                 onClick = onShowSettings,
+            )
+        },
+        toolLauncher,
+        {
+            BossActionButton(
+                imageVector = Icons.Outlined.Search,
+                text = "Search",
+                modifier = modifier,
+                hintText = QuickActionHints.SEARCH,
+                hintDirection = hintDirection,
+                onClick = onShowSearch,
             )
         },
     )
