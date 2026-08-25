@@ -2,7 +2,10 @@ package ai.rever.boss.plugin
 
 import ai.rever.boss.components.plugin.MissingDependencyInstaller
 import ai.rever.boss.components.plugin.PluginDependencyResolution
+import ai.rever.boss.downloads.DownloadCenter
 import ai.rever.boss.plugin.api.PluginManifest
+import ai.rever.boss.plugin.api.TransferKind
+import ai.rever.boss.plugin.api.TransferPhase
 import ai.rever.boss.plugin.loader.PluginManifestReader
 import ai.rever.boss.plugin.loader.PluginSignatureSidecar
 import ai.rever.boss.plugin.repository.PluginInfo
@@ -11,9 +14,12 @@ import ai.rever.boss.plugin.repository.shortFailureReason
 import ai.rever.boss.utils.atomicMoveFrom
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import java.io.File
 
 /**
@@ -137,16 +143,40 @@ class StoreMissingDependencyInstaller(
         // is ignored by the directory scan rather than loaded. (`PluginInstallService` uses
         // `-downloading.jar`, which is scannable, and moves the jar without its sidecar.)
         val part = File("${target.absolutePath}.part")
-        return store
-            .downloadPlugin(pluginId, info.version, part.absolutePath)
-            .fold(
-                onSuccess = { downloaded -> promoteAndLoad(pluginId, downloaded, target, info) },
-                onFailure = { error ->
-                    discard(part.absolutePath)
-                    logger.error(LogCategory.SYSTEM, "Failed to download a plugin dependency", error = error)
-                    failure("Could not download ${info.displayName}: ${error.message ?: "unknown error"}")
-                },
+
+        // Visible in the bottom bar like every other transfer, and cancellable while it
+        // is still bytes. The row is opened inside the detached job (see `install`), so
+        // its Cancel cancels the download rather than the window that asked for it.
+        val job = currentCoroutineContext()[Job]
+        val ownsTransfer =
+            DownloadCenter.begin(
+                id = pluginId,
+                title = info.displayName.ifBlank { pluginId },
+                kind = TransferKind.PLUGIN_INSTALL,
+                detail = "Required by another plugin",
+                onCancel = { job?.cancel() },
             )
+        return try {
+            store
+                .downloadPlugin(pluginId, info.version, part.absolutePath) {
+                    DownloadCenter.progress(pluginId, it)
+                }.fold(
+                    onSuccess = { downloaded ->
+                        DownloadCenter.phase(pluginId, TransferPhase.INSTALLING)
+                        promoteAndLoad(pluginId, downloaded, target, info)
+                    },
+                    onFailure = { error ->
+                        discard(part.absolutePath)
+                        logger.error(LogCategory.SYSTEM, "Failed to download a plugin dependency", error = error)
+                        failure("Could not download ${info.displayName}: ${error.message ?: "unknown error"}")
+                    },
+                )
+        } catch (e: CancellationException) {
+            discard(part.absolutePath)
+            throw e
+        } finally {
+            if (ownsTransfer) DownloadCenter.end(pluginId)
+        }
     }
 
     /**

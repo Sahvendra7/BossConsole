@@ -11,6 +11,7 @@ import ai.rever.boss.plugin.api.ClipboardProvider
 import ai.rever.boss.plugin.api.ContextMenuProvider
 import ai.rever.boss.plugin.api.DashboardContentProvider
 import ai.rever.boss.plugin.api.DiagnosticProvider
+import ai.rever.boss.plugin.api.DownloadCenterProvider
 import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.EditorContentProvider
 import ai.rever.boss.plugin.api.FilePickerProvider
@@ -312,6 +313,9 @@ class TrackingPluginContext(
     // Service providers - delegate to underlying context
     override val performanceDataProvider: PerformanceDataProvider? get() = delegate.performanceDataProvider
     override val downloadDataProvider: DownloadDataProvider? get() = delegate.downloadDataProvider
+
+    // Download center (bottom-bar transfer progress) - delegate to underlying context
+    override val downloadCenterProvider: DownloadCenterProvider? get() = delegate.downloadCenterProvider
     override val bookmarkDataProvider: BookmarkDataProvider? get() = delegate.bookmarkDataProvider
     override val workspaceDataProvider: WorkspaceDataProvider? get() = delegate.workspaceDataProvider
     override val splitViewOperations: SplitViewOperations? get() = delegate.splitViewOperations

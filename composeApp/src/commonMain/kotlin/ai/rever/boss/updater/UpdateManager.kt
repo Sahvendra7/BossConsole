@@ -36,6 +36,13 @@ class UpdateManager {
 
     private val _updateInfo = MutableStateFlow<UpdateInfo?>(null)
 
+    /**
+     * The update the current state is about, or null before any check found one.
+     * Read-only: [UpdateState.Downloading] carries a fraction and nothing else, so
+     * anything naming the download (the download center's row) needs this.
+     */
+    val updateInfo: StateFlow<UpdateInfo?> = _updateInfo.asStateFlow()
+
     // Whether the "update available" dialog should be visible.
     // Set when a check (auto or forced) surfaces a non-dismissed update.
     private val _showUpdateDialog = MutableStateFlow(false)
@@ -219,13 +226,60 @@ class UpdateManager {
     }
 
     /**
+     * The coroutine running the current download, so [cancelDownload] has
+     * something to cancel.
+     *
+     * @Volatile: written on the manager's scope and read from whichever thread
+     * the download center's Cancel arrives on.
+     */
+    @Volatile
+    private var downloadJob: Job? = null
+
+    /**
      * Launch [downloadUpdate] on the manager's own long-lived scope so the
      * download survives the window that started it — the update dialog lives
      * in one specific window, and closing that window must not cancel an
      * in-flight download.
      */
     fun downloadUpdateInBackground(updateInfo: UpdateInfo) {
-        launchInBackground { downloadUpdate(updateInfo) }
+        downloadJob = launchInBackground { downloadUpdate(updateInfo) }
+    }
+
+    /** As [downloadUpdateInBackground], for a specific version (upgrade or downgrade). */
+    fun downloadSpecificVersionInBackground(versionInfo: VersionInfo) {
+        downloadJob = launchInBackground { downloadSpecificVersion(versionInfo) }
+    }
+
+    /**
+     * Abandon the download in flight, if there is one.
+     *
+     * Only the download: an install is a sequence of file moves and an elevated
+     * helper, and stopping it half way is worse than finishing it. The download
+     * center enforces the same rule by only offering Cancel while downloading;
+     * this is the second half of it, so a caller that asks anyway is refused.
+     *
+     * The partial file is deleted by the service, which is the only layer that
+     * knows where it was staged.
+     */
+    fun cancelDownload() {
+        if (_updateState.value !is UpdateState.Downloading) return
+        downloadJob?.cancel()
+    }
+
+    /**
+     * Throw away an update that finished downloading but was not installed.
+     *
+     * Deletes the staged artifact rather than leaving it: it is the whole app,
+     * it sits in a restricted staging directory, and an update the user declined
+     * should not quietly occupy that much disk until the next one replaces it.
+     * The version stays on offer, so the banner can download it again.
+     */
+    suspend fun discardDownload() {
+        val state = _updateState.value
+        if (state !is UpdateState.ReadyToInstall) return
+        updateService.discardDownload(state.downloadPath)
+        _updateState.value =
+            _updateInfo.value?.let { UpdateState.UpdateAvailable(it) } ?: UpdateState.Idle
     }
 
     /**
@@ -254,6 +308,13 @@ class UpdateManager {
                 _updateState.value = UpdateState.Error(errorMsg)
                 UpdateResult.Error(errorMsg)
             }
+        } catch (e: CancellationException) {
+            // A cancellation is an answer, not a fault. Caught before the general
+            // clause below, which would otherwise turn the user's own Cancel into
+            // "Download failed: StandaloneCoroutine was cancelled" in the banner,
+            // and leave that error where the offer to update used to be.
+            _updateState.value = UpdateState.UpdateAvailable(updateInfo)
+            throw e
         } catch (e: Exception) {
             val errorMsg = "Download failed: ${e.message}"
             _updateState.value = UpdateState.Error(errorMsg)
@@ -293,6 +354,11 @@ class UpdateManager {
                 _updateState.value = UpdateState.Error(errorMsg)
                 UpdateResult.Error(errorMsg)
             }
+        } catch (e: CancellationException) {
+            // See downloadUpdate: back to whatever was on offer before, not an error.
+            _updateState.value =
+                _updateInfo.value?.let { UpdateState.UpdateAvailable(it) } ?: UpdateState.Idle
+            throw e
         } catch (e: Exception) {
             val errorMsg = "Download failed: ${e.message}"
             _updateState.value = UpdateState.Error(errorMsg)

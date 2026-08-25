@@ -698,6 +698,20 @@ internal fun BossAppStartupEffects(state: BossAppState) {
         }
     }
 
+    // Keep the badges honest whoever applies an update. The registry used to be
+    // cleared only by the host's own update path, so a plugin updated from the
+    // Toolbox or from its update toast kept offering a version it was already
+    // running. Not gated on isFirstWindow: this outlives the window that started
+    // it only if some window is still collecting, and the reconcile is an
+    // idempotent filter, so several windows running it costs nothing.
+    LaunchedEffect(state.currentDefaultPlugin) {
+        val manager = state.currentDefaultPlugin?.dynamicPluginManager ?: return@LaunchedEffect
+        manager.pluginStates.collect { states ->
+            ai.rever.boss.components.plugin.PluginUpdateRegistry
+                .reconcile(states.mapValues { (_, info) -> info.manifest.version })
+        }
+    }
+
     // Monitor for layout changes to mark workspace as dirty and auto-save
     LaunchedEffect(splitViewState, workspaceManager) {
         var lastWorkspaceSnapshot: LayoutWorkspace? = null

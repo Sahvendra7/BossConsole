@@ -345,11 +345,15 @@ class PluginUpdateManager(
      *
      * @param pluginId Plugin to update
      * @param targetPath Path to download the update to
+     * @param onProgress Called with the download fraction (0.0 to 1.0) as bytes arrive.
+     *   The listener callbacks below only ever report 0f and 1f, which is enough to
+     *   know a download started but not enough to draw a bar.
      * @return Result with the downloaded file path
      */
     suspend fun downloadUpdate(
         pluginId: String,
         targetPath: String,
+        onProgress: ((Float) -> Unit)? = null,
     ): Result<String> {
         val update =
             _availableUpdates.value.find { it.pluginId == pluginId }
@@ -364,6 +368,7 @@ class PluginUpdateManager(
                     pluginId = pluginId,
                     version = update.newVersion,
                     targetPath = targetPath,
+                    onProgress = onProgress,
                 )
 
             if (result.isSuccess) {
@@ -397,6 +402,10 @@ class PluginUpdateManager(
      * @param downloadPath Path to download the new version
      * @param unloadPlugin Function to unload the old plugin
      * @param loadPlugin Function to load the new plugin
+     * @param onProgress Called with the download fraction (0.0 to 1.0) during step 1
+     * @param onInstalling Called once the download is done and the swap begins. The
+     *   caller uses it to withdraw its Cancel: from here on, cancelling would leave
+     *   the plugin unloaded.
      * @return Result indicating success or failure
      */
     suspend fun updatePlugin(
@@ -404,6 +413,8 @@ class PluginUpdateManager(
         downloadPath: String,
         unloadPlugin: suspend (String) -> Result<Unit>,
         loadPlugin: suspend (String) -> Result<Unit>,
+        onProgress: ((Float) -> Unit)? = null,
+        onInstalling: (() -> Unit)? = null,
     ): Result<Unit> {
         val update =
             _availableUpdates.value.find { it.pluginId == pluginId }
@@ -420,7 +431,7 @@ class PluginUpdateManager(
         )
 
         // Download new version
-        val downloadResult = downloadUpdate(pluginId, downloadPath)
+        val downloadResult = downloadUpdate(pluginId, downloadPath, onProgress)
         if (downloadResult.isFailure) {
             return Result.failure(downloadResult.exceptionOrNull() ?: Exception("Download failed"))
         }
@@ -430,6 +441,7 @@ class PluginUpdateManager(
         // Install
         _state.value = UpdateState.Installing(pluginId)
         listeners.forEach { it.onUpdateInstalling(pluginId) }
+        onInstalling?.invoke()
 
         // Unload old version
         val unloadResult = unloadPlugin(pluginId)

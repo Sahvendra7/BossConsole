@@ -1,11 +1,19 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.downloads.DownloadCenter
 import ai.rever.boss.plugin.MissingDependencyReporter
 import ai.rever.boss.plugin.PluginStoreSetup
 import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.api.PluginUnloadIntent
+import ai.rever.boss.plugin.api.TransferKind
+import ai.rever.boss.plugin.api.TransferPhase
+import ai.rever.boss.plugin.loader.PluginSignatureSidecar
+import ai.rever.boss.plugin.updater.UpdateInfo
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import java.io.File
 
 /**
@@ -128,21 +136,32 @@ actual object PluginUpdateBridge {
         }
 
         val reporter = MissingDependencyReporter.forManager(manager)
+
+        val ownsTransfer = beginTransfer(pluginId, update, currentCoroutineContext()[Job])
         val result =
-            mgr.updatePlugin(
-                pluginId = pluginId,
-                downloadPath = targetPath,
-                unloadPlugin = { id -> manager.uninstallPlugin(id, force = true).map { } },
-                loadPlugin = { path ->
-                    manager.installPlugin(path).map { info ->
-                        // An update can add a dependency the installed version never declared,
-                        // and this path does not go through PluginLoaderDelegateImpl. Only for a
-                        // plugin that actually registered: `installPlugin` returns success with
-                        // `state = DISABLED` when registration failed as binary-incompatible.
-                        if (info.state == PluginState.LOADED) reporter.report(info.manifest)
-                    }
-                },
-            )
+            try {
+                mgr.updatePlugin(
+                    pluginId = pluginId,
+                    downloadPath = targetPath,
+                    unloadPlugin = { id -> manager.uninstallPlugin(id, force = true).map { } },
+                    loadPlugin = { path ->
+                        manager.installPlugin(path).map { info ->
+                            // An update can add a dependency the installed version never declared,
+                            // and this path does not go through PluginLoaderDelegateImpl. Only for a
+                            // plugin that actually registered: `installPlugin` returns success with
+                            // `state = DISABLED` when registration failed as binary-incompatible.
+                            if (info.state == PluginState.LOADED) reporter.report(info.manifest)
+                        }
+                    },
+                    onProgress = { DownloadCenter.progress(pluginId, it) },
+                    onInstalling = { DownloadCenter.phase(pluginId, TransferPhase.INSTALLING) },
+                )
+            } catch (e: CancellationException) {
+                discardPartialDownload(targetFile)
+                throw e
+            } finally {
+                if (ownsTransfer) DownloadCenter.end(pluginId)
+            }
         return if (result.isSuccess) {
             PluginUpdateRegistry.clear(pluginId)
             // Remove the previous version's JAR (and any other stale duplicates).
@@ -158,5 +177,50 @@ actual object PluginUpdateBridge {
         } else {
             Result.failure(result.exceptionOrNull() ?: Exception("Update failed"))
         }
+    }
+
+    /**
+     * Open this update's row in the bottom bar, cancellable while it is still bytes.
+     *
+     * Cancel is [job]'s: `performUpdate` runs inside whatever coroutine pressed the
+     * button, so cancelling that is what abandons the download. It stops being
+     * offered on its own once the swap starts, because the center withdraws Cancel
+     * for [ai.rever.boss.plugin.api.TransferPhase.INSTALLING].
+     *
+     * @return whether this call created the row, and so must end it.
+     */
+    private fun beginTransfer(
+        pluginId: String,
+        update: UpdateInfo,
+        job: Job?,
+    ): Boolean =
+        DownloadCenter.begin(
+            id = pluginId,
+            title = update.displayName,
+            kind = TransferKind.PLUGIN_UPDATE,
+            detail = "v${update.currentVersion} \u2192 v${update.newVersion}",
+            onCancel = { job?.cancel() },
+        )
+
+    /**
+     * Remove a jar a cancelled download left behind, and its signature sidecar.
+     *
+     * This path streams straight onto a version-named jar in the plugin directory
+     * (not a `.part` sibling, as the two store installers do), so a cancelled
+     * download leaves a truncated file at a name the next directory scan would try
+     * to load. Nothing else deletes it: the update never reached the reconciler.
+     *
+     * Both, and in that order: `PluginSignatureSidecar` is written next to the path
+     * the download was given, and a sidecar that outlives its jar meets the next
+     * download's fresh bytes and hard-fails the load - which is worse than being
+     * unsigned. Best-effort by design; a file that cannot be deleted here is
+     * reported, not raised, because the cancellation is what the caller is waiting on.
+     */
+    private fun discardPartialDownload(jar: File) {
+        runCatching { if (jar.exists()) jar.delete() }
+            .onFailure { e ->
+                logger.warn(LogCategory.SYSTEM, "Could not remove a cancelled update download: ${e.message}")
+            }
+        runCatching { PluginSignatureSidecar.delete(jar.absolutePath) }
     }
 }
