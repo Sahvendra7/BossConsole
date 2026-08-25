@@ -42,8 +42,8 @@ import androidx.compose.ui.unit.dp
  *
  * A bound, not an estimate - content that would exceed it is CLIPPED. Three `BossActionButton`s at
  * 28.dp square in `imageVector` mode come to ~94x30dp with `space.xs` on each end of the row and
- * the 1.dp border. The width allows a fourth, for the case where the plugins launcher joins them
- * (see `pluginLauncherPlacement`), which is why it is not ~100. Kept close to that rather than
+ * the 1.dp border. The width allows a fourth, for the case where the tools launcher joins them
+ * (see `toolLauncherPlacement`), which is why it is not ~100. Kept close to that rather than
  * round, because until measurement lands this is also the region the overlay swallows clicks in - the same reason
  * `TOAST_OVERLAY_INITIAL_SIZE` gives for keeping itself no larger than it needs to be. The margin
  * is deliberately NOT in here; it rides in the inset (see [QUICK_ACTIONS_MARGIN]).
@@ -296,8 +296,8 @@ internal fun focusQuickActionButtons(
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
     /**
-     * The plugins launcher, when both icon strips are switched off and there is no strip to put it
-     * in - see `pluginLauncherPlacement`. Rendered immediately before Settings, so the two
+     * The tools launcher, when both icon strips are switched off and there is no strip to put it
+     * in - see `toolLauncherPlacement`. Rendered immediately before Settings, so the two
      * app-level controls sit together and Sign Out stays furthest from the corner.
      *
      * It can never be non-null in the [FocusQuickActionsPlacement.RIGHT_RAIL] flavour: that
@@ -305,7 +305,7 @@ internal fun focusQuickActionButtons(
      * gone. `FocusQuickActionsPlacementTest` pins that, because it is what keeps
      * [FOCUS_QUICK_ACTION_COUNT] - and so the rail's reserve - correct at three.
      */
-    pluginLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable () -> Unit)? = null,
 ): List<@Composable () -> Unit> =
     listOfNotNull(
         {
@@ -331,7 +331,7 @@ internal fun focusQuickActionButtons(
                 onClick = onShowSearch,
             )
         },
-        pluginLauncher,
+        toolLauncher,
         {
             BossActionButton(
                 imageVector = Icons.Outlined.Settings,
@@ -415,14 +415,14 @@ internal fun BoxScope.FocusModeQuickActions(
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
-    /** The plugins launcher, when both strips are gone - see `pluginLauncherPlacement`. */
-    pluginLauncher: (@Composable () -> Unit)? = null,
+    /** The tools launcher, when both strips are gone - see `toolLauncherPlacement`. */
+    toolLauncher: (@Composable () -> Unit)? = null,
 ) {
     if (!visible) return
 
     if (!LocalWindowInfo.current.isWindowFocused) {
         Box(modifier = Modifier.align(Alignment.BottomEnd)) {
-            QuickActions(QUICK_ACTIONS_MARGIN, onShowSettings, onShowSearch, onSignOut, pluginLauncher)
+            QuickActions(QUICK_ACTIONS_MARGIN, onShowSettings, onShowSearch, onSignOut, toolLauncher)
         }
         return
     }
@@ -453,7 +453,7 @@ internal fun BoxScope.FocusModeQuickActions(
             onShowSettings,
             onShowSearch,
             onSignOut,
-            pluginLauncher,
+            toolLauncher,
         )
     }
 }
@@ -504,7 +504,7 @@ private fun QuickActions(
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
-    pluginLauncher: (@Composable () -> Unit)?,
+    toolLauncher: (@Composable () -> Unit)?,
 ) {
     Surface(
         modifier =
@@ -529,7 +529,7 @@ private fun QuickActions(
                 onShowSettings = onShowSettings,
                 onShowSearch = onShowSearch,
                 onSignOut = onSignOut,
-                pluginLauncher = pluginLauncher,
+                toolLauncher = toolLauncher,
             ).forEach { action -> action() }
         }
     }

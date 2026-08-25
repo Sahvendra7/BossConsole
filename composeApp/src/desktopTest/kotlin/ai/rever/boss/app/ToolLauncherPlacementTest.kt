@@ -6,33 +6,33 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
 /**
- * Pins where the plugins launcher goes.
+ * Pins where the tools launcher goes.
  *
  * A plugin is reached by clicking its icon in a strip, so a strip that is switched off takes every
  * plugin in it with it. The failure this rules out is silent and total: no crash, no empty state,
- * just a plugin nobody can open and no hint that there was ever a way.
+ * just a tool nobody can open and no hint that there was ever a way.
  */
-class PluginLauncherPlacementTest {
+class ToolLauncherPlacementTest {
     @Test
     fun `both strips on means no launcher`() {
         // Every plugin is already one click away. A launcher here would be a second way to do
         // something that is not hard, taking a row of rail the icons themselves want.
         assertEquals(
-            PluginLauncherPlacement.NONE,
-            pluginLauncherPlacement(leftStripHidden = false, rightStripHidden = false),
+            ToolLauncherPlacement.NONE,
+            toolLauncherPlacement(leftStripHidden = false, rightStripHidden = false),
         )
     }
 
     @Test
     fun `the launcher goes in whichever strip is left`() {
         assertEquals(
-            PluginLauncherPlacement.RIGHT_STRIP,
-            pluginLauncherPlacement(leftStripHidden = true, rightStripHidden = false),
+            ToolLauncherPlacement.RIGHT_STRIP,
+            toolLauncherPlacement(leftStripHidden = true, rightStripHidden = false),
             "left strip gone, so it goes in the right one",
         )
         assertEquals(
-            PluginLauncherPlacement.LEFT_STRIP,
-            pluginLauncherPlacement(leftStripHidden = false, rightStripHidden = true),
+            ToolLauncherPlacement.LEFT_STRIP,
+            toolLauncherPlacement(leftStripHidden = false, rightStripHidden = true),
             "right strip gone, so it goes in the left one",
         )
     }
@@ -40,8 +40,8 @@ class PluginLauncherPlacementTest {
     @Test
     fun `neither strip sends it to the host actions`() {
         assertEquals(
-            PluginLauncherPlacement.HOST_ACTIONS,
-            pluginLauncherPlacement(leftStripHidden = true, rightStripHidden = true),
+            ToolLauncherPlacement.HOST_ACTIONS,
+            toolLauncherPlacement(leftStripHidden = true, rightStripHidden = true),
         )
     }
 
@@ -53,7 +53,7 @@ class PluginLauncherPlacementTest {
         // If this ever fails, the rail under-reserves and pushes an icon off the bottom.
         val settings = FocusModeSettings()
         listOf(false, true).forEach { leftHidden ->
-            val launcher = pluginLauncherPlacement(leftStripHidden = leftHidden, rightStripHidden = false)
+            val launcher = toolLauncherPlacement(leftStripHidden = leftHidden, rightStripHidden = false)
             val quickActions =
                 focusQuickActionsPlacement(
                     settings = settings,
@@ -63,7 +63,7 @@ class PluginLauncherPlacementTest {
                 )
             if (quickActions == FocusQuickActionsPlacement.RIGHT_RAIL) {
                 assertNotEquals(
-                    PluginLauncherPlacement.HOST_ACTIONS,
+                    ToolLauncherPlacement.HOST_ACTIONS,
                     launcher,
                     "the rail hosts the actions only when the right strip is up, and the launcher " +
                         "joins them only when both strips are down",
@@ -80,7 +80,7 @@ class PluginLauncherPlacementTest {
         // booleans are the whole input and this is the whole behaviour.
         val table =
             listOf(false, true).flatMap { l ->
-                listOf(false, true).map { r -> Triple(l, r, pluginLauncherPlacement(l, r)) }
+                listOf(false, true).map { r -> Triple(l, r, toolLauncherPlacement(l, r)) }
             }
 
         assertEquals(4, table.size)

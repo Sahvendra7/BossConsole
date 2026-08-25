@@ -2,7 +2,7 @@ package ai.rever.boss.components.bars.vertical
 
 import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.rememberBarContextMenuItems
-import ai.rever.boss.components.buttons.PluginLauncherButton
+import ai.rever.boss.components.buttons.ToolLauncherButton
 import ai.rever.boss.components.dividers.SDivider
 import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.misc.DraggableSidebarSection
@@ -31,10 +31,10 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun BossDraggableComponent.BossLeftSideBar(
     /**
-     * Whether this bar carries the plugins launcher, i.e. whether the RIGHT strip is switched off.
-     * Decided once in the scaffold - see `pluginLauncherPlacement`.
+     * Whether this bar carries the tools launcher, i.e. whether the RIGHT strip is switched off.
+     * Decided once in the scaffold - see `toolLauncherPlacement`.
      */
-    showPluginLauncher: Boolean = false,
+    showToolLauncher: Boolean = false,
 ) {
     // Customize button can be dragged between the three left-side
     // sections; render it at the bottom of whichever slot the user
@@ -61,7 +61,7 @@ fun BossDraggableComponent.BossLeftSideBar(
                     reservedHeight =
                         SidebarIconRail.SectionDivider +
                             (if (customizeOnThisBar) SidebarIconRail.CustomizeButton else 0.dp) +
-                            (if (showPluginLauncher) SidebarIconRail.PluginLauncherButton else 0.dp),
+                            (if (showToolLauncher) SidebarIconRail.ToolLauncherButton else 0.dp),
                 )
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -94,8 +94,8 @@ fun BossDraggableComponent.BossLeftSideBar(
                 // plugin icon, and the bottom is where the bar already keeps the controls that
                 // are not draggable. Its height is reserved above, or a full rail would spend the
                 // whole budget on plugin icons and push it off screen.
-                if (showPluginLauncher) {
-                    PluginLauncherButton(hintDirection = right)
+                if (showToolLauncher) {
+                    ToolLauncherButton(hintDirection = right)
                 }
             }
         }

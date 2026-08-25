@@ -104,7 +104,7 @@ private val ROW_GAP = 4.dp
 /**
  * The host's own actions at the very foot of the vertical tab bar, under the split map.
  *
- * Settings, Search, Sign Out and - when both icon strips are off - the plugins launcher. This is
+ * Settings, Search, Sign Out and - when both icon strips are off - the tools launcher. This is
  * the [FocusQuickActionsPlacement.TAB_BAR_FOOTER] rendering, chosen over the floating cluster
  * whenever this bar is on screen: the cluster is a native always-on-top window with no
  * click-through, and the bar is chrome the app already draws.
@@ -152,7 +152,7 @@ internal fun focusQuickActionsFooter(
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
-    pluginLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable () -> Unit)? = null,
 ): List<@Composable () -> Unit> =
     if (placement != FocusQuickActionsPlacement.TAB_BAR_FOOTER) {
         emptyList()
@@ -163,6 +163,6 @@ internal fun focusQuickActionsFooter(
             onShowSettings = onShowSettings,
             onShowSearch = onShowSearch,
             onSignOut = onSignOut,
-            pluginLauncher = pluginLauncher,
+            toolLauncher = toolLauncher,
         )
     }

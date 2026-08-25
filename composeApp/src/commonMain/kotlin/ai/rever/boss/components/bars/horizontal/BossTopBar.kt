@@ -74,8 +74,8 @@ fun BossDraggableComponent.BossTopBar(
     // renders, hovers, shows its hint and does nothing if the argument is dropped. A required
     // parameter makes that a compile error at the single call site instead.
     onSignOut: () -> Unit,
-    /** The plugins launcher, when neither icon strip is on screen. See [BossTopRightBar]. */
-    pluginLauncher: (@Composable () -> Unit)? = null,
+    /** The tools launcher, when neither icon strip is on screen. See [BossTopRightBar]. */
+    toolLauncher: (@Composable () -> Unit)? = null,
     onNewProject: (() -> Unit)? = null,
     onCloneProject: (() -> Unit)? = null,
 ) {
@@ -92,7 +92,7 @@ fun BossDraggableComponent.BossTopBar(
                 onShowSettings = onShowSettings,
                 onShowSearch = onShowSearch,
                 onSignOut = onSignOut,
-                pluginLauncher = pluginLauncher,
+                toolLauncher = toolLauncher,
             )
         }
     }
@@ -819,12 +819,12 @@ fun BossTopRightBar(
     // Required - see BossTopBar's onSignOut.
     onSignOut: () -> Unit,
     /**
-     * The plugins launcher, when both icon strips are switched off so there is no strip to hold it
-     * - see `pluginLauncherPlacement`. Rendered immediately before Settings, the same position it
+     * The tools launcher, when both icon strips are switched off so there is no strip to hold it
+     * - see `toolLauncherPlacement`. Rendered immediately before Settings, the same position it
      * takes in the floating cluster and the tab bar's footer, so the group reads the same wherever
      * it is drawn.
      */
-    pluginLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable () -> Unit)? = null,
 ) {
     val currentUser by AuthService.currentUser.collectAsState()
 
@@ -857,7 +857,7 @@ fun BossTopRightBar(
         onShowSearch?.invoke()
     }
 
-    pluginLauncher?.invoke()
+    toolLauncher?.invoke()
 
     BossActionButton(
         imageVector = Icons.Outlined.Settings,

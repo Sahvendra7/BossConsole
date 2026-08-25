@@ -1802,7 +1802,7 @@ fun SplitViewPanel(
     verticalBarFooter: @Composable () -> Unit = {},
     /**
      * Window chrome for BELOW the split map, at the very foot of the vertical bar - Settings,
-     * Search, Sign Out and the plugins launcher when nothing else is left to hold them. Ignored in
+     * Search, Sign Out and the tools launcher when nothing else is left to hold them. Ignored in
      * TOP position, where those go back to the top bar or a floating cluster.
      */
     verticalBarBelowMap: @Composable () -> Unit = {},

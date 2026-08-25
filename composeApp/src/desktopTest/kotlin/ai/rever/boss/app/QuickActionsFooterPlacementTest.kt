@@ -90,14 +90,14 @@ class QuickActionsFooterPlacementTest {
     @Test
     fun `the launcher adds a fourth action without disturbing the reserve`() {
         // The rail's reserve is FOCUS_QUICK_ACTION_COUNT rows, and it stays at three because the
-        // launcher can never join the rail flavour - see PluginLauncherPlacementTest.
+        // launcher can never join the rail flavour - see ToolLauncherPlacementTest.
         val withLauncher =
             focusQuickActionsFooter(
                 FocusQuickActionsPlacement.TAB_BAR_FOOTER,
                 {},
                 {},
                 {},
-                pluginLauncher = {},
+                toolLauncher = {},
             )
 
         assertEquals(FOCUS_QUICK_ACTION_COUNT + 1, withLauncher.size)

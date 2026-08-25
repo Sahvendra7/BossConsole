@@ -6,7 +6,7 @@ import ai.rever.boss.components.bars.horizontal.BossTopBar
 import ai.rever.boss.components.bars.isBarVisible
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
-import ai.rever.boss.components.buttons.PluginLauncherButton
+import ai.rever.boss.components.buttons.ToolLauncherButton
 import ai.rever.boss.components.home.LocalPanelRegistry
 import ai.rever.boss.components.home.LocalPluginStates
 import ai.rever.boss.components.home.LocalRegistryAccess
@@ -270,16 +270,16 @@ internal fun BossAppScaffold(
     // switched off. Decided here for the same reason the line above is: three call sites read it,
     // and two of them showing a launcher at once is worse than neither.
     val launcherPlacement =
-        pluginLauncherPlacement(
+        toolLauncherPlacement(
             leftStripHidden = !appearance.showLeftStrip,
             rightStripHidden = !appearance.showRightStrip,
         )
 
     // Non-null only in the HOST_ACTIONS case, so it can be handed to all three hosts of the
     // Settings / Search / Sign Out group unconditionally and render in whichever one is drawing.
-    val hostPluginLauncher: (@Composable () -> Unit)? =
-        if (launcherPlacement == PluginLauncherPlacement.HOST_ACTIONS) {
-            { state.draggablePanelComponent.PluginLauncherButton(hintDirection = bottom) }
+    val hostToolLauncher: (@Composable () -> Unit)? =
+        if (launcherPlacement == ToolLauncherPlacement.HOST_ACTIONS) {
+            { state.draggablePanelComponent.ToolLauncherButton(hintDirection = bottom) }
         } else {
             null
         }
@@ -435,9 +435,9 @@ internal fun BossAppScaffold(
                                 state.settingsWindow.open()
                             },
                             // Only non-null when neither icon strip is on screen, so the top bar
-                            // grows a plugins button exactly in the configuration where nothing
+                            // grows a tools button exactly in the configuration where nothing
                             // else can hold one.
-                            pluginLauncher = hostPluginLauncher,
+                            toolLauncher = hostToolLauncher,
                             onShowSearch = {
                                 state.showGlobalSearchDialog = true
                             },
@@ -475,7 +475,7 @@ internal fun BossAppScaffold(
                             modifier = Modifier.hoverable(interactionSource = reveal.leftSidebarInteractionSource),
                         ) {
                             BossLeftSideBar(
-                                showPluginLauncher = launcherPlacement == PluginLauncherPlacement.LEFT_STRIP,
+                                showToolLauncher = launcherPlacement == ToolLauncherPlacement.LEFT_STRIP,
                             )
                         }
                     }
@@ -511,7 +511,7 @@ internal fun BossAppScaffold(
                                             onShowSettings = { state.settingsWindow.open() },
                                             onShowSearch = { state.showGlobalSearchDialog = true },
                                             onSignOut = { state.showLogoutDialog = true },
-                                            pluginLauncher = hostPluginLauncher,
+                                            toolLauncher = hostToolLauncher,
                                         ),
                                 )
                             },
@@ -562,7 +562,7 @@ internal fun BossAppScaffold(
                             onShowSettings = { state.settingsWindow.open() },
                             onShowSearch = { state.showGlobalSearchDialog = true },
                             onSignOut = { state.showLogoutDialog = true },
-                            pluginLauncher = hostPluginLauncher,
+                            toolLauncher = hostToolLauncher,
                         )
                     }
 
@@ -593,7 +593,7 @@ internal fun BossAppScaffold(
                             // takes the three icons away without also handing their rows back to
                             // the plugin slots and reshuffling them. See focusQuickActionsRailRows.
                             BossRightSideBar(
-                                showPluginLauncher = launcherPlacement == PluginLauncherPlacement.RIGHT_STRIP,
+                                showToolLauncher = launcherPlacement == ToolLauncherPlacement.RIGHT_STRIP,
                                 bottomActions = quickActionsRail,
                                 bottomActionRows =
                                     focusQuickActionsRailRows(

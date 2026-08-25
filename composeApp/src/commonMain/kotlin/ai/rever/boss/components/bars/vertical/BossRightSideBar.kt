@@ -2,7 +2,7 @@ package ai.rever.boss.components.bars.vertical
 
 import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.rememberBarContextMenuItems
-import ai.rever.boss.components.buttons.PluginLauncherButton
+import ai.rever.boss.components.buttons.ToolLauncherButton
 import ai.rever.boss.components.dividers.SDivider
 import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.misc.DraggableSidebarSection
@@ -46,10 +46,10 @@ fun BossDraggableComponent.BossRightSideBar(
     bottomActions: List<@Composable () -> Unit> = emptyList(),
     bottomActionRows: Int = bottomActions.size,
     /**
-     * Whether this bar carries the plugins launcher, i.e. whether the LEFT strip is switched off.
-     * Decided once in the scaffold - see `pluginLauncherPlacement`.
+     * Whether this bar carries the tools launcher, i.e. whether the LEFT strip is switched off.
+     * Decided once in the scaffold - see `toolLauncherPlacement`.
      */
-    showPluginLauncher: Boolean = false,
+    showToolLauncher: Boolean = false,
 ) {
     val visibility by SidebarVisibilitySettingsManager.currentSettings.collectAsState()
     val customizeSlotId = visibility.customizeButtonSlotId
@@ -78,7 +78,7 @@ fun BossDraggableComponent.BossRightSideBar(
                     reservedHeight =
                         SidebarIconRail.SectionDivider +
                             (if (customizeOnThisBar) SidebarIconRail.CustomizeButton else 0.dp) +
-                            (if (showPluginLauncher) SidebarIconRail.PluginLauncherButton else 0.dp) +
+                            (if (showToolLauncher) SidebarIconRail.ToolLauncherButton else 0.dp) +
                             SidebarIconRail.bottomSectionHeight(bottomActionRows),
                 )
             Column(
@@ -132,8 +132,8 @@ fun BossDraggableComponent.BossRightSideBar(
                 // Outside the clipped region for the same reason the customize button is, and
                 // above the bottom actions: the launcher is about the slots it sits under, while
                 // Settings / Search / Sign Out are about the app.
-                if (showPluginLauncher) {
-                    PluginLauncherButton(hintDirection = left)
+                if (showToolLauncher) {
+                    ToolLauncherButton(hintDirection = left)
                 }
                 SidebarBottomActions(bottomActions)
             }

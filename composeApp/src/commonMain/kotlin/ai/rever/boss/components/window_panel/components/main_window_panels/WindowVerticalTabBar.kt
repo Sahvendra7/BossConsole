@@ -201,7 +201,7 @@ fun WindowVerticalTabBar(
      *
      * Separate from [footer] because the two sit either side of the map and mean different things:
      * the footer holds what belongs to this window's contents (the project and workspace pickers),
-     * this holds what belongs to the app - Settings, Search, Sign Out and the plugins launcher,
+     * this holds what belongs to the app - Settings, Search, Sign Out and the tools launcher,
      * when there is no strip and no top bar left to hold them. See `focusQuickActionsPlacement`.
      */
     belowMap: @Composable () -> Unit = {},
