@@ -4,6 +4,7 @@ import ai.rever.boss.downloads.DownloadCenter
 import ai.rever.boss.plugin.api.TransferKind
 import ai.rever.boss.plugin.api.TransferPhase
 import kotlinx.coroutines.Job
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Publishes the application's own update into [DownloadCenter], so it shares the
@@ -33,16 +34,23 @@ object UpdateDownloadCenterMirror {
      * download that is still going.
      */
     fun start(coordinator: UpdateCoordinator) {
-        if (job?.isActive == true) return
         val manager = coordinator.manager
-        job =
+        // compareAndSet rather than a check on a @Volatile: two windows starting at
+        // once would both pass check-then-act and launch a collector each, which is
+        // not the "every window may ask" this claims to be. The loser cancels the
+        // collector it launched. The expected value is the job we read rather than
+        // null, so a dead one (only app shutdown kills the scope) can be replaced
+        // instead of blocking every later start forever.
+        val existing = job.get()
+        if (existing?.isActive == true) return
+        val started =
             manager.launchInBackground {
                 manager.updateState.collect { state -> publish(state, manager) }
             }
+        if (!job.compareAndSet(existing, started)) started.cancel()
     }
 
-    @Volatile
-    private var job: Job? = null
+    private val job = AtomicReference<Job?>(null)
 
     /** Internal for the mapping test: the table above is the whole behaviour. */
     internal fun publish(
@@ -58,6 +66,18 @@ object UpdateDownloadCenterMirror {
                     kind = TransferKind.APP_UPDATE,
                     detail = "Application update",
                     onCancel = { manager.cancelDownload() },
+                )
+                // Asserted, not left to begin: a row already exists when a second
+                // version is picked from the list while one sits ReadyToInstall, and
+                // begin leaves an existing row alone. Without this the row keeps the
+                // ready-state actions - a Cancel that calls discardDownload() and
+                // early-returns because the state moved on, so the button renders
+                // enabled and does nothing, and an Install still holding the previous
+                // staged path.
+                DownloadCenter.setActions(
+                    id = id,
+                    onCancel = { manager.cancelDownload() },
+                    onInstall = null,
                 )
                 DownloadCenter.progress(id, state.progress)
             }
@@ -77,6 +97,9 @@ object UpdateDownloadCenterMirror {
 
             is UpdateState.Installing -> {
                 DownloadCenter.begin(id, title(manager), TransferKind.APP_UPDATE, "Application update")
+                // Both dropped: an Install left in place would offer a second elevated
+                // install of the artifact this one is already installing.
+                DownloadCenter.setActions(id, onCancel = null, onInstall = null)
                 DownloadCenter.phase(id, TransferPhase.INSTALLING)
             }
 

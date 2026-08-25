@@ -2,6 +2,7 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>ReturnCount:PluginUpdateManager.kt$PluginUpdateManager$private suspend fun swapPlugin( pluginId: String, update: UpdateInfo, downloadedPath: String, unloadPlugin: suspend (String) -&gt; Result&lt;Unit&gt;, loadPlugin: suspend (String) -&gt; Result&lt;Unit&gt;, ): Result&lt;Unit&gt;</ID>
     <ID>LongParameterList:PluginUpdateManager.kt$PluginUpdateManager$( pluginId: String, downloadPath: String, unloadPlugin: suspend (String) -&gt; Result&lt;Unit&gt;, loadPlugin: suspend (String) -&gt; Result&lt;Unit&gt;, onProgress: ((Float) -&gt; Unit)? = null, onInstalling: (() -&gt; Unit)? = null, )</ID>
     <ID>CyclomaticComplexMethod:PluginUpdateManager.kt$PluginUpdateManager$suspend fun checkForUpdates(installedPlugins: Map&lt;String, String&gt;): UpdateCheckResult</ID>
     <ID>LongMethod:PluginUpdateManager.kt$PluginUpdateManager$suspend fun checkForUpdates(installedPlugins: Map&lt;String, String&gt;): UpdateCheckResult</ID>

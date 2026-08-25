@@ -9,6 +9,8 @@ import ai.rever.boss.utils.atomicMoveFrom
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -109,6 +111,29 @@ internal class StoreVersionInstaller(
         // Past the point of no return: the swap can no longer be abandoned safely, so a
         // caller offering Cancel withdraws it here rather than after the unload.
         onInstalling?.invoke()
+
+        // And the work stops being cancellable, not just the button. Cancellation is
+        // cooperative: a Cancel pressed between the last progress tick and this line
+        // would otherwise throw out of `activate` - between the unload and the load -
+        // and leave the plugin gone with nothing in its place, which is what the
+        // detached scope and the withdrawn button both exist to prevent.
+        return withContext(NonCancellable) { promoteAndActivate(request, downloaded, target, unload, load) }
+    }
+
+    /**
+     * Move the verified download into place and swap the running plugin for it.
+     *
+     * Split from the download half so the whole swap runs under `NonCancellable` in
+     * one expression; see the call site for why it must.
+     */
+    private suspend fun promoteAndActivate(
+        request: StoreVersionRequest,
+        downloaded: String,
+        target: File,
+        unload: suspend (String) -> Result<Unit>,
+        load: suspend (String) -> Result<Boolean>,
+    ): Result<String> {
+        val version = request.version
 
         val moved = runCatching { hooks.promoteFiles(downloaded, target) }
         if (moved.isFailure) {

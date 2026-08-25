@@ -138,6 +138,10 @@ actual object PluginUpdateBridge {
         val reporter = MissingDependencyReporter.forManager(manager)
 
         val ownsTransfer = beginTransfer(pluginId, update, currentCoroutineContext()[Job])
+        // Whether the swap has begun, i.e. whether a cancellation is still safe to
+        // clean up after. Set from `onInstalling`, which fires between the last byte
+        // and the unload.
+        var swapStarted = false
         val result =
             try {
                 mgr.updatePlugin(
@@ -154,10 +158,17 @@ actual object PluginUpdateBridge {
                         }
                     },
                     onProgress = { DownloadCenter.progress(pluginId, it) },
-                    onInstalling = { DownloadCenter.phase(pluginId, TransferPhase.INSTALLING) },
+                    onInstalling = {
+                        swapStarted = true
+                        DownloadCenter.phase(pluginId, TransferPhase.INSTALLING)
+                    },
                 )
             } catch (e: CancellationException) {
-                discardPartialDownload(targetFile)
+                // Only while it was still bytes. Past `onInstalling` the jar may already
+                // be loaded and recorded, and deleting it then leaves installed.json
+                // pointing at nothing for the next launch to fail on - a cancellation
+                // arriving late must not take the working install with it.
+                if (!swapStarted) discardPartialDownload(targetFile)
                 throw e
             } finally {
                 if (ownsTransfer) DownloadCenter.end(pluginId)
@@ -217,10 +228,18 @@ actual object PluginUpdateBridge {
      * reported, not raised, because the cancellation is what the caller is waiting on.
      */
     private fun discardPartialDownload(jar: File) {
-        runCatching { if (jar.exists()) jar.delete() }
-            .onFailure { e ->
-                logger.warn(LogCategory.SYSTEM, "Could not remove a cancelled update download: ${e.message}")
-            }
+        // Absence is the postcondition, not a delete that returned true: `delete()`
+        // returns false rather than throwing when a Windows lock holds the file, so
+        // runCatching alone never reported the case this warning exists for - and an
+        // already-absent file returns false too, which is success here.
+        val gone = runCatching { !jar.exists() || jar.delete() }.getOrDefault(false)
+        if (!gone) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "A cancelled update download could not be removed; the next launch would try to load it",
+                mapOf("path" to jar.absolutePath),
+            )
+        }
         runCatching { PluginSignatureSidecar.delete(jar.absolutePath) }
     }
 }

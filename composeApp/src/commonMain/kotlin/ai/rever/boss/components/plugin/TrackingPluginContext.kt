@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.downloads.DownloadCenterProviderImpl
 import ai.rever.boss.plugin.api.ActiveTabsProvider
 import ai.rever.boss.plugin.api.ApplicationEventBus
 import ai.rever.boss.plugin.api.AuthDataProvider
@@ -314,8 +315,12 @@ class TrackingPluginContext(
     override val performanceDataProvider: PerformanceDataProvider? get() = delegate.performanceDataProvider
     override val downloadDataProvider: DownloadDataProvider? get() = delegate.downloadDataProvider
 
-    // Download center (bottom-bar transfer progress) - delegate to underlying context
-    override val downloadCenterProvider: DownloadCenterProvider? get() = delegate.downloadCenterProvider
+    // Download center (bottom-bar transfer progress). NOT a bare delegate: the ids a
+    // plugin reports are namespaced with its plugin id, and this is the only layer
+    // that knows which plugin is asking. See DownloadCenterProviderImpl.idPrefix.
+    override val downloadCenterProvider: DownloadCenterProvider? by lazy {
+        delegate.downloadCenterProvider?.let { DownloadCenterProviderImpl(delegate.pluginScope, idPrefix = pluginId) }
+    }
     override val bookmarkDataProvider: BookmarkDataProvider? get() = delegate.bookmarkDataProvider
     override val workspaceDataProvider: WorkspaceDataProvider? get() = delegate.workspaceDataProvider
     override val splitViewOperations: SplitViewOperations? get() = delegate.splitViewOperations

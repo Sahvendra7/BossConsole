@@ -23,14 +23,26 @@ import kotlinx.coroutines.flow.stateIn
  */
 class DownloadCenterProviderImpl(
     scope: CoroutineScope,
+    /**
+     * Prefix for ids this instance reports, or null for the host's own transfers.
+     *
+     * Without it the id space is one unnamespaced namespace shared by the host and
+     * every plugin, which is two bugs rather than one: two plugins both choosing
+     * `"update"` collide and hit the nested-begin rule by accident (the second is
+     * bound to a row it cannot remove, and its transfer never appears), and any
+     * plugin can address another's transfer - or the host's app update - to withdraw
+     * its Cancel, fake its progress, or fabricate a row. The prefix is stripped on
+     * the way out, so a plugin still matches its own work by the id it passed in.
+     */
+    private val idPrefix: String? = null,
 ) : DownloadCenterProvider {
     override val transfers: StateFlow<List<TransferInfo>> =
         DownloadCenter.transfers
-            .map { list -> list.map { it.info } }
+            .map { list -> list.map { it.info.withoutPrefix(idPrefix) } }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.Eagerly,
-                initialValue = DownloadCenter.transfers.value.map { it.info },
+                initialValue = DownloadCenter.transfers.value.map { it.info.withoutPrefix(idPrefix) },
             )
 
     override fun begin(
@@ -40,8 +52,23 @@ class DownloadCenterProviderImpl(
         detail: String?,
         onCancel: (() -> Unit)?,
     ): TransferHandle {
-        val created = DownloadCenter.begin(id, title, kind, detail, onCancel)
-        return CenterHandle(id, ownsEntry = created)
+        val key = qualify(id)
+        val created = DownloadCenter.begin(key, title, kind, detail, onCancel)
+        return CenterHandle(key, ownsEntry = created)
+    }
+
+    private fun qualify(id: String): String = idPrefix?.let { "$it:$id" } ?: id
+
+    /**
+     * Show a plugin its own ids unprefixed, and leave everyone else's alone.
+     *
+     * A plugin asking "is this one busy?" compares against the id it passed to
+     * [begin]; it should not have to know the host qualified it. Other plugins' rows
+     * stay qualified, which is what makes them unmistakable for your own.
+     */
+    private fun TransferInfo.withoutPrefix(prefix: String?): TransferInfo {
+        val head = prefix?.plus(":") ?: return this
+        return if (id.startsWith(head)) copy(id = id.removePrefix(head)) else this
     }
 
     /**

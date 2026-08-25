@@ -1,6 +1,7 @@
 package ai.rever.boss.app
 
 import ai.rever.boss.components.plugin.DefaultPlugin
+import ai.rever.boss.components.plugin.PluginUpdateRegistry
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.registerPanelHostTab
 import ai.rever.boss.components.registery.PanelComponentStoreRegistry
@@ -707,8 +708,7 @@ internal fun BossAppStartupEffects(state: BossAppState) {
     LaunchedEffect(state.currentDefaultPlugin) {
         val manager = state.currentDefaultPlugin?.dynamicPluginManager ?: return@LaunchedEffect
         manager.pluginStates.collect { states ->
-            ai.rever.boss.components.plugin.PluginUpdateRegistry
-                .reconcile(states.mapValues { (_, info) -> info.manifest.version })
+            PluginUpdateRegistry.reconcile(states.mapValues { (_, info) -> info.manifest.version })
         }
     }
 

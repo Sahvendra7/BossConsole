@@ -8,6 +8,7 @@ import ai.rever.boss.plugin.repository.PluginRepositoryManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Callback interface for update events.
@@ -443,6 +445,28 @@ class PluginUpdateManager(
         listeners.forEach { it.onUpdateInstalling(pluginId) }
         onInstalling?.invoke()
 
+        // From here to the end of the load, NonCancellable. Cancellation is
+        // cooperative, so a Cancel pressed between the last progress tick and this
+        // point would otherwise throw out of `unloadPlugin` or `loadPlugin` and leave
+        // the plugin unloaded with nothing in its place - exactly the harm the caller
+        // withdraws its Cancel button to prevent. Withdrawing the button is necessary
+        // and not sufficient: the button is UI state, this is the work.
+        return withContext(NonCancellable) { swapPlugin(pluginId, update, downloadedPath, unloadPlugin, loadPlugin) }
+    }
+
+    /**
+     * Unload the old version and load [downloadedPath], reporting either outcome.
+     *
+     * Split out so the whole swap can run under `NonCancellable` in one expression;
+     * see the comment at the call site for why it must.
+     */
+    private suspend fun swapPlugin(
+        pluginId: String,
+        update: UpdateInfo,
+        downloadedPath: String,
+        unloadPlugin: suspend (String) -> Result<Unit>,
+        loadPlugin: suspend (String) -> Result<Unit>,
+    ): Result<Unit> {
         // Unload old version
         val unloadResult = unloadPlugin(pluginId)
         if (unloadResult.isFailure) {

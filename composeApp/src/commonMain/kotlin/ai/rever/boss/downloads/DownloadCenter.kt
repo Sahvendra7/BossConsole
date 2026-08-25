@@ -67,10 +67,15 @@ object DownloadCenter {
     ): Boolean {
         var created = false
         _transfers.update { list ->
-            if (list.any { it.info.id == id }) {
+            // ASSIGNED on every pass, never only set: `update` is a compare-and-set
+            // retry loop, so a caller that built the row and then lost the CAS runs
+            // again with the row present - and a stale `true` would hand ownership to
+            // two callers, whose `finally` blocks then delete each other's rows.
+            val exists = list.any { it.info.id == id }
+            created = !exists
+            if (exists) {
                 list
             } else {
-                created = true
                 list +
                     Transfer(
                         info =

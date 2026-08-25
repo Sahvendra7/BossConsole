@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.LinearProgressIndicator
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,13 @@ fun DownloadCenterStatusItem() {
     val transfers by DownloadCenter.transfers.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
 
+    // Reset here, not only inside the dialog: the early return below removes the
+    // dialog's subtree in the same recomposition that empties the list, so its own
+    // LaunchedEffect is disposed before it can dispatch and `showDialog` would stay
+    // true - the next download then pops the dialog open with nobody clicking.
+    LaunchedEffect(transfers.isEmpty()) {
+        if (transfers.isEmpty()) showDialog = false
+    }
     if (transfers.isEmpty()) return
 
     val infos = transfers.map { it.info }

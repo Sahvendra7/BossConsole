@@ -60,12 +60,18 @@ internal fun transferBarLabel(items: List<TransferInfo>): String =
         }
 
         1 -> {
+            // Composed from the parts rather than by rewriting the status line: the
+            // name goes between the verb and the number ("Downloading Toolbox 72%"),
+            // and a search-and-replace on the verb can be surprised by a title that
+            // happens to contain it.
             val info = items.first()
-            val line = transferStatusLine(info)
-            // "Downloading 72% Toolbox" reads backwards, so the name goes between
-            // the verb and the number: "Downloading Toolbox 72%".
             val verb = transferVerb(info)
-            line.replaceFirst(verb, "$verb ${info.title}")
+            val percent = info.progress?.takeIf { info.phase == TransferPhase.DOWNLOADING }
+            when {
+                info.phase == TransferPhase.READY_TO_INSTALL -> "$verb ${info.title}"
+                percent != null -> "$verb ${info.title} ${(percent * 100).toInt()}%"
+                else -> "$verb ${info.title}…"
+            }
         }
 
         else -> {
@@ -79,6 +85,12 @@ internal fun transferBarLabel(items: List<TransferInfo>): String =
  * Determinate only when EVERY transfer knows its size: averaging a known 90%
  * with an unknown would draw a bar that jumps backwards the moment the unknown
  * one starts reporting.
+ *
+ * An UNWEIGHTED mean, deliberately: a 200 KB jar and a 400 MB installer count
+ * equally, so the bar can sit near 50% while the large one does all the work.
+ * Weighting by size would need every transfer to report bytes rather than a
+ * fraction; this is an indicator, and the per-row bars in the dialog are where
+ * someone looks to see which one is moving.
  */
 internal fun overallProgress(items: List<TransferInfo>): Float? {
     // A downloaded update is finished as far as this bar is concerned. Left as
