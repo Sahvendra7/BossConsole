@@ -207,13 +207,25 @@ private fun applyMacAppearanceFromTheme() {
     ai.rever.boss.theme.AppThemeSettingsManager
         .ensureInitialized()
 
+    val theme = BossThemeController.current
     val appearance =
-        if (BossThemeController.current.isLight) {
+        if (theme.isLight) {
             "NSAppearanceNameAqua"
         } else {
             "NSAppearanceNameDarkAqua"
         }
     System.setProperty("apple.awt.application.appearance", appearance)
+
+    // Logged because the failure is invisible from inside the app: the lights are drawn by macOS,
+    // and the only way to tell "the theme was read too early" from "macOS ignored us" is to see
+    // which theme this ran with. Costs one line at startup.
+    BossLogger
+        .forComponent("MacAppearance")
+        .info(
+            LogCategory.SYSTEM,
+            "Window appearance set from theme",
+            mapOf("themeId" to theme.id, "isLight" to theme.isLight.toString(), "appearance" to appearance),
+        )
 }
 
 fun main(args: Array<String>) {
