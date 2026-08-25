@@ -32,6 +32,11 @@ import ai.rever.boss.focusmode.FocusModeSettings
 import ai.rever.boss.handleTabDropResult
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.layout.ChromeBudgetReadout
+import ai.rever.boss.layout.TRAFFIC_LIGHT_HEIGHT
+import ai.rever.boss.layout.TrafficLightInset
+import ai.rever.boss.layout.clearance
+import ai.rever.boss.layout.macTrafficLightInset
+import ai.rever.boss.layout.needsTitleRow
 import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
 import ai.rever.boss.plugin.api.LocalProjectPath
 import ai.rever.boss.plugin.api.LocalSplitViewOperations
@@ -41,11 +46,13 @@ import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.sandbox.notification.PluginToastHost
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
+import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
 import ai.rever.boss.updater.UpdateAvailableDialog
 import ai.rever.boss.updater.UpdateBanner
 import ai.rever.boss.updater.UpdateState
 import ai.rever.boss.updater.rememberUpdateDialogOwnership
+import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.window.LocalWindowGitState
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
@@ -58,6 +65,7 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Box
@@ -65,6 +73,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -277,6 +286,10 @@ internal fun BossAppScaffold(
 
     // Non-null only in the HOST_ACTIONS case, so it can be handed to all three hosts of the
     // Settings / Search / Sign Out group unconditionally and render in whichever one is drawing.
+    // Which column keeps clear of the macOS traffic lights, now that the title row no longer
+    // exists to hold them. Decided once, read by the three places that could carry the inset.
+    val trafficLights = macTrafficLightInset(appearance, SystemUtils.isMacOS)
+
     val openTools = { state.showToolLauncherDialog = true }
 
     val hostToolLauncher: (@Composable () -> Unit)? =
@@ -329,7 +342,11 @@ internal fun BossAppScaffold(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Title bar - conditionally shown based on settings
                 // Default: hidden on Linux/Windows, shown on macOS
-                if (appearance.showTitleBar) {
+                // Also drawn when the traffic lights have nowhere else to go: with no left strip
+                // and the tab bar across the top, the only thing under them is the content, and a
+                // full-width reserve costs no more than padding the content would. See
+                // TrafficLightInset.CONTENT.
+                if (trafficLights.needsTitleRow(appearance.showTitleBar)) {
                     BossTitleBar(
                         onToggleMaximize = onToggleMaximize,
                     )
@@ -474,7 +491,13 @@ internal fun BossAppScaffold(
                             ),
                     ) {
                         Box(
-                            modifier = Modifier.hoverable(interactionSource = reveal.leftSidebarInteractionSource),
+                            modifier =
+                                Modifier
+                                    .hoverable(interactionSource = reveal.leftSidebarInteractionSource)
+                                    // Painted before padded - see WindowBarRow for what an
+                                    // unpainted inset shows through to.
+                                    .background(BossTheme.colors.raised)
+                                    .padding(top = trafficLights.clearance(TrafficLightInset.LEFT_STRIP)),
                         ) {
                             BossLeftSideBar(
                                 onOpenTools =
@@ -508,6 +531,10 @@ internal fun BossAppScaffold(
                             // Settings / Search / Sign Out (and the launcher, when it joins them)
                             // at the very foot of the bar, under the split map - the placement
                             // that displaces the floating cluster wherever this bar is on screen.
+                            // The tab bar is the leftmost column when no strip is on, so its top
+                            // is what the lights would land on.
+                            verticalBarTopInset =
+                                trafficLights.clearance(TrafficLightInset.VERTICAL_TAB_BAR),
                             verticalBarBelowMap = {
                                 VerticalBarHostActions(
                                     actions =

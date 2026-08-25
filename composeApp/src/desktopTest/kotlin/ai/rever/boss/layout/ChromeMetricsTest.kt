@@ -93,11 +93,11 @@ class ChromeMetricsTest {
     }
 
     @Test
-    fun `the shipped defaults spend less height and more width than the classic chrome`() {
-        // What a fresh install actually gets: the title bar, the status line, tabs down the left,
-        // and nothing else - no top bar, neither icon strip. The trade is the point: the top bar
-        // and the tab row both leave the vertical axis, and a 200dp column arrives on the
-        // horizontal one.
+    fun `the title row plus the shipped defaults still spend less height than classic chrome`() {
+        // The shipped defaults PLUS the title row, which is no longer part of them - on macOS the
+        // traffic lights are handled by insetting the leftmost column instead (see
+        // `macTrafficLightInset`), and a fresh install has no title row at all. Named explicitly
+        // here because this case is about what the row costs when someone turns it back on.
         val shippedMac = WindowAppearanceSettings(showTitleBar = true)
         val shipped = ChromeMetrics.mainPanelBudget(shippedMac, focusOff, comfortable)
 

@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
@@ -41,6 +42,8 @@ fun BossDraggableComponent.BossWindow(
     verticalBarFooter: @Composable () -> Unit = {},
     /** Window chrome for below the vertical bar's split map. See [SplitViewPanel]. */
     verticalBarBelowMap: @Composable () -> Unit = {},
+    /** Clearance above the vertical bar, for the macOS traffic lights. See [SplitViewPanel]. */
+    verticalBarTopInset: Dp = 0.dp,
 ) {
     // Process any pending panel opens (for two-phase transitions)
     // This is critical for JxBrowser-based plugins to avoid BrowserViewState conflicts
@@ -125,6 +128,7 @@ fun BossDraggableComponent.BossWindow(
                         onTabDropResult = onTabDropResult,
                         verticalBarFooter = verticalBarFooter,
                         verticalBarBelowMap = verticalBarBelowMap,
+                        verticalBarTopInset = verticalBarTopInset,
                     )
                     // While a header is dragged over the central area, highlight the
                     // resolved target region (a whole panel for center-drop, or the half

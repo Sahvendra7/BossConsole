@@ -8,10 +8,16 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class WindowAppearanceSettings(
     /**
-     * Whether to show the Boss Console title bar
-     * Default: true on macOS, false on Linux/Windows
+     * Whether to show the Boss Console title bar.
+     *
+     * Off everywhere now, macOS included. On Windows and Linux it was always a plain bar above
+     * the content. On macOS it was something else: the window sets `apple.awt.fullWindowContent`,
+     * so the traffic lights are drawn OVER the content and this row existed to hold them - its own
+     * content is a centred title string. Reserving the window's full width to protect one 78dp
+     * corner is the wrong shape, so the clearance moved onto whichever column is leftmost. See
+     * `macTrafficLightInset`, which also names the one case that still wants the row.
      */
-    val showTitleBar: Boolean = true,
+    val showTitleBar: Boolean = false,
     /**
      * Whether the action bar at the top of the window is on screen. Its height comes from
      * `ChromeDimens.topBarHeight`, so quoting a dp figure here would go stale.

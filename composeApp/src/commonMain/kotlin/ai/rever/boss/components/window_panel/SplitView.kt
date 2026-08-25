@@ -1806,6 +1806,15 @@ fun SplitViewPanel(
      * TOP position, where those go back to the top bar or a floating cluster.
      */
     verticalBarBelowMap: @Composable () -> Unit = {},
+    /**
+     * Clearance above the vertical bar.
+     *
+     * macOS draws its traffic lights over the top-left of the content when the window sets
+     * `fullWindowContent`, and with no title row and no left icon strip this bar is what is
+     * under them. Only this column is inset - the rest of the window starts at the top, which
+     * is the whole point of not reserving a full-width row. See `macTrafficLightInset`.
+     */
+    verticalBarTopInset: Dp = 0.dp,
 ) {
     val density = LocalDensity.current
 
@@ -1867,6 +1876,7 @@ fun SplitViewPanel(
                 onTabDropResult = onTabDropResult,
                 footer = verticalBarFooter,
                 belowMap = verticalBarBelowMap,
+                topInset = verticalBarTopInset,
                 splitTree = splitTree,
             )
         } else {
@@ -1936,6 +1946,8 @@ private fun WindowBarRow(
     onTabDropResult: (TabDropResult) -> Unit,
     footer: @Composable () -> Unit,
     belowMap: @Composable () -> Unit,
+    /** Clearance above the bar, for the macOS traffic lights. See [SplitViewPanel]. */
+    topInset: Dp,
     splitTree: @Composable (Modifier) -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -1957,7 +1969,18 @@ private fun WindowBarRow(
     val barWidth = draggedWidth?.dp ?: bar.width
 
     Row(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.hoverable(reveal.railHover, enabled = bar.hoverExpand && bar.railShown)) {
+        Box(
+            modifier =
+                Modifier
+                    // PAINTED before it is padded. Padding alone leaves the inset area drawn by
+                    // nothing, and nothing is not the background: the raw native window surface
+                    // shows through, which is white. Same trap as the bar's resize strip.
+                    // `raised` is what VerticalBar fills itself with, so the clearance reads as
+                    // the top of the bar rather than as a band above it.
+                    .background(BossTheme.colors.raised)
+                    .padding(top = topInset)
+                    .hoverable(reveal.railHover, enabled = bar.hoverExpand && bar.railShown),
+        ) {
             WindowVerticalTabBar(
                 groups = groups,
                 listState = listState,

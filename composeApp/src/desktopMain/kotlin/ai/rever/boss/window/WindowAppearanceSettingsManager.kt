@@ -107,13 +107,13 @@ actual object WindowAppearanceSettingsManager {
     }
 
     actual fun getDefaultSettings(): WindowAppearanceSettings {
-        val os = System.getProperty("os.name").lowercase()
-        val isMacOS = os.contains("mac")
-        // Show title bar on macOS, hide on Linux/Windows
+        // No platform branch any more: the title row is off everywhere, macOS included, and the
+        // traffic lights are handled by insetting the leftmost column instead. See
+        // `macTrafficLightInset`.
+        //
         // Stamped current: a fresh file is already on this build's defaults and must not be
         // migrated on the next launch as though it were an older one.
         return WindowAppearanceSettings(
-            showTitleBar = isMacOS,
             settingsVersion = WindowAppearanceSettings.CURRENT_SETTINGS_VERSION,
         )
     }

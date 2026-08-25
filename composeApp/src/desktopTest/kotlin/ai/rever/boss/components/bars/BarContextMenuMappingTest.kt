@@ -72,8 +72,11 @@ class BarContextMenuMappingTest {
         // showTitleBar is the pre-existing flag for a different strip (the 26dp OS-style title bar),
         // and it deliberately has no ChromeBar member - it is not right-clickable and its toggle
         // already lives in Settings. Hiding every bar here must not switch it off as a side effect.
+        // Switched ON explicitly: the flag now defaults to false like everything else, and this
+        // test is about withBarVisible leaving it alone rather than about what it defaults to.
+        val start = WindowAppearanceSettings(showTitleBar = true)
         val allHidden =
-            ChromeBar.entries.fold(WindowAppearanceSettings()) { acc, bar ->
+            ChromeBar.entries.fold(start) { acc, bar ->
                 acc.withBarVisible(bar, visible = false)
             }
 
