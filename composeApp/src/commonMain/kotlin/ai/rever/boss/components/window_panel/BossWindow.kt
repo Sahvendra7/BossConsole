@@ -39,6 +39,8 @@ fun BossDraggableComponent.BossWindow(
     onTabDropResult: (TabDropResult) -> Unit = {},
     /** Window chrome for the foot of the vertical tab bar. See SplitViewPanel. */
     verticalBarFooter: @Composable () -> Unit = {},
+    /** Window chrome for below the vertical bar's split map. See [SplitViewPanel]. */
+    verticalBarBelowMap: @Composable () -> Unit = {},
 ) {
     // Process any pending panel opens (for two-phase transitions)
     // This is critical for JxBrowser-based plugins to avoid BrowserViewState conflicts
@@ -122,6 +124,7 @@ fun BossDraggableComponent.BossWindow(
                         tabDragComponent = tabDragComponent,
                         onTabDropResult = onTabDropResult,
                         verticalBarFooter = verticalBarFooter,
+                        verticalBarBelowMap = verticalBarBelowMap,
                     )
                     // While a header is dragged over the central area, highlight the
                     // resolved target region (a whole panel for center-drop, or the half

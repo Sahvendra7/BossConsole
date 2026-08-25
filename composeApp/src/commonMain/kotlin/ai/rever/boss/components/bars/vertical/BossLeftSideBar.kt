@@ -2,6 +2,7 @@ package ai.rever.boss.components.bars.vertical
 
 import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.rememberBarContextMenuItems
+import ai.rever.boss.components.buttons.PluginLauncherButton
 import ai.rever.boss.components.dividers.SDivider
 import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.misc.DraggableSidebarSection
@@ -14,6 +15,7 @@ import ai.rever.boss.components.sidebar.computeSlotIconLimits
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.api.Panel.Companion.left
+import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.api.Panel.Companion.top
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -27,7 +29,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BossDraggableComponent.BossLeftSideBar() {
+fun BossDraggableComponent.BossLeftSideBar(
+    /**
+     * Whether this bar carries the plugins launcher, i.e. whether the RIGHT strip is switched off.
+     * Decided once in the scaffold - see `pluginLauncherPlacement`.
+     */
+    showPluginLauncher: Boolean = false,
+) {
     // Customize button can be dragged between the three left-side
     // sections; render it at the bottom of whichever slot the user
     // last dropped it into.
@@ -52,7 +60,8 @@ fun BossDraggableComponent.BossLeftSideBar() {
                     barHeight = maxHeight,
                     reservedHeight =
                         SidebarIconRail.SectionDivider +
-                            (if (customizeOnThisBar) SidebarIconRail.CustomizeButton else 0.dp),
+                            (if (customizeOnThisBar) SidebarIconRail.CustomizeButton else 0.dp) +
+                            (if (showPluginLauncher) SidebarIconRail.PluginLauncherButton else 0.dp),
                 )
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -80,6 +89,13 @@ fun BossDraggableComponent.BossLeftSideBar() {
                 )
                 if (customizeSlotId == SidebarVisibilitySettings.SLOT_LEFT_BOTTOM) {
                     SidebarCustomizeMenu(slot = left.bottom)
+                }
+                // Below the slots, at the foot of the rail: this is host chrome rather than a
+                // plugin icon, and the bottom is where the bar already keeps the controls that
+                // are not draggable. Its height is reserved above, or a full rail would spend the
+                // whole budget on plugin icons and push it off screen.
+                if (showPluginLauncher) {
+                    PluginLauncherButton(hintDirection = right)
                 }
             }
         }

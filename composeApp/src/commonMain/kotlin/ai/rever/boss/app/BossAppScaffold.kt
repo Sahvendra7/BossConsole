@@ -6,6 +6,7 @@ import ai.rever.boss.components.bars.horizontal.BossTopBar
 import ai.rever.boss.components.bars.isBarVisible
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
+import ai.rever.boss.components.buttons.PluginLauncherButton
 import ai.rever.boss.components.home.LocalPanelRegistry
 import ai.rever.boss.components.home.LocalPluginStates
 import ai.rever.boss.components.home.LocalRegistryAccess
@@ -37,6 +38,7 @@ import ai.rever.boss.plugin.api.LocalSplitViewOperations
 import ai.rever.boss.plugin.api.LocalWindowIdProvider
 import ai.rever.boss.plugin.api.LocalWindowProjectStateProvider
 import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
+import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.sandbox.notification.PluginToastHost
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
@@ -48,6 +50,7 @@ import ai.rever.boss.window.LocalWindowGitState
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.LocalWindowRunnerState
+import ai.rever.boss.window.TabBarPosition
 import ai.rever.boss.window.WindowAppearanceSettings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -260,7 +263,26 @@ internal fun BossAppScaffold(
             topBarHidden = !appearance.showTopBar,
             rightStripHidden = !appearance.showRightStrip,
             showTopBar = reveal.showTopBar,
+            verticalTabBar = appearance.tabBarPosition == TabBarPosition.LEFT,
         )
+
+    // Where the way into the plugins goes, when a strip that would normally hold their icons is
+    // switched off. Decided here for the same reason the line above is: three call sites read it,
+    // and two of them showing a launcher at once is worse than neither.
+    val launcherPlacement =
+        pluginLauncherPlacement(
+            leftStripHidden = !appearance.showLeftStrip,
+            rightStripHidden = !appearance.showRightStrip,
+        )
+
+    // Non-null only in the HOST_ACTIONS case, so it can be handed to all three hosts of the
+    // Settings / Search / Sign Out group unconditionally and render in whichever one is drawing.
+    val hostPluginLauncher: (@Composable () -> Unit)? =
+        if (launcherPlacement == PluginLauncherPlacement.HOST_ACTIONS) {
+            { state.draggablePanelComponent.PluginLauncherButton(hintDirection = bottom) }
+        } else {
+            null
+        }
 
     // Remembered, not rebuilt each pass, for the allocations and for a stable reserve - NOT to buy
     // a skip. `kotlin.collections.List` is unstable to Compose's stability inference, so taking one
@@ -412,6 +434,10 @@ internal fun BossAppScaffold(
                             onShowSettings = {
                                 state.settingsWindow.open()
                             },
+                            // Only non-null when neither icon strip is on screen, so the top bar
+                            // grows a plugins button exactly in the configuration where nothing
+                            // else can hold one.
+                            pluginLauncher = hostPluginLauncher,
                             onShowSearch = {
                                 state.showGlobalSearchDialog = true
                             },
@@ -448,7 +474,9 @@ internal fun BossAppScaffold(
                         Box(
                             modifier = Modifier.hoverable(interactionSource = reveal.leftSidebarInteractionSource),
                         ) {
-                            BossLeftSideBar()
+                            BossLeftSideBar(
+                                showPluginLauncher = launcherPlacement == PluginLauncherPlacement.LEFT_STRIP,
+                            )
                         }
                     }
 
@@ -472,6 +500,21 @@ internal fun BossAppScaffold(
                             // workspace manager and the window's project dialog already are, and
                             // a tab bar has no business knowing about either. It reaches the bar
                             // as a slot. See VerticalBarWindowControls.
+                            // Settings / Search / Sign Out (and the launcher, when it joins them)
+                            // at the very foot of the bar, under the split map - the placement
+                            // that displaces the floating cluster wherever this bar is on screen.
+                            verticalBarBelowMap = {
+                                VerticalBarHostActions(
+                                    actions =
+                                        focusQuickActionsFooter(
+                                            placement = quickActionsPlacement,
+                                            onShowSettings = { state.settingsWindow.open() },
+                                            onShowSearch = { state.showGlobalSearchDialog = true },
+                                            onSignOut = { state.showLogoutDialog = true },
+                                            pluginLauncher = hostPluginLauncher,
+                                        ),
+                                )
+                            },
                             verticalBarFooter = {
                                 VerticalBarWindowControls(
                                     topBarHidden = !appearance.showTopBar,
@@ -519,6 +562,7 @@ internal fun BossAppScaffold(
                             onShowSettings = { state.settingsWindow.open() },
                             onShowSearch = { state.showGlobalSearchDialog = true },
                             onSignOut = { state.showLogoutDialog = true },
+                            pluginLauncher = hostPluginLauncher,
                         )
                     }
 
@@ -549,6 +593,7 @@ internal fun BossAppScaffold(
                             // takes the three icons away without also handing their rows back to
                             // the plugin slots and reshuffling them. See focusQuickActionsRailRows.
                             BossRightSideBar(
+                                showPluginLauncher = launcherPlacement == PluginLauncherPlacement.RIGHT_STRIP,
                                 bottomActions = quickActionsRail,
                                 bottomActionRows =
                                     focusQuickActionsRailRows(

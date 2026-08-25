@@ -2,6 +2,7 @@ package ai.rever.boss.components.bars.vertical
 
 import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.rememberBarContextMenuItems
+import ai.rever.boss.components.buttons.PluginLauncherButton
 import ai.rever.boss.components.dividers.SDivider
 import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.misc.DraggableSidebarSection
@@ -13,6 +14,7 @@ import ai.rever.boss.components.sidebar.SidebarVisibilitySettingsManager
 import ai.rever.boss.components.sidebar.computeSlotIconLimits
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel.Companion.left
 import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.api.Panel.Companion.top
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -43,6 +45,11 @@ import androidx.compose.ui.unit.dp
 fun BossDraggableComponent.BossRightSideBar(
     bottomActions: List<@Composable () -> Unit> = emptyList(),
     bottomActionRows: Int = bottomActions.size,
+    /**
+     * Whether this bar carries the plugins launcher, i.e. whether the LEFT strip is switched off.
+     * Decided once in the scaffold - see `pluginLauncherPlacement`.
+     */
+    showPluginLauncher: Boolean = false,
 ) {
     val visibility by SidebarVisibilitySettingsManager.currentSettings.collectAsState()
     val customizeSlotId = visibility.customizeButtonSlotId
@@ -71,6 +78,7 @@ fun BossDraggableComponent.BossRightSideBar(
                     reservedHeight =
                         SidebarIconRail.SectionDivider +
                             (if (customizeOnThisBar) SidebarIconRail.CustomizeButton else 0.dp) +
+                            (if (showPluginLauncher) SidebarIconRail.PluginLauncherButton else 0.dp) +
                             SidebarIconRail.bottomSectionHeight(bottomActionRows),
                 )
             Column(
@@ -120,6 +128,12 @@ fun BossDraggableComponent.BossRightSideBar(
                                 right.top.bottom
                             },
                     )
+                }
+                // Outside the clipped region for the same reason the customize button is, and
+                // above the bottom actions: the launcher is about the slots it sits under, while
+                // Settings / Search / Sign Out are about the app.
+                if (showPluginLauncher) {
+                    PluginLauncherButton(hintDirection = left)
                 }
                 SidebarBottomActions(bottomActions)
             }

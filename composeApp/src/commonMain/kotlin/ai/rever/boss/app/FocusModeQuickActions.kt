@@ -40,14 +40,15 @@ import androidx.compose.ui.unit.dp
  * Hard upper bound on the quick-actions overlay: its size before measurement, and the ceiling every
  * later measurement is taken against.
  *
- * A bound, not an estimate - content that would exceed it is CLIPPED. The real content is ~94x30dp:
- * three `BossActionButton`s at 28.dp square in `imageVector` mode, plus `space.xs` on each end of
- * the row and the 1.dp border. Kept close to that rather than round, because until measurement
- * lands this is also the region the overlay swallows clicks in - the same reason
+ * A bound, not an estimate - content that would exceed it is CLIPPED. Three `BossActionButton`s at
+ * 28.dp square in `imageVector` mode come to ~94x30dp with `space.xs` on each end of the row and
+ * the 1.dp border. The width allows a fourth, for the case where the plugins launcher joins them
+ * (see `pluginLauncherPlacement`), which is why it is not ~100. Kept close to that rather than
+ * round, because until measurement lands this is also the region the overlay swallows clicks in - the same reason
  * `TOAST_OVERLAY_INITIAL_SIZE` gives for keeping itself no larger than it needs to be. The margin
  * is deliberately NOT in here; it rides in the inset (see [QUICK_ACTIONS_MARGIN]).
  */
-internal val QUICK_ACTIONS_OVERLAY_SIZE = DpSize(100.dp, 34.dp)
+internal val QUICK_ACTIONS_OVERLAY_SIZE = DpSize(132.dp, 34.dp)
 
 /**
  * Gap between the cluster and the corner it sits in.
@@ -109,6 +110,15 @@ internal enum class FocusQuickActionsPlacement {
     /** The bottom of the right icon rail, as ordinary sidebar chrome. */
     RIGHT_RAIL,
 
+    /**
+     * A row at the foot of the vertical tab bar, under the split map.
+     *
+     * Preferred over [FLOATING] whenever that bar is on screen, for the reason the rail is: the
+     * floating cluster is an always-on-top native window with no click-through, and the tab bar
+     * already ends in host chrome with room under it.
+     */
+    TAB_BAR_FOOTER,
+
     /** A floating cluster in the content area's bottom-right corner. */
     FLOATING,
 }
@@ -148,11 +158,25 @@ internal fun focusQuickActionsPlacement(
     topBarHidden: Boolean,
     rightStripHidden: Boolean,
     showTopBar: Boolean,
+    /**
+     * Whether the window's tab bar runs down the left edge, which gives these actions a home under
+     * its split map. Read from `WindowAppearanceSettings.tabBarPosition`, which is a standing
+     * choice, so it needs none of the care the reveal flags do.
+     */
+    verticalTabBar: Boolean = false,
 ): FocusQuickActionsPlacement =
     when {
         !focusQuickActionsVisible(settings, topBarHidden, showTopBar) -> FocusQuickActionsPlacement.NONE
-        !railExists(settings, rightStripHidden) -> FocusQuickActionsPlacement.FLOATING
-        else -> FocusQuickActionsPlacement.RIGHT_RAIL
+
+        // Rail first, unchanged: where there is a right rail these have always gone in it, and it
+        // is the least intrusive of the three.
+        railExists(settings, rightStripHidden) -> FocusQuickActionsPlacement.RIGHT_RAIL
+
+        // Then the tab bar's foot, which displaces only the floating cluster - it is chrome the app
+        // already draws, where the cluster is a native always-on-top window with no click-through.
+        verticalTabBar -> FocusQuickActionsPlacement.TAB_BAR_FOOTER
+
+        else -> FocusQuickActionsPlacement.FLOATING
     }
 
 /** Test tag of the cluster - see `FocusModeQuickActionsTest`. */
@@ -192,7 +216,7 @@ internal fun focusQuickActionsRail(
     }
 
 /** One rail icon, matching what `DraggableSidebarSection` gives the plugin icons above it. */
-private val SIDEBAR_ICON_SIZE = 32.dp
+internal val SIDEBAR_ICON_SIZE = 32.dp
 
 /**
  * How many rail rows to keep reserved for the quick actions, whether or not they are on screen at
@@ -264,14 +288,26 @@ internal const val FOCUS_QUICK_ACTION_COUNT = 3
  * (see `SidebarIconRail.bottomSectionHeight`), and a list is the only shape where the count and the
  * content cannot drift apart.
  */
-private fun focusQuickActionButtons(
+@Suppress("LongParameterList")
+internal fun focusQuickActionButtons(
     hintDirection: Panel,
     modifier: Modifier = Modifier,
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    /**
+     * The plugins launcher, when both icon strips are switched off and there is no strip to put it
+     * in - see `pluginLauncherPlacement`. Rendered immediately before Settings, so the two
+     * app-level controls sit together and Sign Out stays furthest from the corner.
+     *
+     * It can never be non-null in the [FocusQuickActionsPlacement.RIGHT_RAIL] flavour: that
+     * placement needs a right strip, and the launcher only reaches this group when BOTH strips are
+     * gone. `FocusQuickActionsPlacementTest` pins that, because it is what keeps
+     * [FOCUS_QUICK_ACTION_COUNT] - and so the rail's reserve - correct at three.
+     */
+    pluginLauncher: (@Composable () -> Unit)? = null,
 ): List<@Composable () -> Unit> =
-    listOf(
+    listOfNotNull(
         {
             // The only one of the three that reads auth state, and it reads it here rather than in
             // either host so that neither recomposes when the signed-in address changes.
@@ -295,6 +331,7 @@ private fun focusQuickActionButtons(
                 onClick = onShowSearch,
             )
         },
+        pluginLauncher,
         {
             BossActionButton(
                 imageVector = Icons.Outlined.Settings,
@@ -378,12 +415,14 @@ internal fun BoxScope.FocusModeQuickActions(
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    /** The plugins launcher, when both strips are gone - see `pluginLauncherPlacement`. */
+    pluginLauncher: (@Composable () -> Unit)? = null,
 ) {
     if (!visible) return
 
     if (!LocalWindowInfo.current.isWindowFocused) {
         Box(modifier = Modifier.align(Alignment.BottomEnd)) {
-            QuickActions(QUICK_ACTIONS_MARGIN, onShowSettings, onShowSearch, onSignOut)
+            QuickActions(QUICK_ACTIONS_MARGIN, onShowSettings, onShowSearch, onSignOut, pluginLauncher)
         }
         return
     }
@@ -414,6 +453,7 @@ internal fun BoxScope.FocusModeQuickActions(
             onShowSettings,
             onShowSearch,
             onSignOut,
+            pluginLauncher,
         )
     }
 }
@@ -464,6 +504,7 @@ private fun QuickActions(
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    pluginLauncher: (@Composable () -> Unit)?,
 ) {
     Surface(
         modifier =
@@ -488,6 +529,7 @@ private fun QuickActions(
                 onShowSettings = onShowSettings,
                 onShowSearch = onShowSearch,
                 onSignOut = onSignOut,
+                pluginLauncher = pluginLauncher,
             ).forEach { action -> action() }
         }
     }

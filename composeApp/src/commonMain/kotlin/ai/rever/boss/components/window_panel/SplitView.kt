@@ -1800,6 +1800,12 @@ fun SplitViewPanel(
     onTabDropResult: (TabDropResult) -> Unit = {},
     /** Window chrome for the foot of the vertical bar. Ignored in TOP position, which has none. */
     verticalBarFooter: @Composable () -> Unit = {},
+    /**
+     * Window chrome for BELOW the split map, at the very foot of the vertical bar - Settings,
+     * Search, Sign Out and the plugins launcher when nothing else is left to hold them. Ignored in
+     * TOP position, where those go back to the top bar or a floating cluster.
+     */
+    verticalBarBelowMap: @Composable () -> Unit = {},
 ) {
     val density = LocalDensity.current
 
@@ -1860,6 +1866,7 @@ fun SplitViewPanel(
                 tabDragComponent = tabDragComponent,
                 onTabDropResult = onTabDropResult,
                 footer = verticalBarFooter,
+                belowMap = verticalBarBelowMap,
                 splitTree = splitTree,
             )
         } else {
@@ -1928,6 +1935,7 @@ private fun WindowBarRow(
     tabDragComponent: TabDraggableComponent?,
     onTabDropResult: (TabDropResult) -> Unit,
     footer: @Composable () -> Unit,
+    belowMap: @Composable () -> Unit,
     splitTree: @Composable (Modifier) -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -1959,6 +1967,7 @@ private fun WindowBarRow(
                 onToggleCollapse = rememberToggleCollapseAction(bar, reveal),
                 tabDragComponent = tabDragComponent,
                 footer = footer,
+                belowMap = belowMap,
                 zoomed = splitViewState.zoomedPanelId != null,
                 onExitZoom = splitViewState::exitZoom,
             )

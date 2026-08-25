@@ -196,6 +196,15 @@ fun WindowVerticalTabBar(
      * about. It measures panes and lists tabs; whoever composes the window knows about projects.
      */
     footer: @Composable () -> Unit = {},
+    /**
+     * Window chrome to sit BELOW the split map, at the very foot of the bar.
+     *
+     * Separate from [footer] because the two sit either side of the map and mean different things:
+     * the footer holds what belongs to this window's contents (the project and workspace pickers),
+     * this holds what belongs to the app - Settings, Search, Sign Out and the plugins launcher,
+     * when there is no strip and no top bar left to hold them. See `focusQuickActionsPlacement`.
+     */
+    belowMap: @Composable () -> Unit = {},
 ) {
     // The pane the user is working in owns the bar's shared chrome: its bar menu, its Favorites
     // shelf, and where a favourite opens. Falling back to the first group keeps every one of
@@ -257,6 +266,7 @@ fun WindowVerticalTabBar(
                 onStripBounds = { stripBounds = it },
                 tabDragComponent = tabDragComponent.takeIf { registerBounds },
                 footer = footer,
+                belowMap = belowMap,
                 zoomed = zoomed,
                 onExitZoom = onExitZoom,
             )
@@ -406,6 +416,7 @@ private fun ExpandedGroups(
     onStripBounds: (Rect) -> Unit,
     tabDragComponent: TabDraggableComponent?,
     footer: @Composable () -> Unit,
+    belowMap: @Composable () -> Unit,
     zoomed: Boolean,
     onExitZoom: () -> Unit,
 ) {
@@ -465,6 +476,7 @@ private fun ExpandedGroups(
         // The one place that shows the whole arrangement at once, which is what makes a four-way
         // split legible rather than a run of headers to read in order.
         SplitMap(groups = groups, zoomed = zoomed, onExitZoom = onExitZoom)
+        belowMap()
     }
 }
 
