@@ -23,7 +23,7 @@ fun LspSettings() {
         PluginSettingsUnavailableNotice(
             what = "Language-server settings",
             pluginName = "Code Editor",
-            pluginId = EDITOR_TAB_PLUGIN_ID,
+            pluginId = SettingsPluginIds.EDITOR_TAB,
         )
     }
 }

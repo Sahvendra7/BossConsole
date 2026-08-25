@@ -22,10 +22,7 @@ fun BossEditorSettings() {
         PluginSettingsUnavailableNotice(
             what = "Editor settings",
             pluginName = "Code Editor",
-            pluginId = EDITOR_TAB_PLUGIN_ID,
+            pluginId = SettingsPluginIds.EDITOR_TAB,
         )
     }
 }
-
-/** The plugin that bundles BossEditor and serves both editor sections. */
-internal const val EDITOR_TAB_PLUGIN_ID = "ai.rever.boss.plugin.dynamic.editortab"

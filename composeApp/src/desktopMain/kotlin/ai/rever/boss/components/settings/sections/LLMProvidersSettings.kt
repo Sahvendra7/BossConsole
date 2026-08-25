@@ -21,25 +21,18 @@ import androidx.compose.ui.Modifier
 @Composable
 fun LLMProvidersSettings() {
     val provider = LlmProviderAPIAccess.rememberProvider()
-    // supportsSettingsPanel distinguishes "no panel" from "blank panel": the API's panel
-    // member has a default no-op, so a plugin that registers without overriding it would
-    // otherwise render an empty section with no explanation.
-    val missingPermissions = LlmProviderAPIAccess.rememberMissingPermissions()
+    // supportsSettingsPanel distinguishes "no panel" from "blank panel": the API's panel member
+    // has a default no-op, so a plugin that registers without overriding it would otherwise
+    // render an empty section with no explanation. It is the one fact the notice cannot look up
+    // for itself, so it is passed; everything else it derives from the plugin id.
     if (provider != null && provider.supportsSettingsPanel) {
         provider.LlmProviderSettingsPanel(modifier = Modifier.fillMaxSize())
     } else {
-        // One notice for every reason there is no panel. It tells the four apart - never
-        // installed, switched off, still starting, or inaccessible - and offers to install the
-        // plugin in the one case where that is the answer. The permission case is passed in
-        // rather than derived there because only this section can ask it.
         PluginSettingsUnavailableNotice(
             what = "AI provider settings",
             pluginName = "Secret Manager",
-            pluginId = SECRET_MANAGER_PLUGIN_ID,
-            missingPermissions = missingPermissions,
+            pluginId = SettingsPluginIds.SECRET_MANAGER,
+            servesNoPanel = provider != null,
         )
     }
 }
-
-/** The plugin that owns AI provider settings. Also the credential vault. */
-private const val SECRET_MANAGER_PLUGIN_ID = "ai.rever.boss.plugin.dynamic.secretmanager"
