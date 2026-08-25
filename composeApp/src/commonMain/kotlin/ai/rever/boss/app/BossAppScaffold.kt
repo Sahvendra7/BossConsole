@@ -32,9 +32,9 @@ import ai.rever.boss.focusmode.FocusModeSettings
 import ai.rever.boss.handleTabDropResult
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.layout.ChromeBudgetReadout
-import ai.rever.boss.layout.TRAFFIC_LIGHT_HEIGHT
 import ai.rever.boss.layout.TrafficLightInset
-import ai.rever.boss.layout.clearance
+import ai.rever.boss.layout.barStartInset
+import ai.rever.boss.layout.columnInset
 import ai.rever.boss.layout.macTrafficLightInset
 import ai.rever.boss.layout.needsTitleRow
 import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
@@ -497,7 +497,7 @@ internal fun BossAppScaffold(
                                     // Painted before padded - see WindowBarRow for what an
                                     // unpainted inset shows through to.
                                     .background(BossTheme.colors.raised)
-                                    .padding(top = trafficLights.clearance(TrafficLightInset.LEFT_STRIP)),
+                                    .padding(top = trafficLights.columnInset()),
                         ) {
                             BossLeftSideBar(
                                 onOpenTools =
@@ -533,8 +533,7 @@ internal fun BossAppScaffold(
                             // that displaces the floating cluster wherever this bar is on screen.
                             // The tab bar is the leftmost column when no strip is on, so its top
                             // is what the lights would land on.
-                            verticalBarTopInset =
-                                trafficLights.clearance(TrafficLightInset.VERTICAL_TAB_BAR),
+                            verticalBarTopInset = trafficLights.columnInset(),
                             verticalBarBelowMap = {
                                 VerticalBarHostActions(
                                     actions =

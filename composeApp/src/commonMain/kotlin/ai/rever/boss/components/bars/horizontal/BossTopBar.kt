@@ -52,6 +52,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.icons.FeatherIcons
@@ -60,6 +61,9 @@ import kotlinx.coroutines.launch
 import java.io.File
 import ai.rever.boss.plugin.git.GitOperationResult.Error as GitError
 import ai.rever.boss.plugin.git.GitOperationResult.Success as GitSuccess
+
+/** The bar's own long-standing start indent, before any traffic-light clearance. */
+private val TOP_BAR_START_INDENT = 36.dp
 
 @Composable
 fun BossDraggableComponent.BossTopBar(
@@ -78,11 +82,25 @@ fun BossDraggableComponent.BossTopBar(
     toolLauncher: (@Composable () -> Unit)? = null,
     onNewProject: (() -> Unit)? = null,
     onCloneProject: (() -> Unit)? = null,
+    /**
+     * Extra indent at the start of the row, for the macOS traffic lights.
+     *
+     * The bar spans the window's full width at y=0, so with no title row above it, it is what the
+     * lights are drawn over - see `macTrafficLightInset`. A horizontal indent rather than a
+     * vertical one, because this is a row and the lights sit at its start.
+     *
+     * Applied INSIDE the bar's own painted area. Padding the bar from outside would leave the
+     * indent drawn by nothing, and nothing is not the background - the raw native window surface
+     * shows through, which is white.
+     */
+    startInset: Dp = 0.dp,
 ) {
     val items = rememberBarContextMenuItems(ChromeBar.TOP)
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = BossChrome.dimens.topBarHeight) {
-        HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
+        // The 36dp is the bar's own long-standing indent; the lights need more than that, so this
+        // takes whichever is larger rather than adding them and pushing the content twice as far.
+        HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = maxOf(TOP_BAR_START_INDENT, startInset))) {
             BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject, onCloneProject)
             Spacer(modifier = Modifier.weight(1f))
             // Run/debug controls (Issue #91 / #321)
