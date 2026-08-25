@@ -50,9 +50,11 @@ internal val FAVICON_CHIP_SIZE = 20.dp
 /** The icon itself. */
 private val FAVICON_SIZE = 14.dp
 
-/** Gap between a chip and the cross it reveals, and the cross's glyph. */
-private val CLOSE_GAP = 1.dp
+/** The cross's glyph. */
 private val CLOSE_ICON_SIZE = 11.dp
+
+/** Corner radius of a chip, and of the pill a chip and its cross make together. */
+private val CHIP_RADIUS = 4.dp
 
 /** How much a tab that is not current is faded, so the current one reads without a marker. */
 private const val INACTIVE_ICON_ALPHA = 0.55f
@@ -150,7 +152,7 @@ internal fun TabFaviconChip(
                 modifier =
                     Modifier
                         .size(size)
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(chipShape(squareTrailingEdge = showClose))
                         .background(background)
                         .hoverable(interactionSource)
                         .optionalContextMenu(contextMenuItems)
@@ -175,12 +177,31 @@ internal fun TabFaviconChip(
             }
 
             if (showClose && onClose != null) {
-                Spacer(modifier = Modifier.width(CLOSE_GAP))
-                TabCloseButton(onClose = onClose)
+                // No gap: the cross is part of the chip, not a button next to it.
+                TabCloseButton(base = background, onClose = onClose)
             }
         }
     }
 }
+
+/**
+ * A chip's outline: rounded all round, or square on the trailing side while its cross is out.
+ *
+ * Squaring that edge is what makes the chip and the cross meet flush and read as one pill, rather
+ * than as two rounded things touching with a seam down the middle. [TabCloseButton] clips to the
+ * mirror of it.
+ */
+private fun chipShape(squareTrailingEdge: Boolean) =
+    if (squareTrailingEdge) {
+        RoundedCornerShape(
+            topStart = CHIP_RADIUS,
+            bottomStart = CHIP_RADIUS,
+            topEnd = 0.dp,
+            bottomEnd = 0.dp,
+        )
+    } else {
+        RoundedCornerShape(CHIP_RADIUS)
+    }
 
 /** A right-click menu where the surface owes one, and nothing at all where it does not. */
 private fun Modifier.optionalContextMenu(items: List<ContextMenuItem>): Modifier =
@@ -236,7 +257,10 @@ private fun Modifier.tabChipDrag(
  * one control while the pointer is on them.
  */
 @Composable
-private fun TabCloseButton(onClose: () -> Unit) {
+private fun TabCloseButton(
+    base: Color,
+    onClose: () -> Unit,
+) {
     val colors = BossTheme.colors
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
@@ -245,8 +269,19 @@ private fun TabCloseButton(onClose: () -> Unit) {
         modifier =
             Modifier
                 .size(FAVICON_CHIP_SIZE)
-                .clip(RoundedCornerShape(4.dp))
-                .background(if (hovered) colors.raised else Color.Transparent)
+                // Mirror of [chipShape], so the two halves close one pill.
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 0.dp,
+                        bottomStart = 0.dp,
+                        topEnd = CHIP_RADIUS,
+                        bottomEnd = CHIP_RADIUS,
+                    ),
+                )
+                // Carries the chip's own background rather than starting transparent, or the
+                // pill would be filled on one side and see-through on the other. Its own hover
+                // is what brightens it.
+                .background(if (hovered) colors.lineStrong else base)
                 .hoverable(interactionSource)
                 .clickable(onClick = onClose),
         contentAlignment = Alignment.Center,
