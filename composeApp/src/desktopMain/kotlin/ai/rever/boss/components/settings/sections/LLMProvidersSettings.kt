@@ -27,17 +27,19 @@ fun LLMProvidersSettings() {
     val missingPermissions = LlmProviderAPIAccess.rememberMissingPermissions()
     if (provider != null && provider.supportsSettingsPanel) {
         provider.LlmProviderSettingsPanel(modifier = Modifier.fillMaxSize())
-    } else if (missingPermissions.isNotEmpty()) {
-        // Not a loading state. The host skips register() for a plugin the user cannot
-        // access, so this section will stay empty until an admin grants the permission.
-        // Naming it is the difference between a dead end and an actionable one.
-        PluginSettingsUnavailableNotice(
-            "AI provider settings are provided by the Secret Manager plugin, which you do not have " +
-                "access to. Ask an administrator to grant: ${missingPermissions.joinToString(", ")}.",
-        )
     } else {
+        // One notice for every reason there is no panel. It tells the four apart - never
+        // installed, switched off, still starting, or inaccessible - and offers to install the
+        // plugin in the one case where that is the answer. The permission case is passed in
+        // rather than derived there because only this section can ask it.
         PluginSettingsUnavailableNotice(
-            "AI provider settings are provided by the Secret Manager plugin, which isn't loaded yet.",
+            what = "AI provider settings",
+            pluginName = "Secret Manager",
+            pluginId = SECRET_MANAGER_PLUGIN_ID,
+            missingPermissions = missingPermissions,
         )
     }
 }
+
+/** The plugin that owns AI provider settings. Also the credential vault. */
+private const val SECRET_MANAGER_PLUGIN_ID = "ai.rever.boss.plugin.dynamic.secretmanager"

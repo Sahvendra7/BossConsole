@@ -238,6 +238,34 @@ deletes the jar it rejected - so an entry-only check made Retry close the dialog
 success with nothing installed, and silenced the prompt for every other dependent of that
 plugin. The check is an entry whose `jarPath` still exists.
 
+### A settings section can offer to install the plugin that serves it
+
+Three sections render a panel that belongs to a plugin - `Settings > AI Providers` (secret-manager),
+`Editor` and `Language servers` (both editor-tab). All three used to say "isn't loaded yet" for
+every reason there was no panel, which is true of exactly one of them. A plugin that was never
+installed, or that the user switched off, does not arrive however long they look at it.
+
+`PluginSettingsUnavailableNotice` now tells the four apart and offers an Install button for the one
+case where that is the answer. It leans on `MissingPluginOffer`, so no second install path exists:
+the press raises the host's own `MissingDependencyDialog`, which names the plugin **from the store**
+and shows the id it will install by, rather than installing on the button's say-so.
+
+**`pluginSectionAbsence` asks `isDisabled` before `installed`, and that order is the feature.**
+`MissingPluginOffer.isInstalled` counts a disabled plugin as installed - it is on disk, and
+`MissingDependencyInstaller` documents that deliberately - so the other order puts an Install button
+in front of a user who simply switched the plugin off, and pressing it downloads a jar they already
+have and changes nothing. That exact bug has shipped here once already with the bookmarks shelf. It
+is a pure function so the order is pinned by a test rather than by the reading order of a `when`,
+and reversing it fails *disabled is decided before installed*.
+
+**The notice gates on `MissingPluginOffer.isInstalled`, not on "can I reach the API".** Those are
+different questions and they disagree exactly when the plugin is installed but not running - which
+is the state where a button that appears does nothing. Same rule the tab bar's bookmarks shelf
+states.
+
+`null` from `isInstalled` means the question cannot be answered here (no active manager, no injected
+installer factory), and it must not become an offer: the section falls back to the neutral wait.
+
 ## Retiring a plugin into another one
 
 `RetiredPlugins.sweep()` uninstalls a plugin whose job another plugin has taken over. It runs at

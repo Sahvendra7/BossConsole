@@ -19,6 +19,13 @@ fun BossEditorSettings() {
     if (provider != null) {
         provider.EditorSettingsPanel(modifier = Modifier.fillMaxSize())
     } else {
-        PluginSettingsUnavailableNotice("Editor settings are provided by the Code Editor plugin, which isn't loaded yet.")
+        PluginSettingsUnavailableNotice(
+            what = "Editor settings",
+            pluginName = "Code Editor",
+            pluginId = EDITOR_TAB_PLUGIN_ID,
+        )
     }
 }
+
+/** The plugin that bundles BossEditor and serves both editor sections. */
+internal const val EDITOR_TAB_PLUGIN_ID = "ai.rever.boss.plugin.dynamic.editortab"
