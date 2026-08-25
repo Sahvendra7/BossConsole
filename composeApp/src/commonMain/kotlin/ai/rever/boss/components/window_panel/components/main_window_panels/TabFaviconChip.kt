@@ -18,9 +18,14 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +49,10 @@ internal val FAVICON_CHIP_SIZE = 20.dp
 
 /** The icon itself. */
 private val FAVICON_SIZE = 14.dp
+
+/** Gap between a chip and the cross it reveals, and the cross's glyph. */
+private val CLOSE_GAP = 1.dp
+private val CLOSE_ICON_SIZE = 11.dp
 
 /** How much a tab that is not current is faded, so the current one reads without a marker. */
 private const val INACTIVE_ICON_ALPHA = 0.55f
@@ -93,6 +102,14 @@ internal fun TabFaviconChip(
     tabIndex: Int = -1,
     /** The drop, once the pointer is released. */
     onDragEnd: (TabDropResult?) -> Unit = {},
+    /**
+     * Closes this tab, revealed as a cross beside the favicon while the pointer is on it.
+     *
+     * Null where a surface should not offer one. The collapsed RAIL passes null: it is a column
+     * a few pixels wide standing in for the whole bar, and a close target that appears there
+     * under a pointer on its way somewhere else would be closing tabs by accident.
+     */
+    onClose: (() -> Unit)? = null,
 ) {
     val colors = BossTheme.colors
     val interactionSource = remember { MutableInteractionSource() }
@@ -112,50 +129,134 @@ internal fun TabFaviconChip(
             else -> Color.Transparent
         }
 
+    // The cross is revealed on hover and takes real width while it is there, so the chips to its
+    // right shift over. That is deliberate rather than tolerated: a 20dp chip has no room to
+    // overlay a target anyone could hit, and reserving the width permanently would cost the strip
+    // about a third of the tabs it can show - the density is the whole reason the strip exists.
+    // The pointer is over the favicon when the cross appears to its RIGHT, so the chip under the
+    // pointer never moves out from under it.
+    val showClose = onClose != null && hovered
+
     HoverTooltipBox(
         text = tab.title,
         placement = placement,
-        modifier = Modifier.size(size),
+        // Hover is tracked out here, around the chip AND the cross. On the inner box it would
+        // drop the moment the pointer crossed onto the cross, collapsing the thing the pointer
+        // was reaching for - a flicker loop rather than a button.
+        modifier = Modifier.hoverable(interactionSource),
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(size)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(background)
-                    .hoverable(interactionSource)
-                    .then(if (contextMenuItems.isEmpty()) Modifier else Modifier.contextMenu(items = contextMenuItems))
-                    .onGloballyPositioned { coordinates -> windowPosition = coordinates.positionInWindow() }
-                    .then(
-                        if (!dragEnabled) {
-                            Modifier
-                        } else {
-                            Modifier.pointerInput(tab, panelId, tabIndex) {
-                                detectDragGestures(
-                                    onDragStart = { offset ->
-                                        tabDragComponent.startDragging(
-                                            tabInfo = tab,
-                                            panelId = panelId,
-                                            index = tabIndex,
-                                            startPosition = windowPosition + offset,
-                                        )
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        tabDragComponent.updateDrag(dragAmount)
-                                    },
-                                    // Cleaned up first either way: a result that throws must not
-                                    // leave a ghost stuck to the pointer.
-                                    onDragEnd = { onDragEnd(tabDragComponent.endDrag()) },
-                                    onDragCancel = { tabDragComponent.cancelDrag() },
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(size)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(background)
+                        .hoverable(interactionSource)
+                        .optionalContextMenu(contextMenuItems)
+                        .onGloballyPositioned { coordinates -> windowPosition = coordinates.positionInWindow() }
+                        .then(
+                            if (!dragEnabled || tabDragComponent == null || panelId == null) {
+                                Modifier
+                            } else {
+                                Modifier.tabChipDrag(
+                                    tab = tab,
+                                    panelId = panelId,
+                                    tabIndex = tabIndex,
+                                    windowPosition = { windowPosition },
+                                    tabDragComponent = tabDragComponent,
+                                    onDragEnd = onDragEnd,
                                 )
-                            }
-                        },
-                    ).clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            TabGlyph(icon = icon, tab = tab, isActive = isActive)
+                            },
+                        ).clickable(onClick = onClick),
+                contentAlignment = Alignment.Center,
+            ) {
+                TabGlyph(icon = icon, tab = tab, isActive = isActive)
+            }
+
+            if (showClose && onClose != null) {
+                Spacer(modifier = Modifier.width(CLOSE_GAP))
+                TabCloseButton(onClose = onClose)
+            }
         }
+    }
+}
+
+/** A right-click menu where the surface owes one, and nothing at all where it does not. */
+private fun Modifier.optionalContextMenu(items: List<ContextMenuItem>): Modifier =
+    if (items.isEmpty()) this else this.contextMenu(items = items)
+
+/**
+ * Picking a tab up from a chip.
+ *
+ * Its own modifier so [TabFaviconChip] stays a description of what is drawn. [windowPosition] is a
+ * lambda because the gesture reads it when the drag STARTS rather than when the modifier is built:
+ * the chip is measured after this runs, so a captured value would be the position from the frame
+ * before, which is where the ghost would appear.
+ *
+ * Six parameters plus the receiver, and they are the drag's own identity - which tab, in which
+ * panel, at which index, from where. Wrapping them in a holder would move the same six values
+ * behind one name without making the call site say less.
+ */
+@Suppress("LongParameterList")
+private fun Modifier.tabChipDrag(
+    tab: TabInfo,
+    panelId: String,
+    tabIndex: Int,
+    windowPosition: () -> Offset,
+    tabDragComponent: TabDraggableComponent,
+    onDragEnd: (TabDropResult?) -> Unit,
+): Modifier =
+    pointerInput(tab, panelId, tabIndex) {
+        detectDragGestures(
+            onDragStart = { offset ->
+                tabDragComponent.startDragging(
+                    tabInfo = tab,
+                    panelId = panelId,
+                    index = tabIndex,
+                    startPosition = windowPosition() + offset,
+                )
+            },
+            onDrag = { change, dragAmount ->
+                change.consume()
+                tabDragComponent.updateDrag(dragAmount)
+            },
+            // Cleaned up first either way: a result that throws must not leave a ghost stuck to
+            // the pointer.
+            onDragEnd = { onDragEnd(tabDragComponent.endDrag()) },
+            onDragCancel = { tabDragComponent.cancelDrag() },
+        )
+    }
+
+/**
+ * The cross beside a hovered chip.
+ *
+ * Its own click target rather than a gesture on the chip, because the chip already answers a
+ * click by selecting the tab and a drag by picking it up. Sized to the chip so the two read as
+ * one control while the pointer is on them.
+ */
+@Composable
+private fun TabCloseButton(onClose: () -> Unit) {
+    val colors = BossTheme.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+
+    Box(
+        modifier =
+            Modifier
+                .size(FAVICON_CHIP_SIZE)
+                .clip(RoundedCornerShape(4.dp))
+                .background(if (hovered) colors.raised else Color.Transparent)
+                .hoverable(interactionSource)
+                .clickable(onClick = onClose),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Close,
+            contentDescription = "Close tab",
+            tint = if (hovered) colors.textPrimary else colors.textSecondary,
+            modifier = Modifier.size(CLOSE_ICON_SIZE),
+        )
     }
 }
 
