@@ -426,14 +426,27 @@ self-healing. Nothing has ever read it from that file - it is an **environment v
 the priority order above does not apply to it.
 
 - **AI providers** (chat, agents, plugin AI features) are owned entirely by the
-  **secret-manager** plugin: `Settings → AI Providers`. The host has no provider list; it
-  relays the plugin's through `PluginContext.llmProvider`. See that plugin's `AGENTS.md`.
+  **secret-manager** plugin, in the **AI section of its own panel**. The host has no provider
+  list and no settings section for one; it relays the plugin's through
+  `PluginContext.llmProvider`. See that plugin's `AGENTS.md`.
+
+  The host used to render `Settings > AI Providers` from that plugin, through a
+  `LlmProviderAPIAccess` singleton. Both are gone: the credentials live in that panel's vault,
+  so the page that manages them belongs beside them rather than two clicks away in another
+  window, and the singleton existed only to give host composables a plugin handle. What remains
+  is `DefaultPlugin.llmProvider`, which resolves against **its own** instance's registry -
+  deliberately never through a singleton, because `DefaultPlugin` is per window and a shared
+  cached reference would hand window 1's plugins whatever window 2 registered.
+
+  A stale `boss://settings?section=LLM_PROVIDERS` deep link now resolves to
+  `SettingsDeepLink.Unresolved`, so the window opens on its default section rather than
+  failing.
 - **AI self-healing / repair** is the one credential the host still resolves itself, because
   `SelfHealingSettingsManager` runs before any window or plugin exists and so cannot reach the
   plugin's store. It reads `AI_REPAIR_API_KEY`, then the provider's own variable
   (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / …), then the legacy `~/.boss/llm_settings.json` and
   its `.migrated` sibling - all as **env vars / files, never local.properties**. A key rotated
-  in Settings → AI Providers does not reach it.
+  in the Secret Manager panel's AI section does not reach it.
 
 There are NO credential fallbacks in source (public repo). Packaged builds get
 the JxBrowser license and Supabase settings baked in by the

@@ -80,7 +80,6 @@ class SettingsSearchIndexShapeTest {
                 SettingsSection.TERMINAL,
                 SettingsSection.BOSS_EDITOR,
                 SettingsSection.LANGUAGE_SERVERS,
-                SettingsSection.LLM_PROVIDERS,
             )
 
         delegated.forEach { section ->

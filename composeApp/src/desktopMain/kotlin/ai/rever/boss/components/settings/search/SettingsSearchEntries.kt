@@ -135,15 +135,6 @@ private fun delegatedEntries() =
             "hover",
             "format",
         ),
-        delegated(
-            SettingsSection.LLM_PROVIDERS,
-            "api key",
-            "anthropic",
-            "openai",
-            "model",
-            "claude",
-            "gateway",
-        ),
     )
 
 /**
