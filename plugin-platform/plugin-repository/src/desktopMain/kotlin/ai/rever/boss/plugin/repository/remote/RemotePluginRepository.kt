@@ -14,6 +14,7 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.utils.io.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -457,6 +458,11 @@ class RemotePluginRepository(
                     downloadProgress.remove(pluginId, progressFlow)
                 }
             }.onFailure { e ->
+                // A cancellation is not a download failure, and it must not arrive as
+                // one: `runCatching` catches Throwable, so a cancelled download used to
+                // come back as Result.failure and every caller above reported it as a
+                // fault - and stopped propagating, so nobody's cancellation handler ran.
+                if (e is CancellationException) throw e
                 logger.error(LogCategory.NETWORK, "Failed to download plugin", mapOf("pluginId" to pluginId), e)
             }
         }

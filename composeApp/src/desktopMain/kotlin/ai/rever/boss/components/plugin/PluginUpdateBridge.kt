@@ -109,15 +109,10 @@ actual object PluginUpdateBridge {
             return Result.failure(DependentRestartDeclinedException(pluginId))
         }
 
-        // newVersion comes from the (remote) store manifest, and SemanticVersion.parse does NOT
-        // reject path separators in prerelease/build metadata — so sanitize the filename and verify
-        // the resolved path stays inside the plugin directory (no traversal out of it).
         val pluginDir = PluginStoreSetup.getPluginDir()
-        val safeName = "$pluginId-${update.newVersion}".replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val targetFile = File(pluginDir, "$safeName.jar")
-        if (!targetFile.canonicalPath.startsWith(pluginDir.canonicalPath + File.separator)) {
-            return Result.failure(Exception("Refusing to download update outside the plugin directory"))
-        }
+        val targetFile =
+            downloadTargetIn(pluginDir, pluginId, update.newVersion)
+                ?: return Result.failure(Exception("Refusing to download update outside the plugin directory"))
         val targetPath = targetFile.absolutePath
 
         // Keep the jar this update is about to make unreachable, BEFORE anything downloads.
@@ -138,9 +133,7 @@ actual object PluginUpdateBridge {
         val reporter = MissingDependencyReporter.forManager(manager)
 
         val ownsTransfer = beginTransfer(pluginId, update, currentCoroutineContext()[Job])
-        // Whether the swap has begun, i.e. whether a cancellation is still safe to
-        // clean up after. Set from `onInstalling`, which fires between the last byte
-        // and the unload.
+        // Set from `onInstalling`; see discardPartialDownload for what it gates.
         var swapStarted = false
         val result =
             try {
@@ -164,11 +157,7 @@ actual object PluginUpdateBridge {
                     },
                 )
             } catch (e: CancellationException) {
-                // Only while it was still bytes. Past `onInstalling` the jar may already
-                // be loaded and recorded, and deleting it then leaves installed.json
-                // pointing at nothing for the next launch to fail on - a cancellation
-                // arriving late must not take the working install with it.
-                if (!swapStarted) discardPartialDownload(targetFile)
+                discardIfUnswapped(swapStarted, targetFile)
                 throw e
             } finally {
                 if (ownsTransfer) DownloadCenter.end(pluginId)
@@ -186,6 +175,7 @@ actual object PluginUpdateBridge {
             }
             Result.success(update.newVersion)
         } else {
+            discardIfUnswapped(swapStarted, targetFile)
             Result.failure(result.exceptionOrNull() ?: Exception("Update failed"))
         }
     }
@@ -214,12 +204,53 @@ actual object PluginUpdateBridge {
         )
 
     /**
+     * Where this update's jar goes, or null if that would leave [pluginDir].
+     *
+     * `newVersion` comes from the remote store manifest, and `SemanticVersion.parse`
+     * does NOT reject path separators in prerelease or build metadata - so the name is
+     * sanitised and the resolved path is checked, rather than trusted.
+     */
+    private fun downloadTargetIn(
+        pluginDir: File,
+        pluginId: String,
+        newVersion: String,
+    ): File? {
+        val safeName = "$pluginId-$newVersion".replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val target = File(pluginDir, "$safeName.jar")
+        return target.takeIf { it.canonicalPath.startsWith(pluginDir.canonicalPath + File.separator) }
+    }
+
+    /**
+     * Discard the download unless the swap has begun.
+     *
+     * Both non-success paths need this, not only the cancellation: this is the one
+     * host update path that streams onto a scannable `<pluginId>-<version>.jar`
+     * rather than a `.part` sibling, and `reconcilePluginDir` runs only on success -
+     * so a mid-stream network failure leaves a truncated jar for the next launch to
+     * load with no cancellation anywhere in sight. The two store installers discard
+     * in both their failure branch and a catch; this one now matches.
+     *
+     * And not once the swap has begun: the jar may already be loaded and recorded,
+     * and deleting it then leaves `installed.json` pointing at nothing.
+     */
+    private fun discardIfUnswapped(
+        swapStarted: Boolean,
+        jar: File,
+    ) {
+        if (!swapStarted) discardPartialDownload(jar)
+    }
+
+    /**
      * Remove a jar a cancelled download left behind, and its signature sidecar.
      *
      * This path streams straight onto a version-named jar in the plugin directory
-     * (not a `.part` sibling, as the two store installers do), so a cancelled
-     * download leaves a truncated file at a name the next directory scan would try
-     * to load. Nothing else deletes it: the update never reached the reconciler.
+     * (not a `.part` sibling, as the two store installers do), so a cancelled or
+     * failed download leaves a truncated file at a name the next directory scan would
+     * try to load. Nothing else deletes it: the update never reached the reconciler.
+     *
+     * Only called while `swapStarted` is false. Past `onInstalling` the jar may
+     * already be loaded and recorded, and deleting it then leaves `installed.json`
+     * pointing at nothing for the next launch to fail on.
      *
      * Both, and in that order: `PluginSignatureSidecar` is written next to the path
      * the download was given, and a sidecar that outlives its jar meets the next

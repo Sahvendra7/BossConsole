@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The plugin-facing view of [DownloadCenter].
@@ -21,7 +22,7 @@ import kotlinx.coroutines.flow.stateIn
  * @param scope a long-lived scope (the plugin layer's) for the derived flow;
  *   the mapping is stateful so every plugin observing it shares one collector.
  */
-class DownloadCenterProviderImpl(
+class DownloadCenterProviderImpl internal constructor(
     scope: CoroutineScope,
     /**
      * Prefix for ids this instance reports, or null for the host's own transfers.
@@ -41,6 +42,11 @@ class DownloadCenterProviderImpl(
             .map { list -> list.map { it.info.withoutPrefix(idPrefix) } }
             .stateIn(
                 scope = scope,
+                // Eagerly, so `.value` is truthful for a reader that never collects -
+                // WhileSubscribed would hand such a caller the stale initial value, and
+                // "is this one busy?" is exactly a `.value` question. The instance is
+                // cached per prefix (see [forPlugin]), so this costs one collector per
+                // plugin rather than one per plugin LOAD.
                 started = SharingStarted.Eagerly,
                 initialValue = DownloadCenter.transfers.value.map { it.info.withoutPrefix(idPrefix) },
             )
@@ -69,6 +75,28 @@ class DownloadCenterProviderImpl(
     private fun TransferInfo.withoutPrefix(prefix: String?): TransferInfo {
         val head = prefix?.plus(":") ?: return this
         return if (id.startsWith(head)) copy(id = id.removePrefix(head)) else this
+    }
+
+    companion object {
+        private val byPrefix = ConcurrentHashMap<String, DownloadCenterProviderImpl>()
+
+        /**
+         * The instance for [pluginId], created once and reused.
+         *
+         * A fresh `TrackingPluginContext` is built on every plugin LOAD, so constructing
+         * one of these per context left an eager collector behind on each hot reload,
+         * Toolbox reload and `resetPluginInstances` - growing with reload count rather
+         * than plugin count, each survivor remapping the whole transfer list per tick.
+         *
+         * Safe to share because [scope] is the plugin LAYER's scope (DefaultPlugin's),
+         * not the unloading plugin's: a reload cannot cancel the collector another
+         * plugin's view depends on.
+         */
+        fun forPlugin(
+            scope: CoroutineScope,
+            pluginId: String,
+            // `it` is the prefix, which is the second parameter.
+        ): DownloadCenterProviderImpl = byPrefix.computeIfAbsent(pluginId) { DownloadCenterProviderImpl(scope, it) }
     }
 
     /**

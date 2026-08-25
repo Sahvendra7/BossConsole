@@ -319,7 +319,13 @@ class TrackingPluginContext(
     // plugin reports are namespaced with its plugin id, and this is the only layer
     // that knows which plugin is asking. See DownloadCenterProviderImpl.idPrefix.
     override val downloadCenterProvider: DownloadCenterProvider? by lazy {
-        delegate.downloadCenterProvider?.let { DownloadCenterProviderImpl(delegate.pluginScope, idPrefix = pluginId) }
+        // A presence test, not a use: `?.let { }` discarding `it` read as if the
+        // delegate's instance were needed, and forced it into existence for nothing.
+        if (delegate.downloadCenterProvider == null) {
+            null
+        } else {
+            DownloadCenterProviderImpl.forPlugin(delegate.pluginScope, pluginId)
+        }
     }
     override val bookmarkDataProvider: BookmarkDataProvider? get() = delegate.bookmarkDataProvider
     override val workspaceDataProvider: WorkspaceDataProvider? get() = delegate.workspaceDataProvider

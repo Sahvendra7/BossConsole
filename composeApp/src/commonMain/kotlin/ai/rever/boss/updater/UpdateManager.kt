@@ -278,8 +278,14 @@ class UpdateManager {
         val state = _updateState.value
         if (state !is UpdateState.ReadyToInstall) return
         updateService.discardDownload(state.downloadPath)
+        // Idle unless there is genuinely a newer version to offer: after discarding a
+        // DOWNGRADE, `_updateInfo` holds the older version, and UpdateAvailable would
+        // put "Update v9.4.20 available" in the banner.
         _updateState.value =
-            _updateInfo.value?.let { UpdateState.UpdateAvailable(it) } ?: UpdateState.Idle
+            _updateInfo.value
+                ?.takeIf { it.isNewerVersionAvailable }
+                ?.let { UpdateState.UpdateAvailable(it) }
+                ?: UpdateState.Idle
     }
 
     /**
@@ -341,6 +347,12 @@ class UpdateManager {
                     sha256 = versionInfo.sha256,
                 )
 
+            // Published before the download starts, so anything naming it - the
+            // download center's row, and the state discardDownload restores - names the
+            // version actually on the wire. Only the check path used to write this, so
+            // downgrading to 9.4.20 showed a row reading "BOSS v9.4.34".
+            _updateInfo.value = updateInfo
+
             val downloadPath =
                 updateService.downloadUpdate(updateInfo) { progress ->
                     _updateState.value = UpdateState.Downloading(progress)
@@ -355,9 +367,13 @@ class UpdateManager {
                 UpdateResult.Error(errorMsg)
             }
         } catch (e: CancellationException) {
-            // See downloadUpdate: back to whatever was on offer before, not an error.
+            // See downloadUpdate: back to whatever was on offer before, not an error -
+            // and Idle rather than an "available" banner for a version that is older.
             _updateState.value =
-                _updateInfo.value?.let { UpdateState.UpdateAvailable(it) } ?: UpdateState.Idle
+                _updateInfo.value
+                    ?.takeIf { it.isNewerVersionAvailable }
+                    ?.let { UpdateState.UpdateAvailable(it) }
+                    ?: UpdateState.Idle
             throw e
         } catch (e: Exception) {
             val errorMsg = "Download failed: ${e.message}"

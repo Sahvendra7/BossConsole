@@ -5,6 +5,7 @@ import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import ai.rever.boss.plugin.repository.PluginInfo
 import ai.rever.boss.plugin.repository.PluginRepositoryManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -383,6 +384,13 @@ class PluginUpdateManager(
             }
 
             result
+        } catch (e: CancellationException) {
+            // Ahead of the general clause, and rethrown rather than reported: the user
+            // pressed Cancel. Reported as a failure it became "update failed:
+            // StandaloneCoroutine was cancelled" in the Toolbox, AND it stopped the
+            // cancellation propagating - so the caller's cleanup, which is what removes
+            // the truncated jar, never ran.
+            throw e
         } catch (e: Exception) {
             val error = e.message ?: "Download failed"
             _state.value = UpdateState.Failed(pluginId, error, e)

@@ -71,10 +71,25 @@ object DownloadCenter {
             // retry loop, so a caller that built the row and then lost the CAS runs
             // again with the row present - and a stale `true` would hand ownership to
             // two callers, whose `finally` blocks then delete each other's rows.
-            val exists = list.any { it.info.id == id }
-            created = !exists
-            if (exists) {
-                list
+            val existing = list.firstOrNull { it.info.id == id }
+            created = existing == null
+            if (existing != null) {
+                // Joining is for a fallback path nested inside ONE operation, where the
+                // row's Cancel belongs to the operation still running it. Two
+                // INDEPENDENT operations can also land here - the host keys plugin work
+                // by pluginId, so an "Install Store Version" concurrent with a
+                // dependency install of the same id shares a row - and there the row's
+                // Cancel would abandon whichever got there first while the user was
+                // looking at the other. Withdrawing it is the honest answer: neither
+                // can be cancelled without the other, so nothing offers to.
+                val joinedByAnother = onCancel != null && existing.onCancel !== onCancel
+                if (joinedByAnother) {
+                    list.map { t ->
+                        if (t.info.id == id) t.copy(onCancel = null, info = t.info.copy(cancellable = false)) else t
+                    }
+                } else {
+                    list
+                }
             } else {
                 list +
                     Transfer(
@@ -141,26 +156,57 @@ object DownloadCenter {
     }
 
     /**
-     * Run [id]'s cancel action, if it currently has one.
+     * Run [id]'s cancel action once, if it currently has one.
      *
-     * The row is NOT removed here: the cancelled work removes it through the
-     * same `finally` that a completed one does, so a cancel that loses a race
-     * with completion cannot leave a phantom row behind.
+     * Read and cleared in one update, so a second press cannot fire it again. The row
+     * survives a cancel - the work being cancelled removes it through the same
+     * `finally` a completed one uses, which can take a while on a slow socket - so
+     * without this the button stays clickable over a live-looking bar.
+     *
+     * A caller that re-asserts its actions per state (the app-update mirror does, on
+     * every progress tick) puts the action back, which is right: while bytes are still
+     * arriving the transfer really is still cancellable, and the underlying
+     * `cancelDownload` is idempotent. What this closes is the double click, where two
+     * presses land before anything has moved.
      */
     fun cancel(id: String) {
-        _transfers.value
-            .firstOrNull { it.info.id == id }
-            ?.takeIf { it.info.cancellable }
-            ?.onCancel
-            ?.invoke()
+        var action: (() -> Unit)? = null
+        _transfers.update { list ->
+            val target = list.firstOrNull { it.info.id == id }
+            // Assigned on every pass: `update` retries, and a stale action from a lost
+            // CAS would run after another thread had already taken it.
+            action = target?.onCancel?.takeIf { target.info.cancellable }
+            if (action == null) {
+                list
+            } else {
+                list.map { t ->
+                    if (t.info.id == id) t.copy(onCancel = null, info = t.info.copy(cancellable = false)) else t
+                }
+            }
+        }
+        action?.invoke()
     }
 
-    /** Run [id]'s install action, if it has one (a downloaded app update). */
+    /**
+     * Run [id]'s install action once, if it has one (a downloaded app update).
+     *
+     * Single-shot for a sharper reason than Cancel: the action is withdrawn only when
+     * the state reaches Installing, which is a background hop plus a collect plus a
+     * recomposition away, and the row still reads "Ready to install" under the cursor.
+     * Two quick clicks used to launch two elevated installs of the same artifact.
+     */
     fun install(id: String) {
-        _transfers.value
-            .firstOrNull { it.info.id == id }
-            ?.onInstall
-            ?.invoke()
+        var action: (() -> Unit)? = null
+        _transfers.update { list ->
+            val target = list.firstOrNull { it.info.id == id }
+            action = target?.onInstall
+            if (action == null) {
+                list
+            } else {
+                list.map { t -> if (t.info.id == id) t.copy(onInstall = null) else t }
+            }
+        }
+        action?.invoke()
     }
 
     /** Drop everything. Test-only; production rows are ended by their owners. */

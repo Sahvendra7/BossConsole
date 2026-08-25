@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertTrue
@@ -24,6 +25,8 @@ class DownloadCenterStatusItemTest {
     @get:Rule
     val rule = createComposeRule()
 
+    // Both, so the first test does not depend on every other class tidying up.
+    @Before
     @After
     fun clean() = DownloadCenter.reset()
 

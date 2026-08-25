@@ -3,6 +3,7 @@ package ai.rever.boss.updater
 import ai.rever.boss.downloads.DownloadCenter
 import ai.rever.boss.plugin.api.TransferKind
 import ai.rever.boss.plugin.api.TransferPhase
+import ai.rever.boss.utils.Version
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import kotlin.test.Test
@@ -82,6 +83,16 @@ class UpdateDownloadCenterMirrorTest {
             UpdateState.CheckingForUpdates,
             UpdateState.RestartRequired,
             UpdateState.Error("boom"),
+            // The state a CANCELLED download lands in, so the one that most needs to
+            // retract the row - and the one this list originally missed.
+            UpdateState.UpdateAvailable(
+                UpdateInfo(
+                    available = true,
+                    currentVersion = Version.parse("9.4.33")!!,
+                    latestVersion = Version.parse("9.4.34")!!,
+                    releaseNotes = "",
+                ),
+            ),
         ).forEach { state ->
             UpdateDownloadCenterMirror.publish(UpdateState.Downloading(0.5f), manager)
             UpdateDownloadCenterMirror.publish(state, manager)
