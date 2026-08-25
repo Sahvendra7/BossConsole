@@ -1969,6 +1969,9 @@ private fun WindowBarRow(
     val barWidth = draggedWidth?.dp ?: bar.width
 
     Row(modifier = Modifier.fillMaxSize()) {
+        // The bar and its resize band share one Box: the band is an OVERLAY on the bar's trailing
+        // edge rather than a strip beside it, so it costs no layout width. A strip cost 6dp where
+        // the divider had cost 1, which read as a margin down the bar's right edge.
         Box(
             modifier =
                 Modifier
@@ -1994,23 +1997,24 @@ private fun WindowBarRow(
                 zoomed = splitViewState.zoomedPanelId != null,
                 onExitZoom = splitViewState::exitZoom,
             )
+            VerticalTabBarResizeHandle(
+                // Not while the bar is a rail: the rail's width is a different number, and a drag
+                // that appeared to work would be moving one nothing on screen was showing.
+                enabled = !bar.railShown,
+                currentWidth = barWidth.value,
+                onPreview = { width -> draggedWidth = width },
+                onCommit = { width ->
+                    draggedWidth = null
+                    barWidthScope.launch {
+                        WindowAppearanceSettingsManager.updateSettings(
+                            WindowAppearanceSettingsManager.currentSettings.value
+                                .copy(tabBarVerticalWidth = width),
+                        )
+                    }
+                },
+            )
         }
-        VerticalTabBarResizeHandle(
-            // Not while the bar is a rail: the rail's width is a different number, and a drag
-            // that appeared to work would be moving one nothing on screen was showing.
-            enabled = !bar.railShown,
-            currentWidth = barWidth.value,
-            onPreview = { width -> draggedWidth = width },
-            onCommit = { width ->
-                draggedWidth = null
-                barWidthScope.launch {
-                    WindowAppearanceSettingsManager.updateSettings(
-                        WindowAppearanceSettingsManager.currentSettings.value
-                            .copy(tabBarVerticalWidth = width),
-                    )
-                }
-            },
-        )
+        VDivider()
         splitTree(Modifier.weight(1f).fillMaxHeight())
     }
 }

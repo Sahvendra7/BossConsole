@@ -257,6 +257,25 @@ fun ApplicationScope.BossWindow(
             window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
         }
 
+        // The traffic lights are drawn by macOS, and it picks their colours from the WINDOW's
+        // NSAppearance - not from anything we paint. The app launches with
+        // `-Dapple.awt.application.appearance=system`, which ties that to the macOS setting, so a
+        // BOSS light theme under macOS dark mode gets a dark-appearance window: the INACTIVE
+        // lights are then drawn pale, and on light chrome they disappear. The active ones are
+        // always red/amber/green, which is why this only shows up on an unfocused window.
+        //
+        // So the appearance follows the BOSS theme instead. Keyed on isLight, and re-applied when
+        // the theme changes rather than only at creation, because switching themes at runtime is
+        // exactly when the two would otherwise disagree.
+        val themeIsLight = BossThemeController.current.isLight
+        LaunchedEffect(window, isMacOS, themeIsLight) {
+            if (!isMacOS) return@LaunchedEffect
+            window.rootPane.putClientProperty(
+                "apple.awt.windowAppearance",
+                if (themeIsLight) "NSAppearanceNameVibrantLight" else "NSAppearanceNameVibrantDark",
+            )
+        }
+
         // Publish Compose's authoritative placement. Native macOS fullscreen does not
         // reliably report full-display AWT bounds, so browser-video fullscreen uses this
         // state to decide whether to overlay the existing fullscreen Space.
