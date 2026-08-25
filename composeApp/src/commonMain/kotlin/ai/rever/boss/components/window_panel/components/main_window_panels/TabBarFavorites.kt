@@ -8,6 +8,7 @@ import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.HoverTooltipBox
 import ai.rever.boss.components.overlays.TooltipPlacement
 import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.bookmark.Bookmark
 import ai.rever.boss.plugin.ui.BossTheme
@@ -211,7 +212,11 @@ fun TabBarFavorites(
             // their own Install button and their own explanation.
             onOpen =
                 windowId?.takeIf { pluginInstalled == true && apiReachable }?.let { id ->
-                    { MenuActionsHandler.triggerRevealPlugin(id, BOOKMARKS_PLUGIN_ID) }
+                    // PanelIds.BOOKMARKS, not BOOKMARKS_PLUGIN_ID. The reveal event resolves a
+                    // PANEL id, and the two ids for this plugin look enough alike that passing the
+                    // plugin one matched nothing and did nothing - which is exactly how this
+                    // shipped inert the first time.
+                    { MenuActionsHandler.triggerRevealPlugin(id, PanelIds.BOOKMARKS.panelId) }
                 },
         )
 

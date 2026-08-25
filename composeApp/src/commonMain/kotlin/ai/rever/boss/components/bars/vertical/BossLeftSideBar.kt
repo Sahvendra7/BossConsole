@@ -31,10 +31,13 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun BossDraggableComponent.BossLeftSideBar(
     /**
-     * Whether this bar carries the tools launcher, i.e. whether the RIGHT strip is switched off.
-     * Decided once in the scaffold - see `toolLauncherPlacement`.
+     * Opens the tools dialog, when this bar is the one carrying the launcher - i.e. when the
+     * RIGHT strip is switched off. Null means it is not, and no button is drawn.
+     *
+     * A callback rather than a flag, because the dialog is owned by the window: see
+     * `ToolLauncherButton` for the overlay that made that necessary.
      */
-    showToolLauncher: Boolean = false,
+    onOpenTools: (() -> Unit)? = null,
 ) {
     // Customize button can be dragged between the three left-side
     // sections; render it at the bottom of whichever slot the user
@@ -61,7 +64,7 @@ fun BossDraggableComponent.BossLeftSideBar(
                     reservedHeight =
                         SidebarIconRail.SectionDivider +
                             (if (customizeOnThisBar) SidebarIconRail.CustomizeButton else 0.dp) +
-                            (if (showToolLauncher) SidebarIconRail.ToolLauncherButton else 0.dp),
+                            (if (onOpenTools != null) SidebarIconRail.ToolLauncherButton else 0.dp),
                 )
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -94,8 +97,8 @@ fun BossDraggableComponent.BossLeftSideBar(
                 // plugin icon, and the bottom is where the bar already keeps the controls that
                 // are not draggable. Its height is reserved above, or a full rail would spend the
                 // whole budget on plugin icons and push it off screen.
-                if (showToolLauncher) {
-                    ToolLauncherButton(hintDirection = right)
+                onOpenTools?.let { open ->
+                    ToolLauncherButton(onClick = open, hintDirection = right)
                 }
             }
         }

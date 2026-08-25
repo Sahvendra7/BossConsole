@@ -46,10 +46,13 @@ fun BossDraggableComponent.BossRightSideBar(
     bottomActions: List<@Composable () -> Unit> = emptyList(),
     bottomActionRows: Int = bottomActions.size,
     /**
-     * Whether this bar carries the tools launcher, i.e. whether the LEFT strip is switched off.
-     * Decided once in the scaffold - see `toolLauncherPlacement`.
+     * Opens the tools dialog, when this bar is the one carrying the launcher - i.e. when the
+     * LEFT strip is switched off. Null means it is not, and no button is drawn.
+     *
+     * A callback rather than a flag, because the dialog is owned by the window: see
+     * `ToolLauncherButton` for the overlay that made that necessary.
      */
-    showToolLauncher: Boolean = false,
+    onOpenTools: (() -> Unit)? = null,
 ) {
     val visibility by SidebarVisibilitySettingsManager.currentSettings.collectAsState()
     val customizeSlotId = visibility.customizeButtonSlotId
@@ -78,7 +81,7 @@ fun BossDraggableComponent.BossRightSideBar(
                     reservedHeight =
                         SidebarIconRail.SectionDivider +
                             (if (customizeOnThisBar) SidebarIconRail.CustomizeButton else 0.dp) +
-                            (if (showToolLauncher) SidebarIconRail.ToolLauncherButton else 0.dp) +
+                            (if (onOpenTools != null) SidebarIconRail.ToolLauncherButton else 0.dp) +
                             SidebarIconRail.bottomSectionHeight(bottomActionRows),
                 )
             Column(
@@ -132,8 +135,8 @@ fun BossDraggableComponent.BossRightSideBar(
                 // Outside the clipped region for the same reason the customize button is, and
                 // above the bottom actions: the launcher is about the slots it sits under, while
                 // Settings / Search / Sign Out are about the app.
-                if (showToolLauncher) {
-                    ToolLauncherButton(hintDirection = left)
+                onOpenTools?.let { open ->
+                    ToolLauncherButton(onClick = open, hintDirection = left)
                 }
                 SidebarBottomActions(bottomActions)
             }

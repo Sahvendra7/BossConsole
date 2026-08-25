@@ -1,7 +1,5 @@
 package ai.rever.boss.components.buttons
 
-import ai.rever.boss.components.dialogs.ToolLauncherDialog
-import ai.rever.boss.components.model.BossDraggableComponent
 import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import androidx.compose.foundation.layout.Box
@@ -10,10 +8,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -31,29 +25,32 @@ const val TOOL_LAUNCHER_TAG = "tool-launcher-button"
  * the user is looking for is a tool. `GlobalSearchDialog` already uses this glyph for the
  * everything-category, so a grid of squares means the same thing in both places.
  *
- * Owns its own dialog state. Every host that renders one of these renders at most one, and the
- * dialog belongs to the button rather than to the window, so nothing has to be threaded through
- * the scaffold to open it.
+ * **Raises a callback; it does not own the dialog.** An earlier version kept `showDialog` here,
+ * which worked in a strip and failed in the floating cluster: that cluster is a heavyweight
+ * always-on-top window, `FocusModeQuickActions` swaps it for an in-place rendering the moment the
+ * main window loses focus, and opening a dialog is exactly what takes focus away - so the subtree
+ * holding the state was disposed and the dialog vanished about 200ms after opening. The same file
+ * already says this in prose about the sign-out dialog: the buttons raise callbacks and
+ * `BossAppScaffold` owns the state, because a dialog composed inside a content-sized overlay
+ * window has nowhere to go.
  *
  * @param hintDirection which way the tooltip opens - away from the edge the button sits on.
+ * @param onClick asks the window to open the tools dialog.
  */
 @Composable
-fun BossDraggableComponent.ToolLauncherButton(hintDirection: Panel = bottom) {
-    var showDialog by remember { mutableStateOf(false) }
-
+fun ToolLauncherButton(
+    onClick: () -> Unit,
+    hintDirection: Panel = bottom,
+    isSelected: Boolean = false,
+) {
     Box(modifier = Modifier.padding(vertical = 4.dp)) {
         BossActionButton(
             imageVector = Icons.Outlined.Apps,
             text = "Tools",
-            isSelected = showDialog,
+            isSelected = isSelected,
             hintDirection = hintDirection,
             modifier = Modifier.size(32.dp).testTag(TOOL_LAUNCHER_TAG),
-        ) {
-            showDialog = true
-        }
-    }
-
-    if (showDialog) {
-        ToolLauncherDialog(onDismiss = { showDialog = false })
+            onClick = onClick,
+        )
     }
 }

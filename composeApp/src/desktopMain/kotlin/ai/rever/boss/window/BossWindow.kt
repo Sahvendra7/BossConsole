@@ -792,7 +792,7 @@ fun ApplicationScope.BossWindow(
                         onClick = {
                             MenuActionsHandler.triggerRevealPlugin(
                                 windowId = windowState.id,
-                                pluginId = panelInfo.id.panelId,
+                                panelId = panelInfo.id.panelId,
                             )
                         },
                     )

@@ -277,9 +277,11 @@ internal fun BossAppScaffold(
 
     // Non-null only in the HOST_ACTIONS case, so it can be handed to all three hosts of the
     // Settings / Search / Sign Out group unconditionally and render in whichever one is drawing.
+    val openTools = { state.showToolLauncherDialog = true }
+
     val hostToolLauncher: (@Composable () -> Unit)? =
         if (launcherPlacement == ToolLauncherPlacement.HOST_ACTIONS) {
-            { state.draggablePanelComponent.ToolLauncherButton(hintDirection = bottom) }
+            { ToolLauncherButton(onClick = openTools, hintDirection = bottom) }
         } else {
             null
         }
@@ -475,7 +477,10 @@ internal fun BossAppScaffold(
                             modifier = Modifier.hoverable(interactionSource = reveal.leftSidebarInteractionSource),
                         ) {
                             BossLeftSideBar(
-                                showToolLauncher = launcherPlacement == ToolLauncherPlacement.LEFT_STRIP,
+                                onOpenTools =
+                                    openTools.takeIf {
+                                        launcherPlacement == ToolLauncherPlacement.LEFT_STRIP
+                                    },
                             )
                         }
                     }
@@ -593,7 +598,10 @@ internal fun BossAppScaffold(
                             // takes the three icons away without also handing their rows back to
                             // the plugin slots and reshuffling them. See focusQuickActionsRailRows.
                             BossRightSideBar(
-                                showToolLauncher = launcherPlacement == ToolLauncherPlacement.RIGHT_STRIP,
+                                onOpenTools =
+                                    openTools.takeIf {
+                                        launcherPlacement == ToolLauncherPlacement.RIGHT_STRIP
+                                    },
                                 bottomActions = quickActionsRail,
                                 bottomActionRows =
                                     focusQuickActionsRailRows(
