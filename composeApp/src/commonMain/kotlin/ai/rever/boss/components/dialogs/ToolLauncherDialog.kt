@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,13 +38,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-/** How tall the grid is allowed to get before it scrolls. */
-private val GRID_MAX_HEIGHT = 400.dp
 
 /** Dialog width, matching [NewTabDialog] so the two do not read as different kinds of thing. */
 private val DIALOG_WIDTH = 520.dp
@@ -53,6 +59,34 @@ private const val TILE_HOVER_ALPHA = 0.22f
 /** Gap between tiles, and the narrowest a tile may be before the grid drops a column. */
 private val TILE_GAP = 8.dp
 private val TILE_MIN_WIDTH = 110.dp
+
+/**
+ * Every tile is exactly this tall, whatever its label does.
+ *
+ * A Row stretches its children to the tallest of them, so one two-line label - "Run
+ * Configurations" is the one that found this - made its whole row taller than the rows above and
+ * below it, and the grid lost its rhythm at exactly the tile the eye was on. Fixing the height
+ * and giving the label a fixed two lines ([LABEL_LINES]) means a long name changes nothing about
+ * the shape of anything else.
+ */
+private val TILE_HEIGHT = 82.dp
+
+/**
+ * Lines reserved for a label, always - a one-line name is padded to two rather than centred.
+ *
+ * Reserving them is what keeps a wrapped label from resizing its tile; drawing them consistently
+ * is what keeps every icon on the same baseline across a row.
+ */
+private const val LABEL_LINES = 2
+
+/**
+ * Rows shown before the grid scrolls.
+ *
+ * The bound is a whole number of rows rather than a round number of dp, because a dp bound cuts
+ * whichever tile happens to straddle it and a half-drawn tile reads as a broken layout instead of
+ * as "there is more below".
+ */
+private const val VISIBLE_ROWS = 4
 
 /**
  * Every tool, searchable, for when the icon strips that normally hold them are not on screen.
@@ -92,6 +126,23 @@ fun BossDraggableComponent.ToolLauncherDialog(onDismiss: () -> Unit) {
             .distinctBy { it.id }
     val matches = allTools.filter { matchesToolQuery(it, query) }
 
+    // Type-to-open, the way a launcher is expected to behave: the field has focus the moment the
+    // dialog appears, so the first keystroke filters instead of being swallowed, and Enter takes
+    // the top match. Without the focus the search bar is a box you have to click first, which is
+    // the difference between a launcher and a dialog with a filter in it.
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { searchFocus.requestFocus() }
+
+    val openFirstMatch: () -> Unit = {
+        // Nothing to open when the query matches nothing: Enter on an empty grid should do
+        // nothing rather than close the dialog, which would look like it had opened something.
+        matches.firstOrNull()?.let { tool ->
+            handleSidebarItemClick(tool)
+            onDismiss()
+        }
+        Unit
+    }
+
     BossDialog(onDismissRequest = onDismiss) {
         Column(
             modifier =
@@ -99,6 +150,7 @@ fun BossDraggableComponent.ToolLauncherDialog(onDismiss: () -> Unit) {
                     .width(DIALOG_WIDTH)
                     .background(BossTheme.colors.panel, RoundedCornerShape(8.dp))
                     .border(1.dp, BossTheme.colors.line, RoundedCornerShape(8.dp))
+                    .launcherKeys(onEscape = onDismiss, onEnter = openFirstMatch)
                     .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -106,7 +158,7 @@ fun BossDraggableComponent.ToolLauncherDialog(onDismiss: () -> Unit) {
                 query = query,
                 onQueryChange = { query = it },
                 placeholder = "Search tools...",
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().focusRequester(searchFocus),
             )
 
             if (matches.isEmpty()) {
@@ -127,6 +179,38 @@ fun BossDraggableComponent.ToolLauncherDialog(onDismiss: () -> Unit) {
 }
 
 /**
+ * Escape closes, Enter takes the top match.
+ *
+ * PREVIEW, not `onKeyEvent`: the search field has focus from the moment the dialog opens and
+ * consumes both keys itself, so a bubbling handler here would never see either of them.
+ */
+private fun Modifier.launcherKeys(
+    onEscape: () -> Unit,
+    onEnter: () -> Unit,
+): Modifier =
+    onPreviewKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            false
+        } else {
+            when (event.key) {
+                Key.Escape -> {
+                    onEscape()
+                    true
+                }
+
+                Key.Enter, Key.NumPadEnter -> {
+                    onEnter()
+                    true
+                }
+
+                else -> {
+                    false
+                }
+            }
+        }
+    }
+
+/**
  * The tiles, wrapped into as many columns as fit.
  *
  * A plain scrolling Column of chunked Rows rather than a LazyVerticalGrid: the whole point of the
@@ -140,7 +224,12 @@ private fun ToolGrid(
     onClick: (SidebarItem) -> Unit,
 ) {
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth().heightIn(max = GRID_MAX_HEIGHT),
+        // Exactly VISIBLE_ROWS of tiles plus the gaps between them, so the scroll boundary always
+        // falls between two rows.
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = TILE_HEIGHT * VISIBLE_ROWS + TILE_GAP * (VISIBLE_ROWS - 1)),
     ) {
         val columns = homeToolColumns(maxWidth, minTileWidth = TILE_MIN_WIDTH, gap = TILE_GAP)
         Column(
@@ -180,26 +269,32 @@ private fun ToolTile(
     Column(
         modifier =
             modifier
-                .clip(RoundedCornerShape(6.dp))
+                .height(TILE_HEIGHT)
+                .clip(RoundedCornerShape(8.dp))
                 .background(if (hovered) colors.signal.copy(alpha = TILE_HOVER_ALPHA) else colors.raised)
-                .border(1.dp, if (hovered) colors.lineStrong else colors.line, RoundedCornerShape(6.dp))
+                .border(1.dp, if (hovered) colors.signal else colors.line, RoundedCornerShape(8.dp))
                 .hoverable(interactionSource)
                 .clickable(onClick = onClick)
-                .padding(vertical = 12.dp, horizontal = 6.dp),
+                .padding(horizontal = 6.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        // Space-between rather than a fixed gap: the icon sits at the top of every tile and the
+        // label block at the bottom of every tile, so both line up across a row whether the label
+        // takes one line or two.
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Icon(
             imageVector = tool.icon,
             contentDescription = null,
             tint = if (hovered) colors.signalText else colors.textPrimary,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(24.dp),
         )
         Text(
             text = tool.label,
             color = if (hovered) colors.textPrimary else colors.textSecondary,
             fontSize = 11.sp,
-            maxLines = 2,
+            lineHeight = 14.sp,
+            minLines = LABEL_LINES,
+            maxLines = LABEL_LINES,
             textAlign = TextAlign.Center,
             overflow = TextOverflow.Ellipsis,
         )
