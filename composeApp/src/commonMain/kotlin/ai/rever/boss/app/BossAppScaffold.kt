@@ -37,6 +37,7 @@ import ai.rever.boss.layout.asDrawn
 import ai.rever.boss.layout.bannerStartInset
 import ai.rever.boss.layout.barStartInset
 import ai.rever.boss.layout.columnInset
+import ai.rever.boss.layout.leftColumnOffsets
 import ai.rever.boss.layout.macTrafficLightInset
 import ai.rever.boss.layout.needsTitleRow
 import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
@@ -47,6 +48,7 @@ import ai.rever.boss.plugin.api.LocalWindowProjectStateProvider
 import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
 import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel.Companion.left
 import ai.rever.boss.plugin.sandbox.notification.PluginToastHost
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.plugin.ui.BossTheme
@@ -342,10 +344,18 @@ internal fun BossAppScaffold(
         macTrafficLightInset(
             appearance = drawn,
             isMacOs = SystemUtils.isMacOS,
-            barCollapsed = barRailed,
             bannerVisible = bannerVisible,
-            // The density's width, not the 36dp floor: Comfortable draws 40dp rails, and
-            // measuring the corner with the floor gave away a case that fits.
+        )
+
+    // Where each left column starts, so it can ask whether the light box reaches it.
+    //
+    // The order down the window's left edge is strip, then an open plugin panel, then the vertical
+    // tab bar. Only the first 78dp of that is under the lights, so which column needs clearing
+    // depends on what is open - and a panel, when there is one, is what the bar used to be.
+    val columns =
+        leftColumnOffsets(
+            showLeftStrip = drawn.showLeftStrip,
+            leftPanelOpen = state.draggablePanelComponent.isVisible(left),
             stripWidth = BossChrome.dimens.stripWidth,
         )
 
@@ -609,7 +619,13 @@ internal fun BossAppScaffold(
                             // that displaces the floating cluster wherever this bar is on screen.
                             // The tab bar is the leftmost column when no strip is on, so its top
                             // is what the lights would land on.
-                            verticalBarTopInset = trafficLights.columnInset(),
+                            // Offset past an open plugin panel, which sits between the strip and
+                            // this bar: with one open the bar is the THIRD column and well clear
+                            // of the box, and the 28dp gap it used to keep was pure dead space.
+                            verticalBarTopInset = trafficLights.columnInset(columns.bar),
+                            // The panel itself is second when it is open, so the clearance moves
+                            // onto it - this is what the lights were landing on.
+                            leftPanelTopInset = trafficLights.columnInset(columns.panel),
                             onDrawerVisibleChange = { visible -> drawerVisible = visible },
                             onBarRailedChange = { railed -> barRailed = railed },
                             verticalBarBelowMap = {
