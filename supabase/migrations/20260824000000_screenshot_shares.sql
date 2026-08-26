@@ -203,6 +203,7 @@ DECLARE
     v_image BYTEA;
     v_share_id UUID;
     v_password_hash TEXT;
+    v_recent_count INTEGER;
 BEGIN
     IF v_actor IS NULL THEN
         RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
@@ -218,6 +219,25 @@ BEGIN
 
     IF p_mime_type IS NULL OR p_mime_type NOT IN ('image/png', 'image/jpeg') THEN
         RETURN jsonb_build_object('success', false, 'error', 'Unsupported image type');
+    END IF;
+
+    IF p_password IS NOT NULL AND char_length(p_password) > 128 THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Password must be 128 characters or fewer');
+    END IF;
+
+    -- Rolling-24h send quota. The per-row 8MB cap bounds one image but nothing
+    -- bounded how many, so table growth was open-ended; 100/day/sender puts a
+    -- predictable ceiling (~800MB/day worst case) on it. Checked BEFORE the
+    -- base64 decode below so a throttled call costs no decode work, and served
+    -- by the existing idx_screenshot_shares_sender index.
+    SELECT count(*) INTO v_recent_count
+      FROM public.screenshot_shares
+     WHERE sender_id = v_actor
+       AND created_at > now() - interval '24 hours';
+
+    IF v_recent_count >= 100 THEN
+        RETURN jsonb_build_object('success', false, 'error',
+            'Daily send limit reached (100 per 24 hours) -- try again later');
     END IF;
 
     -- A common ACTIVE organisation is the whole authorization check -- the
@@ -265,9 +285,9 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text") OWNER TO "postgres";
+ALTER FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text", "text") OWNER TO "postgres";
 
-COMMENT ON FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text") IS 'Sends a base64-encoded PNG/JPEG to a co-member of any organisation the caller actively belongs to. Re-checks the common-organisation relationship server-side rather than trusting list_shareable_recipients output.';
+COMMENT ON FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text", "text") IS 'Sends a base64-encoded PNG/JPEG to a co-member of any organisation the caller actively belongs to. Re-checks the common-organisation relationship server-side rather than trusting list_shareable_recipients output. Rate-limited to 100 sends per sender per rolling 24 hours, which together with the 8MB per-row cap is what bounds this table''s growth.';
 
 
 -- ============================================================================
@@ -430,8 +450,8 @@ COMMENT ON FUNCTION "public"."get_screenshot_image"("uuid", "text") IS 'Returns 
 REVOKE EXECUTE ON FUNCTION "public"."list_shareable_recipients"("text", integer) FROM PUBLIC, "anon";
 GRANT  EXECUTE ON FUNCTION "public"."list_shareable_recipients"("text", integer) TO "authenticated", "service_role";
 
-REVOKE EXECUTE ON FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text") FROM PUBLIC, "anon";
-GRANT  EXECUTE ON FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text") TO "authenticated", "service_role";
+REVOKE EXECUTE ON FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text", "text") FROM PUBLIC, "anon";
+GRANT  EXECUTE ON FUNCTION "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text", "text") TO "authenticated", "service_role";
 
 REVOKE EXECUTE ON FUNCTION "public"."list_received_screenshots"(boolean, integer, integer) FROM PUBLIC, "anon";
 GRANT  EXECUTE ON FUNCTION "public"."list_received_screenshots"(boolean, integer, integer) TO "authenticated", "service_role";
