@@ -33,6 +33,7 @@ import ai.rever.boss.handleTabDropResult
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.layout.ChromeBudgetReadout
 import ai.rever.boss.layout.TrafficLightInset
+import ai.rever.boss.layout.asDrawn
 import ai.rever.boss.layout.barStartInset
 import ai.rever.boss.layout.columnInset
 import ai.rever.boss.layout.macTrafficLightInset
@@ -262,6 +263,10 @@ internal fun BossAppScaffold(
     var contentInset by remember { mutableStateOf(DpSize.Zero) }
     val density = LocalDensity.current.density
 
+    // What is actually drawn, which is what these two rules are about - a bar focus mode is
+    // clearing is not on screen however the preference reads. See asDrawn.
+    val drawn = appearance.asDrawn(focusModeSettings)
+
     // Whether the hover-revealed bar is up, reported by SplitViewPanel. It decides where the
     // host's actions render while the bar is collapsed - see the placement below.
     var drawerVisible by remember { mutableStateOf(false) }
@@ -298,8 +303,8 @@ internal fun BossAppScaffold(
     // and two of them showing a launcher at once is worse than neither.
     val launcherPlacement =
         toolLauncherPlacement(
-            leftStripHidden = !appearance.showLeftStrip,
-            rightStripHidden = !appearance.showRightStrip,
+            leftStripHidden = !drawn.showLeftStrip,
+            rightStripHidden = !drawn.showRightStrip,
         )
 
     // Non-null only in the HOST_ACTIONS case, so it can be handed to all three hosts of the
@@ -308,7 +313,7 @@ internal fun BossAppScaffold(
     // exists to hold them. Decided once, read by the three places that could carry the inset.
     val trafficLights =
         macTrafficLightInset(
-            appearance = appearance,
+            appearance = drawn,
             isMacOs = SystemUtils.isMacOS,
             barCollapsed = appearance.tabBarCollapsed,
         )
