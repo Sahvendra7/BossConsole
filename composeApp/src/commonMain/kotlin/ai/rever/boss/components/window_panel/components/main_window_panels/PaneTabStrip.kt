@@ -7,6 +7,7 @@ import ai.rever.boss.components.overlays.HoverTooltipBox
 import ai.rever.boss.components.overlays.TooltipPlacement
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.window_panel.SplitViewState
+import ai.rever.boss.layout.trafficLightStartInset
 import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.window.MenuActionsHandler
@@ -37,11 +38,16 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.dp
 
 /** Height of the strip. Deliberately close to the chip it holds: this is an indicator, not a bar. */
@@ -122,6 +128,16 @@ internal fun PaneTabStrip(
 
     val listState = rememberLazyListState()
 
+    // Where this strip sits in the window, so it can keep its chips clear of the macOS traffic
+    // lights when it is the row in the corner.
+    //
+    // Measured rather than passed down: whether the lights reach this strip depends on which pane
+    // it belongs to and how the window is split, which nothing above it knows. In the leftmost
+    // pane with a collapsed tab bar the rail is 40dp and the light box is 78dp, so the first 38dp
+    // of this row is underneath them - which is where the first chip was.
+    var originInWindow by remember { mutableStateOf<Offset?>(null) }
+    val startClearance = trafficLightStartInset(originInWindow)
+
     // Keep the current tab in view. A pane narrow enough to scroll this strip is exactly the one
     // where the current tab can end up off the end of it.
     LaunchedEffect(activeIndex) {
@@ -135,8 +151,12 @@ internal fun PaneTabStrip(
                 .fillMaxWidth()
                 .height(PANE_STRIP_HEIGHT)
                 .background(BossTheme.colors.panel)
+                .onGloballyPositioned { originInWindow = it.positionInWindow() }
                 .contextMenu(items = menuItems),
-        contentPadding = PaddingValues(horizontal = 6.dp),
+        // The clearance goes in contentPadding, not on the strip: the background stays full width
+        // and runs on under the buttons, and only the chips move out from under them. Padding the
+        // strip itself would leave the window's own surface showing through beside them.
+        contentPadding = PaddingValues(start = 6.dp + (startClearance ?: 0.dp), end = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

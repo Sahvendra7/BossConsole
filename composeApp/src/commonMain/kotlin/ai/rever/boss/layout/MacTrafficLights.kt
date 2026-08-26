@@ -2,6 +2,10 @@ package ai.rever.boss.layout
 
 import ai.rever.boss.window.TabBarPosition
 import ai.rever.boss.window.WindowAppearanceSettings
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -203,4 +207,41 @@ fun leftColumnOffsets(
     // everywhere except a deliberately collapsed sliver.
     val bar = if (leftPanelOpen) TRAFFIC_LIGHT_WIDTH else panel
     return LeftColumnOffsets(panel = panel, bar = bar)
+}
+
+/**
+ * The clearance answer for this window, for chrome too deep in the tree to be handed it.
+ *
+ * Provided once by the scaffold. The columns down the left edge are reached by parameter, because
+ * the scaffold composes them directly - but the row of tab chips at the top of a pane is inside the
+ * split tree, and threading a Dp through SplitViewPanel, the pane tree and each pane to reach it
+ * would be a parameter on everything in between that none of them have any use for.
+ */
+val LocalTrafficLightInset = staticCompositionLocalOf { TrafficLightInset.NONE }
+
+/**
+ * The start inset for a ROW that has measured itself at [originInWindow], or null before it has.
+ *
+ * Self-locating, because whether a row is under the lights is a question about where it ended up:
+ * the top row of the leftmost pane is, the same row in a pane one split to the right is not, and
+ * the difference is decided by a split tree and a user's drag rather than by any setting.
+ *
+ * Null until measured, so a row that has not been positioned yet reserves nothing rather than
+ * reserving the full width and visibly snapping back on its second frame.
+ */
+@Composable
+fun trafficLightStartInset(originInWindow: Offset?): Dp? {
+    val density = LocalDensity.current
+    return when {
+        // Something above this row already holds the lights, or there is nothing to hold.
+        LocalTrafficLightInset.current != TrafficLightInset.LEFT_COLUMNS -> 0.dp
+
+        originInWindow == null -> null
+
+        // Below the box entirely: a row further down the window is never under them, whatever its
+        // x is - which is what keeps a browser toolbar or any second row from indenting itself.
+        with(density) { originInWindow.y.toDp() } >= TRAFFIC_LIGHT_HEIGHT -> 0.dp
+
+        else -> with(density) { (TRAFFIC_LIGHT_WIDTH - originInWindow.x.toDp()).coerceAtLeast(0.dp) }
+    }
 }
