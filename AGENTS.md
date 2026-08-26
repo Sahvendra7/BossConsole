@@ -441,6 +441,24 @@ the priority order above does not apply to it.
   A stale `boss://settings?section=LLM_PROVIDERS` deep link now resolves to
   `SettingsDeepLink.Unresolved`, so the window opens on its default section rather than
   failing.
+
+  Settings search still answers for `api key`, `anthropic`, `claude` and the rest: a curated
+  **panel signpost** (`panelSignpost` in `SettingsSearchEntries.kt`) opens the Secret Manager
+  panel and raises the main window. It is the only search entry that navigates out of the
+  Settings window. The delegated-section keywords could not have covered this - a panel is not a
+  settings page, so nothing merges it into the index at query time.
+
+  **There is deliberately no version floor on secret-manager.** The AI section exists in that
+  plugin only from 1.2.19, and nothing in the host gates on it: secret-manager is not in the
+  `system_plugins` manifest, so no `min_version` applies, and plugin updates surface in the
+  Toolbox rather than installing themselves. A user on 1.2.18 who takes this host build gets the
+  Secret Manager panel with no AI section in it. That is accepted rather than overlooked, and it
+  is a weaker case than `RetiredPlugins.minReplacementVersion`, which names a release because
+  getting it wrong **deletes** the user's only secrets panel. Here nothing is deleted and nothing
+  is lost - the credentials stay in the vault, `PluginContext.llmProvider` keeps serving them to
+  every plugin that asks, and updating the plugin restores the page. The floor would have to be
+  enforced somewhere, and the only mechanism the host has for that is refusing to load the
+  plugin, which would take the vault down with it.
 - **AI self-healing / repair** is the one credential the host still resolves itself, because
   `SelfHealingSettingsManager` runs before any window or plugin exists and so cannot reach the
   plugin's store. It reads `AI_REPAIR_API_KEY`, then the provider's own variable

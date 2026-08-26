@@ -150,7 +150,7 @@ class PluginSectionAbsenceTest {
         val message =
             pluginSectionMessage(
                 PluginSectionAbsence.NO_ACCESS,
-                "AI provider settings",
+                "language server settings",
                 "Secret Manager",
                 listOf("secret.read", "secret.write"),
             )

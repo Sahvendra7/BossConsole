@@ -11,6 +11,7 @@ import ai.rever.boss.components.settings.search.SettingsSearchMatcher
 import ai.rever.boss.components.settings.search.SettingsSearchState
 import ai.rever.boss.components.settings.search.handleSettingsSearchKey
 import ai.rever.boss.components.settings.search.pluginPageEntry
+import ai.rever.boss.components.settings.search.revealPanel
 import ai.rever.boss.components.settings.sections.*
 import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
 import ai.rever.boss.components.settings.shared.SettingsTheme.BackgroundColor
@@ -33,6 +34,8 @@ import ai.rever.boss.startup.StartupSettingsManager
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.updater.UpdateSettingsSection
 import ai.rever.boss.utils.DisplayUtils
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.ApplyBossWindowIcon
 import ai.rever.boss.window.BossWindowIcon
 import androidx.compose.foundation.background
@@ -54,6 +57,8 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import kotlinx.coroutines.launch
 import java.awt.Frame
+
+private val logger = BossLogger.forComponent("SettingsWindow")
 
 @Composable
 actual fun SettingsWindow(
@@ -178,6 +183,14 @@ private fun SettingsContent(
     val applyHit: (SettingsSearchHit) -> Unit = { hit ->
         val entry = hit.entry
         when {
+            // Asked FIRST, because a signpost is the one hit that does not navigate this window at
+            // all - and leaving `selectedSection` where it was is deliberate. The user is being
+            // sent to another window; changing this one behind them would be a second navigation
+            // they did not ask for, waiting for them when they come back.
+            entry.panel != null -> {
+                revealPanel(entry.panel, entry.label, coroutineScope)
+            }
+
             entry.pluginPageId != null -> {
                 selectedPluginPageId = entry.pluginPageId
                 highlight = null
@@ -224,7 +237,15 @@ private fun SettingsContent(
             }
 
             SettingsDeepLink.Unresolved -> {
-                Unit
+                // Nothing to show, and nothing visible happens - so this is the only record that
+                // the request arrived at all. Worth having: the population that reaches it is a
+                // plugin deep-linking to a section or page this build does not have, and from the
+                // outside that is indistinguishable from the window ignoring the plugin.
+                logger.debug(
+                    LogCategory.UI,
+                    "Settings deep link named nothing this build can show; leaving the window where it was",
+                    mapOf("requested" to (initialSection ?: "null")),
+                )
             }
         }
     }
