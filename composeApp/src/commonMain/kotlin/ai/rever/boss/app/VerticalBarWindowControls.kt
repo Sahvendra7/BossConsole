@@ -38,6 +38,18 @@ import compose.icons.feathericons.Folder
  */
 @Composable
 internal fun VerticalBarWindowControls(
+    /**
+     * Whether the top bar - which owns these two controls - is off screen.
+     *
+     * Passed as what is DRAWN rather than what is preferred, so a top bar focus mode has cleared
+     * counts: the pickers live nowhere else, and focus mode is exactly when a window is at its
+     * barest.
+     *
+     * Deliberately the STANDING focus-mode state, not the reveal flag. Keyed on the reveal, these
+     * would appear and disappear on every hover, and this footer sits directly above the split
+     * map - so the map would jump up and down the bar each time. Two copies of a picker for the
+     * seconds a bar is revealed is the better of the two.
+     */
     topBarHidden: Boolean,
     project: Project,
     onOpenProject: () -> Unit,

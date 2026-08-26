@@ -580,7 +580,10 @@ internal fun BossAppScaffold(
                             },
                             verticalBarFooter = {
                                 VerticalBarWindowControls(
-                                    topBarHidden = !appearance.showTopBar,
+                                    // `drawn`, not the preference: a top bar focus mode has
+                                    // cleared is not on screen, and the project and workspace
+                                    // pickers live nowhere else.
+                                    topBarHidden = !drawn.showTopBar,
                                     project = selectedProject,
                                     onOpenProject = { state.showProjectDialog = true },
                                     workspaceManager = workspaceManager,
