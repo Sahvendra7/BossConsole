@@ -272,7 +272,10 @@ internal fun BossAppScaffold(
             topBarHidden = !appearance.showTopBar,
             rightStripHidden = !appearance.showRightStrip,
             showTopBar = reveal.showTopBar,
-            verticalTabBar = appearance.tabBarPosition == TabBarPosition.LEFT,
+            // Not merely "the bar is on the left": a COLLAPSED bar draws its rail and nothing
+            // else, so the foot of it does not exist and these four would render nowhere. The
+            // floating cluster is the fallback for exactly that.
+            verticalTabBar = appearance.tabBarPosition == TabBarPosition.LEFT && !appearance.tabBarCollapsed,
         )
 
     // Where the way into the plugins goes, when a strip that would normally hold their icons is

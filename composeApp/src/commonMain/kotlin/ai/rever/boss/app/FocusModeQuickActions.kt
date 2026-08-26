@@ -159,9 +159,14 @@ internal fun focusQuickActionsPlacement(
     rightStripHidden: Boolean,
     showTopBar: Boolean,
     /**
-     * Whether the window's tab bar runs down the left edge, which gives these actions a home under
-     * its split map. Read from `WindowAppearanceSettings.tabBarPosition`, which is a standing
-     * choice, so it needs none of the care the reveal flags do.
+     * Whether the window's tab bar runs down the left edge AND is expanded, which is what gives
+     * these actions a home under its split map.
+     *
+     * The expanded half is not a detail: a collapsed bar draws its rail and nothing else, so its
+     * foot does not exist and these four would render nowhere at all. Read from
+     * `WindowAppearanceSettings`, which is a standing choice, so it needs none of the care the
+     * reveal flags do - with the same known gap the traffic-light rule has, that a bar which
+     * rails itself on a narrow window is decided during layout rather than in settings.
      */
     verticalTabBar: Boolean = false,
 ): FocusQuickActionsPlacement =

@@ -48,6 +48,17 @@ class QuickActionsFooterPlacementTest {
     }
 
     @Test
+    fun `a collapsed bar floats them, because its foot does not exist`() {
+        // The caller passes verticalTabBar = false for a collapsed bar. Pinned here as the
+        // contract rather than left to the scaffold, because the failure is silent: the four
+        // actions simply render nowhere.
+        assertEquals(
+            FocusQuickActionsPlacement.FLOATING,
+            placement(rightStripHidden = true, verticalTabBar = false),
+        )
+    }
+
+    @Test
     fun `without either it floats, as before`() {
         assertEquals(
             FocusQuickActionsPlacement.FLOATING,
