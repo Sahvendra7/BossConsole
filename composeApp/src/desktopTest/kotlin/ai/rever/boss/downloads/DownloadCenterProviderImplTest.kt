@@ -1,9 +1,6 @@
 package ai.rever.boss.downloads
 
 import ai.rever.boss.plugin.api.TransferKind
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import kotlin.test.Test
@@ -21,16 +18,11 @@ import kotlin.test.assertTrue
  * are pinned here.
  */
 class DownloadCenterProviderImplTest {
-    private val scope = CoroutineScope(Dispatchers.Unconfined)
-
     @BeforeEach
     @AfterEach
     fun clean() = DownloadCenter.reset()
 
-    @AfterEach
-    fun stop() = scope.cancel()
-
-    private fun provider(prefix: String?) = DownloadCenterProviderImpl(scope, idPrefix = prefix)
+    private fun provider(prefix: String?) = DownloadCenterProviderImpl(idPrefix = prefix)
 
     @Test
     fun `a plugin's id is qualified in the center`() {

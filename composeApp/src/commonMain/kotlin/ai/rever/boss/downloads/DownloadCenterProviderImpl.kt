@@ -5,7 +5,6 @@ import ai.rever.boss.plugin.api.TransferHandle
 import ai.rever.boss.plugin.api.TransferInfo
 import ai.rever.boss.plugin.api.TransferKind
 import ai.rever.boss.plugin.api.TransferPhase
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -19,11 +18,10 @@ import java.util.concurrent.ConcurrentHashMap
  * providers use: there is nothing platform-specific to reach for, the center is
  * already common, and an expect/actual pair here would only be ceremony.
  *
- * @param scope a long-lived scope (the plugin layer's) for the derived flow;
- *   the mapping is stateful so every plugin observing it shares one collector.
+ * The derived flow lives on [DownloadCenter.scope] - the center's own, because a
+ * plugin-layer scope belongs to one window and dies with it.
  */
 class DownloadCenterProviderImpl internal constructor(
-    scope: CoroutineScope,
     /**
      * Prefix for ids this instance reports, or null for the host's own transfers.
      *
@@ -41,7 +39,9 @@ class DownloadCenterProviderImpl internal constructor(
         DownloadCenter.transfers
             .map { list -> list.map { it.info.withoutPrefix(idPrefix) } }
             .stateIn(
-                scope = scope,
+                // The center's scope, not a caller's: see DownloadCenter.scope for the
+                // window-lifetime trap that hid behind "a long-lived scope".
+                scope = DownloadCenter.scope,
                 // Eagerly, so `.value` is truthful for a reader that never collects -
                 // WhileSubscribed would hand such a caller the stale initial value, and
                 // "is this one busy?" is exactly a `.value` question. The instance is
@@ -88,15 +88,16 @@ class DownloadCenterProviderImpl internal constructor(
          * Toolbox reload and `resetPluginInstances` - growing with reload count rather
          * than plugin count, each survivor remapping the whole transfer list per tick.
          *
-         * Safe to share because [scope] is the plugin LAYER's scope (DefaultPlugin's),
-         * not the unloading plugin's: a reload cannot cancel the collector another
-         * plugin's view depends on.
+         * Safe to cache because the view lives on [DownloadCenter.scope], which nothing
+         * cancels - a window closing or a plugin unloading cannot freeze another
+         * plugin's view.
          */
-        fun forPlugin(
-            scope: CoroutineScope,
-            pluginId: String,
-            // `it` is the prefix, which is the second parameter.
-        ): DownloadCenterProviderImpl = byPrefix.computeIfAbsent(pluginId) { DownloadCenterProviderImpl(scope, it) }
+        fun forPlugin(pluginId: String) = byPrefix.computeIfAbsent(pluginId) { DownloadCenterProviderImpl(it) }
+
+        /** The host's own view: unprefixed ids, one instance. */
+        fun forHost(): DownloadCenterProviderImpl = hostView
+
+        private val hostView by lazy { DownloadCenterProviderImpl(idPrefix = null) }
     }
 
     /**

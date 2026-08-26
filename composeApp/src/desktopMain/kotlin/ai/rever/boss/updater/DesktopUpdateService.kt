@@ -299,6 +299,10 @@ actual class UpdateService {
                     is SocketTimeoutException -> "Network timeout: Download interrupted"
                     else -> e.message ?: "Unknown error"
                 }
+            // The partial goes here too, not only on the cancellation path: a dropped
+            // connection otherwise leaves a DMG's worth of disk occupied until the next
+            // attempt happens to overwrite it. Same asymmetry the plugin side closed.
+            runCatching { partial?.delete() }
             logger.error(LogCategory.NETWORK, "Error downloading update", mapOf("error" to errorMessage))
             null
         }

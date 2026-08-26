@@ -3,6 +3,9 @@ package ai.rever.boss.downloads
 import ai.rever.boss.plugin.api.TransferInfo
 import ai.rever.boss.plugin.api.TransferKind
 import ai.rever.boss.plugin.api.TransferPhase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +44,22 @@ data class Transfer(
 object DownloadCenter {
     /** The id the application's own update is tracked under. */
     const val APP_UPDATE_ID = "boss-app-update"
+
+    /**
+     * Where the per-plugin views of [transfers] are kept alive.
+     *
+     * The center's own, and NOT a plugin scope: `DefaultPlugin` is created per WINDOW
+     * and its `dispose()` cancels `pluginScope`, so a view built on the first window's
+     * scope froze - permanently, and for every plugin that resolved through it - the
+     * moment that window closed. This object is process-wide; so is this.
+     *
+     * Unconfined, so a derived view updates on the thread that changed the center
+     * rather than after a dispatch. The derivation is a list map, and the alternative
+     * hands a caller reading `transfers.value` right after its own `begin` the value
+     * from before it - which is exactly the question `.value` gets asked ("is this one
+     * busy?"), and is why these views are eager in the first place.
+     */
+    internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
     // Insertion-ordered: rows must not jump around in the dialog as progress ticks.
     private val _transfers = MutableStateFlow<List<Transfer>>(emptyList())

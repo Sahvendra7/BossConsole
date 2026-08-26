@@ -318,14 +318,12 @@ class TrackingPluginContext(
     // Download center (bottom-bar transfer progress). NOT a bare delegate: the ids a
     // plugin reports are namespaced with its plugin id, and this is the only layer
     // that knows which plugin is asking. See DownloadCenterProviderImpl.idPrefix.
-    override val downloadCenterProvider: DownloadCenterProvider? by lazy {
-        // A presence test, not a use: `?.let { }` discarding `it` read as if the
-        // delegate's instance were needed, and forced it into existence for nothing.
-        if (delegate.downloadCenterProvider == null) {
-            null
-        } else {
-            DownloadCenterProviderImpl.forPlugin(delegate.pluginScope, pluginId)
-        }
+    // The delegate's own provider is deliberately NOT read: reading the property is
+    // what forces it, so a presence test built one unread instance with its own
+    // collector per window. The center is a process-wide object, so a prefixed view
+    // of it is always available - there is nothing to test for.
+    override val downloadCenterProvider: DownloadCenterProvider by lazy {
+        DownloadCenterProviderImpl.forPlugin(pluginId)
     }
     override val bookmarkDataProvider: BookmarkDataProvider? get() = delegate.bookmarkDataProvider
     override val workspaceDataProvider: WorkspaceDataProvider? get() = delegate.workspaceDataProvider

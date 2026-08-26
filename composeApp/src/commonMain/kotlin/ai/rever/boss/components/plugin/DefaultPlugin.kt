@@ -734,7 +734,10 @@ class DefaultPlugin(
     // same progress item and dialog as the host's (and the Toolbox stops needing
     // a status-bar widget of its own).
     override val downloadCenterProvider: DownloadCenterProvider by lazy {
-        DownloadCenterProviderImpl(pluginScope)
+        // Unprefixed: this is the host's own view. A plugin never gets this one -
+        // TrackingPluginContext hands out a prefixed view instead - and it lives on
+        // the center's process-wide scope rather than this per-window pluginScope.
+        DownloadCenterProviderImpl.forHost()
     }
 
     // Phase 4: Application event bus for state change events

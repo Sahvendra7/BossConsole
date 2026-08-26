@@ -171,6 +171,72 @@ class DownloadCenterTest {
     }
 
     @Test
+    fun `a second press does nothing - both actions are single-shot`() {
+        var cancels = 0
+        var installs = 0
+        DownloadCenter.begin("p", "Plugin", TransferKind.PLUGIN_UPDATE, onCancel = { cancels++ })
+        DownloadCenter.setActions("p", onCancel = { cancels++ }, onInstall = { installs++ })
+        DownloadCenter.progress("p", 0.4f)
+
+        // The row keeps reading "Downloading" under the cursor until a background hop
+        // and a recomposition land, so two quick presses are one gesture away.
+        DownloadCenter.cancel("p")
+        DownloadCenter.cancel("p")
+        assertEquals(1, cancels)
+
+        DownloadCenter.phase("p", TransferPhase.READY_TO_INSTALL)
+        DownloadCenter.install("p")
+        DownloadCenter.install("p")
+        assertEquals(1, installs, "two elevated installs of one staged artifact")
+    }
+
+    @Test
+    fun `a second operation joining one row withdraws its Cancel`() {
+        var first = 0
+        var second = 0
+        DownloadCenter.begin("p", "Store version", TransferKind.PLUGIN_INSTALL, onCancel = {
+            first++
+            Unit
+        })
+        DownloadCenter.progress("p", 0.3f)
+
+        // The host keys plugin work by pluginId, so an "Install Store Version" and a
+        // dependency install of the same id land on one row. Cancel would abandon
+        // whichever got there first, while the user was looking at the other.
+        DownloadCenter.begin("p", "Dependency", TransferKind.PLUGIN_INSTALL, onCancel = {
+            second++
+            Unit
+        })
+
+        assertFalse(
+            DownloadCenter.transfers.value
+                .single()
+                .info.cancellable,
+        )
+        DownloadCenter.cancel("p")
+        assertEquals(0, first)
+        assertEquals(0, second)
+    }
+
+    @Test
+    fun `re-beginning with the same action is nesting, not joining`() {
+        var cancels = 0
+        val onCancel: () -> Unit = { cancels++ }
+        DownloadCenter.begin("p", "Plugin", TransferKind.PLUGIN_INSTALL, onCancel = onCancel)
+        DownloadCenter.progress("p", 0.3f)
+
+        // A fallback path inside one operation passes the same action, and must not
+        // cost that operation its Cancel.
+        DownloadCenter.begin("p", "Plugin", TransferKind.PLUGIN_INSTALL, onCancel = onCancel)
+
+        assertTrue(
+            DownloadCenter.transfers.value
+                .single()
+                .info.cancellable,
+        )
+    }
+
+    @Test
     fun `rows keep their insertion order as progress arrives`() {
         DownloadCenter.begin("a", "A", TransferKind.PLUGIN_INSTALL)
         DownloadCenter.begin("b", "B", TransferKind.PLUGIN_INSTALL)

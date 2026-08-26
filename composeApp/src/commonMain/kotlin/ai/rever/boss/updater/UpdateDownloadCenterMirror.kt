@@ -4,6 +4,7 @@ import ai.rever.boss.downloads.DownloadCenter
 import ai.rever.boss.plugin.api.TransferKind
 import ai.rever.boss.plugin.api.TransferPhase
 import kotlinx.coroutines.Job
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -53,11 +54,33 @@ object UpdateDownloadCenterMirror {
     private val job = AtomicReference<Job?>(null)
 
     /** Internal for the mapping test: the table above is the whole behaviour. */
+
+    /**
+     * The actions, allocated once per manager rather than per emission.
+     *
+     * Identity matters: `DownloadCenter.begin` decides "another operation joined" by
+     * comparing cancel actions by reference, and a fresh lambda every progress tick
+     * made that fire on every tick - withdrawing Cancel, having `setActions` put it
+     * straight back, and rebuilding the list three times where one would do. A guard
+     * that fires constantly for the one caller it does not mean is no guard at all.
+     */
+    private val actions = ConcurrentHashMap<UpdateManager, UpdateActions>()
+
+    private class UpdateActions(
+        manager: UpdateManager,
+    ) {
+        val cancelDownload: () -> Unit = { manager.cancelDownload() }
+        val discardDownload: () -> Unit = { manager.launchInBackground { manager.discardDownload() } }
+    }
+
+    private fun actionsFor(manager: UpdateManager) = actions.computeIfAbsent(manager) { UpdateActions(it) }
+
     internal fun publish(
         state: UpdateState,
         manager: UpdateManager,
     ) {
         val id = DownloadCenter.APP_UPDATE_ID
+        val acts = actionsFor(manager)
         when (state) {
             is UpdateState.Downloading -> {
                 DownloadCenter.begin(
@@ -65,7 +88,7 @@ object UpdateDownloadCenterMirror {
                     title = title(manager),
                     kind = TransferKind.APP_UPDATE,
                     detail = "Application update",
-                    onCancel = { manager.cancelDownload() },
+                    onCancel = acts.cancelDownload,
                 )
                 // Asserted, not left to begin: a row already exists when a second
                 // version is picked from the list while one sits ReadyToInstall, and
@@ -76,7 +99,7 @@ object UpdateDownloadCenterMirror {
                 // staged path.
                 DownloadCenter.setActions(
                     id = id,
-                    onCancel = { manager.cancelDownload() },
+                    onCancel = acts.cancelDownload,
                     onInstall = null,
                 )
                 DownloadCenter.progress(id, state.progress)
@@ -89,7 +112,7 @@ object UpdateDownloadCenterMirror {
                 val staged = state.downloadPath
                 DownloadCenter.setActions(
                     id = id,
-                    onCancel = { manager.launchInBackground { manager.discardDownload() } },
+                    onCancel = acts.discardDownload,
                     onInstall = { manager.launchInBackground { manager.installUpdate(staged) } },
                 )
                 DownloadCenter.phase(id, TransferPhase.READY_TO_INSTALL)

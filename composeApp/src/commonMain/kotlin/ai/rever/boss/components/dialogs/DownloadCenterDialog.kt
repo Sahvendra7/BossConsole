@@ -182,7 +182,11 @@ private fun TransferActions(transfer: Transfer) {
             Text("Install", fontSize = 12.sp)
         }
     }
-    if (transfer.onCancel != null) {
+    // Rendered on the phase, not on the action's presence: `DownloadCenter.cancel`
+    // clears the action to make the press single-shot, so keying the button on it made
+    // Cancel VANISH when pressed and reappear a tick later on a row whose caller
+    // re-asserts its actions - exactly the moving target this comment argues against.
+    if (info.phase != TransferPhase.READY_TO_INSTALL || transfer.onCancel != null) {
         TextButton(
             onClick = { DownloadCenter.cancel(info.id) },
             enabled = info.cancellable,

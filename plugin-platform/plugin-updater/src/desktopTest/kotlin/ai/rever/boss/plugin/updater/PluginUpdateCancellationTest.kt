@@ -6,8 +6,11 @@ import ai.rever.boss.plugin.repository.PluginRepositoryManager
 import ai.rever.boss.plugin.repository.PluginSearchFilter
 import ai.rever.boss.plugin.repository.PluginSearchResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -87,6 +90,42 @@ class PluginUpdateCancellationTest {
         }
 
     @Test
+    fun `a cancel after the swap has started still completes the unload and load`() =
+        runTest {
+            val mgr = manager(SucceedingRepository(candidate()))
+            mgr.checkForUpdates(mapOf(pluginId to "1.0.0"))
+            var loaded = false
+
+            // The headline hazard: withdrawing the Cancel button is UI state, so the
+            // work has to stop being cancellable too. Here the unload cancels the very
+            // job the swap runs on - if the swap were cancellable, the plugin would be
+            // left unloaded with nothing in its place.
+            runCatching {
+                coroutineScope {
+                    mgr.updatePlugin(
+                        pluginId = pluginId,
+                        downloadPath = "/tmp/does-not-matter.jar",
+                        unloadPlugin = {
+                            this@coroutineScope.cancel()
+                            Result.success(Unit)
+                        },
+                        loadPlugin = {
+                            // A REAL suspension point, or the test proves nothing:
+                            // cancellation is cooperative, and a lambda that never
+                            // suspends never checks. Under NonCancellable this does not
+                            // throw, which is the whole point.
+                            yield()
+                            loaded = true
+                            Result.success(Unit)
+                        },
+                    )
+                }
+            }
+
+            assertTrue(loaded, "the load must still run, or the plugin is gone with nothing in its place")
+        }
+
+    @Test
     fun `a real download failure is still reported`() =
         runTest {
             val mgr = manager(FailingRepository(candidate()))
@@ -120,6 +159,18 @@ private class CancellingRepository(
         targetPath: String,
         onProgress: ((Float) -> Unit)?,
     ): Result<String> = throw CancellationException("cancelled by the user")
+}
+
+/** Downloads without incident, for the paths that are about the swap. */
+private class SucceedingRepository(
+    private val latest: PluginInfo,
+) : StubRepository(latest) {
+    override suspend fun downloadPlugin(
+        pluginId: String,
+        version: String?,
+        targetPath: String,
+        onProgress: ((Float) -> Unit)?,
+    ): Result<String> = Result.success(targetPath)
 }
 
 /** Fails the way an unreachable asset does. */

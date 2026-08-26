@@ -18,8 +18,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -147,6 +149,8 @@ class StoreMissingDependencyInstaller(
         // Visible in the bottom bar like every other transfer, and cancellable while it
         // is still bytes. The row is opened inside the detached job (see `install`), so
         // its Cancel cancels the download rather than the window that asked for it.
+        // Whether the (uncancellable) promotion has run; see the catch below.
+        var promoted = false
         val job = currentCoroutineContext()[Job]
         val ownsTransfer =
             DownloadCenter.begin(
@@ -163,7 +167,19 @@ class StoreMissingDependencyInstaller(
                 }.fold(
                     onSuccess = { downloaded ->
                         DownloadCenter.phase(pluginId, TransferPhase.INSTALLING)
-                        promoteAndLoad(pluginId, downloaded, target, info)
+                        // NonCancellable, like the two swap paths: a Cancel pressed
+                        // between the last progress tick and here surfaces at the next
+                        // suspension point, which can be INSIDE the promotion. By then
+                        // the jar and its sidecar may have moved onto the final name -
+                        // so discarding the part file removes nothing, and a `.jar` sits
+                        // at a scannable name with no installed.json row. The next
+                        // launch's directory scan installs it, unvetted, because
+                        // `vetAndLoad` never ran. That is the exact harm the `.part`
+                        // suffix exists to prevent, reached by another door.
+                        withContext(NonCancellable) {
+                            promoted = true
+                            promoteAndLoad(pluginId, downloaded, target, info)
+                        }
                     },
                     onFailure = { error ->
                         discard(part.absolutePath)
@@ -173,6 +189,10 @@ class StoreMissingDependencyInstaller(
                 )
         } catch (e: CancellationException) {
             discard(part.absolutePath)
+            // The target only if the promotion never ran. Past it the jar may BE the
+            // installed plugin, with its installed.json row written - the same reason
+            // the host's update path gates its discard on `swapStarted`.
+            if (!promoted) discard(target.absolutePath)
             throw e
         } finally {
             if (ownsTransfer) DownloadCenter.end(pluginId)
