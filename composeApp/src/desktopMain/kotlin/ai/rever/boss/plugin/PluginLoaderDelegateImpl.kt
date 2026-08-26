@@ -567,16 +567,29 @@ class PluginLoaderDelegateImpl(
      * Sidebar panels re-register on reload; open tabs do not reopen.
      */
     suspend fun teardownAllPluginTabs(): Int {
-        val tabs =
+        val sandboxed =
             SplitViewStateRegistry.getAllStates().values.flatMap { state ->
                 state.getAllPanels().flatMap { panel ->
                     val component = panel.tabsComponent
                     component.tabsState.value.tabs
-                        .filter { tab -> TabSandboxRegistry.getSandbox(tab.typeId) != null }
-                        .map { tab -> component to tab.id }
+                        .mapNotNull { tab ->
+                            TabSandboxRegistry.getSandbox(tab.typeId)?.let { sandbox ->
+                                Triple(component, tab.id, sandbox.pluginId)
+                            }
+                        }
                 }
             }
-        if (tabs.isEmpty()) return 0
+        val tabs = sandboxed.map { (component, tabId, _) -> component to tabId }
+        // The plugins whose loaders the swap is about to close - the only ones worth waiting on.
+        // NOT every mounted plugin: sidebar panels stay up across a swap by design, so an "is
+        // anything mounted" wait could never come true while one was open.
+        val owners = sandboxed.map { (_, _, pluginId) -> pluginId }.toSet()
+        if (tabs.isEmpty()) {
+            // Still waits: a plugin whose only surface is a sidebar panel has no tabs to close,
+            // and its boundary disposes on a later frame exactly like a tab's would.
+            awaitPluginUiDisposal(owners)
+            return 0
+        }
         logger.info(
             LogCategory.SYSTEM,
             "Tearing down plugin tabs before API-layer swap",
@@ -585,6 +598,7 @@ class PluginLoaderDelegateImpl(
             ),
         )
         closeTabsOnEdt(pluginId = null, tabs = tabs)
+        awaitPluginUiDisposal(owners)
         return tabs.size
     }
 
@@ -597,7 +611,12 @@ class PluginLoaderDelegateImpl(
      */
     suspend fun teardownPluginTabs(pluginId: String): Int {
         val tabs = findOpenTabs(pluginId)
-        if (tabs.isEmpty()) return 0
+        if (tabs.isEmpty()) {
+            // No tabs is not "nothing to wait for": this plugin's sidebar panel is a boundary too,
+            // and its loader is about to close whether or not it had a tab open.
+            awaitPluginUiDisposal(setOf(pluginId))
+            return 0
+        }
         logger.info(
             LogCategory.SYSTEM,
             "Tearing down plugin tabs before unload",
@@ -607,7 +626,32 @@ class PluginLoaderDelegateImpl(
             ),
         )
         closeTabsOnEdt(pluginId, tabs)
+        awaitPluginUiDisposal(setOf(pluginId))
         return tabs.size
+    }
+
+    /**
+     * Wait for [pluginIds]' UI to actually leave the composition, before their loaders close.
+     *
+     * Closing a tab is not disposing it: `removeTabById` mutates the tab model on the EDT and
+     * returns, while Compose disposes the subtree on a LATER render frame - and that frame is what
+     * runs the plugin's own onDispose lambdas, which cannot resolve once its classloader has gone.
+     *
+     * Hoisted out of [closeTabsOnEdt] because it is not about tabs: a plugin whose only surface is
+     * a sidebar panel has no tabs to close and the same race to lose.
+     */
+    private suspend fun awaitPluginUiDisposal(pluginIds: Set<String>) {
+        if (PluginUiMountRegistry.awaitDisposed(pluginIds, UI_DISPOSAL_TIMEOUT_MS)) return
+        logger.warn(
+            LogCategory.SYSTEM,
+            "Plugin UI still mounted after teardown timeout - unloading anyway",
+            mapOf(
+                // The awaited plugins only. Listing every mounted plugin named ones that had
+                // nothing to do with this unload, which is what made the line unactionable.
+                "stillMounted" to PluginUiMountRegistry.stillMounted(pluginIds).toString(),
+                "timeoutMs" to UI_DISPOSAL_TIMEOUT_MS.toString(),
+            ),
+        )
     }
 
     /**
@@ -663,33 +707,6 @@ class PluginLoaderDelegateImpl(
                     )
                 }
             }
-        }
-
-        // Removing the tabs is not the same as disposing them, and the caller is about to close
-        // classloaders.
-        //
-        // removeTabById mutates the tab model on the EDT and returns; Compose disposes the subtree
-        // on a LATER render frame, and it is that frame which runs the plugin's own onDispose
-        // lambdas. Returning here left roughly one frame in which the loader closed first, and the
-        // plugin's teardown then could not resolve its own classes - the NoClassDefFoundError the
-        // classloader reports as "something still referenced the plugin after it was unloaded".
-        //
-        // Waiting on the boundary's own mounted/disposed signal is the fix. It is bounded: a
-        // window that is minimised or fully occluded may never draw, and hanging an unload on a
-        // frame that never comes would be worse than the fault, which the crash boundary contains.
-        val disposed = PluginUiMountRegistry.awaitDisposed(pluginId, UI_DISPOSAL_TIMEOUT_MS)
-        if (!disposed) {
-            logger.warn(
-                LogCategory.SYSTEM,
-                "Plugin UI still mounted after teardown timeout - unloading anyway",
-                mapOf(
-                    "pluginId" to (pluginId ?: "all"),
-                    "stillMounted" to
-                        PluginUiMountRegistry.mounted.value.keys
-                            .joinToString(),
-                    "timeoutMs" to UI_DISPOSAL_TIMEOUT_MS.toString(),
-                ),
-            )
         }
     }
 

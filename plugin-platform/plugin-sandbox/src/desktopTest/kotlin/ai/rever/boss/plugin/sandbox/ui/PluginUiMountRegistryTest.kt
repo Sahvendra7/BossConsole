@@ -69,7 +69,7 @@ class PluginUiMountRegistryTest {
 
             val waiter =
                 async {
-                    val reached = PluginUiMountRegistry.awaitDisposed("terminal", timeoutMillis = 5_000)
+                    val reached = PluginUiMountRegistry.awaitDisposed(setOf("terminal"), timeoutMillis = 5_000)
                     reached to disposeHappened
                 }
             delay(20)
@@ -85,8 +85,8 @@ class PluginUiMountRegistryTest {
     fun `awaiting nothing returns immediately`() =
         runBlocking {
             // The common case: an unload with no plugin UI on screen must not pay the timeout.
-            assertTrue(PluginUiMountRegistry.awaitDisposed("terminal", timeoutMillis = 5_000))
-            assertTrue(PluginUiMountRegistry.awaitDisposed(null, timeoutMillis = 5_000))
+            assertTrue(PluginUiMountRegistry.awaitDisposed(setOf("terminal"), timeoutMillis = 5_000))
+            assertTrue(PluginUiMountRegistry.awaitDisposed(setOf("terminal", "editor"), timeoutMillis = 5_000))
         }
 
     @Test
@@ -96,18 +96,43 @@ class PluginUiMountRegistryTest {
             // an unload on it would be worse than the fault the crash boundary already contains.
             PluginUiMountRegistry.onMounted("terminal")
 
-            assertFalse(PluginUiMountRegistry.awaitDisposed("terminal", timeoutMillis = 50))
+            assertFalse(PluginUiMountRegistry.awaitDisposed(setOf("terminal"), timeoutMillis = 50))
         }
 
     @Test
     fun `awaiting one plugin ignores another still on screen`() =
         runBlocking {
             // Unloading one plugin must not wait on an unrelated plugin's UI, which is not going
-            // anywhere and whose loader is not closing.
+            // anywhere and whose loader is not closing. This is what keeps a sidebar panel that
+            // deliberately survives an API swap from burning the whole timeout on every swap.
             PluginUiMountRegistry.onMounted("editor")
 
-            assertTrue(PluginUiMountRegistry.awaitDisposed("terminal", timeoutMillis = 5_000))
-            assertFalse(PluginUiMountRegistry.awaitDisposed(null, timeoutMillis = 50), "but 'all' waits for it")
+            assertTrue(PluginUiMountRegistry.awaitDisposed(setOf("terminal"), timeoutMillis = 5_000))
+            assertFalse(
+                PluginUiMountRegistry.awaitDisposed(setOf("terminal", "editor"), timeoutMillis = 50),
+                "a set that names the mounted plugin must wait for it",
+            )
+        }
+
+    @Test
+    fun `awaiting an empty set returns immediately`() =
+        runBlocking {
+            // An unload with no sandboxed surfaces at all. It must not pay the timeout, and it
+            // must not wait on unrelated plugins that happen to be mounted.
+            PluginUiMountRegistry.onMounted("editor")
+
+            assertTrue(PluginUiMountRegistry.awaitDisposed(emptySet(), timeoutMillis = 50))
+        }
+
+    @Test
+    fun `stillMounted reports only the plugins that were awaited`() =
+        runBlocking {
+            // The timeout warning is built from this. Listing every mounted plugin named ones with
+            // nothing to do with the unload, which is what made the line unactionable.
+            PluginUiMountRegistry.onMounted("terminal")
+            PluginUiMountRegistry.onMounted("editor")
+
+            assertEquals(mapOf("terminal" to 1), PluginUiMountRegistry.stillMounted(setOf("terminal")))
         }
 
     @Test
