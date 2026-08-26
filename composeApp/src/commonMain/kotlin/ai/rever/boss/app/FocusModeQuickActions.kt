@@ -42,19 +42,26 @@ import androidx.compose.ui.unit.dp
  *
  * A bound, not an estimate - content that would exceed it is CLIPPED. Three `BossActionButton`s at
  * 28.dp square in `imageVector` mode come to ~94x30dp with `space.xs` on each end of the row and
- * the 1.dp border; a fourth, when the tools launcher joins them (see `toolLauncherPlacement`),
- * needs ~132dp. Kept close to those rather than round, because until measurement lands this is also
- * the region the overlay swallows clicks in - the same reason `TOAST_OVERLAY_INITIAL_SIZE` gives
- * for keeping itself no larger than it needs to be. Which is why the fourth button's width is
- * asked for only when there IS a fourth button, rather than reserved always: the three-action case
- * is the common one, and it would have spent a frame swallowing clicks 32dp wider than it draws.
+ * the 1.dp border. Kept close to that rather than round, because until measurement lands this is
+ * also the region the overlay swallows clicks in - the same reason `TOAST_OVERLAY_INITIAL_SIZE`
+ * gives for keeping itself no larger than it needs to be.
+ *
+ * Three actions is the common case, which is why it is this constant that carries the plain name:
+ * the fourth button's width is asked for only when there IS a fourth button
+ * ([QUICK_ACTIONS_OVERLAY_SIZE_WITH_LAUNCHER]), rather than reserved always, which would spend a
+ * frame swallowing clicks 32dp wider than the cluster draws.
  *
  * The margin is deliberately NOT in here; it rides in the inset (see [QUICK_ACTIONS_MARGIN]).
  */
-internal val QUICK_ACTIONS_OVERLAY_SIZE = DpSize(132.dp, 34.dp)
+internal val QUICK_ACTIONS_OVERLAY_SIZE = DpSize(100.dp, 34.dp)
 
-/** The same bound without the tools launcher, which is the common case. See above. */
-internal val QUICK_ACTIONS_OVERLAY_SIZE_NO_LAUNCHER = DpSize(100.dp, 34.dp)
+/**
+ * The same bound with the tools launcher in the row, when both icon strips are gone.
+ *
+ * See `toolLauncherPlacement` for when that happens, and [QUICK_ACTIONS_OVERLAY_SIZE] for why the
+ * two are separate rather than one number wide enough for both.
+ */
+internal val QUICK_ACTIONS_OVERLAY_SIZE_WITH_LAUNCHER = DpSize(132.dp, 34.dp)
 
 /**
  * Gap between the cluster and the corner it sits in.
@@ -454,7 +461,7 @@ internal fun BoxScope.FocusModeQuickActions(
     OverlayCorner(
         alignment = Alignment.BottomEnd,
         initialSize =
-            if (toolLauncher == null) QUICK_ACTIONS_OVERLAY_SIZE_NO_LAUNCHER else QUICK_ACTIONS_OVERLAY_SIZE,
+            if (toolLauncher == null) QUICK_ACTIONS_OVERLAY_SIZE else QUICK_ACTIONS_OVERLAY_SIZE_WITH_LAUNCHER,
         // inset() is invoked INSIDE the branch, not above it. Read unconditionally, the lightweight
         // path subscribes to a value it then ignores and recomposes on every frame of a 250ms
         // sidebar animation - the exact cost the lambda parameter exists to avoid.

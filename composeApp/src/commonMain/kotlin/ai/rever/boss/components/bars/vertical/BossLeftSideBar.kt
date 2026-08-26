@@ -1,5 +1,6 @@
 package ai.rever.boss.components.bars.vertical
 
+import ai.rever.boss.app.SIDEBAR_ICON_SIZE
 import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.rememberBarContextMenuItems
 import ai.rever.boss.components.buttons.ToolLauncherButton
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +42,8 @@ fun BossDraggableComponent.BossLeftSideBar(
      * `ToolLauncherButton` for the overlay that made that necessary.
      */
     onOpenTools: (() -> Unit)? = null,
+    /** Whether the tools dialog is open, so its launcher reads as selected while it is. */
+    toolsOpen: Boolean = false,
 ) {
     // Customize button can be dragged between the three left-side
     // sections; render it at the bottom of whichever slot the user
@@ -99,7 +103,7 @@ fun BossDraggableComponent.BossLeftSideBar(
                 // plugin icon, and the bottom is where the bar already keeps the controls that
                 // are not draggable. Its height is reserved above, or a full rail would spend the
                 // whole budget on plugin icons and push it off screen.
-                onOpenTools?.let { open -> RailToolLauncher(onClick = open, hintDirection = right) }
+                onOpenTools?.let { open -> RailToolLauncher(open, right, toolsOpen) }
             }
         }
     }
@@ -107,20 +111,27 @@ fun BossDraggableComponent.BossLeftSideBar(
 }
 
 /**
- * The tools launcher as a rail icon, with the 4dp the rail puts between its other icons.
+ * The tools launcher as a rail icon: one [SidebarIconRail.RowPitch], like every icon beside it.
  *
- * The spacing lives here rather than inside [ToolLauncherButton] because that button also sits in
- * the floating cluster's row, where the same padding made it taller than its neighbours and
- * dropped its glyph below theirs. Shared by both rails so they cannot space it differently.
+ * BOTH halves are here rather than inside [ToolLauncherButton], because that button also sits in
+ * the floating cluster and the bar's foot, which set their own size and spacing - a size baked
+ * into the button made it the one that did not match wherever it went.
+ *
+ * The size is not decoration. Without it the button fell back to `BossActionButton`'s intrinsic
+ * ~28dp, so it drew visibly smaller than the plugin icons directly above it, while
+ * [SidebarIconRail.ToolLauncherButton] reserved a full 40dp row for it and its own KDoc described
+ * a 32dp icon. Padding OUTSIDE the size, so the two come to exactly that reserved row.
  */
 @Composable
 internal fun RailToolLauncher(
     onClick: () -> Unit,
     hintDirection: Panel,
+    isSelected: Boolean = false,
 ) {
     ToolLauncherButton(
         onClick = onClick,
         hintDirection = hintDirection,
-        modifier = Modifier.padding(vertical = 4.dp),
+        isSelected = isSelected,
+        modifier = Modifier.padding(vertical = 4.dp).size(SIDEBAR_ICON_SIZE),
     )
 }

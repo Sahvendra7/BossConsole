@@ -170,7 +170,7 @@ class FocusModeQuickActionsTest {
         // Three actions, so the ceiling that applies is the one without the launcher. Checking
         // against the wider four-button bound would pass while the overlay this case actually
         // creates clipped a button.
-        val ceiling = QUICK_ACTIONS_OVERLAY_SIZE_NO_LAUNCHER
+        val ceiling = QUICK_ACTIONS_OVERLAY_SIZE
         assertTrue(
             content.width <= ceiling.width && content.height <= ceiling.height,
             "content is $content but the ceiling that clips it is $ceiling",

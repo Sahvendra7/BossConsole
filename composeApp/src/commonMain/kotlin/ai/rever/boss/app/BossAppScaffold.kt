@@ -94,6 +94,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -325,15 +327,23 @@ internal fun BossAppScaffold(
     // Read above the decision below rather than beside the banner, because whether a banner is up
     // is an INPUT to that decision: while one is drawn it is the topmost chrome, so it takes the
     // clearance and nothing beneath it does.
+    //
+    // The BIT, not the state. UpdateState.Downloading carries a progress float that emits
+    // continuously, and collecting the state itself here would invalidate this scaffold - parent
+    // of the bars, the strips and the content - on every tick of a download, to answer a question
+    // whose answer does not change. UpdateBanner still collects the full state for itself, inside
+    // the Column, where a progress tick recomposes the banner and nothing else.
     val updateHandle = state.updateHandle
-    val updateState by updateHandle.updateState.collectAsState()
+    val bannerVisible by remember(updateHandle) {
+        updateHandle.updateState.map { it.drawsBanner() }.distinctUntilChanged()
+    }.collectAsState(initial = false)
 
     val trafficLights =
         macTrafficLightInset(
             appearance = drawn,
             isMacOs = SystemUtils.isMacOS,
             barCollapsed = barRailed,
-            bannerVisible = updateState.drawsBanner(),
+            bannerVisible = bannerVisible,
             // The density's width, not the 36dp floor: Comfortable draws 40dp rails, and
             // measuring the corner with the floor gave away a case that fits.
             stripWidth = BossChrome.dimens.stripWidth,
@@ -348,7 +358,12 @@ internal fun BossAppScaffold(
     val hostToolLauncher: (@Composable (Panel, Modifier) -> Unit)? =
         if (launcherPlacement == ToolLauncherPlacement.HOST_ACTIONS) {
             { hintDirection, modifier ->
-                ToolLauncherButton(onClick = openTools, hintDirection = hintDirection, modifier = modifier)
+                ToolLauncherButton(
+                    onClick = openTools,
+                    hintDirection = hintDirection,
+                    isSelected = state.showToolLauncherDialog,
+                    modifier = modifier,
+                )
             }
         } else {
             null
@@ -408,6 +423,7 @@ internal fun BossAppScaffold(
                 }
 
                 // Update banner - always visible (even in focus mode)
+                val updateState by updateHandle.updateState.collectAsState()
                 // Every action runs on the manager's scope, never this window's
                 // rememberCoroutineScope(): that scope dies with the composition, so
                 // closing the window mid-install used to cancel the install (leaving
@@ -559,6 +575,7 @@ internal fun BossAppScaffold(
                                     .padding(top = trafficLights.columnInset()),
                         ) {
                             BossLeftSideBar(
+                                toolsOpen = state.showToolLauncherDialog,
                                 onOpenTools =
                                     openTools.takeIf {
                                         launcherPlacement == ToolLauncherPlacement.LEFT_STRIP
@@ -688,6 +705,7 @@ internal fun BossAppScaffold(
                             // takes the three icons away without also handing their rows back to
                             // the plugin slots and reshuffling them. See focusQuickActionsRailRows.
                             BossRightSideBar(
+                                toolsOpen = state.showToolLauncherDialog,
                                 onOpenTools =
                                     openTools.takeIf {
                                         launcherPlacement == ToolLauncherPlacement.RIGHT_STRIP

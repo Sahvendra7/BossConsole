@@ -54,6 +54,8 @@ fun BossDraggableComponent.BossRightSideBar(
      * `ToolLauncherButton` for the overlay that made that necessary.
      */
     onOpenTools: (() -> Unit)? = null,
+    /** Whether the tools dialog is open, so its launcher reads as selected while it is. */
+    toolsOpen: Boolean = false,
 ) {
     val visibility by SidebarVisibilitySettingsManager.currentSettings.collectAsState()
     val customizeSlotId = visibility.customizeButtonSlotId
@@ -136,7 +138,7 @@ fun BossDraggableComponent.BossRightSideBar(
                 // Outside the clipped region for the same reason the customize button is, and
                 // above the bottom actions: the launcher is about the slots it sits under, while
                 // Settings / Search / Sign Out are about the app.
-                onOpenTools?.let { open -> RailToolLauncher(onClick = open, hintDirection = left) }
+                onOpenTools?.let { open -> RailToolLauncher(open, left, toolsOpen) }
                 SidebarBottomActions(bottomActions)
             }
         }

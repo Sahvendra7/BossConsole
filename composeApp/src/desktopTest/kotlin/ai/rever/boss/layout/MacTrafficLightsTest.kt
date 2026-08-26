@@ -1,6 +1,5 @@
 package ai.rever.boss.layout
 
-import ai.rever.boss.layout.ChromeDimens
 import ai.rever.boss.window.TabBarPosition
 import ai.rever.boss.window.WindowAppearanceSettings
 import androidx.compose.ui.unit.dp

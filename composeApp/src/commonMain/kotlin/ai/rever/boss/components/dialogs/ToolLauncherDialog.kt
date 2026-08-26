@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -131,7 +132,19 @@ fun BossDraggableComponent.ToolLauncherDialog(onDismiss: () -> Unit) {
     // the top match. Without the focus the search bar is a box you have to click first, which is
     // the difference between a launcher and a dialog with a filter in it.
     val searchFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { searchFocus.requestFocus() }
+    LaunchedEffect(Unit) {
+        // Guarded, and the stake is higher here than in an ordinary dialog. `launcherKeys` is an
+        // onPreviewKeyEvent on the Column, so it only fires while focus is inside this subtree:
+        // if the request throws, the launcher loses type-to-filter, Enter AND Escape at once, and
+        // a dialog that will not close on Escape is the worst of those three.
+        //
+        // requestFocus() on a FocusRequester whose node is not attached yet throws
+        // IllegalStateException, and inside a BossDialog - which composes into its own window on
+        // the heavyweight path - that ordering is not guaranteed. One frame is usually enough;
+        // runCatching is what makes "usually" survivable.
+        withFrameNanos { }
+        runCatching { searchFocus.requestFocus() }
+    }
 
     val openFirstMatch: () -> Unit = {
         // Nothing to open when the query matches nothing: Enter on an empty grid should do

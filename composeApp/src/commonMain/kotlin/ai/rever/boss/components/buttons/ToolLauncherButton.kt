@@ -10,8 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
-/** Test tag of the launcher, for the layout tests that check it is on screen. */
-const val TOOL_LAUNCHER_TAG = "tool-launcher-button"
+/** Test tag of the launcher - see `VerticalBarHostActionsLayoutTest`, which asserts its size. */
+internal const val TOOL_LAUNCHER_TAG = "tool-launcher-button"
 
 /**
  * The way into every tool, for windows where the icon strips are not both on screen.
@@ -39,6 +39,7 @@ const val TOOL_LAUNCHER_TAG = "tool-launcher-button"
 fun ToolLauncherButton(
     onClick: () -> Unit,
     hintDirection: Panel = bottom,
+    /** True while the launcher's dialog is open, so the button reads as the thing that opened it. */
     isSelected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {

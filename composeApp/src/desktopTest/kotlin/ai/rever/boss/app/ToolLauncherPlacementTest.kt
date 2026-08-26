@@ -4,6 +4,7 @@ import ai.rever.boss.focusmode.FocusModeSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * Pins where the tools launcher goes.
@@ -51,25 +52,45 @@ class ToolLauncherPlacementTest {
         // which stays at three. The launcher joins that group only in HOST_ACTIONS, and the rail
         // placement needs a right strip - so the two must be mutually exclusive by construction.
         // If this ever fails, the rail under-reserves and pushes an icon off the bottom.
-        val settings = FocusModeSettings()
-        listOf(false, true).forEach { leftHidden ->
-            val launcher = toolLauncherPlacement(leftStripHidden = leftHidden, rightStripHidden = false)
+        //
+        // Over the FULL cross-product, and asserted as an implication. The previous version looped
+        // over `leftHidden` without passing it to either function and fixed `rightStripHidden` to
+        // false - which is the one value that makes HOST_ACTIONS impossible, so both iterations
+        // computed the same thing and the assertion could not fail. It stood in for this invariant
+        // while testing nothing.
+        val bools = listOf(false, true)
+        val cases = bools.flatMap { l -> bools.flatMap { r -> bools.map { t -> Triple(l, r, t) } } }
+
+        var sawHostActions = false
+        var sawRail = false
+
+        cases.forEach { (leftHidden, rightHidden, topBarHidden) ->
+            val launcher = toolLauncherPlacement(leftStripHidden = leftHidden, rightStripHidden = rightHidden)
             val quickActions =
                 focusQuickActionsPlacement(
-                    settings = settings,
-                    topBarHidden = true,
-                    rightStripHidden = false,
+                    settings = FocusModeSettings(),
+                    topBarHidden = topBarHidden,
+                    rightStripHidden = rightHidden,
                     showTopBar = false,
                 )
-            if (quickActions == FocusQuickActionsPlacement.RIGHT_RAIL) {
+
+            if (launcher == ToolLauncherPlacement.HOST_ACTIONS) sawHostActions = true
+            if (quickActions == FocusQuickActionsPlacement.RIGHT_RAIL) sawRail = true
+
+            if (launcher == ToolLauncherPlacement.HOST_ACTIONS) {
                 assertNotEquals(
-                    ToolLauncherPlacement.HOST_ACTIONS,
-                    launcher,
-                    "the rail hosts the actions only when the right strip is up, and the launcher " +
-                        "joins them only when both strips are down",
+                    FocusQuickActionsPlacement.RIGHT_RAIL,
+                    quickActions,
+                    "launcher in the host group while the rail draws it: leftHidden=$leftHidden " +
+                        "rightHidden=$rightHidden topBarHidden=$topBarHidden",
                 )
             }
         }
+
+        // Both sides of the implication have to occur somewhere in the sweep, or it is vacuous
+        // again by another route.
+        assertTrue(sawHostActions, "no case produced HOST_ACTIONS")
+        assertTrue(sawRail, "no case produced RIGHT_RAIL")
     }
 
     @Test

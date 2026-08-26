@@ -60,10 +60,30 @@ class QuickActionsFooterPlacementTest {
     }
 
     @Test
-    fun `without either it floats, as before`() {
+    fun `a bar that is not on the left has no foot either`() {
+        // Was a character-for-character copy of the test above, so the case its name described -
+        // no vertical bar AT ALL, as against a collapsed one - went untested while looking covered.
+        //
+        // Asked through verticalBarHasFoot rather than by passing `false` again, because that is
+        // the composition the scaffold performs and the only way the two cases differ.
+        val tabsOnTop = verticalBarHasFoot(tabBarOnLeft = false, barCollapsed = false, drawerVisible = false)
         assertEquals(
             FocusQuickActionsPlacement.FLOATING,
-            placement(rightStripHidden = true, verticalTabBar = false),
+            placement(rightStripHidden = true, verticalTabBar = tabsOnTop),
+        )
+
+        // And the collapsed-bar case reaches the same answer by the other route.
+        val collapsedOnLeft = verticalBarHasFoot(tabBarOnLeft = true, barCollapsed = true, drawerVisible = false)
+        assertEquals(
+            FocusQuickActionsPlacement.FLOATING,
+            placement(rightStripHidden = true, verticalTabBar = collapsedOnLeft),
+        )
+
+        // The drawer is the third state: a collapsed bar with it open HAS a foot again.
+        val drawerOpen = verticalBarHasFoot(tabBarOnLeft = true, barCollapsed = true, drawerVisible = true)
+        assertEquals(
+            FocusQuickActionsPlacement.TAB_BAR_FOOTER,
+            placement(rightStripHidden = true, verticalTabBar = drawerOpen),
         )
     }
 

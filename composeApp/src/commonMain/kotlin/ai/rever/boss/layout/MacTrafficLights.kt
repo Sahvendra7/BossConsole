@@ -172,6 +172,23 @@ fun TrafficLightInset.barStartInset(): Dp = if (this == TrafficLightInset.TOP_BA
  *
  * True when the user asked for it, and true for [TrafficLightInset.CONTENT] - there is no chrome
  * to inset, so the row is what keeps the lights off the content.
+ *
+ * **The CONTENT answer is reached dynamically, and the row therefore appears and disappears.** Two
+ * ways in, both of them a user gesture rather than a setting:
+ *
+ * - **Narrowing the window.** The default configuration is [TrafficLightInset.LEFT_COLUMNS]; drag
+ *   past `TAB_BAR_AUTO_COLLAPSE_WIDTH` and the bar rails itself, the left chrome drops under
+ *   [TRAFFIC_LIGHT_WIDTH], and a 26dp row appears at the top - moving the whole window's content
+ *   down mid-drag. Widen again and it goes.
+ * - **Focus mode**, when the top bar was what held them: clearing it leaves nothing up there, so
+ *   focus mode ADDS a row, which is the opposite of what it is for.
+ *
+ * Both are the honest answer to "where do the lights go" and neither is what anyone wants to see.
+ * Kept, rather than papered over, because the alternatives are worse: leaving the lights over a
+ * browser pane makes them unreadable and unclickable-looking, and insetting a column narrower than
+ * the box protects half the corner and looks deliberate. Closing it properly means a transparent
+ * clearance region over the content rather than a row above it, which is a change to how the
+ * window composes its top edge and does not belong to the change that found it.
  */
 fun TrafficLightInset.needsTitleRow(showTitleBar: Boolean): Boolean = showTitleBar || this == TrafficLightInset.CONTENT
 

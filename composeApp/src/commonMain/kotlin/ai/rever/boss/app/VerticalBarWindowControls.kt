@@ -10,6 +10,7 @@ import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.window.Project
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -132,14 +133,24 @@ private val ROW_GAP = 4.dp
 internal fun VerticalBarHostActions(actions: List<@Composable () -> Unit>) {
     if (actions.isEmpty()) return
 
-    Row(
+    // A FlowRow, not a Row, because these do not fit on one line in a narrow bar.
+    //
+    // The bar goes down to TabBarVerticalWidthRange.start, 120dp. Four 32dp buttons with 4dp
+    // between them and 8dp either side need 156dp, and three need exactly 120 - no margin at all.
+    // A Row does not wrap, and what it did instead, measured at 120dp, was give its LAST child
+    // zero width: Search came back as a 0x0 rect while the other three kept their full size. Not
+    // a clipped icon - an absent one, on a width the user can reach by dragging.
+    //
+    // Wrapping is the fallback and not the shape: at any comfortable width these still lay out
+    // side by side, which VerticalBarHostActionsLayoutTest pins along with the narrow case.
+    FlowRow(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .testTag(VERTICAL_BAR_HOST_ACTIONS_TAG)
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         // No key: the list is fixed-order for a given placement, so positional identity is what a
         // key would give - the same call SidebarBottomActions makes about the same three actions.
@@ -147,7 +158,7 @@ internal fun VerticalBarHostActions(actions: List<@Composable () -> Unit>) {
     }
 }
 
-/** Test tag of the footer row - see `VerticalBarHostActionsTest`. */
+/** Test tag of the footer row - see `VerticalBarHostActionsLayoutTest`. */
 internal const val VERTICAL_BAR_HOST_ACTIONS_TAG = "vertical-bar-host-actions"
 
 /**
