@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS "public"."screenshot_shares" (
     "width" integer,
     "height" integer,
     "note" "text",
+    "password_hash" "text",
+    "failed_password_attempts" integer DEFAULT 0 NOT NULL,
     "read_at" timestamp with time zone,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "expires_at" timestamp with time zone DEFAULT ("now"() + interval '14 days') NOT NULL,
@@ -54,6 +56,7 @@ CREATE TABLE IF NOT EXISTS "public"."screenshot_shares" (
     CONSTRAINT "screenshot_shares_not_self" CHECK ("sender_id" <> "recipient_id"),
     CONSTRAINT "screenshot_shares_image_size" CHECK ("octet_length"("image_data") <= 8388608),
     CONSTRAINT "screenshot_shares_note_length" CHECK ("note" IS NULL OR "char_length"("note") <= 500),
+    CONSTRAINT "screenshot_shares_failed_attempts_check" CHECK ("failed_password_attempts" >= 0),
     CONSTRAINT "screenshot_shares_sender_fkey" FOREIGN KEY ("sender_id")
         REFERENCES "auth"."users"("id") ON DELETE CASCADE,
     CONSTRAINT "screenshot_shares_recipient_fkey" FOREIGN KEY ("recipient_id")
@@ -69,6 +72,10 @@ COMMENT ON TABLE "public"."screenshot_shares" IS 'One shared, annotated screensh
 COMMENT ON COLUMN "public"."screenshot_shares"."expires_at" IS 'Default 14 days. Old shares are opportunistically deleted by trigger_cleanup_expired_screenshot_shares, the same probabilistic-on-insert pattern as organisation_handoff_tokens -- this table only ever holds short-lived rows, so a scheduled job is unnecessary.';
 
 COMMENT ON COLUMN "public"."screenshot_shares"."read_at" IS 'Set once, the first time the recipient calls get_screenshot_image() for this row. Drives the unread badge in the plugin''s inbox panel.';
+
+COMMENT ON COLUMN "public"."screenshot_shares"."password_hash" IS 'Optional bcrypt hash (pgcrypto crypt()/gen_salt(''bf'')) of a passphrase the sender set. Null means the share opens with no password prompt. One-way -- get_screenshot_image() verifies against it, nothing ever reads it back.';
+
+COMMENT ON COLUMN "public"."screenshot_shares"."failed_password_attempts" IS 'Incremented by get_screenshot_image() on every wrong password. At 5, the share is locked out for its remaining lifetime (no further hash comparison is even attempted) -- there is no cooldown/reset, matching this table''s otherwise simple, short-lived-row design.';
 
 CREATE INDEX IF NOT EXISTS "idx_screenshot_shares_recipient"
     ON "public"."screenshot_shares" ("recipient_id", "created_at" DESC);
@@ -144,7 +151,13 @@ BEGIN
       INTO v_rows
       FROM (
         SELECT DISTINCT ON (u.id)
-               u.id AS user_id, u.email, om.org_id, o.name AS org_name
+               u.id AS user_id, u.email,
+               COALESCE(
+                   u.raw_user_meta_data ->> 'full_name',
+                   u.raw_user_meta_data ->> 'name',
+                   split_part(u.email, '@', 1)
+               ) AS display_name,
+               om.org_id, o.name AS org_name
         FROM public.organisation_members om
         JOIN public.organisation_members mine
           ON mine.org_id = om.org_id
@@ -178,7 +191,8 @@ CREATE OR REPLACE FUNCTION "public"."share_screenshot"(
     "p_mime_type" "text" DEFAULT 'image/png'::"text",
     "p_width" integer DEFAULT NULL::integer,
     "p_height" integer DEFAULT NULL::integer,
-    "p_note" "text" DEFAULT NULL::"text"
+    "p_note" "text" DEFAULT NULL::"text",
+    "p_password" "text" DEFAULT NULL::"text"
 ) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -188,6 +202,7 @@ DECLARE
     v_org_id UUID;
     v_image BYTEA;
     v_share_id UUID;
+    v_password_hash TEXT;
 BEGIN
     IF v_actor IS NULL THEN
         RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
@@ -236,10 +251,14 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'Screenshot exceeds the 8MB limit');
     END IF;
 
+    IF p_password IS NOT NULL AND btrim(p_password) <> '' THEN
+        v_password_hash := extensions.crypt(p_password, extensions.gen_salt('bf'));
+    END IF;
+
     INSERT INTO public.screenshot_shares (
-        sender_id, recipient_id, org_id, image_data, mime_type, width, height, note
+        sender_id, recipient_id, org_id, image_data, mime_type, width, height, note, password_hash
     ) VALUES (
-        v_actor, p_recipient_id, v_org_id, v_image, p_mime_type, p_width, p_height, p_note
+        v_actor, p_recipient_id, v_org_id, v_image, p_mime_type, p_width, p_height, p_note, v_password_hash
     ) RETURNING id INTO v_share_id;
 
     RETURN jsonb_build_object('success', true, 'share_id', v_share_id::text);
@@ -277,7 +296,8 @@ BEGIN
       INTO v_rows
       FROM (
         SELECT s.id, s.sender_id, u.email AS sender_email, s.note,
-               s.width, s.height, s.mime_type, s.created_at, s.read_at
+               s.width, s.height, s.mime_type, s.created_at, s.read_at,
+               (s.password_hash IS NOT NULL) AS has_password
         FROM public.screenshot_shares s
         JOIN auth.users u ON u.id = s.sender_id
         WHERE s.recipient_id = v_actor
@@ -314,7 +334,8 @@ BEGIN
       INTO v_rows
       FROM (
         SELECT s.id, s.recipient_id, u.email AS recipient_email, s.note,
-               s.width, s.height, s.mime_type, s.created_at, s.read_at
+               s.width, s.height, s.mime_type, s.created_at, s.read_at,
+               (s.password_hash IS NOT NULL) AS has_password
         FROM public.screenshot_shares s
         JOIN auth.users u ON u.id = s.recipient_id
         WHERE s.sender_id = v_actor
@@ -335,7 +356,7 @@ ALTER FUNCTION "public"."list_sent_screenshots"(integer, integer) OWNER TO "post
 -- SECTION 5: get_screenshot_image -- fetches bytes, marks read as a side effect
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION "public"."get_screenshot_image"("p_share_id" "uuid")
+CREATE OR REPLACE FUNCTION "public"."get_screenshot_image"("p_share_id" "uuid", "p_password" "text" DEFAULT NULL::"text")
 RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -343,6 +364,7 @@ RETURNS "jsonb"
 DECLARE
     v_actor UUID := auth.uid();
     v_row public.screenshot_shares;
+    v_new_attempts INTEGER;
 BEGIN
     IF v_actor IS NULL THEN
         RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
@@ -353,6 +375,30 @@ BEGIN
 
     IF NOT FOUND OR (v_row.sender_id <> v_actor AND v_row.recipient_id <> v_actor) THEN
         RETURN jsonb_build_object('success', false, 'error', 'Screenshot not found');
+    END IF;
+
+    -- The password gate only applies to the RECIPIENT -- the sender who set
+    -- it already knows it and must always be able to see their own sent item.
+    IF v_row.password_hash IS NOT NULL AND v_row.recipient_id = v_actor THEN
+        IF v_row.failed_password_attempts >= 5 THEN
+            RETURN jsonb_build_object('success', false, 'error', 'locked');
+        END IF;
+
+        IF p_password IS NULL THEN
+            RETURN jsonb_build_object('success', false, 'error', 'password_required');
+        END IF;
+
+        IF extensions.crypt(p_password, v_row.password_hash) <> v_row.password_hash THEN
+            UPDATE public.screenshot_shares
+               SET failed_password_attempts = failed_password_attempts + 1
+             WHERE id = p_share_id
+             RETURNING failed_password_attempts INTO v_new_attempts;
+
+            RETURN jsonb_build_object(
+                'success', false,
+                'error', 'invalid_password',
+                'attempts_remaining', GREATEST(5 - v_new_attempts, 0));
+        END IF;
     END IF;
 
     -- Marked read on first fetch by the RECIPIENT only -- the sender opening
@@ -370,9 +416,9 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION "public"."get_screenshot_image"("uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."get_screenshot_image"("uuid", "text") OWNER TO "postgres";
 
-COMMENT ON FUNCTION "public"."get_screenshot_image"("uuid") IS 'Returns the base64-encoded image and marks read_at the first time the RECIPIENT (never the sender) fetches it.';
+COMMENT ON FUNCTION "public"."get_screenshot_image"("uuid", "text") IS 'Returns the base64-encoded image and marks read_at the first time the RECIPIENT (never the sender) fetches it. If the share is password-protected, the RECIPIENT must supply a matching p_password -- errors "password_required"/"invalid_password"/"locked" (5 wrong attempts) let the caller distinguish those cases from a hard failure.';
 
 
 -- ============================================================================
@@ -393,8 +439,8 @@ GRANT  EXECUTE ON FUNCTION "public"."list_received_screenshots"(boolean, integer
 REVOKE EXECUTE ON FUNCTION "public"."list_sent_screenshots"(integer, integer) FROM PUBLIC, "anon";
 GRANT  EXECUTE ON FUNCTION "public"."list_sent_screenshots"(integer, integer) TO "authenticated", "service_role";
 
-REVOKE EXECUTE ON FUNCTION "public"."get_screenshot_image"("uuid") FROM PUBLIC, "anon";
-GRANT  EXECUTE ON FUNCTION "public"."get_screenshot_image"("uuid") TO "authenticated", "service_role";
+REVOKE EXECUTE ON FUNCTION "public"."get_screenshot_image"("uuid", "text") FROM PUBLIC, "anon";
+GRANT  EXECUTE ON FUNCTION "public"."get_screenshot_image"("uuid", "text") TO "authenticated", "service_role";
 
 REVOKE EXECUTE ON FUNCTION "public"."trigger_cleanup_expired_screenshot_shares"() FROM PUBLIC, "anon", "authenticated";
 
