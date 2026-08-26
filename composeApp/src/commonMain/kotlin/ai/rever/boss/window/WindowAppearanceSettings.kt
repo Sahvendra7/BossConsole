@@ -143,13 +143,17 @@ data class WindowAppearanceSettings(
      * bar is hidden by default now. A one-pane window could therefore reach a state with no tab
      * titles anywhere on screen, which is the state the strip exists to prevent.
      *
-     * So the pane count is a preference rather than a rule - but it stays ON by default, which
-     * makes this purely additive: every install keeps the behaviour it already had, and anyone
-     * who wants the strip in an unsplit window can switch this off. That is also why no
-     * [WindowAppearanceMigrations] step is needed for it. A file written before this field
-     * existed decodes to the default, and the default is what that build already did.
+     * So the pane count is a preference rather than a rule, and it is OFF by default: the strip
+     * shows in a one-pane window too, because that is the window most likely to have no tab titles
+     * anywhere else on screen. Anyone who wants the old split-only behaviour switches it on.
+     *
+     * This DOES change what an existing install does, and reaches one without a migration step: a
+     * file written before this field existed does not name it, so it decodes to whatever the
+     * default is now. That is the mechanism `WindowAppearanceEncodeDefaultsTest` pins - and its
+     * limit applies here too, since a file that omits the field cannot say whether that is a
+     * preference or simply an older build.
      */
-    val paneTabStripOnlyWhenSplit: Boolean = true,
+    val paneTabStripOnlyWhenSplit: Boolean = false,
     /**
      * Whether right-click menus are the operating system's own rather than BOSS-drawn.
      *
