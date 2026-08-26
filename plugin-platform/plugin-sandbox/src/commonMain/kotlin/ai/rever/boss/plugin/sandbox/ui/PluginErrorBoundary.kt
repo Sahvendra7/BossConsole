@@ -385,8 +385,15 @@ fun PluginErrorBoundary(
                 PluginCrashRegistry.recordCrash(pluginId, e)
             }
         }
+    // Mounted/disposed is recorded HERE rather than at the two call sites, because this boundary
+    // is what every plugin surface goes through - a tab, a sidebar panel, and whatever is added
+    // next. The unload path waits on it: Compose disposes a removed tab on a later frame, and that
+    // frame is what runs the plugin's own onDispose lambdas, which cannot resolve once its
+    // classloader has closed. See PluginUiMountRegistry.
     DisposableEffect(pluginId) {
+        PluginUiMountRegistry.onMounted(pluginId)
         onDispose {
+            PluginUiMountRegistry.onDisposed(pluginId)
             crashRegistration?.invoke()
         }
     }

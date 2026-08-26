@@ -24,6 +24,7 @@ import ai.rever.boss.plugin.loader.PluginUnloadException
 import ai.rever.boss.plugin.repository.remote.PluginStoreConfig
 import ai.rever.boss.plugin.sandbox.TabSandboxRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
+import ai.rever.boss.plugin.sandbox.ui.PluginUiMountRegistry
 import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -663,6 +664,33 @@ class PluginLoaderDelegateImpl(
                 }
             }
         }
+
+        // Removing the tabs is not the same as disposing them, and the caller is about to close
+        // classloaders.
+        //
+        // removeTabById mutates the tab model on the EDT and returns; Compose disposes the subtree
+        // on a LATER render frame, and it is that frame which runs the plugin's own onDispose
+        // lambdas. Returning here left roughly one frame in which the loader closed first, and the
+        // plugin's teardown then could not resolve its own classes - the NoClassDefFoundError the
+        // classloader reports as "something still referenced the plugin after it was unloaded".
+        //
+        // Waiting on the boundary's own mounted/disposed signal is the fix. It is bounded: a
+        // window that is minimised or fully occluded may never draw, and hanging an unload on a
+        // frame that never comes would be worse than the fault, which the crash boundary contains.
+        val disposed = PluginUiMountRegistry.awaitDisposed(pluginId, UI_DISPOSAL_TIMEOUT_MS)
+        if (!disposed) {
+            logger.warn(
+                LogCategory.SYSTEM,
+                "Plugin UI still mounted after teardown timeout - unloading anyway",
+                mapOf(
+                    "pluginId" to (pluginId ?: "all"),
+                    "stillMounted" to
+                        PluginUiMountRegistry.mounted.value.keys
+                            .joinToString(),
+                    "timeoutMs" to UI_DISPOSAL_TIMEOUT_MS.toString(),
+                ),
+            )
+        }
     }
 
     override fun getInaccessiblePlugins(): List<InaccessiblePluginInfo> =
@@ -721,3 +749,11 @@ class PluginLoaderDelegateImpl(
         }
     }
 }
+
+/**
+ * How long an unload waits for Compose to finish disposing a plugin's UI.
+ *
+ * Generous for what it waits on - a render frame is ~16ms - and short enough that a window which
+ * is never going to draw does not hold up an unload. See `PluginUiMountRegistry.awaitDisposed`.
+ */
+private const val UI_DISPOSAL_TIMEOUT_MS = 2_000L
