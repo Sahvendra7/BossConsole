@@ -307,6 +307,16 @@ fun BoxScope.WindowRevealedTabBarDrawer(
     reveal: TabBarRevealState,
     contentRegion: IntRect?,
     onPin: (() -> Unit)?,
+    /**
+     * The window chrome the pinned bar carries, so the revealed one carries it too.
+     *
+     * The drawer is a full bar, not a preview of one: while it is open it is the only bar on
+     * screen, since the in-flow one is down to its rail. Leaving these out meant the project and
+     * workspace pickers and the host's own actions - Sign Out, Settings, Tools, Search - were
+     * reachable from the pinned bar and from nowhere at all once it was collapsed.
+     */
+    footer: @Composable () -> Unit = {},
+    belowMap: @Composable () -> Unit = {},
 ) {
     // Built here rather than taken as a parameter: dismissing a drawer is the drawer's own
     // business, and the pointer state it needs is a composable read the caller had to make on the
@@ -358,6 +368,8 @@ fun BoxScope.WindowRevealedTabBarDrawer(
             onPin = onPin,
             tabDragComponent = null,
             registerBounds = false,
+            footer = footer,
+            belowMap = belowMap,
         )
     }
 }

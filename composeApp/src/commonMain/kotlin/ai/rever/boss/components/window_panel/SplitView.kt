@@ -1856,17 +1856,7 @@ fun SplitViewPanel(
                     paths.forEach { splitViewState.openFileInActivePanel(it, it.extractFileName()) }
                 },
     ) {
-        val splitTree: @Composable (Modifier) -> Unit = { treeModifier ->
-            Box(modifier = treeModifier) {
-                SplitOrZoomedPane(
-                    splitViewState = splitViewState,
-                    tabDragComponent = tabDragComponent,
-                    onTabDropResult = onTabDropResult,
-                    // A panel draws its own bar only when this one is not drawing it for them.
-                    showPanelTabBar = !bar.vertical,
-                )
-            }
-        }
+        val splitTree = rememberSplitTree(splitViewState, tabDragComponent, onTabDropResult, bar.vertical)
 
         if (bar.vertical) {
             WindowBarRow(
@@ -1885,16 +1875,14 @@ fun SplitViewPanel(
         }
 
         if (bar.vertical && bar.railShown) {
-            WindowRevealedTabBarDrawer(
+            RevealedBar(
                 splitViewState = splitViewState,
                 bar = bar,
                 reveal = reveal,
-                // Started BELOW the traffic-light clearance rather than padded inside it. The
-                // drawer is its own always-on-top window, so the lights are behind it whatever it
-                // pads - the only way to leave them visible is to not cover them. Region is in dp,
-                // which is what verticalBarTopInset already is.
-                contentRegion = contentRegion.below(verticalBarTopInset),
-                onPin = rememberPinDrawerAction(reveal, bar),
+                contentRegion = contentRegion,
+                topInset = verticalBarTopInset,
+                footer = verticalBarFooter,
+                belowMap = verticalBarBelowMap,
             )
         }
     }
@@ -2022,6 +2010,66 @@ private fun WindowBarRow(
         VDivider()
         splitTree(Modifier.weight(1f).fillMaxHeight())
     }
+}
+
+/**
+ * The split tree as a slot, so the two layouts below can each place it where they want it.
+ *
+ * A `remember`, not a fresh lambda each pass: the vertical layout hands it to `WindowBarRow`,
+ * which is not skippable, and a new lambda identity every recomposition would recompose the whole
+ * bar alongside the tree it wraps.
+ */
+@Composable
+private fun rememberSplitTree(
+    splitViewState: SplitViewState,
+    tabDragComponent: TabDraggableComponent?,
+    onTabDropResult: (TabDropResult) -> Unit,
+    barIsVertical: Boolean,
+): @Composable (Modifier) -> Unit =
+    remember(splitViewState, tabDragComponent, onTabDropResult, barIsVertical) {
+        { treeModifier ->
+            Box(modifier = treeModifier) {
+                SplitOrZoomedPane(
+                    splitViewState = splitViewState,
+                    tabDragComponent = tabDragComponent,
+                    onTabDropResult = onTabDropResult,
+                    // A panel draws its own bar only when this one is not drawing it for them.
+                    showPanelTabBar = !barIsVertical,
+                )
+            }
+        }
+    }
+
+/**
+ * The hover-revealed bar, with everything the pinned one carries.
+ *
+ * Split out of [SplitViewPanel], which is at detekt's length ceiling. Both slots are passed
+ * because while this is open it is the only bar on screen - the in-flow one is down to its rail -
+ * so anything missing here is missing outright, not merely missing from a preview.
+ */
+@Composable
+@Suppress("LongParameterList")
+private fun BoxScope.RevealedBar(
+    splitViewState: SplitViewState,
+    bar: TabBarLayout,
+    reveal: TabBarRevealState,
+    contentRegion: IntRect?,
+    topInset: Dp,
+    footer: @Composable () -> Unit,
+    belowMap: @Composable () -> Unit,
+) {
+    WindowRevealedTabBarDrawer(
+        splitViewState = splitViewState,
+        bar = bar,
+        reveal = reveal,
+        // Started BELOW the traffic-light clearance rather than padded inside it. The drawer is
+        // its own always-on-top window, so the lights are behind it whatever it pads - the only
+        // way to leave them visible is to not cover them. The region is already in dp.
+        contentRegion = contentRegion.below(topInset),
+        footer = footer,
+        belowMap = belowMap,
+        onPin = rememberPinDrawerAction(reveal, bar),
+    )
 }
 
 /**
