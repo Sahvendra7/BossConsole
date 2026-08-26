@@ -370,6 +370,18 @@ fun BoxScope.WindowRevealedTabBarDrawer(
             registerBounds = false,
             footer = footer,
             belowMap = belowMap,
+            // The drawer is a second bar, and a bar with no idea a pane is zoomed draws its map
+            // as an ordinary arrangement: no signal border, no "Exit Full Screen" across it, and
+            // nothing clickable. On a COLLAPSED bar the drawer is the only map there is, so that
+            // left a zoomed pane with no way back from the tab bar at all.
+            zoomed = splitViewState.zoomedPanelId != null,
+            // Dismissed as well as exited, for the same reason picking a tab dismisses: the
+            // arrangement coming back is behind this drawer, and leaving it up covers the thing
+            // the click just asked to see.
+            onExitZoom = {
+                splitViewState.exitZoom()
+                onDismiss()
+            },
         )
     }
 }

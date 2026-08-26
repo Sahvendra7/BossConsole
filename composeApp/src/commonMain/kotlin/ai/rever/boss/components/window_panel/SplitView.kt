@@ -1824,6 +1824,16 @@ fun SplitViewPanel(
      * gives them one again. Only this composable knows: the reveal state machine lives here.
      */
     onDrawerVisibleChange: (Boolean) -> Unit = {},
+    /**
+     * Reports whether the bar in the layout is the slim rail.
+     *
+     * Not the same question as the `tabBarCollapsed` preference, which is what the window used to
+     * ask: a bar also rails itself when there is no room for a full one, and only this composable
+     * has measured the width. The window needs the MEASURED answer, because a rail has no foot to
+     * put the host's actions in - and while it believed the preference, a narrow window sent them
+     * to a foot that was not being drawn and they rendered nowhere at all.
+     */
+    onBarRailedChange: (Boolean) -> Unit = {},
 ) {
     val density = LocalDensity.current
 
@@ -1853,6 +1863,11 @@ fun SplitViewPanel(
     // during composition of the thing that reads it.
     val drawerOpen = bar.vertical && bar.railShown && reveal.drawerVisible
     LaunchedEffect(drawerOpen) { onDrawerVisibleChange(drawerOpen) }
+
+    // Same reasoning, same shape: reported in an effect because the window turns it into a
+    // placement decision that feeds back into what this composable is handed.
+    val barRailed = bar.vertical && bar.railShown
+    LaunchedEffect(barRailed) { onBarRailedChange(barRailed) }
 
     Box(
         modifier =

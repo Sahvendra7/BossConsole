@@ -24,6 +24,8 @@ import ai.rever.boss.git.GitService
 import ai.rever.boss.git.GitStashInfo
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.platform.rememberDirectoryPicker
+import ai.rever.boss.plugin.api.Panel
+import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.ui.BossAlertDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.project.removeProjectAndReport
@@ -79,7 +81,7 @@ fun BossDraggableComponent.BossTopBar(
     // parameter makes that a compile error at the single call site instead.
     onSignOut: () -> Unit,
     /** The tools launcher, when neither icon strip is on screen. See [BossTopRightBar]. */
-    toolLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     onNewProject: (() -> Unit)? = null,
     onCloneProject: (() -> Unit)? = null,
     /**
@@ -842,7 +844,7 @@ fun BossTopRightBar(
      * takes in the floating cluster and the tab bar's footer, so the group reads the same wherever
      * it is drawn.
      */
-    toolLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
 ) {
     val currentUser by AuthService.currentUser.collectAsState()
 
@@ -875,7 +877,9 @@ fun BossTopRightBar(
         onShowSettings?.invoke()
     }
 
-    toolLauncher?.invoke()
+    // The default direction here, unlike the two groups that hint upwards: this bar is at the top
+    // of the window, so below it is where there is room.
+    toolLauncher?.invoke(bottom, Modifier)
 
     BossActionButton(
         imageVector = Icons.Outlined.Search,

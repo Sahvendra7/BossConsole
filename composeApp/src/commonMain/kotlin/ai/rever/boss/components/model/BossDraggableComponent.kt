@@ -588,7 +588,18 @@ class BossDraggableComponent(
         // rather than two early returns, which keeps the whole miss story in one place.
         val item = items.find { it.pluginContentId.panelId == panelId }
         val panel = displayPanelFor(slot)
-        if (item == null || panel == null) return
+        if (item == null || panel == null) {
+            // Logged for the same reason the miss above is: this path is reached from a click
+            // too, and returning quietly here leaves exactly the dead affordance the warning
+            // above exists to explain. "Cannot miss" is the argument for it being a single
+            // guard, not for it being silent.
+            logger.warn(
+                LogCategory.UI,
+                "Sidebar panel matched a slot but could not be resolved",
+                mapOf("panelId" to panelId, "slot" to slot.toString()),
+            )
+            return
+        }
 
         // Same plugin toggles, a different one takes the panel over - what toggleVisibility does.
         if (panelsData[panel]?.sidebarItem?.id == item.id) {

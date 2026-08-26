@@ -441,7 +441,7 @@ internal fun BossAppDialogs(state: BossAppState) {
         )
     }
 
-    // Global search dialog (Issue #92)
+    // The tools launcher's dialog.
     if (state.showToolLauncherDialog) {
         // In the MAIN composition, not inside whichever chrome raised it - see BossAppState.
         state.draggablePanelComponent.ToolLauncherDialog(

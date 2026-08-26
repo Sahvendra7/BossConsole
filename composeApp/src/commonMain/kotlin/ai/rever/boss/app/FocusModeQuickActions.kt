@@ -42,13 +42,19 @@ import androidx.compose.ui.unit.dp
  *
  * A bound, not an estimate - content that would exceed it is CLIPPED. Three `BossActionButton`s at
  * 28.dp square in `imageVector` mode come to ~94x30dp with `space.xs` on each end of the row and
- * the 1.dp border. The width allows a fourth, for the case where the tools launcher joins them
- * (see `toolLauncherPlacement`), which is why it is not ~100. Kept close to that rather than
- * round, because until measurement lands this is also the region the overlay swallows clicks in - the same reason
- * `TOAST_OVERLAY_INITIAL_SIZE` gives for keeping itself no larger than it needs to be. The margin
- * is deliberately NOT in here; it rides in the inset (see [QUICK_ACTIONS_MARGIN]).
+ * the 1.dp border; a fourth, when the tools launcher joins them (see `toolLauncherPlacement`),
+ * needs ~132dp. Kept close to those rather than round, because until measurement lands this is also
+ * the region the overlay swallows clicks in - the same reason `TOAST_OVERLAY_INITIAL_SIZE` gives
+ * for keeping itself no larger than it needs to be. Which is why the fourth button's width is
+ * asked for only when there IS a fourth button, rather than reserved always: the three-action case
+ * is the common one, and it would have spent a frame swallowing clicks 32dp wider than it draws.
+ *
+ * The margin is deliberately NOT in here; it rides in the inset (see [QUICK_ACTIONS_MARGIN]).
  */
 internal val QUICK_ACTIONS_OVERLAY_SIZE = DpSize(132.dp, 34.dp)
+
+/** The same bound without the tools launcher, which is the common case. See above. */
+internal val QUICK_ACTIONS_OVERLAY_SIZE_NO_LAUNCHER = DpSize(100.dp, 34.dp)
 
 /**
  * Gap between the cluster and the corner it sits in.
@@ -314,7 +320,7 @@ internal fun focusQuickActionButtons(
      * gone. `FocusQuickActionsPlacementTest` pins that, because it is what keeps
      * [FOCUS_QUICK_ACTION_COUNT] - and so the rail's reserve - correct at three.
      */
-    toolLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
 ): List<@Composable () -> Unit> =
     listOfNotNull(
         {
@@ -340,7 +346,11 @@ internal fun focusQuickActionButtons(
                 onClick = onShowSettings,
             )
         },
-        toolLauncher,
+        // Wrapped rather than passed straight through: the launcher takes this group's hint
+        // direction and modifier like every other button in it. Handed a ready-made composable,
+        // it kept whatever the scaffold had baked in - which pointed its hint off the bottom of
+        // the window in both of the groups that hint upwards.
+        toolLauncher?.let { launcher -> { launcher(hintDirection, modifier) } },
         {
             BossActionButton(
                 imageVector = Icons.Outlined.Search,
@@ -425,7 +435,7 @@ internal fun BoxScope.FocusModeQuickActions(
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
     /** The tools launcher, when both strips are gone - see `toolLauncherPlacement`. */
-    toolLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
 ) {
     if (!visible) return
 
@@ -443,7 +453,8 @@ internal fun BoxScope.FocusModeQuickActions(
     val heavyweight = overlayCornerIsHeavyweight()
     OverlayCorner(
         alignment = Alignment.BottomEnd,
-        initialSize = QUICK_ACTIONS_OVERLAY_SIZE,
+        initialSize =
+            if (toolLauncher == null) QUICK_ACTIONS_OVERLAY_SIZE_NO_LAUNCHER else QUICK_ACTIONS_OVERLAY_SIZE,
         // inset() is invoked INSIDE the branch, not above it. Read unconditionally, the lightweight
         // path subscribes to a value it then ignores and recomposes on every frame of a 250ms
         // sidebar animation - the exact cost the lambda parameter exists to avoid.
@@ -513,7 +524,7 @@ private fun QuickActions(
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
-    toolLauncher: (@Composable () -> Unit)?,
+    toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)?,
 ) {
     Surface(
         modifier =

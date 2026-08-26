@@ -118,7 +118,6 @@ internal fun TabFaviconChip(
     val hovered by interactionSource.collectIsHoveredAsState()
     val loaded = rememberFaviconLoader(tab)
 
-    val dragEnabled = tabDragComponent != null && panelId != null && tabIndex >= 0
     // Where this chip sits in the window, so a drag can start from an absolute point. The ghost
     // follows the pointer, and the pointer is in window coordinates.
     var windowPosition by remember { mutableStateOf(Offset.Zero) }
@@ -154,11 +153,18 @@ internal fun TabFaviconChip(
                         .size(size)
                         .clip(chipShape(squareTrailingEdge = showClose))
                         .background(background)
-                        .hoverable(interactionSource)
+                        // No hoverable here: it is registered once around the chip AND the cross,
+                        // above. Registering the same source twice happens to balance its
+                        // enter/exit pairs, which is what let this survive - but it reads as
+                        // though the outer one were the redundant of the two.
                         .optionalContextMenu(contextMenuItems)
                         .onGloballyPositioned { coordinates -> windowPosition = coordinates.positionInWindow() }
                         .then(
-                            if (!dragEnabled || tabDragComponent == null || panelId == null) {
+                            // Inlined rather than a named `dragEnabled` flag: the flag was these
+                            // three conditions, and the `if` then repeated all three beside it -
+                            // which read as a guard doing more than it does, and cost the smart
+                            // cast the branch needs.
+                            if (tabDragComponent == null || panelId == null || tabIndex < 0) {
                                 Modifier
                             } else {
                                 Modifier.tabChipDrag(
@@ -176,7 +182,9 @@ internal fun TabFaviconChip(
                 TabGlyph(icon = icon, tab = tab, isActive = isActive)
             }
 
-            if (showClose && onClose != null) {
+            // `showClose` already carries `onClose != null`; repeating it here only looked like
+            // a null check, and the compiler reads it as always true.
+            if (showClose) {
                 // No gap: the cross is part of the chip, not a button next to it.
                 TabCloseButton(base = background, onClose = onClose)
             }
@@ -311,7 +319,7 @@ private fun TabGlyph(
     val painter =
         when {
             icon != null -> icon.asPainter()
-            tab.icon != null -> rememberVectorPainter(tab.icon!!)
+            tab.icon != null -> rememberVectorPainter(tab.icon)
             else -> null
         }
     val dim = Modifier.alpha(if (isActive) 1f else INACTIVE_ICON_ALPHA).size(FAVICON_SIZE)

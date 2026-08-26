@@ -1,7 +1,7 @@
 package ai.rever.boss.app
 
 /** Where the tools launcher belongs right now. Mutually exclusive by construction. */
-enum class ToolLauncherPlacement {
+internal enum class ToolLauncherPlacement {
     /** Nowhere. Both strips are on screen, so every tool is already one click away. */
     NONE,
 
@@ -40,7 +40,7 @@ enum class ToolLauncherPlacement {
  * Pure and named so the four-way table is testable. The alternative is a conditional inlined in
  * the scaffold that no test can see, whose failure mode is a tool nobody can open.
  */
-fun toolLauncherPlacement(
+internal fun toolLauncherPlacement(
     leftStripHidden: Boolean,
     rightStripHidden: Boolean,
 ): ToolLauncherPlacement =

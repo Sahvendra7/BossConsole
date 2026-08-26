@@ -62,11 +62,7 @@ class MacTrafficLightsTest {
 
     @Test
     fun `the columns take it when the top bar is off`() {
-        assertEquals(
-            TrafficLightInset.LEFT_COLUMNS,
-            macTrafficLightInset(bare.copy(showLeftStrip = true), isMacOs = true),
-            "a strip alone",
-        )
+        // `bare` already puts the tab bar on the LEFT, so these two differ by the strip only.
         assertEquals(
             TrafficLightInset.LEFT_COLUMNS,
             macTrafficLightInset(bare, isMacOs = true),
@@ -75,7 +71,24 @@ class MacTrafficLightsTest {
         assertEquals(
             TrafficLightInset.LEFT_COLUMNS,
             macTrafficLightInset(bare.copy(showLeftStrip = true), isMacOs = true),
-            "both - and both are inset, because a 40dp strip is narrower than the 78dp box",
+            "both, and both are inset, because one strip is narrower than the 78dp box",
+        )
+    }
+
+    @Test
+    fun `a strip with no bar beside it cannot hold the box`() {
+        // The case the two assertions above were once BOTH written as, which made it look covered
+        // while the answer went untested: a strip alone is one rail wide, and a rail is nowhere
+        // near 78dp - so the corner cannot be protected by insetting it and the title row is what
+        // holds the lights. Tabs across the top is the only way to have a strip and no bar.
+        val stripOnly = bare.copy(showLeftStrip = true, tabBarPosition = TabBarPosition.TOP)
+        assertEquals(TrafficLightInset.CONTENT, macTrafficLightInset(stripOnly, isMacOs = true))
+
+        // True at the widest strip any preset draws, not just at the floor.
+        assertEquals(
+            TrafficLightInset.CONTENT,
+            macTrafficLightInset(stripOnly, isMacOs = true, stripWidth = 44.dp),
+            "even a Spacious 44dp strip is under 78dp",
         )
     }
 
@@ -117,6 +130,34 @@ class MacTrafficLightsTest {
         assertEquals(
             bare.tabBarVerticalWidth.dp,
             leftChromeWidth(bare, barCollapsed = false),
+        )
+    }
+
+    @Test
+    fun `the width rule measures with the density's strip, not the floor`() {
+        // The floor is 36dp; Comfortable, which ships, draws 40dp and Spacious 44dp. Measuring
+        // with the floor made a strip plus a collapsed rail come to 72dp and fall back to the
+        // title row, where what is actually drawn is 80dp and fits the 78dp box with room over.
+        val stripAndRail = bare.copy(showLeftStrip = true)
+        assertEquals(
+            72.dp,
+            leftChromeWidth(stripAndRail, barCollapsed = true),
+            "the floor, which is what the default measures",
+        )
+        assertEquals(
+            80.dp,
+            leftChromeWidth(stripAndRail, barCollapsed = true, stripWidth = 40.dp),
+            "Comfortable, which is what ships",
+        )
+
+        // And the answer flips with it, which is the point of passing it in.
+        assertEquals(
+            TrafficLightInset.CONTENT,
+            macTrafficLightInset(stripAndRail, isMacOs = true, barCollapsed = true),
+        )
+        assertEquals(
+            TrafficLightInset.LEFT_COLUMNS,
+            macTrafficLightInset(stripAndRail, isMacOs = true, barCollapsed = true, stripWidth = 40.dp),
         )
     }
 

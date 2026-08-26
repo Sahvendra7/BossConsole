@@ -109,7 +109,7 @@ class QuickActionsFooterPlacementTest {
                 {},
                 {},
                 {},
-                toolLauncher = {},
+                toolLauncher = { _, _ -> },
             )
 
         assertEquals(FOCUS_QUICK_ACTION_COUNT + 1, withLauncher.size)

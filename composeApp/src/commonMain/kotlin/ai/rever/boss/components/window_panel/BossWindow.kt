@@ -46,6 +46,8 @@ fun BossDraggableComponent.BossWindow(
     verticalBarTopInset: Dp = 0.dp,
     /** Reports whether the hover-revealed bar is on screen. See [SplitViewPanel]. */
     onDrawerVisibleChange: (Boolean) -> Unit = {},
+    /** See `SplitViewPanel.onBarRailedChange`. */
+    onBarRailedChange: (Boolean) -> Unit = {},
 ) {
     // Process any pending panel opens (for two-phase transitions)
     // This is critical for JxBrowser-based plugins to avoid BrowserViewState conflicts
@@ -132,6 +134,7 @@ fun BossDraggableComponent.BossWindow(
                         verticalBarBelowMap = verticalBarBelowMap,
                         verticalBarTopInset = verticalBarTopInset,
                         onDrawerVisibleChange = onDrawerVisibleChange,
+                        onBarRailedChange = onBarRailedChange,
                     )
                     // While a header is dragged over the central area, highlight the
                     // resolved target region (a whole panel for center-drop, or the half

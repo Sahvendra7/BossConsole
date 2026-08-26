@@ -189,10 +189,20 @@ object WindowAppearanceMigrations {
      * purpose, and everything else is preserved. The step runs at most once, because the migrated
      * file records the new version.
      *
-     * Changing the DEFAULT alone would not have done this. The manager writes the whole object on
-     * every save, so an existing file names both values explicitly and would keep them for ever -
-     * the new defaults would reach new installs only, which is not what "by default" means to
-     * somebody who already has BOSS open.
+     * Changing the DEFAULT alone would not reliably have done this, which is why this step exists
+     * even though a later one relies on exactly that. The manager omits default-valued fields when
+     * it writes (`encodeDefaults` is false), so a changed default DOES reach a file that never
+     * mentioned the field - but this pair is not in that position: an install on the old shipped
+     * defaults had `showTopBar = true` and `tabBarPosition = TOP`, both differing from the class
+     * defaults of the day and therefore both written out explicitly. A default flip would have
+     * left those files untouched for ever.
+     *
+     * The flags flipped later - the title row and the two icon strips - are the other case: their
+     * old shipped values equalled the class defaults, so they were never written, and changing the
+     * default is enough. That rests entirely on `encodeDefaults` staying false, which
+     * `WindowAppearanceEncodeDefaultsTest` pins. It also inherits the same blindness: someone who
+     * deliberately chose the value that used to be the default is indistinguishable from someone
+     * who never touched it, and moves with everyone else.
      *
      * One thing this reasons over that it cannot actually see: it tests decoded VALUES, not what
      * the file said. A key that is absent decodes to the field's default, so a file written

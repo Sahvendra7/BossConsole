@@ -802,6 +802,10 @@ fun main(args: Array<String>) {
 
     // Apply the persisted app theme before any UI composes, so the app opens
     // in the user's chosen look rather than flashing the default first.
+    //
+    // Not necessarily the FIRST such call any more: on macOS applyMacAppearanceFromTheme needs the
+    // theme before AWT starts, so it initialises there and this one is a no-op. Kept because it is
+    // the call every other platform relies on, and idempotent either way.
     ai.rever.boss.theme.AppThemeSettingsManager
         .ensureInitialized()
 

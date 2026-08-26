@@ -99,10 +99,10 @@ fun macTrafficLightInset(
      * cannot protect the corner - the lights spill onto whatever is beside it, which is a browser
      * pane and cannot be inset at all. That case falls back to the title row.
      *
-     * Read from `tabBarCollapsed`, the standing preference. **Known gap**: the bar also rails
-     * itself when a panel is too narrow (`TabBarLayout.railShown`), and that is decided during
-     * layout where this is not, so an auto-collapsed bar on a narrow window still overlaps.
-     * Closing it means this decision moving to where the layout is known.
+     * Take it from the MEASURED rail state (`SplitViewPanel.onBarRailedChange`), not from the
+     * `tabBarCollapsed` preference: a bar also rails itself when the window is too narrow for a
+     * full one, and a window that asked the preference read an auto-railed bar as a full column
+     * and let the lights land on the pane beside it.
      */
     barCollapsed: Boolean = false,
     /**
@@ -113,6 +113,8 @@ fun macTrafficLightInset(
      * same empty band by another route.
      */
     bannerVisible: Boolean = false,
+    /** One icon rail's width at the current density. See [leftChromeWidth]. */
+    stripWidth: Dp = ChromeDimens.MIN_STRIP_WIDTH,
 ): TrafficLightInset {
     val base =
         when {
@@ -136,7 +138,7 @@ fun macTrafficLightInset(
             // Only when the columns are actually wide enough to hold the box. Insetting chrome that
             // is narrower than the lights protects part of the corner and leaves the rest over the
             // content, which is worse than not trying: it looks deliberate.
-            leftChromeWidth(appearance, barCollapsed) >= TRAFFIC_LIGHT_WIDTH -> {
+            leftChromeWidth(appearance, barCollapsed, stripWidth) >= TRAFFIC_LIGHT_WIDTH -> {
                 TrafficLightInset.LEFT_COLUMNS
             }
 
@@ -177,18 +179,25 @@ fun TrafficLightInset.needsTitleRow(showTitleBar: Boolean): Boolean = showTitleB
  * How much chrome runs down the window's left edge, which is what decides whether the corner can
  * be protected by insetting columns at all.
  *
- * The icon strip is one [ChromeDimens.stripWidth]; the vertical tab bar is its configured width,
- * or the same rail width when collapsed. A bar in TOP position contributes nothing.
+ * The icon strip is one [stripWidth]; the vertical tab bar is its configured width, or the same
+ * rail width when collapsed. A bar in TOP position contributes nothing.
+ *
+ * [stripWidth] is passed in rather than read here, because it is the DENSITY's value and this is
+ * pure: the shipped Comfortable preset is 40dp, not the 36dp floor. Measuring with the floor gave
+ * a strip plus a rail as 72dp and fell back to the title row, where what is actually drawn is
+ * 80dp and could have been inset. The default is the floor, which is the conservative direction:
+ * it can only over-reserve, never leave the lights over a column too narrow to hold them.
  */
 internal fun leftChromeWidth(
     appearance: WindowAppearanceSettings,
     barCollapsed: Boolean,
+    stripWidth: Dp = ChromeDimens.MIN_STRIP_WIDTH,
 ): Dp {
-    val strip = if (appearance.showLeftStrip) ChromeDimens.MIN_STRIP_WIDTH else 0.dp
+    val strip = if (appearance.showLeftStrip) stripWidth else 0.dp
     val bar =
         when {
             appearance.tabBarPosition != TabBarPosition.LEFT -> 0.dp
-            barCollapsed -> ChromeDimens.MIN_STRIP_WIDTH
+            barCollapsed -> stripWidth
             else -> appearance.tabBarVerticalWidth.dp
         }
     return strip + bar

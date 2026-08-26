@@ -45,6 +45,7 @@ import ai.rever.boss.plugin.api.LocalSplitViewOperations
 import ai.rever.boss.plugin.api.LocalWindowIdProvider
 import ai.rever.boss.plugin.api.LocalWindowProjectStateProvider
 import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
+import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.sandbox.notification.PluginToastHost
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
@@ -273,6 +274,14 @@ internal fun BossAppScaffold(
     // host's actions render while the bar is collapsed - see the placement below.
     var drawerVisible by remember { mutableStateOf(false) }
 
+    // Whether the bar in the layout is the RAIL, reported by SplitViewPanel once it has measured.
+    //
+    // Seeded from the preference so the first frame has an answer, then corrected within a frame
+    // by the thing that actually draws the bar. Asking the preference and stopping there is what
+    // sent the host's actions to a foot that was not being drawn: a bar also rails itself when the
+    // window is too narrow for a full one, and nothing in the settings says so.
+    var barRailed by remember { mutableStateOf(appearance.tabBarCollapsed) }
+
     // Where Settings / Search / Sign Out go while focus mode holds the top bar that owns them.
     // One decision, two mutually exclusive renderings: the bottom of the right rail when that rail
     // is on screen, a floating corner cluster when it is not. Read once here so the two call sites
@@ -295,7 +304,7 @@ internal fun BossAppScaffold(
             verticalTabBar =
                 verticalBarHasFoot(
                     tabBarOnLeft = appearance.tabBarPosition == TabBarPosition.LEFT,
-                    barCollapsed = appearance.tabBarCollapsed,
+                    barCollapsed = barRailed,
                     drawerVisible = drawerVisible,
                 ),
         )
@@ -323,15 +332,24 @@ internal fun BossAppScaffold(
         macTrafficLightInset(
             appearance = drawn,
             isMacOs = SystemUtils.isMacOS,
-            barCollapsed = appearance.tabBarCollapsed,
+            barCollapsed = barRailed,
             bannerVisible = updateState.drawsBanner(),
+            // The density's width, not the 36dp floor: Comfortable draws 40dp rails, and
+            // measuring the corner with the floor gave away a case that fits.
+            stripWidth = BossChrome.dimens.stripWidth,
         )
 
     val openTools = { state.showToolLauncherDialog = true }
 
-    val hostToolLauncher: (@Composable () -> Unit)? =
+    // Takes its hint direction and size from whichever host draws it, rather than baking in one
+    // set here: the top bar hints downwards, and the bar's foot and the floating cluster both sit
+    // on a bottom edge and hint up. One baked-in `bottom` put the hint off the window in two of
+    // the three, and a baked-in size made it the odd button out in the third.
+    val hostToolLauncher: (@Composable (Panel, Modifier) -> Unit)? =
         if (launcherPlacement == ToolLauncherPlacement.HOST_ACTIONS) {
-            { ToolLauncherButton(onClick = openTools, hintDirection = bottom) }
+            { hintDirection, modifier ->
+                ToolLauncherButton(onClick = openTools, hintDirection = hintDirection, modifier = modifier)
+            }
         } else {
             null
         }
@@ -576,6 +594,7 @@ internal fun BossAppScaffold(
                             // is what the lights would land on.
                             verticalBarTopInset = trafficLights.columnInset(),
                             onDrawerVisibleChange = { visible -> drawerVisible = visible },
+                            onBarRailedChange = { railed -> barRailed = railed },
                             verticalBarBelowMap = {
                                 VerticalBarHostActions(
                                     actions =

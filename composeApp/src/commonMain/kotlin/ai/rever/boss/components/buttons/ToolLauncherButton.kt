@@ -42,16 +42,17 @@ fun ToolLauncherButton(
     isSelected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    // No padding of its own. It shares a row with Sign Out, Settings and Search in the floating
-    // cluster, and that row is top-aligned - so 4dp of vertical padding here made this button 8dp
-    // taller than its siblings and dropped its glyph below theirs. Spacing belongs to whoever
-    // arranges these; the two icon strips add their own, matching the rail's other icons.
+    // Neither padding NOR a size of its own. It shares a row with Sign Out, Settings and Search,
+    // and those take both from whoever arranges them: 4dp of padding here made this button 8dp
+    // taller than its siblings and dropped its glyph below theirs, and a hardcoded 32dp made it
+    // the one button in the floating cluster that did not match the three beside it. The strips
+    // and the bar's foot pass their own, matching the rail's other icons.
     BossActionButton(
         imageVector = Icons.Outlined.Apps,
         text = "Tools",
         isSelected = isSelected,
         hintDirection = hintDirection,
-        modifier = modifier.size(32.dp).testTag(TOOL_LAUNCHER_TAG),
+        modifier = modifier.testTag(TOOL_LAUNCHER_TAG),
         onClick = onClick,
     )
 }

@@ -4,6 +4,7 @@ import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.WorkspaceButton
 import ai.rever.boss.components.workspaces.WorkspaceManager
+import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.window.Project
@@ -164,7 +165,7 @@ internal fun focusQuickActionsFooter(
     onShowSettings: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
-    toolLauncher: (@Composable () -> Unit)? = null,
+    toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
 ): List<@Composable () -> Unit> =
     if (placement != FocusQuickActionsPlacement.TAB_BAR_FOOTER) {
         emptyList()
@@ -189,7 +190,7 @@ internal fun focusQuickActionsFooter(
  * Pure and named because it is the one input to [focusQuickActionsPlacement] that is not a
  * standing preference, and because the scaffold that reads it is at detekt's complexity ceiling.
  */
-fun verticalBarHasFoot(
+internal fun verticalBarHasFoot(
     tabBarOnLeft: Boolean,
     barCollapsed: Boolean,
     drawerVisible: Boolean,

@@ -214,7 +214,7 @@ private fun Modifier.launcherKeys(
  * The tiles, wrapped into as many columns as fit.
  *
  * A plain scrolling Column of chunked Rows rather than a LazyVerticalGrid: the whole point of the
- * dialog is that you can see the tools at once, so it is bounded at [GRID_MAX_HEIGHT] and rarely
+ * dialog is that you can see the tools at once, so it is bounded at [VISIBLE_ROWS] rows and rarely
  * scrolls at all. A lazy grid inside a height-bounded dialog also has to be told its own height,
  * which is the awkward part of using one here for at most a few dozen tiles.
  */

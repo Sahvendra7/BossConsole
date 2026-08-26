@@ -23,7 +23,18 @@ import java.io.File
 actual object WindowAppearanceSettingsManager {
     private val logger = BossLogger.forComponent("WindowAppearanceSettingsManager")
     private val settingsFile = BossDirectories.resolve("window-appearance-settings.json")
-    private val json =
+
+    /**
+     * Internal, not private, so a test can encode with the REAL instance.
+     *
+     * `encodeDefaults` is left at its default of false, and three chrome flags now depend on that:
+     * a field equal to its default is not written, so a file that never mentions a bar picks up a
+     * changed default instead of being pinned to the old one for ever. Someone switching
+     * `encodeDefaults` on for an unrelated reason would strand every existing install on the old
+     * chrome, silently and only on the next release. `WindowAppearanceEncodeDefaultsTest` fails
+     * if that happens.
+     */
+    internal val json =
         Json {
             prettyPrint = true
             ignoreUnknownKeys = true
