@@ -237,6 +237,65 @@ class DownloadCenterTest {
     }
 
     @Test
+    fun `a non-finite fraction is indeterminate, not clamped`() {
+        DownloadCenter.begin("p", "Plugin", TransferKind.PLUGIN_INSTALL)
+
+        // bytes / length is NaN when the length is absent or zero, and coerceIn
+        // propagates NaN - straight to the progress bar.
+        DownloadCenter.progress("p", Float.NaN)
+        assertNull(
+            DownloadCenter.transfers.value
+                .single()
+                .info.progress,
+        )
+
+        DownloadCenter.progress("p", Float.POSITIVE_INFINITY)
+        assertNull(
+            DownloadCenter.transfers.value
+                .single()
+                .info.progress,
+        )
+
+        DownloadCenter.progress("p", 0.5f)
+        assertEquals(
+            0.5f,
+            DownloadCenter.transfers.value
+                .single()
+                .info.progress,
+        )
+    }
+
+    @Test
+    fun `detail can change as the steps do`() {
+        DownloadCenter.begin("p", "Plugin", TransferKind.PLUGIN_INSTALL, detail = "1 of 3")
+
+        DownloadCenter.detail("p", "2 of 3")
+        assertEquals(
+            "2 of 3",
+            DownloadCenter.transfers.value
+                .single()
+                .info.detail,
+        )
+
+        DownloadCenter.detail("p", null)
+        assertNull(
+            DownloadCenter.transfers.value
+                .single()
+                .info.detail,
+        )
+    }
+
+    @Test
+    fun `owner distinguishes a plugin's row from the host's for one plugin id`() {
+        DownloadCenter.begin("com.foo", "Foo", TransferKind.PLUGIN_INSTALL)
+        DownloadCenter.begin("tools:com.foo", "Foo", TransferKind.PLUGIN_INSTALL, owner = "tools")
+
+        // Two real downloads of the same plugin - one the host started, one a plugin
+        // did. The id alone cannot tell them apart once the prefix is stripped.
+        assertEquals(listOf(null, "tools"), DownloadCenter.transfers.value.map { it.info.owner })
+    }
+
+    @Test
     fun `rows keep their insertion order as progress arrives`() {
         DownloadCenter.begin("a", "A", TransferKind.PLUGIN_INSTALL)
         DownloadCenter.begin("b", "B", TransferKind.PLUGIN_INSTALL)

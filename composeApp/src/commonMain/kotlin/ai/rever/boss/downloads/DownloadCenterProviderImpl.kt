@@ -59,7 +59,10 @@ class DownloadCenterProviderImpl internal constructor(
         onCancel: (() -> Unit)?,
     ): TransferHandle {
         val key = qualify(id)
-        val created = DownloadCenter.begin(key, title, kind, detail, onCancel)
+        // The owner is this instance's prefix: null for the host's own view, the
+        // plugin id otherwise. It is what lets a plugin tell its row for `com.foo`
+        // from the host's row for `com.foo`, which the id alone cannot.
+        val created = DownloadCenter.begin(key, title, kind, detail, onCancel, owner = idPrefix)
         return CenterHandle(key, ownsEntry = created)
     }
 
@@ -114,6 +117,8 @@ class DownloadCenterProviderImpl internal constructor(
         override fun progress(fraction: Float) = DownloadCenter.progress(id, fraction)
 
         override fun phase(phase: TransferPhase) = DownloadCenter.phase(id, phase)
+
+        override fun detail(text: String?) = DownloadCenter.detail(id, text)
 
         override fun done() {
             if (ownsEntry) DownloadCenter.end(id)

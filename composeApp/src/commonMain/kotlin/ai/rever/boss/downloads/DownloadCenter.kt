@@ -83,6 +83,7 @@ object DownloadCenter {
         kind: TransferKind,
         detail: String? = null,
         onCancel: (() -> Unit)? = null,
+        owner: String? = null,
     ): Boolean {
         var created = false
         _transfers.update { list ->
@@ -121,6 +122,7 @@ object DownloadCenter {
                                 phase = TransferPhase.PREPARING,
                                 progress = null,
                                 cancellable = onCancel != null,
+                                owner = owner,
                             ),
                         onCancel = onCancel,
                     )
@@ -143,7 +145,10 @@ object DownloadCenter {
             info =
                 t.info.copy(
                     phase = TransferPhase.DOWNLOADING,
-                    progress = fraction.coerceIn(0f, 1f),
+                    // Indeterminate rather than clamped for a non-finite value:
+                    // `coerceIn` propagates NaN, and NaN is what `bytes / length` gives
+                    // when the length is absent or zero - so it would reach the bar.
+                    progress = fraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f),
                 ),
         )
     }
@@ -161,6 +166,12 @@ object DownloadCenter {
                 ),
         )
     }
+
+    /** Replace [id]'s detail line, or clear it. */
+    fun detail(
+        id: String,
+        text: String?,
+    ) = mutate(id) { it.copy(info = it.info.copy(detail = text)) }
 
     /** Replace [id]'s actions, e.g. when a finished download gains an Install. */
     fun setActions(

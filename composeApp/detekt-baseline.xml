@@ -2,6 +2,7 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>LongParameterList:DownloadCenter.kt$DownloadCenter$( id: String, title: String, kind: TransferKind, detail: String? = null, onCancel: (() -&gt; Unit)? = null, owner: String? = null, )</ID>
     <ID>LongParameterList:StoreVersionInstaller.kt$StoreVersionInstaller$( store: PluginRepository, request: StoreVersionRequest, unload: suspend (String) -&gt; Result&lt;Unit&gt;, load: suspend (String) -&gt; Result&lt;Boolean&gt;, onProgress: ((Float) -&gt; Unit)? = null, onInstalling: (() -&gt; Unit)? = null, )</ID>
     <ID>ComplexCondition:BossAppEventBusEffects.kt$processingState.totalTabs == 0 &amp;&amp; !processingState.isProcessingURLs &amp;&amp; !processingState.isProcessingTerminals &amp;&amp; !processingState.isProcessingFiles &amp;&amp; processingState.isRestorationComplete</ID>
     <ID>ComplexCondition:BrowserHandleImpl.kt$BrowserHandleImpl$ch != '\u0000' &amp;&amp; !ch.isISOControl() &amp;&amp; !bool("ctrl") &amp;&amp; !bool("meta")</ID>
