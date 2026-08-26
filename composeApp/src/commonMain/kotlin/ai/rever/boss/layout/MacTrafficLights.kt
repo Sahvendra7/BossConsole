@@ -75,6 +75,19 @@ enum class TrafficLightInset {
 fun macTrafficLightInset(
     appearance: WindowAppearanceSettings,
     isMacOs: Boolean,
+    /**
+     * Whether the vertical bar is down to its slim rail, which changes what it can cover.
+     *
+     * A rail is one [ChromeDimens.stripWidth], so on its own it is narrower than the light box and
+     * cannot protect the corner - the lights spill onto whatever is beside it, which is a browser
+     * pane and cannot be inset at all. That case falls back to the title row.
+     *
+     * Read from `tabBarCollapsed`, the standing preference. **Known gap**: the bar also rails
+     * itself when a panel is too narrow (`TabBarLayout.railShown`), and that is decided during
+     * layout where this is not, so an auto-collapsed bar on a narrow window still overlaps.
+     * Closing it means this decision moving to where the layout is known.
+     */
+    barCollapsed: Boolean = false,
 ): TrafficLightInset =
     when {
         // Not macOS: the lights are somebody else's problem, and on Windows and Linux the title
@@ -94,7 +107,10 @@ fun macTrafficLightInset(
             TrafficLightInset.TOP_BAR
         }
 
-        appearance.showLeftStrip || appearance.tabBarPosition == TabBarPosition.LEFT -> {
+        // Only when the columns are actually wide enough to hold the box. Insetting chrome that
+        // is narrower than the lights protects part of the corner and leaves the rest over the
+        // content, which is worse than not trying: it looks deliberate.
+        leftChromeWidth(appearance, barCollapsed) >= TRAFFIC_LIGHT_WIDTH -> {
             TrafficLightInset.LEFT_COLUMNS
         }
 
@@ -116,3 +132,24 @@ fun TrafficLightInset.barStartInset(): Dp = if (this == TrafficLightInset.TOP_BA
  * to inset, so the row is what keeps the lights off the content.
  */
 fun TrafficLightInset.needsTitleRow(showTitleBar: Boolean): Boolean = showTitleBar || this == TrafficLightInset.CONTENT
+
+/**
+ * How much chrome runs down the window's left edge, which is what decides whether the corner can
+ * be protected by insetting columns at all.
+ *
+ * The icon strip is one [ChromeDimens.stripWidth]; the vertical tab bar is its configured width,
+ * or the same rail width when collapsed. A bar in TOP position contributes nothing.
+ */
+internal fun leftChromeWidth(
+    appearance: WindowAppearanceSettings,
+    barCollapsed: Boolean,
+): Dp {
+    val strip = if (appearance.showLeftStrip) ChromeDimens.MIN_STRIP_WIDTH else 0.dp
+    val bar =
+        when {
+            appearance.tabBarPosition != TabBarPosition.LEFT -> 0.dp
+            barCollapsed -> ChromeDimens.MIN_STRIP_WIDTH
+            else -> appearance.tabBarVerticalWidth.dp
+        }
+    return strip + bar
+}

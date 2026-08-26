@@ -288,7 +288,12 @@ internal fun BossAppScaffold(
     // Settings / Search / Sign Out group unconditionally and render in whichever one is drawing.
     // Which column keeps clear of the macOS traffic lights, now that the title row no longer
     // exists to hold them. Decided once, read by the three places that could carry the inset.
-    val trafficLights = macTrafficLightInset(appearance, SystemUtils.isMacOS)
+    val trafficLights =
+        macTrafficLightInset(
+            appearance = appearance,
+            isMacOs = SystemUtils.isMacOS,
+            barCollapsed = appearance.tabBarCollapsed,
+        )
 
     val openTools = { state.showToolLauncherDialog = true }
 

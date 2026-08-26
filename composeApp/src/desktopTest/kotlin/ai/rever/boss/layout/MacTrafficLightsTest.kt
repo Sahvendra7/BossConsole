@@ -1,5 +1,6 @@
 package ai.rever.boss.layout
 
+import ai.rever.boss.layout.ChromeDimens
 import ai.rever.boss.window.TabBarPosition
 import ai.rever.boss.window.WindowAppearanceSettings
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,47 @@ class MacTrafficLightsTest {
             TrafficLightInset.LEFT_COLUMNS,
             macTrafficLightInset(bare.copy(showLeftStrip = true), isMacOs = true),
             "both - and both are inset, because a 40dp strip is narrower than the 78dp box",
+        )
+    }
+
+    @Test
+    fun `a collapsed bar is too narrow to protect the corner`() {
+        // A rail is one strip width. On its own that is less than the light box, so the lights
+        // spill onto whatever is beside it - a browser pane, which cannot be inset at all. The
+        // title row comes back for that case rather than half-covering the corner.
+        val collapsed = macTrafficLightInset(bare, isMacOs = true, barCollapsed = true)
+
+        assertEquals(TrafficLightInset.CONTENT, collapsed)
+    }
+
+    @Test
+    fun `a collapsed bar beside a strip is still too narrow`() {
+        // Two rails come to 72dp against a 78dp box - six short, so the corner still cannot be
+        // protected by insetting them and the title row takes it. Worth pinning as a NUMBER
+        // rather than a feeling: it is the one case where the answer is not obvious by eye, and
+        // if either width moves this flips.
+        val withStrip = bare.copy(showLeftStrip = true)
+
+        assertTrue(
+            leftChromeWidth(withStrip, barCollapsed = true) < TRAFFIC_LIGHT_WIDTH,
+            "two rails should not reach the light box",
+        )
+        assertEquals(
+            TrafficLightInset.CONTENT,
+            macTrafficLightInset(withStrip, isMacOs = true, barCollapsed = true),
+        )
+    }
+
+    @Test
+    fun `the width rule reads the collapsed bar as a rail`() {
+        assertEquals(
+            ChromeDimens.MIN_STRIP_WIDTH,
+            leftChromeWidth(bare, barCollapsed = true),
+            "a collapsed bar contributes a rail, not its configured width",
+        )
+        assertEquals(
+            bare.tabBarVerticalWidth.dp,
+            leftChromeWidth(bare, barCollapsed = false),
         )
     }
 

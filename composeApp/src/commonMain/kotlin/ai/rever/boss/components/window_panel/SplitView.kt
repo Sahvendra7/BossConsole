@@ -91,6 +91,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 // Sealed class representing the split tree structure
@@ -1888,7 +1889,11 @@ fun SplitViewPanel(
                 splitViewState = splitViewState,
                 bar = bar,
                 reveal = reveal,
-                contentRegion = contentRegion,
+                // Started BELOW the traffic-light clearance rather than padded inside it. The
+                // drawer is its own always-on-top window, so the lights are behind it whatever it
+                // pads - the only way to leave them visible is to not cover them. Region is in dp,
+                // which is what verticalBarTopInset already is.
+                contentRegion = contentRegion.below(verticalBarTopInset),
                 onPin = rememberPinDrawerAction(reveal, bar),
             )
         }
@@ -2017,6 +2022,19 @@ private fun WindowBarRow(
         VDivider()
         splitTree(Modifier.weight(1f).fillMaxHeight())
     }
+}
+
+/**
+ * The region with its top moved down by [inset].
+ *
+ * Used to start the hover drawer BELOW the macOS traffic lights. The drawer is its own
+ * always-on-top window, so the lights are behind it whatever it pads - the only way to leave them
+ * visible is to not cover them. The region is already in dp, which is what [inset] is.
+ */
+private fun IntRect?.below(inset: Dp): IntRect? {
+    val region = this ?: return null
+    val dp = inset.value.roundToInt()
+    return if (dp <= 0) region else region.copy(top = region.top + dp)
 }
 
 @Composable
