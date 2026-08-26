@@ -177,9 +177,9 @@ internal const val VERTICAL_BAR_HOST_ACTIONS_TAG = "vertical-bar-host-actions"
 internal fun focusQuickActionsFooter(
     placement: FocusQuickActionsPlacement,
     onShowSettings: () -> Unit,
-    onOpenToolbox: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    toolbox: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
 ): List<@Composable () -> Unit> =
     if (placement != FocusQuickActionsPlacement.TAB_BAR_FOOTER) {
@@ -189,7 +189,7 @@ internal fun focusQuickActionsFooter(
             hintDirection = top,
             modifier = Modifier.size(SIDEBAR_ICON_SIZE),
             onShowSettings = onShowSettings,
-            onOpenToolbox = onOpenToolbox,
+            toolbox = toolbox,
             onShowSearch = onShowSearch,
             onSignOut = onSignOut,
             toolLauncher = toolLauncher,

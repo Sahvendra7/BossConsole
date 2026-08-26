@@ -3,12 +3,17 @@ package ai.rever.boss.components.bars.vertical
 import ai.rever.boss.app.FOCUS_QUICK_ACTION_COUNT
 import ai.rever.boss.app.FocusQuickActionsPlacement
 import ai.rever.boss.app.focusQuickActionsRail
+import ai.rever.boss.components.buttons.ToolboxButton
+import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.components.sidebar.SidebarIconRail
+import ai.rever.boss.plugin.api.SidebarItem
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -87,15 +92,29 @@ class SidebarBottomActionsLayoutTest {
     /** The real thing the rail is handed in focus mode, not a stand-in for it. */
     private fun quickActions(
         onShowSettings: () -> Unit = {},
-        onOpenToolbox: () -> Unit = {},
         onShowSearch: () -> Unit = {},
         onSignOut: () -> Unit = {},
     ) = focusQuickActionsRail(
         placement = FocusQuickActionsPlacement.RIGHT_RAIL,
         onShowSettings = onShowSettings,
-        onOpenToolbox = onOpenToolbox,
         onShowSearch = onShowSearch,
         onSignOut = onSignOut,
+        // A REAL button, not an empty lambda: this test measures rendered height against the
+        // reserve, so a stand-in that draws nothing makes the section come up one row short and
+        // the assertion fail for a reason that has nothing to do with the arithmetic.
+        toolbox = { hint, mod ->
+            ToolboxButton(
+                item =
+                    SidebarItem(
+                        pluginContentId = PanelIds.PLUGIN_MANAGER,
+                        icon = Icons.Outlined.Extension,
+                        label = "Toolbox",
+                    ),
+                onClick = {},
+                hintDirection = hint,
+                modifier = mod,
+            )
+        },
     )
 
     private fun boundsOf(tag: String): Rect = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
@@ -178,7 +197,6 @@ class SidebarBottomActionsLayoutTest {
         mountRail(
             quickActions(
                 onShowSettings = { settings++ },
-                onOpenToolbox = {},
                 onShowSearch = { search++ },
                 onSignOut = { signOut++ },
             ),

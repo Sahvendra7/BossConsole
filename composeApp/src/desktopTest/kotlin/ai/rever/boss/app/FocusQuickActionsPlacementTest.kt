@@ -229,8 +229,10 @@ class FocusQuickActionsPlacementTest {
         focusQuickActionsRail(
             placement = placement,
             onShowSettings = {},
-            onOpenToolbox = {},
             onShowSearch = {},
             onSignOut = {},
+            // The row production draws: the Toolbox is a bundled system plugin, so
+            // FOCUS_QUICK_ACTION_COUNT counts it and the rail reserves a row for it.
+            toolbox = { _, _ -> },
         )
 }

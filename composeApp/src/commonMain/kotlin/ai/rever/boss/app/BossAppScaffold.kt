@@ -7,6 +7,7 @@ import ai.rever.boss.components.bars.isBarVisible
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.buttons.ToolLauncherButton
+import ai.rever.boss.components.buttons.ToolboxButton
 import ai.rever.boss.components.home.LocalPanelRegistry
 import ai.rever.boss.components.home.LocalPluginStates
 import ai.rever.boss.components.home.LocalRegistryAccess
@@ -352,13 +353,31 @@ internal fun BossAppScaffold(
 
     val openTools = { state.showToolLauncherDialog = true }
 
-    // Opens the Toolbox panel through the same path a sidebar icon click takes, so it behaves
-    // identically whether it is reached from its own icon, the View menu or this button.
+    // The Toolbox's OWN sidebar item, so this button draws the plugin's icon and label rather than
+    // a second face chosen here - and follows the plugin when it changes them.
     //
-    // A PANEL id, not a plugin id: activatePlugin matches on `pluginContentId.panelId`, and the
-    // two differ for this one - the plugin kept the id `plugin-manager` when it was renamed to
-    // Toolbox, and passing a plugin id finds nothing and reports no error.
-    val openToolbox = { state.draggablePanelComponent.activatePlugin(PanelIds.PLUGIN_MANAGER.panelId) }
+    // Found by PANEL id, not plugin id: the plugin kept the id `plugin-manager` when it was
+    // renamed to Toolbox, and matching on a plugin id finds nothing and reports no error. Null
+    // only if it is not registered at all, in which case no button is drawn.
+    //
+    // Deliberately NOT remembered: itemsBySlot is Compose state, so reading it here is what picks
+    // up the Toolbox loading, unloading or changing its icon while the window is open.
+    val hostToolbox: (@Composable (Panel, Modifier) -> Unit)? =
+        state.draggablePanelComponent
+            .toolboxSidebarItem()
+            ?.let { item ->
+                { hintDirection, modifier ->
+                    ToolboxButton(
+                        item = item,
+                        // handleSidebarItemClick, not activatePlugin: it is the entry point the
+                        // sidebar icons and the tools launcher use, so a custom onClick the plugin
+                        // registered is honoured here too.
+                        onClick = { state.draggablePanelComponent.handleSidebarItemClick(item) },
+                        hintDirection = hintDirection,
+                        modifier = modifier,
+                    )
+                }
+            }
 
     // Takes its hint direction and size from whichever host draws it, rather than baking in one
     // set here: the top bar hints downwards, and the bar's foot and the floating cluster both sit
@@ -390,7 +409,7 @@ internal fun BossAppScaffold(
             focusQuickActionsRail(
                 placement = quickActionsPlacement,
                 onShowSettings = { state.settingsWindow.open() },
-                onOpenToolbox = openToolbox,
+                toolbox = hostToolbox,
                 onShowSearch = { state.showGlobalSearchDialog = true },
                 onSignOut = { state.showLogoutDialog = true },
             )
@@ -535,7 +554,7 @@ internal fun BossAppScaffold(
                             onShowSettings = {
                                 state.settingsWindow.open()
                             },
-                            onOpenToolbox = openToolbox,
+                            toolbox = hostToolbox,
                             // Only non-null when neither icon strip is on screen, so the top bar
                             // grows a tools button exactly in the configuration where nothing
                             // else can hold one.
@@ -629,7 +648,7 @@ internal fun BossAppScaffold(
                                         focusQuickActionsFooter(
                                             placement = quickActionsPlacement,
                                             onShowSettings = { state.settingsWindow.open() },
-                                            onOpenToolbox = openToolbox,
+                                            toolbox = hostToolbox,
                                             onShowSearch = { state.showGlobalSearchDialog = true },
                                             onSignOut = { state.showLogoutDialog = true },
                                             toolLauncher = hostToolLauncher,
@@ -684,7 +703,7 @@ internal fun BossAppScaffold(
                             visible = quickActionsPlacement == FocusQuickActionsPlacement.FLOATING,
                             inset = { contentInset },
                             onShowSettings = { state.settingsWindow.open() },
-                            onOpenToolbox = openToolbox,
+                            toolbox = hostToolbox,
                             onShowSearch = { state.showGlobalSearchDialog = true },
                             onSignOut = { state.showLogoutDialog = true },
                             toolLauncher = hostToolLauncher,

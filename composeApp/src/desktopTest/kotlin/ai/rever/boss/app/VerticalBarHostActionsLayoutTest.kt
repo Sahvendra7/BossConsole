@@ -50,7 +50,6 @@ class VerticalBarHostActionsLayoutTest {
             focusQuickActionsFooter(
                 placement = FocusQuickActionsPlacement.TAB_BAR_FOOTER,
                 onShowSettings = {},
-                onOpenToolbox = {},
                 onShowSearch = {},
                 onSignOut = {},
                 toolLauncher =

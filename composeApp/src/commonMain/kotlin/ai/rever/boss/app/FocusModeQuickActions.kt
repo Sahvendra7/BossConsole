@@ -212,9 +212,9 @@ internal const val FOCUS_QUICK_ACTIONS_TAG = "focus-quick-actions"
 internal fun focusQuickActionsRail(
     placement: FocusQuickActionsPlacement,
     onShowSettings: () -> Unit,
-    onOpenToolbox: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    toolbox: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
 ): List<@Composable () -> Unit> =
     if (placement != FocusQuickActionsPlacement.RIGHT_RAIL) {
         emptyList()
@@ -230,7 +230,7 @@ internal fun focusQuickActionsRail(
             // imageVector mode, because a fixed constraint coerces what it wraps.
             modifier = Modifier.size(SIDEBAR_ICON_SIZE),
             onShowSettings = onShowSettings,
-            onOpenToolbox = onOpenToolbox,
+            toolbox = toolbox,
             onShowSearch = onShowSearch,
             onSignOut = onSignOut,
         )
@@ -318,9 +318,9 @@ internal fun focusQuickActionButtons(
     hintDirection: Panel,
     modifier: Modifier = Modifier,
     onShowSettings: () -> Unit,
-    onOpenToolbox: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    toolbox: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     /**
      * The tools launcher, when both icon strips are switched off and there is no strip to put it
      * in - see `toolLauncherPlacement`. Rendered between Settings and Search, so the two things
@@ -358,9 +358,12 @@ internal fun focusQuickActionButtons(
             )
         },
         // Directly after Settings: both are "go and configure the app", where Search and the tools
-        // launcher open something. Unconditional, unlike the launcher - the Toolbox is a bundled
-        // system plugin, so FOCUS_QUICK_ACTION_COUNT counts it and the rail reserves for it.
-        { ToolboxButton(onClick = onOpenToolbox, hintDirection = hintDirection, modifier = modifier) },
+        // launcher open something.
+        //
+        // Wrapped so it takes this group's direction and modifier like every other button in it.
+        // Null only if the Toolbox plugin is not registered at all, which a bundled system plugin
+        // normally is - FOCUS_QUICK_ACTION_COUNT counts it, so the rail reserves a row for it.
+        toolbox?.let { button -> { button(hintDirection, modifier) } },
         // Wrapped rather than passed straight through: the launcher takes this group's hint
         // direction and modifier like every other button in it. Handed a ready-made composable,
         // it kept whatever the scaffold had baked in - which pointed its hint off the bottom of
@@ -447,9 +450,9 @@ internal fun BoxScope.FocusModeQuickActions(
     visible: Boolean,
     inset: () -> DpSize,
     onShowSettings: () -> Unit,
-    onOpenToolbox: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    toolbox: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     /** The tools launcher, when both strips are gone - see `toolLauncherPlacement`. */
     toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
 ) {
@@ -460,9 +463,9 @@ internal fun BoxScope.FocusModeQuickActions(
             QuickActions(
                 QUICK_ACTIONS_MARGIN,
                 onShowSettings,
-                onOpenToolbox,
                 onShowSearch,
                 onSignOut,
+                toolbox,
                 toolLauncher,
             )
         }
@@ -494,9 +497,9 @@ internal fun BoxScope.FocusModeQuickActions(
         QuickActions(
             margin = if (heavyweight) 0.dp else QUICK_ACTIONS_MARGIN,
             onShowSettings,
-            onOpenToolbox,
             onShowSearch,
             onSignOut,
+            toolbox,
             toolLauncher,
         )
     }
@@ -546,9 +549,9 @@ internal fun Modifier.reportContentInset(
 private fun QuickActions(
     margin: Dp,
     onShowSettings: () -> Unit,
-    onOpenToolbox: () -> Unit,
     onShowSearch: () -> Unit,
     onSignOut: () -> Unit,
+    toolbox: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)?,
 ) {
     Surface(
@@ -577,7 +580,7 @@ private fun QuickActions(
             focusQuickActionButtons(
                 hintDirection = top,
                 onShowSettings = onShowSettings,
-                onOpenToolbox = onOpenToolbox,
+                toolbox = toolbox,
                 onShowSearch = onShowSearch,
                 onSignOut = onSignOut,
                 toolLauncher = toolLauncher,

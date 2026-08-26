@@ -75,13 +75,13 @@ fun BossDraggableComponent.BossTopBar(
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
     onShowSettings: (() -> Unit)? = null,
-    onOpenToolbox: (() -> Unit)? = null,
     onShowSearch: (() -> Unit)? = null,
     // Required, unlike its neighbours. Those were always callback-only; this one used to open the
     // confirmation itself, and moving that to BossAppState turned Sign Out into a button that
     // renders, hovers, shows its hint and does nothing if the argument is dropped. A required
     // parameter makes that a compile error at the single call site instead.
     onSignOut: () -> Unit,
+    toolbox: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     /** The tools launcher, when neither icon strip is on screen. See [BossTopRightBar]. */
     toolLauncher: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     onNewProject: (() -> Unit)? = null,
@@ -112,7 +112,7 @@ fun BossDraggableComponent.BossTopBar(
             Spacer(modifier = Modifier.weight(0.1f))
             BossTopRightBar(
                 onShowSettings = onShowSettings,
-                onOpenToolbox = onOpenToolbox,
+                toolbox = toolbox,
                 onShowSearch = onShowSearch,
                 onSignOut = onSignOut,
                 toolLauncher = toolLauncher,
@@ -838,10 +838,10 @@ fun BossDraggableComponent.BossTopLeftBar(
 @Composable
 fun BossTopRightBar(
     onShowSettings: (() -> Unit)? = null,
-    onOpenToolbox: (() -> Unit)? = null,
     onShowSearch: (() -> Unit)? = null,
     // Required - see BossTopBar's onSignOut.
     onSignOut: () -> Unit,
+    toolbox: (@Composable (hintDirection: Panel, modifier: Modifier) -> Unit)? = null,
     /**
      * The tools launcher, when both icon strips are switched off so there is no strip to hold it
      * - see `toolLauncherPlacement`. Rendered between Settings and Search, the same position it
@@ -881,8 +881,9 @@ fun BossTopRightBar(
         onShowSettings?.invoke()
     }
 
-    // Beside Settings here as everywhere else - see ToolboxButton for why the two sit together.
-    onOpenToolbox?.let { open -> ToolboxButton(onClick = open) }
+    // Beside Settings here as everywhere else. The default direction, unlike the two groups that
+    // sit on a bottom edge: this bar is at the top of the window, so below it is where the room is.
+    toolbox?.invoke(bottom, Modifier)
 
     // The default direction here, unlike the two groups that hint upwards: this bar is at the top
     // of the window, so below it is where there is room.

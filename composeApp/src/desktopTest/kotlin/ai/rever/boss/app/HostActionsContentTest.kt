@@ -1,6 +1,11 @@
 package ai.rever.boss.app
 
+import ai.rever.boss.components.buttons.ToolboxButton
+import ai.rever.boss.components.plugin.PanelIds
+import ai.rever.boss.plugin.api.SidebarItem
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -27,12 +32,20 @@ class HostActionsContentTest {
     val rule = createComposeRule()
 
     private fun mount(onOpenToolbox: () -> Unit = {}) {
+        val item =
+            SidebarItem(
+                pluginContentId = PanelIds.PLUGIN_MANAGER,
+                icon = Icons.Outlined.Extension,
+                label = "Toolbox",
+            )
         rule.setContent {
             Row {
                 focusQuickActionsRail(
                     placement = FocusQuickActionsPlacement.RIGHT_RAIL,
                     onShowSettings = {},
-                    onOpenToolbox = onOpenToolbox,
+                    toolbox = { hint, mod ->
+                        ToolboxButton(item = item, onClick = onOpenToolbox, hintDirection = hint, modifier = mod)
+                    },
                     onShowSearch = {},
                     onSignOut = {},
                 ).forEach { action -> action() }
@@ -76,9 +89,21 @@ class HostActionsContentTest {
             focusQuickActionsRail(
                 placement = FocusQuickActionsPlacement.RIGHT_RAIL,
                 onShowSettings = {},
-                onOpenToolbox = {},
                 onShowSearch = {},
                 onSignOut = {},
+                toolbox = { hint, mod ->
+                    ToolboxButton(
+                        item =
+                            SidebarItem(
+                                pluginContentId = PanelIds.PLUGIN_MANAGER,
+                                icon = Icons.Outlined.Extension,
+                                label = "Toolbox",
+                            ),
+                        onClick = {},
+                        hintDirection = hint,
+                        modifier = mod,
+                    )
+                },
             )
         assertEquals(FOCUS_QUICK_ACTION_COUNT, rendered.size)
     }
