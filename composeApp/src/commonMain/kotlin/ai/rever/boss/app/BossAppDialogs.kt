@@ -14,6 +14,7 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
 import ai.rever.boss.components.dialogs.ToolLauncherDialog
 import ai.rever.boss.components.dialogs.TopOfMindDialog
+import ai.rever.boss.components.events.DashboardEventBus
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.DependentRestartDeclinedException
@@ -618,6 +619,30 @@ internal fun BossAppDialogs(state: BossAppState) {
                 }
                 state.focusRequester.requestFocus()
             },
+            onToolSelect = { panelId ->
+                state.showGlobalSearchDialog = false
+                // The same entry point a sidebar icon click takes, so a tool opened from search
+                // behaves exactly as it does from its icon - custom onClick handlers included.
+                state.draggablePanelComponent.activatePlugin(panelId)
+                state.focusRequester.requestFocus()
+            },
+            onSettingSelect = { setting ->
+                state.showGlobalSearchDialog = false
+                // A plugin page navigates by page id; everything else by section. Both go through
+                // the same open(), which raises the window if it is already up and bumps its
+                // sectionRequest so asking twice for one section still navigates.
+                state.settingsWindow.reveal(
+                    section = setting.pluginPageId ?: setting.section,
+                    group = setting.group,
+                    label = setting.label,
+                    highlightable = setting.highlightable,
+                )
+            },
+            onPageSelect = { url ->
+                state.showGlobalSearchDialog = false
+                coroutineScope.launch { DashboardEventBus.openUrlInNewTab(url, windowId) }
+                state.focusRequester.requestFocus()
+            },
         )
     }
 
@@ -635,6 +660,7 @@ internal fun BossAppDialogs(state: BossAppState) {
             // which reads as a different bug rather than as none.
             focusRequest = state.settingsWindow.focusRequest,
             sectionRequest = state.settingsWindow.sectionRequest,
+            requestedHighlight = state.settingsWindow.highlight,
         )
     }
 

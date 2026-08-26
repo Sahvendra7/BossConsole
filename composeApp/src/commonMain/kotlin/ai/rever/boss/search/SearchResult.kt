@@ -130,6 +130,89 @@ sealed class SearchResult {
         override val displayName: String = description
         override val category: SearchCategory = SearchCategory.COMMANDS
     }
+
+    /**
+     * A tool - a plugin's sidebar panel - reachable without hunting for its icon.
+     *
+     * @property panelId The panel's id, which is what activates it. NOT the plugin id: the two
+     *   differ for several plugins, and `activatePlugin` matches on this one.
+     * @property label The tool's own name, as its sidebar icon and the tools launcher show it
+     * @property score The fuzzy match score
+     */
+    data class ToolResult(
+        val panelId: String,
+        val label: String,
+        override val score: Int,
+    ) : SearchResult() {
+        override val displayName: String = label
+        override val category: SearchCategory = SearchCategory.TOOLS
+    }
+
+    /**
+     * A row in the Settings window.
+     *
+     * @property section The settings section to navigate to, or null for a plugin page
+     * @property pluginPageId Set instead of [section] for a plugin's own settings page
+     * @property group The group within the section, for the highlight
+     * @property label The setting's label, which is also what the highlight matches on
+     * @property breadcrumb Where it lives, e.g. "Appearance > Tab Bar", shown as the subtitle
+     * @property highlightable False when landing on the section is all this entry can do
+     * @property score The fuzzy match score
+     */
+    data class SettingResult(
+        val section: String?,
+        val pluginPageId: String?,
+        val group: String?,
+        val label: String,
+        val breadcrumb: String,
+        val highlightable: Boolean,
+        override val score: Int,
+    ) : SearchResult() {
+        override val displayName: String = label
+        override val category: SearchCategory = SearchCategory.SETTINGS
+    }
+
+    /**
+     * An MCP tool, indexed so its existence and name can be found - and nothing else.
+     *
+     * There is deliberately no activation for this one. An MCP tool takes arguments a search row
+     * cannot collect, so selecting it closes the dialog, which is what [GlobalSearchDialog] already
+     * does for a result whose handler is absent. The question this answers is "is there a tool for
+     * this, and what is it called", which is why [enabled] and [providerId] are carried: a disabled
+     * tool is precisely the one someone is looking for.
+     *
+     * @property name The tool's name, e.g. `git_status`. Clients see it as `mcp__boss__git_status`
+     * @property providerId The plugin that contributes it
+     * @property description The tool's own description, matched on as well as the name
+     * @property enabled Whether it is currently exposed to clients
+     * @property score The fuzzy match score
+     */
+    data class McpToolResult(
+        val name: String,
+        val providerId: String,
+        val description: String,
+        val enabled: Boolean,
+        override val score: Int,
+    ) : SearchResult() {
+        override val displayName: String = name
+        override val category: SearchCategory = SearchCategory.MCP
+    }
+
+    /**
+     * A page from the browser's recent history.
+     *
+     * @property url The page's URL, which is what opens, and is matched on as well as the title
+     * @property title The page title
+     * @property score The fuzzy match score
+     */
+    data class PageResult(
+        val url: String,
+        val title: String,
+        override val score: Int,
+    ) : SearchResult() {
+        override val displayName: String = title.ifBlank { url }
+        override val category: SearchCategory = SearchCategory.PAGES
+    }
 }
 
 /**
@@ -145,6 +228,10 @@ enum class SearchCategory(
     BOOKMARKS("Bookmarks", "bookmark"),
     RUN_CONFIGS("Run Configs", "play_arrow"),
     COMMANDS("Commands", "terminal"),
+    TOOLS("Tools", "apps"),
+    SETTINGS("Settings", "settings"),
+    MCP("MCP Tools", "build"),
+    PAGES("Recent Pages", "history"),
 }
 
 /**

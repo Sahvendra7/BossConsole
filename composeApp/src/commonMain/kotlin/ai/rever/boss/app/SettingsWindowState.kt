@@ -1,5 +1,6 @@
 package ai.rever.boss.app
 
+import ai.rever.boss.components.settings.search.SettingsHighlight
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -55,6 +56,46 @@ internal class SettingsWindowState {
      * [section] is applied only when given. Passing null means "just show settings" and must not
      * clear a section another caller navigated to, which a plain assignment would.
      */
+
+    /**
+     * The row to point at once the window has navigated, or null to point at nothing.
+     *
+     * Separate from [section] for the same reason [sectionRequest] is separate from
+     * [focusRequest]: the window has to be able to tell "navigate here and light this row" from
+     * "just raise yourself", and a highlight left armed from a previous pick would fire on a page
+     * it does not belong to. Its own nonce makes asking twice for the same row work twice.
+     */
+    var highlight by mutableStateOf<SettingsHighlight?>(null)
+        private set
+
+    private var highlightNonce = 0
+
+    /**
+     * Show the settings window at [section] (or a plugin page) and light up one row.
+     *
+     * The one entry point for "take me to this setting" - used by the global search, which finds a
+     * row by name and has to be able to land on it rather than merely on its page.
+     *
+     * [highlightable] false means the entry can only reach its section: either the page belongs to
+     * another module, or its control carries no search target. Pointing at nothing is the honest
+     * outcome there, and better than leaving the last pick's highlight armed.
+     */
+    fun reveal(
+        section: String?,
+        group: String?,
+        label: String,
+        highlightable: Boolean,
+    ) {
+        highlight =
+            if (highlightable) {
+                highlightNonce += 1
+                SettingsHighlight(group = group, label = label, nonce = highlightNonce)
+            } else {
+                null
+            }
+        open(section)
+    }
+
     fun open(section: String? = null) {
         if (section != null) {
             this.section = section

@@ -306,6 +306,23 @@ class BossDraggableComponent(
      * Matched on [PanelId.panelId] rather than on the plugin id - the plugin kept the id
      * `plugin-manager` when it was renamed to Toolbox, so the two differ for exactly this one.
      */
+
+    /**
+     * Every tool registered in this window's sidebar, hidden ones included.
+     *
+     * Unfiltered on purpose, and shared by the two surfaces that exist to reach a tool without its
+     * icon - the tools launcher and the global search. Both make the same argument: a tool someone
+     * hid from a strip is precisely the one they will go looking for.
+     *
+     * Not remembered anywhere: `itemsBySlot` is Compose state, so reading it is what keeps a caller
+     * subscribed to a plugin loading or unloading.
+     */
+    fun allSidebarTools(): List<SidebarItem> =
+        SidebarVisibilitySettings.ALL_SLOT_IDS
+            .map(SidebarVisibilitySettings::panelFor)
+            .flatMap(::getItemsForSlotUnfiltered)
+            .distinctBy { it.id }
+
     fun toolboxSidebarItem(): SidebarItem? =
         SidebarVisibilitySettings.ALL_SLOT_IDS
             .map(SidebarVisibilitySettings::panelFor)

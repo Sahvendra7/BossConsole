@@ -1,8 +1,10 @@
 package ai.rever.boss.search
 
+import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.formatShortcutLabel
+import ai.rever.boss.mcp.McpToolRegistryImpl
 import ai.rever.boss.plugin.api.PluginSearchResult
 import ai.rever.boss.plugin.api.SearchResultAction
 import ai.rever.boss.run.RunConfigurationManager
@@ -72,6 +74,15 @@ object GlobalSearchService {
     private const val MIN_SCORE = 1
 
     /**
+     * How much a keyword hit gives up against a label hit, for settings.
+     *
+     * A keyword exists so that "passkey" reaches "Platform Authenticator". It is not a second name
+     * for the row, so a setting actually called what you typed has to win - the same ordering
+     * `SettingsSearchMatcher` applies inside the settings window.
+     */
+    private const val KEYWORD_PENALTY = 10
+
+    /**
      * Index a project directory for file searching.
      *
      * If switching to a different project, the old index is automatically cleared
@@ -133,6 +144,10 @@ object GlobalSearchService {
                                 async { searchPluginProviders(query) }, // Includes bookmarks from plugin
                                 async { searchRunConfigs(query) },
                                 async { searchCommands(query) },
+                                async { searchTools(query) },
+                                async { searchSettings(query) },
+                                async { searchMcpTools(query) },
+                                async { searchRecentPages(query) },
                             ).awaitAll().flatten()
 
                         // Sort by score
@@ -447,6 +462,129 @@ object GlobalSearchService {
 
         return results
             .sortedByDescending { it.score }
+            .take(MAX_RESULTS_PER_CATEGORY)
+    }
+
+    /**
+     * Search the tools - plugin panels - in the active window's sidebar.
+     *
+     * **Hidden tools included**, deliberately, exactly as `ToolLauncherDialog` argues about its own
+     * list: a tool someone hid from a strip is the one they will come here to find, and this is the
+     * surface that has to be able to reach anything.
+     *
+     * Matched on the panel id as well as the label, because the id is what a plugin's own
+     * documentation and its MCP tools call it.
+     */
+    private fun searchTools(query: String): List<SearchResult.ToolResult> {
+        val queryLower = query.lowercase()
+
+        return SearchSources
+            .tools()
+            .mapNotNull { tool ->
+                val labelMatch = FuzzyMatcher.match(queryLower, tool.label, tool.label.lowercase())
+                val idMatch = FuzzyMatcher.match(queryLower, tool.panelId, tool.panelId.lowercase())
+                val best = listOfNotNull(labelMatch, idMatch).maxByOrNull { it.score }
+
+                best?.takeIf { it.score >= MIN_SCORE }?.let {
+                    SearchResult.ToolResult(panelId = tool.panelId, label = tool.label, score = it.score)
+                }
+            }.sortedByDescending { it.score }
+            .take(MAX_RESULTS_PER_CATEGORY)
+    }
+
+    /**
+     * Search the rows of the Settings window.
+     *
+     * Keywords are matched but scored BELOW a label hit, which is the rule `SettingsSearchMatcher`
+     * already applies inside the settings window: a keyword exists so that "passkey" finds
+     * "Platform Authenticator", not so that it outranks a setting actually called that.
+     */
+    private fun searchSettings(query: String): List<SearchResult.SettingResult> {
+        val queryLower = query.lowercase()
+
+        return SearchSources
+            .settings()
+            .mapNotNull { entry ->
+                val labelScore = FuzzyMatcher.match(queryLower, entry.label, entry.label.lowercase())?.score
+                val crumbScore =
+                    FuzzyMatcher.match(queryLower, entry.breadcrumb, entry.breadcrumb.lowercase())?.score
+                val keywordScore =
+                    entry.keywords
+                        .mapNotNull { FuzzyMatcher.match(queryLower, it, it.lowercase())?.score }
+                        .maxOrNull()
+                        ?.minus(KEYWORD_PENALTY)
+
+                listOfNotNull(labelScore, crumbScore, keywordScore)
+                    .maxOrNull()
+                    ?.takeIf { it >= MIN_SCORE }
+                    ?.let { score ->
+                        SearchResult.SettingResult(
+                            section = entry.section,
+                            pluginPageId = entry.pluginPageId,
+                            group = entry.group,
+                            label = entry.label,
+                            breadcrumb = entry.breadcrumb,
+                            highlightable = entry.highlightable,
+                            score = score,
+                        )
+                    }
+            }.sortedByDescending { it.score }
+            .take(MAX_RESULTS_PER_CATEGORY)
+    }
+
+    /**
+     * Search the MCP tools plugins have contributed.
+     *
+     * **`allTools`, not `tools`**: the exposed set drops the ones a user has switched off, and a
+     * disabled tool is exactly what someone searching for it wants to find - so the result carries
+     * `enabled` and says so rather than hiding it.
+     *
+     * These results have no activation. See [SearchResult.McpToolResult].
+     */
+    private fun searchMcpTools(query: String): List<SearchResult.McpToolResult> {
+        val queryLower = query.lowercase()
+        val disabled = McpToolRegistryImpl.disabledToolNames.value
+
+        return McpToolRegistryImpl.allTools.value
+            .mapNotNull { registered ->
+                val def = registered.definition
+                val nameMatch = FuzzyMatcher.match(queryLower, def.name, def.name.lowercase())
+                val descMatch =
+                    FuzzyMatcher.match(queryLower, def.description, def.description.lowercase())
+                val best = listOfNotNull(nameMatch, descMatch).maxByOrNull { it.score }
+
+                best?.takeIf { it.score >= MIN_SCORE }?.let {
+                    SearchResult.McpToolResult(
+                        name = def.name,
+                        providerId = registered.providerId,
+                        description = def.description,
+                        enabled = def.name !in disabled,
+                        score = it.score,
+                    )
+                }
+            }.sortedByDescending { it.score }
+            .take(MAX_RESULTS_PER_CATEGORY)
+    }
+
+    /**
+     * Search the browser's recent pages.
+     *
+     * Both the title and the URL, because half of what makes a page findable is its domain -
+     * "github" should reach a page whose title never mentions it.
+     */
+    private fun searchRecentPages(query: String): List<SearchResult.PageResult> {
+        val queryLower = query.lowercase()
+
+        return RecentBrowserPagesManager.recentPages.value
+            .mapNotNull { page ->
+                val titleMatch = FuzzyMatcher.match(queryLower, page.title, page.title.lowercase())
+                val urlMatch = FuzzyMatcher.match(queryLower, page.url, page.url.lowercase())
+                val best = listOfNotNull(titleMatch, urlMatch).maxByOrNull { it.score }
+
+                best?.takeIf { it.score >= MIN_SCORE }?.let {
+                    SearchResult.PageResult(url = page.url, title = page.title, score = it.score)
+                }
+            }.sortedByDescending { it.score }
             .take(MAX_RESULTS_PER_CATEGORY)
     }
 

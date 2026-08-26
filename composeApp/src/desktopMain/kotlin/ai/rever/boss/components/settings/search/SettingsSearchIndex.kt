@@ -1,6 +1,9 @@
 package ai.rever.boss.components.settings.search
 
+import ai.rever.boss.components.plugin.registries.SettingsPageRegistryImpl
 import ai.rever.boss.components.settings.sidebar.SettingsSection
+import ai.rever.boss.search.SearchSources
+import ai.rever.boss.search.SettingSearchRecord
 
 /**
  * One searchable thing in the Settings window.
@@ -87,6 +90,38 @@ object SettingsSearchIndex {
      * and a diff that adds a setting touches only the data.
      */
     val builtIn: List<SettingsSearchEntry> get() = builtInEntries
+
+    /**
+     * Hand this index to the global (double-shift) search.
+     *
+     * Called once at desktop startup. The global search lives in commonMain and cannot see this
+     * type at all, so it takes plain records through [SearchSources] - a supplier rather than a
+     * snapshot, because plugin pages appear and disappear with their plugins and a list captured
+     * at startup would go stale into a search index, which is the one place staleness is invisible.
+     *
+     * Built-in entries plus the plugin pages currently visible, which is the same union
+     * `SettingsWindow` feeds its own search box.
+     */
+    fun registerWithGlobalSearch() {
+        SearchSources.settingsSupplier = {
+            val pages =
+                SettingsPageRegistryImpl.visiblePages().map {
+                    pluginPageEntry(it.pageId, it.displayName, it.description)
+                }
+            (builtIn + pages)
+                .map { entry ->
+                    SettingSearchRecord(
+                        label = entry.label,
+                        breadcrumb = entry.breadcrumb,
+                        section = entry.section?.name,
+                        pluginPageId = entry.pluginPageId,
+                        group = entry.group,
+                        keywords = entry.keywords,
+                        highlightable = entry.highlightable,
+                    )
+                }
+        }
+    }
 }
 
 /** Builds a plugin-page entry. Plugins supply only a name and a description, so that is all we index. */

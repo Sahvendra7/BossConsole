@@ -61,6 +61,7 @@ actual fun SettingsWindow(
     initialSection: String?,
     focusRequest: Int,
     sectionRequest: Int,
+    requestedHighlight: SettingsHighlight?,
 ) {
     // No local `isOpen` flag. Composition is already gated by `SettingsWindowState.visible`, and a
     // second source of truth for "is this window up" is the bug this whole change fixes, waiting to
@@ -123,6 +124,7 @@ actual fun SettingsWindow(
                 SettingsContent(
                     initialSection = initialSection,
                     sectionRequest = sectionRequest,
+                    requestedHighlight = requestedHighlight,
                     searchState = searchState,
                 )
             }
@@ -134,6 +136,7 @@ actual fun SettingsWindow(
 private fun SettingsContent(
     initialSection: String? = null,
     sectionRequest: Int = 0,
+    requestedHighlight: SettingsHighlight? = null,
     searchState: SettingsSearchState = remember { SettingsSearchState() },
 ) {
     var selectedSection by remember { mutableStateOf(initialSectionFor(initialSection, visiblePageIds())) }
@@ -227,6 +230,15 @@ private fun SettingsContent(
                 Unit
             }
         }
+    }
+
+    // A highlight asked for from OUTSIDE the window - the global search finding a row by name.
+    //
+    // Keyed on the request's own nonce, not on its value: picking the same row twice leaves group
+    // and label unchanged, and a value key would light it the first time and do nothing the
+    // second. Runs after the navigation effect above, which is what puts the row on screen.
+    LaunchedEffect(requestedHighlight?.nonce) {
+        requestedHighlight?.let { highlight = it }
     }
 
     // If the selected page's plugin is disabled/unloaded, fall back to sections.
