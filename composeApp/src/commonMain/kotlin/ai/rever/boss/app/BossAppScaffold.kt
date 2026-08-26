@@ -457,6 +457,9 @@ internal fun BossAppScaffold(
                             // grows a tools button exactly in the configuration where nothing
                             // else can hold one.
                             toolLauncher = hostToolLauncher,
+                            // Clearance for the macOS traffic lights, which are drawn over this
+                            // bar's start when there is no title row above it.
+                            startInset = trafficLights.barStartInset(),
                             onShowSearch = {
                                 state.showGlobalSearchDialog = true
                             },
