@@ -535,9 +535,19 @@ object GlobalSearchService {
     /**
      * Search the MCP tools plugins have contributed.
      *
-     * **`allTools`, not `tools`**: the exposed set drops the ones a user has switched off, and a
-     * disabled tool is exactly what someone searching for it wants to find - so the result carries
-     * `enabled` and says so rather than hiding it.
+     * **Permitted tools, disabled ones included.** Two filters, pulling opposite ways:
+     *
+     * - The DISABLED ones stay. A tool someone switched off is exactly what they will search for,
+     *   and the row says `off` rather than hiding it.
+     * - The ones this user has no permission for go. `allTools` deliberately keeps those for the
+     *   management UI, which shows every tool with its state - but this is the everyday launcher,
+     *   open to every user and to nobody signed in yet, where a name and a full description of an
+     *   admin-only tool would be enumerable by typing. The settings source added alongside this one
+     *   already filters by RBAC, and the two should not disagree about whether search respects it.
+     *
+     * `enabled` therefore means what the row claims: not switched off. Computing it from the
+     * disabled set alone, over unfiltered tools, showed a permission-denied tool as live when no
+     * client could see it - and answering "is this switched off" is the row's entire job.
      *
      * These results have no activation. See [SearchResult.McpToolResult].
      */
@@ -545,7 +555,8 @@ object GlobalSearchService {
         val queryLower = query.lowercase()
         val disabled = McpToolRegistryImpl.disabledToolNames.value
 
-        return McpToolRegistryImpl.allTools.value
+        return McpToolRegistryImpl
+            .permittedTools()
             .mapNotNull { registered ->
                 val def = registered.definition
                 val nameMatch = FuzzyMatcher.match(queryLower, def.name, def.name.lowercase())

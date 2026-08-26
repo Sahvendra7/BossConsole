@@ -374,24 +374,6 @@ internal fun BossAppScaffold(
             stripWidth = BossChrome.dimens.stripWidth,
         )
 
-    // Offer this window's tools to the global search while it is on screen.
-    //
-    // Per WINDOW, which is why it is registered here and not once at startup: the sidebar's items
-    // belong to a window's own component, and the search service is a single object shared by all
-    // of them. A supplier rather than a snapshot, so a plugin loading while the window is open is
-    // findable without re-registering.
-    //
-    // Last window mounted wins, and that is the honest simplification: the dialog is opened from
-    // the window the user is in, and the sets differ only when two windows have different plugins
-    // loaded, which the plugin system does not currently allow.
-    DisposableEffect(state.draggablePanelComponent) {
-        val component = state.draggablePanelComponent
-        SearchSources.toolsSupplier = {
-            component.allSidebarTools().map { ToolSearchRecord(panelId = it.pluginContentId.panelId, label = it.label) }
-        }
-        onDispose { SearchSources.toolsSupplier = null }
-    }
-
     val openTools = { state.showToolLauncherDialog = true }
 
     // The Toolbox's OWN sidebar item, so this button draws the plugin's icon and label rather than

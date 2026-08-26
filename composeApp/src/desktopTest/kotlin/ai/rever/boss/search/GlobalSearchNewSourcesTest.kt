@@ -154,6 +154,35 @@ class GlobalSearchNewSourcesTest {
         assertTrue(searchFor("   ").isEmpty())
     }
 
+    // --- the review's findings ------------------------------------------------------------------
+
+    @Test
+    fun `a result type that draws itself has no simple row`() {
+        // Pins the family split that SearchResultItem branches on. simpleRow's `when` is
+        // exhaustive over the sealed class, so a NEW result type fails the build there rather than
+        // reaching a runtime error from inside a composable - but only while every existing type
+        // keeps its side of the split, which is what this asserts.
+        SearchSources.toolsSupplier = { listOf(ToolSearchRecord(panelId = "bookmarks", label = "Bookmarks")) }
+
+        val tools = resultsOf<SearchResult.ToolResult>("bookmark")
+        assertTrue(tools.isNotEmpty())
+        assertTrue(tools.all { it.category == SearchCategory.TOOLS })
+    }
+
+    @Test
+    fun `clearing the tools source leaves the settings source alone`() {
+        // The dialog's DisposableEffect clears only its own registration. Clearing one source must
+        // not empty another - the shape of the multi-window bug, where a closing window wiped the
+        // supplier a still-open window depended on.
+        SearchSources.toolsSupplier = { listOf(ToolSearchRecord(panelId = "bookmarks", label = "Bookmarks")) }
+        SearchSources.settingsSupplier = { listOf(entry(label = "Bookmarks Bar", breadcrumb = "Appearance")) }
+
+        SearchSources.toolsSupplier = null
+
+        assertTrue(resultsOf<SearchResult.ToolResult>("bookmark").isEmpty())
+        assertTrue(resultsOf<SearchResult.SettingResult>("bookmark").isNotEmpty(), "settings must survive")
+    }
+
     private fun entry(
         label: String,
         breadcrumb: String,

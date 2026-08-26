@@ -56,6 +56,8 @@ import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
+import ai.rever.boss.search.SearchSources
+import ai.rever.boss.search.ToolSearchRecord
 import ai.rever.boss.services.auth.UserDataStorage
 import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
@@ -68,6 +70,7 @@ import ai.rever.boss.window.selectProjectInWindow
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.CancellationException
@@ -451,6 +454,32 @@ internal fun BossAppDialogs(state: BossAppState) {
     }
 
     if (state.showGlobalSearchDialog) {
+        // Offer THIS window's tools to the search, for exactly as long as its dialog is open.
+        //
+        // Registered here rather than per window, because the window that matters is the one whose
+        // dialog is up - which is what this block already is. Registering while the WINDOW was
+        // mounted had a worse failure than "last one wins": closing any window ran its onDispose
+        // and cleared the slot unconditionally, including when the supplier in it belonged to a
+        // window still open, whose effect would never re-run. That window's Tools results then
+        // stayed empty for the rest of the session.
+        //
+        // A supplier rather than a snapshot, so a plugin loading while the dialog is open is
+        // findable without reopening it.
+        DisposableEffect(state.draggablePanelComponent) {
+            val component = state.draggablePanelComponent
+            val supplier: () -> List<ToolSearchRecord> = {
+                component.allSidebarTools().map {
+                    ToolSearchRecord(panelId = it.pluginContentId.panelId, label = it.label)
+                }
+            }
+            SearchSources.toolsSupplier = supplier
+            onDispose {
+                // Only if it is still ours. Two windows can have a dialog open at once, and
+                // clearing another window's registration would leave IT searching no tools.
+                if (SearchSources.toolsSupplier === supplier) SearchSources.toolsSupplier = null
+            }
+        }
+
         GlobalSearchDialog(
             projectPath = selectedProject.path,
             workspaceManager = workspaceManager,

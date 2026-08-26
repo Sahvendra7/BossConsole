@@ -119,5 +119,11 @@ internal class SettingsWindowState {
     fun close() {
         visible = false
         section = null
+        // Cleared with the section, and for the same reason. SettingsContent is composed fresh
+        // each time `visible` flips, so a highlight left armed here fires on that first
+        // composition - long after the pick it belonged to, on whatever page the window happens to
+        // land on. The nonce only guards repeats within one composition's lifetime; it cannot tell
+        // this one apart from a fresh request.
+        highlight = null
     }
 }

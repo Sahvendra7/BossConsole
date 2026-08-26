@@ -1031,26 +1031,15 @@ private fun SearchResultItem(
     // Two families, not nine cases. The older result types each have a shape of their own - a file
     // shows its matched ranges, a tab shows which window it is in - and are dispatched below; the
     // four newer ones differ only in data, so they share one row and one table (`simpleRow`).
-    when (result) {
-        is SearchResult.ToolResult,
-        is SearchResult.SettingResult,
-        is SearchResult.McpToolResult,
-        is SearchResult.PageResult,
-        -> {
-            SimpleResultItem(
-                result.simpleRow(),
-                isSelected,
-                isHovered,
-                scale,
-                backgroundColor,
-                interactionSource,
-                onClick,
-            )
-        }
-
-        else -> {
-            DetailedResultItem(result, isSelected, isHovered, scale, backgroundColor, interactionSource, onClick)
-        }
+    //
+    // Which family this is comes from simpleRow returning a row or null, and THAT `when` is
+    // exhaustive over the sealed class - so adding a result type fails the build there rather than
+    // reaching a runtime error from inside a composable.
+    val row = result.simpleRow()
+    if (row != null) {
+        SimpleResultItem(row, isSelected, isHovered, scale, backgroundColor, interactionSource, onClick)
+    } else {
+        DetailedResultItem(result, isSelected, isHovered, scale, backgroundColor, interactionSource, onClick)
     }
 }
 
@@ -1093,7 +1082,7 @@ private fun DetailedResultItem(
         }
 
         else -> {
-            error("DetailedResultItem got a simple result type: ${'$'}{result::class.simpleName}")
+            error("DetailedResultItem got a simple result type: ${result::class.simpleName}")
         }
     }
 }
@@ -1218,7 +1207,7 @@ private fun SearchResult.simpleRow(): SimpleRow =
         }
 
         else -> {
-            error("simpleRow is only for the four simple result types, not ${'$'}{this::class.simpleName}")
+            error("simpleRow is only for the four simple result types, not ${this::class.simpleName}")
         }
     }
 

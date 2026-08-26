@@ -238,7 +238,16 @@ private fun SettingsContent(
     // and label unchanged, and a value key would light it the first time and do nothing the
     // second. Runs after the navigation effect above, which is what puts the row on screen.
     LaunchedEffect(requestedHighlight?.nonce) {
-        requestedHighlight?.let { highlight = it }
+        // Re-stamped with THIS window's counter rather than adopted as-is. The requester has a
+        // counter of its own, and both start at zero: reveal row A from the global search
+        // (external nonce 1), then pick the same row A in this window's search box (local nonce 1),
+        // and the value equals what is already in `highlight` - no state change, the keyed effect
+        // in searchTarget never re-runs, and the window visibly does nothing. Which is precisely
+        // what the nonce exists to prevent.
+        requestedHighlight?.let {
+            highlightNonce += 1
+            highlight = it.copy(nonce = highlightNonce)
+        }
     }
 
     // If the selected page's plugin is disabled/unloaded, fall back to sections.

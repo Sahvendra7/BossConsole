@@ -105,6 +105,9 @@ object McpToolRegistryImpl : McpToolRegistry {
      */
     val killSwitchFault: StateFlow<McpKillSwitchFault?> get() = core.fault
 
+    /** See `Core.permittedTools`. */
+    fun permittedTools(): List<RegisteredMcpTool> = core.permittedTools()
+
     fun registerProvider(provider: McpToolProvider) = core.registerProvider(provider)
 
     fun unregisterProvider(providerId: String) = core.unregisterProvider(providerId)
@@ -554,6 +557,18 @@ internal class McpToolRegistryCore(
     }
 
     /** Mirrors host RBAC: admin bypasses; requiresAdmin gates to admins; else must hold all perms. */
+
+    /**
+     * Every registered tool the CURRENT user may run, disabled ones included.
+     *
+     * Between [allTools] and [tools]: it keeps the ones a user has switched off, because a search
+     * for a tool someone disabled should find it and say so, but drops the ones they have no
+     * permission for. [allTools] deliberately drops neither, which is right for the management UI
+     * that shows every tool with its state, and wrong anywhere a name and a full description would
+     * be enumerable by whoever is typing.
+     */
+    fun permittedTools(): List<RegisteredMcpTool> = _all.value.filter { permitted(it.definition) }
+
     private fun permitted(def: McpToolDefinition): Boolean {
         if (isAdmin) return true
         if (def.requiresAdmin) return false
