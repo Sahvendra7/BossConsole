@@ -13,6 +13,7 @@ import ai.rever.boss.components.sidebar.SidebarVisibilitySettings
 import ai.rever.boss.components.sidebar.SidebarVisibilitySettingsManager
 import ai.rever.boss.components.sidebar.computeSlotIconLimits
 import ai.rever.boss.layout.BossChrome
+import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.api.Panel.Companion.left
 import ai.rever.boss.plugin.api.Panel.Companion.right
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -97,11 +99,28 @@ fun BossDraggableComponent.BossLeftSideBar(
                 // plugin icon, and the bottom is where the bar already keeps the controls that
                 // are not draggable. Its height is reserved above, or a full rail would spend the
                 // whole budget on plugin icons and push it off screen.
-                onOpenTools?.let { open ->
-                    ToolLauncherButton(onClick = open, hintDirection = right)
-                }
+                onOpenTools?.let { open -> RailToolLauncher(onClick = open, hintDirection = right) }
             }
         }
     }
     VDivider()
+}
+
+/**
+ * The tools launcher as a rail icon, with the 4dp the rail puts between its other icons.
+ *
+ * The spacing lives here rather than inside [ToolLauncherButton] because that button also sits in
+ * the floating cluster's row, where the same padding made it taller than its neighbours and
+ * dropped its glyph below theirs. Shared by both rails so they cannot space it differently.
+ */
+@Composable
+internal fun RailToolLauncher(
+    onClick: () -> Unit,
+    hintDirection: Panel,
+) {
+    ToolLauncherButton(
+        onClick = onClick,
+        hintDirection = hintDirection,
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
 }

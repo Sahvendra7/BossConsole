@@ -528,7 +528,12 @@ private fun QuickActions(
         // showing on the lightweight one - the two paths have to look the same. The hairline
         // border is what separates the cluster from the content underneath.
     ) {
-        Row(modifier = Modifier.padding(horizontal = BossTheme.space.xs)) {
+        // Centred, not top-aligned. A child even slightly taller than the rest used to hang its
+        // glyph below theirs rather than sitting level with them.
+        Row(
+            modifier = Modifier.padding(horizontal = BossTheme.space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             // hintDirection = top throughout: the cluster sits on the bottom edge of the content
             // area, so a hint below it would be off the window on the lightweight path. (On the
             // heavyweight path BossActionButton routes hints to SwingTooltip, which places itself,

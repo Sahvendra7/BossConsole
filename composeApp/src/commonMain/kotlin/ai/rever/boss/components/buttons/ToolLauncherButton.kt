@@ -2,8 +2,6 @@ package ai.rever.boss.components.buttons
 
 import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
@@ -42,15 +40,18 @@ fun ToolLauncherButton(
     onClick: () -> Unit,
     hintDirection: Panel = bottom,
     isSelected: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
-    Box(modifier = Modifier.padding(vertical = 4.dp)) {
-        BossActionButton(
-            imageVector = Icons.Outlined.Apps,
-            text = "Tools",
-            isSelected = isSelected,
-            hintDirection = hintDirection,
-            modifier = Modifier.size(32.dp).testTag(TOOL_LAUNCHER_TAG),
-            onClick = onClick,
-        )
-    }
+    // No padding of its own. It shares a row with Sign Out, Settings and Search in the floating
+    // cluster, and that row is top-aligned - so 4dp of vertical padding here made this button 8dp
+    // taller than its siblings and dropped its glyph below theirs. Spacing belongs to whoever
+    // arranges these; the two icon strips add their own, matching the rail's other icons.
+    BossActionButton(
+        imageVector = Icons.Outlined.Apps,
+        text = "Tools",
+        isSelected = isSelected,
+        hintDirection = hintDirection,
+        modifier = modifier.size(32.dp).testTag(TOOL_LAUNCHER_TAG),
+        onClick = onClick,
+    )
 }

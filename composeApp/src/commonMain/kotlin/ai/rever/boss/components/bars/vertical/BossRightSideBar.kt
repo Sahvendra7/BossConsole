@@ -20,6 +20,7 @@ import ai.rever.boss.plugin.api.Panel.Companion.top
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -135,9 +136,7 @@ fun BossDraggableComponent.BossRightSideBar(
                 // Outside the clipped region for the same reason the customize button is, and
                 // above the bottom actions: the launcher is about the slots it sits under, while
                 // Settings / Search / Sign Out are about the app.
-                onOpenTools?.let { open ->
-                    ToolLauncherButton(onClick = open, hintDirection = left)
-                }
+                onOpenTools?.let { open -> RailToolLauncher(onClick = open, hintDirection = left) }
                 SidebarBottomActions(bottomActions)
             }
         }
