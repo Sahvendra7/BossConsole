@@ -53,6 +53,7 @@ import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
 import ai.rever.boss.updater.UpdateAvailableDialog
 import ai.rever.boss.updater.UpdateBanner
 import ai.rever.boss.updater.UpdateState
+import ai.rever.boss.updater.drawsBanner
 import ai.rever.boss.updater.rememberUpdateDialogOwnership
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.window.LocalWindowGitState
@@ -312,11 +313,18 @@ internal fun BossAppScaffold(
     // Settings / Search / Sign Out group unconditionally and render in whichever one is drawing.
     // Which column keeps clear of the macOS traffic lights, now that the title row no longer
     // exists to hold them. Decided once, read by the three places that could carry the inset.
+    // Read above the decision below rather than beside the banner, because whether a banner is up
+    // is an INPUT to that decision: while one is drawn it is the topmost chrome, so it takes the
+    // clearance and nothing beneath it does.
+    val updateHandle = state.updateHandle
+    val updateState by updateHandle.updateState.collectAsState()
+
     val trafficLights =
         macTrafficLightInset(
             appearance = drawn,
             isMacOs = SystemUtils.isMacOS,
             barCollapsed = appearance.tabBarCollapsed,
+            bannerVisible = updateState.drawsBanner(),
         )
 
     val openTools = { state.showToolLauncherDialog = true }
@@ -382,16 +390,14 @@ internal fun BossAppScaffold(
                 }
 
                 // Update banner - always visible (even in focus mode)
-                val updateHandle = state.updateHandle
-                val updateState by updateHandle.updateState.collectAsState()
                 // Every action runs on the manager's scope, never this window's
                 // rememberCoroutineScope(): that scope dies with the composition, so
                 // closing the window mid-install used to cancel the install (leaving
                 // UpdateState on Installing) and could drop a persisted dismissal.
                 UpdateBanner(
                     updateState = updateState,
-                    // The banner is above every other bar, so while it is up the lights are on it
-                    // rather than on whatever else was given clearance.
+                    // Non-zero only when this banner is the chrome holding the lights, in which
+                    // case the bars below it have already given up their own clearance.
                     startInset = trafficLights.bannerStartInset(),
                     onCheckForUpdates = {
                         // Manual retry: bypass per-version dismissal

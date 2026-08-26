@@ -141,6 +141,58 @@ class MacTrafficLightsTest {
     }
 
     @Test
+    fun `the banner takes the clearance off the top bar while it is up`() {
+        // The banner is drawn above the bar, so the lights land on the banner. A bar that kept its
+        // own indent would be reserving space for buttons that moved.
+        val withBar = bare.copy(showTopBar = true)
+        assertEquals(TrafficLightInset.TOP_BAR, macTrafficLightInset(withBar, isMacOs = true))
+        assertEquals(
+            TrafficLightInset.BANNER,
+            macTrafficLightInset(withBar, isMacOs = true, bannerVisible = true),
+        )
+    }
+
+    @Test
+    fun `the banner takes the clearance off the columns while it is up`() {
+        // This is the reported defect: the columns kept a 28dp top inset under a banner that had
+        // already taken the lights, so an empty band opened above the tab bar's Favorites shelf.
+        val defaults = WindowAppearanceSettings()
+        assertEquals(TrafficLightInset.LEFT_COLUMNS, macTrafficLightInset(defaults, isMacOs = true))
+
+        val underBanner = macTrafficLightInset(defaults, isMacOs = true, bannerVisible = true)
+        assertEquals(TrafficLightInset.BANNER, underBanner)
+        assertEquals(0.dp, underBanner.columnInset())
+        assertEquals(TRAFFIC_LIGHT_WIDTH, underBanner.bannerStartInset())
+    }
+
+    @Test
+    fun `a banner changes nothing where the title row holds the lights`() {
+        // The row is drawn ABOVE the banner, so it goes on holding them and the banner needs no
+        // indent. Mapping these to BANNER would also drop the row, moving the whole window.
+        val titled = bare.copy(showTitleBar = true)
+        assertEquals(
+            TrafficLightInset.NONE,
+            macTrafficLightInset(titled, isMacOs = true, bannerVisible = true),
+        )
+
+        // CONTENT keeps the row for the same reason, so a banner leaves it alone too.
+        val topTabs = bare.copy(tabBarPosition = TabBarPosition.TOP)
+        val content = macTrafficLightInset(topTabs, isMacOs = true, bannerVisible = true)
+        assertEquals(TrafficLightInset.CONTENT, content)
+        assertEquals(0.dp, content.bannerStartInset())
+        assertTrue(content.needsTitleRow(showTitleBar = false))
+    }
+
+    @Test
+    fun `no banner inset off macOS`() {
+        // There are no lights to clear, so a banner is just a banner.
+        assertEquals(
+            TrafficLightInset.NONE,
+            macTrafficLightInset(bare, isMacOs = false, bannerVisible = true),
+        )
+    }
+
+    @Test
     fun `each answer produces exactly one kind of inset`() {
         // The two insets are different axes - a column takes height, the bar takes width - so a
         // case that produced both, or neither where one is needed, is a layout bug either way.
@@ -150,6 +202,16 @@ class MacTrafficLightsTest {
         assertEquals(0.dp, TrafficLightInset.TOP_BAR.columnInset())
         assertEquals(0.dp, TrafficLightInset.NONE.columnInset())
         assertEquals(0.dp, TrafficLightInset.NONE.barStartInset())
+
+        // The banner takes a start indent and nothing else: this is the whole fix, since the band
+        // under the banner was the column inset surviving alongside it.
+        assertEquals(TRAFFIC_LIGHT_WIDTH, TrafficLightInset.BANNER.bannerStartInset())
+        assertEquals(0.dp, TrafficLightInset.BANNER.columnInset())
+        assertEquals(0.dp, TrafficLightInset.BANNER.barStartInset())
+
+        // And no other answer indents the banner, so the indent can never be applied twice.
+        val indenting = TrafficLightInset.entries.filter { it.bannerStartInset() > 0.dp }
+        assertEquals(listOf(TrafficLightInset.BANNER), indenting)
     }
 
     @Test

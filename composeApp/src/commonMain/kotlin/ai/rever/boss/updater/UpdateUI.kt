@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.layout.TRAFFIC_LIGHT_HEIGHT
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.utils.Version
 import androidx.compose.foundation.BorderStroke
@@ -799,4 +800,10 @@ private val PAD_Y = 6.dp
  * of them, and a banner that forgot it would put the lights over its text only in whichever state
  * that banner represents - an update error, say, which is the hardest of the five to reproduce.
  */
-private fun Modifier.bannerPad(inset: Dp) = padding(start = PAD_X + inset, end = PAD_X, top = PAD_Y, bottom = PAD_Y)
+private fun Modifier.bannerPad(inset: Dp) =
+    // An inset means this banner is carrying the lights, and carrying them means being at least
+    // as tall as they are. Its natural height happens to clear 28dp today, which is not the same
+    // as being guaranteed to: a shorter string, a smaller icon or a denser theme would spill them
+    // onto the bar below, where nothing is reserving space any more.
+    then(if (inset > 0.dp) Modifier.heightIn(min = TRAFFIC_LIGHT_HEIGHT) else Modifier)
+        .padding(start = PAD_X + inset, end = PAD_X, top = PAD_Y, bottom = PAD_Y)

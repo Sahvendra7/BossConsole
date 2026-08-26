@@ -62,6 +62,23 @@ enum class TrafficLightInset {
      * browser's native surface lives, which is not something to leave a hole in.
      */
     CONTENT,
+
+    /**
+     * The update banner is up, and it is drawn above every bar and column, so it is what the
+     * lights land on.
+     *
+     * This replaces [TOP_BAR] and [LEFT_COLUMNS] for as long as the banner exists, and replacing
+     * is the whole point: the clearance belongs to exactly ONE piece of chrome. Leaving the
+     * columns their inset while the banner took its own opened an empty 28dp band under the
+     * banner, above the tab bar's Favorites shelf - clearance for lights that were no longer
+     * there.
+     *
+     * It does NOT replace [CONTENT] or [NONE]: both of those draw the title row, and the row is
+     * ABOVE the banner, so the row still holds the lights and the banner needs nothing. Mapping
+     * them here would drop a row the layout keeps permanently, shifting the whole window by its
+     * height every time a banner appeared.
+     */
+    BANNER,
 }
 
 /**
@@ -88,52 +105,62 @@ fun macTrafficLightInset(
      * Closing it means this decision moving to where the layout is known.
      */
     barCollapsed: Boolean = false,
-): TrafficLightInset =
-    when {
-        // Not macOS: the lights are somebody else's problem, and on Windows and Linux the title
-        // row is a normal bar above the content rather than an overlay on top of it.
-        !isMacOs -> {
-            TrafficLightInset.NONE
+    /**
+     * Whether the update banner is currently drawing. See [TrafficLightInset.BANNER].
+     *
+     * Take it from [ai.rever.boss.updater.drawsBanner] rather than from "an update exists": most
+     * of `UpdateState` draws no banner at all, and insetting for a banner that is not there is the
+     * same empty band by another route.
+     */
+    bannerVisible: Boolean = false,
+): TrafficLightInset {
+    val base =
+        when {
+            // Not macOS: the lights are somebody else's problem, and on Windows and Linux the title
+            // row is a normal bar above the content rather than an overlay on top of it.
+            !isMacOs -> {
+                TrafficLightInset.NONE
+            }
+
+            // The row is on and is exactly what it is for.
+            appearance.showTitleBar -> {
+                TrafficLightInset.NONE
+            }
+
+            // Asked BEFORE the columns: the top bar is above them, so when it is on, it is what is
+            // under the lights and the columns start below the box entirely.
+            appearance.showTopBar -> {
+                TrafficLightInset.TOP_BAR
+            }
+
+            // Only when the columns are actually wide enough to hold the box. Insetting chrome that
+            // is narrower than the lights protects part of the corner and leaves the rest over the
+            // content, which is worse than not trying: it looks deliberate.
+            leftChromeWidth(appearance, barCollapsed) >= TRAFFIC_LIGHT_WIDTH -> {
+                TrafficLightInset.LEFT_COLUMNS
+            }
+
+            else -> {
+                TrafficLightInset.CONTENT
+            }
         }
 
-        // The row is on and is exactly what it is for.
-        appearance.showTitleBar -> {
-            TrafficLightInset.NONE
-        }
-
-        // Asked BEFORE the columns: the top bar is above them, so when it is on, it is what is
-        // under the lights and the columns start below the box entirely.
-        appearance.showTopBar -> {
-            TrafficLightInset.TOP_BAR
-        }
-
-        // Only when the columns are actually wide enough to hold the box. Insetting chrome that
-        // is narrower than the lights protects part of the corner and leaves the rest over the
-        // content, which is worse than not trying: it looks deliberate.
-        leftChromeWidth(appearance, barCollapsed) >= TRAFFIC_LIGHT_WIDTH -> {
-            TrafficLightInset.LEFT_COLUMNS
-        }
-
-        else -> {
-            TrafficLightInset.CONTENT
-        }
-    }
+    // The banner takes over from whatever chrome it is drawn above, and only from that chrome.
+    val coverable = base == TrafficLightInset.TOP_BAR || base == TrafficLightInset.LEFT_COLUMNS
+    return if (bannerVisible && coverable) TrafficLightInset.BANNER else base
+}
 
 /** The top inset for a left-hand column, which is the height of the box or nothing. */
 fun TrafficLightInset.columnInset(): Dp = if (this == TrafficLightInset.LEFT_COLUMNS) TRAFFIC_LIGHT_HEIGHT else 0.dp
 
 /**
- * The start indent for the update banner, which sits above everything else when it is up.
+ * The start indent for the update banner.
  *
- * Any answer but [TrafficLightInset.NONE] and [TrafficLightInset.CONTENT] means there is no title
- * row, so the banner is the topmost chrome and the lights are drawn over it. CONTENT keeps the
- * row, which holds them, and NONE means there is nothing to clear.
+ * Non-zero for exactly [TrafficLightInset.BANNER], which is the answer only when the banner is
+ * both up and topmost. The banner is a row, so it takes a horizontal indent; the height it has to
+ * keep is enforced where it is drawn.
  */
-fun TrafficLightInset.bannerStartInset(): Dp =
-    when (this) {
-        TrafficLightInset.TOP_BAR, TrafficLightInset.LEFT_COLUMNS -> TRAFFIC_LIGHT_WIDTH
-        TrafficLightInset.NONE, TrafficLightInset.CONTENT -> 0.dp
-    }
+fun TrafficLightInset.bannerStartInset(): Dp = if (this == TrafficLightInset.BANNER) TRAFFIC_LIGHT_WIDTH else 0.dp
 
 /** The start indent for the top bar, which is the width of the box or nothing. */
 fun TrafficLightInset.barStartInset(): Dp = if (this == TrafficLightInset.TOP_BAR) TRAFFIC_LIGHT_WIDTH else 0.dp
