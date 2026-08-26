@@ -166,3 +166,19 @@ internal fun focusQuickActionsFooter(
             toolLauncher = toolLauncher,
         )
     }
+
+/**
+ * Whether the vertical tab bar has a foot to put the host's actions in.
+ *
+ * Three states, not two. An EXPANDED left bar has one. A COLLAPSED one draws its rail and nothing
+ * else, so it has none and the actions float. A collapsed bar whose hover drawer is OPEN has one
+ * again for as long as the drawer is up, because the drawer is a full bar.
+ *
+ * Pure and named because it is the one input to [focusQuickActionsPlacement] that is not a
+ * standing preference, and because the scaffold that reads it is at detekt's complexity ceiling.
+ */
+fun verticalBarHasFoot(
+    tabBarOnLeft: Boolean,
+    barCollapsed: Boolean,
+    drawerVisible: Boolean,
+): Boolean = tabBarOnLeft && (!barCollapsed || drawerVisible)

@@ -44,6 +44,8 @@ fun BossDraggableComponent.BossWindow(
     verticalBarBelowMap: @Composable () -> Unit = {},
     /** Clearance above the vertical bar, for the macOS traffic lights. See [SplitViewPanel]. */
     verticalBarTopInset: Dp = 0.dp,
+    /** Reports whether the hover-revealed bar is on screen. See [SplitViewPanel]. */
+    onDrawerVisibleChange: (Boolean) -> Unit = {},
 ) {
     // Process any pending panel opens (for two-phase transitions)
     // This is critical for JxBrowser-based plugins to avoid BrowserViewState conflicts
@@ -129,6 +131,7 @@ fun BossDraggableComponent.BossWindow(
                         verticalBarFooter = verticalBarFooter,
                         verticalBarBelowMap = verticalBarBelowMap,
                         verticalBarTopInset = verticalBarTopInset,
+                        onDrawerVisibleChange = onDrawerVisibleChange,
                     )
                     // While a header is dragged over the central area, highlight the
                     // resolved target region (a whole panel for center-drop, or the half

@@ -262,6 +262,10 @@ internal fun BossAppScaffold(
     var contentInset by remember { mutableStateOf(DpSize.Zero) }
     val density = LocalDensity.current.density
 
+    // Whether the hover-revealed bar is up, reported by SplitViewPanel. It decides where the
+    // host's actions render while the bar is collapsed - see the placement below.
+    var drawerVisible by remember { mutableStateOf(false) }
+
     // Where Settings / Search / Sign Out go while focus mode holds the top bar that owns them.
     // One decision, two mutually exclusive renderings: the bottom of the right rail when that rail
     // is on screen, a floating corner cluster when it is not. Read once here so the two call sites
@@ -272,10 +276,21 @@ internal fun BossAppScaffold(
             topBarHidden = !appearance.showTopBar,
             rightStripHidden = !appearance.showRightStrip,
             showTopBar = reveal.showTopBar,
-            // Not merely "the bar is on the left": a COLLAPSED bar draws its rail and nothing
-            // else, so the foot of it does not exist and these four would render nowhere. The
-            // floating cluster is the fallback for exactly that.
-            verticalTabBar = appearance.tabBarPosition == TabBarPosition.LEFT && !appearance.tabBarCollapsed,
+            // Not merely "the bar is on the left". A COLLAPSED bar draws its rail and nothing
+            // else, so its foot does not exist and these four would render nowhere - they float
+            // instead. Hovering the rail opens the drawer, which IS a foot, so they go back into
+            // it for as long as it is up.
+            //
+            // The cost, stated because the neighbouring KDoc warns against exactly this: the
+            // floating overlay is a native always-on-top window, so it is torn down and rebuilt on
+            // each hover reveal rather than sitting there. Accepted deliberately - the alternative
+            // is a cluster in the corner while a bar with room for it is open on the left.
+            verticalTabBar =
+                verticalBarHasFoot(
+                    tabBarOnLeft = appearance.tabBarPosition == TabBarPosition.LEFT,
+                    barCollapsed = appearance.tabBarCollapsed,
+                    drawerVisible = drawerVisible,
+                ),
         )
 
     // Where the way into the plugins goes, when a strip that would normally hold their icons is
@@ -545,6 +560,7 @@ internal fun BossAppScaffold(
                             // The tab bar is the leftmost column when no strip is on, so its top
                             // is what the lights would land on.
                             verticalBarTopInset = trafficLights.columnInset(),
+                            onDrawerVisibleChange = { visible -> drawerVisible = visible },
                             verticalBarBelowMap = {
                                 VerticalBarHostActions(
                                     actions =

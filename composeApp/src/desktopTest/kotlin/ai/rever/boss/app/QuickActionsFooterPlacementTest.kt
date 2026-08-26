@@ -3,6 +3,7 @@ package ai.rever.boss.app
 import ai.rever.boss.focusmode.FocusModeSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -132,5 +133,37 @@ class QuickActionsFooterPlacementTest {
                 verticalTabBar = true,
             ),
         )
+    }
+}
+
+/**
+ * Pins the three states of "does the vertical bar have a foot to put the host's actions in".
+ *
+ * Two of them look the same from the settings alone - a collapsed bar with the drawer open and one
+ * with it shut differ only in a transient flag - and getting it wrong is silent either way: the
+ * actions render twice, or nowhere.
+ */
+class VerticalBarFootTest {
+    @Test
+    fun `an expanded left bar has a foot`() {
+        assertTrue(verticalBarHasFoot(tabBarOnLeft = true, barCollapsed = false, drawerVisible = false))
+    }
+
+    @Test
+    fun `a collapsed bar has none, so they float`() {
+        // It draws its rail and nothing else - there is no foot to render into.
+        assertFalse(verticalBarHasFoot(tabBarOnLeft = true, barCollapsed = true, drawerVisible = false))
+    }
+
+    @Test
+    fun `a collapsed bar with the drawer open has one again`() {
+        // The drawer is a full bar, split map and all, for as long as it is up.
+        assertTrue(verticalBarHasFoot(tabBarOnLeft = true, barCollapsed = true, drawerVisible = true))
+    }
+
+    @Test
+    fun `a top tab bar never has one, drawer or not`() {
+        // There is no vertical bar at all in TOP position, so no drawer can give it a foot.
+        assertFalse(verticalBarHasFoot(tabBarOnLeft = false, barCollapsed = false, drawerVisible = true))
     }
 }

@@ -1816,6 +1816,14 @@ fun SplitViewPanel(
      * is the whole point of not reserving a full-width row. See `macTrafficLightInset`.
      */
     verticalBarTopInset: Dp = 0.dp,
+    /**
+     * Reports whether the hover-revealed bar is on screen.
+     *
+     * The window needs it because the host's actions live under the bar's split map, and a
+     * COLLAPSED bar has no foot to put them in - so they float instead, until the drawer opens and
+     * gives them one again. Only this composable knows: the reveal state machine lives here.
+     */
+    onDrawerVisibleChange: (Boolean) -> Unit = {},
 ) {
     val density = LocalDensity.current
 
@@ -1839,6 +1847,12 @@ fun SplitViewPanel(
     // This area's rectangle in dp relative to the window's content pane, for the drawer's
     // heavyweight overlay window. Null until measured, and the drawer draws nothing while it is.
     var contentRegion by remember { mutableStateOf<IntRect?>(null) }
+
+    // In an effect, not during composition: the window turns this into a placement decision that
+    // feeds back into what this composable is given, and writing it inline would be a state write
+    // during composition of the thing that reads it.
+    val drawerOpen = bar.vertical && bar.railShown && reveal.drawerVisible
+    LaunchedEffect(drawerOpen) { onDrawerVisibleChange(drawerOpen) }
 
     Box(
         modifier =
