@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -29,6 +30,15 @@ import kotlin.time.Clock
 @Composable
 fun UpdateBanner(
     updateState: UpdateState,
+    /**
+     * Indent at the start of the banner, for the macOS traffic lights.
+     *
+     * The banner is the TOPMOST chrome when there is no title row - above the top bar, above the
+     * columns - so whatever else has been given clearance, the lights are drawn over this while it
+     * is up. It is also transient, which is why it is not one of `TrafficLightInset`'s cases: it
+     * does not change where anything else goes, it just indents itself while it exists.
+     */
+    startInset: Dp = 0.dp,
     onCheckForUpdates: () -> Unit = {},
     onDownloadUpdate: (UpdateInfo) -> Unit = {},
     onInstallUpdate: (String) -> Unit = {},
@@ -37,6 +47,7 @@ fun UpdateBanner(
     when (updateState) {
         is UpdateState.UpdateAvailable -> {
             UpdateAvailableBanner(
+                startInset = startInset,
                 updateInfo = updateState.updateInfo,
                 onDownload = { onDownloadUpdate(updateState.updateInfo) },
                 onDismiss = onDismiss,
@@ -44,21 +55,23 @@ fun UpdateBanner(
         }
 
         is UpdateState.Downloading -> {
-            DownloadProgressBanner(progress = updateState.progress)
+            DownloadProgressBanner(startInset = startInset, progress = updateState.progress)
         }
 
         is UpdateState.ReadyToInstall -> {
             ReadyToInstallBanner(
+                startInset = startInset,
                 onInstall = { onInstallUpdate(updateState.downloadPath) },
             )
         }
 
         is UpdateState.RestartRequired -> {
-            RestartRequiredBanner()
+            RestartRequiredBanner(startInset = startInset)
         }
 
         is UpdateState.Error -> {
             ErrorBanner(
+                startInset = startInset,
                 message = updateState.message,
                 onRetry = onCheckForUpdates,
                 onDismiss = onDismiss,
@@ -71,6 +84,7 @@ fun UpdateBanner(
 
 @Composable
 private fun UpdateAvailableBanner(
+    startInset: Dp,
     updateInfo: UpdateInfo,
     onDownload: () -> Unit,
     onDismiss: () -> Unit,
@@ -83,7 +97,7 @@ private fun UpdateAvailableBanner(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .bannerPad(startInset),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -134,7 +148,10 @@ private fun UpdateAvailableBanner(
 }
 
 @Composable
-private fun DownloadProgressBanner(progress: Float) {
+private fun DownloadProgressBanner(
+    startInset: Dp,
+    progress: Float,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = BossTheme.colors.panel,
@@ -143,7 +160,7 @@ private fun DownloadProgressBanner(progress: Float) {
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .bannerPad(startInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -173,7 +190,10 @@ private fun DownloadProgressBanner(progress: Float) {
 }
 
 @Composable
-private fun ReadyToInstallBanner(onInstall: () -> Unit) {
+private fun ReadyToInstallBanner(
+    startInset: Dp,
+    onInstall: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = BossTheme.colors.panel,
@@ -182,7 +202,7 @@ private fun ReadyToInstallBanner(onInstall: () -> Unit) {
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .bannerPad(startInset),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -216,7 +236,7 @@ private fun ReadyToInstallBanner(onInstall: () -> Unit) {
 }
 
 @Composable
-private fun RestartRequiredBanner() {
+private fun RestartRequiredBanner(startInset: Dp) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = BossTheme.colors.panel,
@@ -225,7 +245,7 @@ private fun RestartRequiredBanner() {
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .bannerPad(startInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -246,6 +266,7 @@ private fun RestartRequiredBanner() {
 
 @Composable
 private fun ErrorBanner(
+    startInset: Dp,
     message: String,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
@@ -258,7 +279,7 @@ private fun ErrorBanner(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .bannerPad(startInset),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -766,3 +787,16 @@ private fun formatTime(instant: kotlin.time.Instant): String {
 
 // Platform-specific restart function
 expect fun restartApplication()
+
+/** A banner's own padding, both axes. */
+private val PAD_X = 12.dp
+private val PAD_Y = 6.dp
+
+/**
+ * A banner's own padding, with room at the start for the macOS traffic lights.
+ *
+ * One helper rather than the same padding line in five variants: the inset has to reach every one
+ * of them, and a banner that forgot it would put the lights over its text only in whichever state
+ * that banner represents - an update error, say, which is the hardest of the five to reproduce.
+ */
+private fun Modifier.bannerPad(inset: Dp) = padding(start = PAD_X + inset, end = PAD_X, top = PAD_Y, bottom = PAD_Y)

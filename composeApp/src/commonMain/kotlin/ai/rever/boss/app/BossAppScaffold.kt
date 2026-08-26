@@ -34,6 +34,7 @@ import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.layout.ChromeBudgetReadout
 import ai.rever.boss.layout.TrafficLightInset
 import ai.rever.boss.layout.asDrawn
+import ai.rever.boss.layout.bannerStartInset
 import ai.rever.boss.layout.barStartInset
 import ai.rever.boss.layout.columnInset
 import ai.rever.boss.layout.macTrafficLightInset
@@ -389,6 +390,9 @@ internal fun BossAppScaffold(
                 // UpdateState on Installing) and could drop a persisted dismissal.
                 UpdateBanner(
                     updateState = updateState,
+                    // The banner is above every other bar, so while it is up the lights are on it
+                    // rather than on whatever else was given clearance.
+                    startInset = trafficLights.bannerStartInset(),
                     onCheckForUpdates = {
                         // Manual retry: bypass per-version dismissal
                         updateHandle.checkForUpdatesInBackground(force = true)

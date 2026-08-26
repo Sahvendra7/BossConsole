@@ -122,6 +122,19 @@ fun macTrafficLightInset(
 /** The top inset for a left-hand column, which is the height of the box or nothing. */
 fun TrafficLightInset.columnInset(): Dp = if (this == TrafficLightInset.LEFT_COLUMNS) TRAFFIC_LIGHT_HEIGHT else 0.dp
 
+/**
+ * The start indent for the update banner, which sits above everything else when it is up.
+ *
+ * Any answer but [TrafficLightInset.NONE] and [TrafficLightInset.CONTENT] means there is no title
+ * row, so the banner is the topmost chrome and the lights are drawn over it. CONTENT keeps the
+ * row, which holds them, and NONE means there is nothing to clear.
+ */
+fun TrafficLightInset.bannerStartInset(): Dp =
+    when (this) {
+        TrafficLightInset.TOP_BAR, TrafficLightInset.LEFT_COLUMNS -> TRAFFIC_LIGHT_WIDTH
+        TrafficLightInset.NONE, TrafficLightInset.CONTENT -> 0.dp
+    }
+
 /** The start indent for the top bar, which is the width of the box or nothing. */
 fun TrafficLightInset.barStartInset(): Dp = if (this == TrafficLightInset.TOP_BAR) TRAFFIC_LIGHT_WIDTH else 0.dp
 
