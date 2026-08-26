@@ -32,7 +32,6 @@ import ai.rever.boss.focusmode.FocusModeSettings
 import ai.rever.boss.handleTabDropResult
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.layout.ChromeBudgetReadout
-import ai.rever.boss.layout.LocalTrafficLightInset
 import ai.rever.boss.layout.TrafficLightInset
 import ai.rever.boss.layout.asDrawn
 import ai.rever.boss.layout.bannerStartInset
@@ -341,11 +340,22 @@ internal fun BossAppScaffold(
         updateHandle.updateState.map { it.drawsBanner() }.distinctUntilChanged()
     }.collectAsState(initial = false)
 
+    // Read before the rule, which counts it as a column, and before the offsets, which need to
+    // know whether the panel or the bar is the one behind the strip.
+    val leftPanelOpen = state.draggablePanelComponent.isVisible(left)
+
     val trafficLights =
         macTrafficLightInset(
             appearance = drawn,
             isMacOs = SystemUtils.isMacOS,
             bannerVisible = bannerVisible,
+            // The MEASURED rail, not the preference: a bar rails itself on a narrow window too.
+            barCollapsed = barRailed,
+            // An open panel is a column, and a wide one - which is what lets a window with a
+            // collapsed rail carry the clearance in its columns instead of in a title row.
+            leftPanelOpen = leftPanelOpen,
+            // The density's width, not the 36dp floor: Comfortable draws 40dp rails.
+            stripWidth = BossChrome.dimens.stripWidth,
         )
 
     // Where each left column starts, so it can ask whether the light box reaches it.
@@ -356,7 +366,7 @@ internal fun BossAppScaffold(
     val columns =
         leftColumnOffsets(
             showLeftStrip = drawn.showLeftStrip,
-            leftPanelOpen = state.draggablePanelComponent.isVisible(left),
+            leftPanelOpen = leftPanelOpen,
             stripWidth = BossChrome.dimens.stripWidth,
         )
 
@@ -602,68 +612,62 @@ internal fun BossAppScaffold(
                                 .weight(1f)
                                 .reportContentInset(density) { contentInset = it },
                     ) {
-                        // Provided here rather than at the top of the scaffold because this is
-                        // the subtree that needs it: the pane tab strips are inside the split
-                        // tree, too deep to be handed a Dp without putting a parameter on
-                        // everything in between. See LocalTrafficLightInset.
-                        CompositionLocalProvider(LocalTrafficLightInset provides trafficLights) {
-                            BossWindow(
-                                modifier = Modifier.fillMaxSize(),
-                                tabsComponent = state.tabsComponent,
-                                panelComponentStore = state.panelComponentStore,
-                                splitViewState = splitViewState,
-                                tabDragComponent = state.tabDragComponent,
-                                onTabDropResult = { result ->
-                                    handleTabDropResult(result, splitViewState)
-                                },
-                                // Composed HERE rather than inside the bar: this is where the
-                                // workspace manager and the window's project dialog already are, and
-                                // a tab bar has no business knowing about either. It reaches the bar
-                                // as a slot. See VerticalBarWindowControls.
-                                // Settings / Search / Sign Out (and the launcher, when it joins them)
-                                // at the very foot of the bar, under the split map - the placement
-                                // that displaces the floating cluster wherever this bar is on screen.
-                                // The tab bar is the leftmost column when no strip is on, so its top
-                                // is what the lights would land on.
-                                // Offset past an open plugin panel, which sits between the strip and
-                                // this bar: with one open the bar is the THIRD column and well clear
-                                // of the box, and the 28dp gap it used to keep was pure dead space.
-                                verticalBarTopInset = trafficLights.columnInset(columns.bar),
-                                // The panel itself is second when it is open, so the clearance moves
-                                // onto it - this is what the lights were landing on.
-                                leftPanelTopInset = trafficLights.columnInset(columns.panel),
-                                onDrawerVisibleChange = { visible -> drawerVisible = visible },
-                                onBarRailedChange = { railed -> barRailed = railed },
-                                verticalBarBelowMap = {
-                                    VerticalBarHostActions(
-                                        actions =
-                                            focusQuickActionsFooter(
-                                                placement = quickActionsPlacement,
-                                                onShowSettings = { state.settingsWindow.open() },
-                                                onShowSearch = { state.showGlobalSearchDialog = true },
-                                                onSignOut = { state.showLogoutDialog = true },
-                                                toolLauncher = hostToolLauncher,
-                                            ),
-                                    )
-                                },
-                                verticalBarFooter = {
-                                    VerticalBarWindowControls(
-                                        // `drawn`, not the preference: a top bar focus mode has
-                                        // cleared is not on screen, and the project and workspace
-                                        // pickers live nowhere else.
-                                        topBarHidden = !drawn.showTopBar,
-                                        project = selectedProject,
-                                        onOpenProject = { state.showProjectDialog = true },
-                                        workspaceManager = workspaceManager,
-                                        onApplyWorkspace = applyWorkspaceAndPreserve,
-                                        getCurrentWorkspace = {
-                                            extractCurrentWorkspace(splitViewState, selectedProject.path)
-                                        },
-                                        onShowTopOfMind = { state.showTopOfMindDialog = true },
-                                    )
-                                },
-                            )
-                        }
+                        BossWindow(
+                            modifier = Modifier.fillMaxSize(),
+                            tabsComponent = state.tabsComponent,
+                            panelComponentStore = state.panelComponentStore,
+                            splitViewState = splitViewState,
+                            tabDragComponent = state.tabDragComponent,
+                            onTabDropResult = { result ->
+                                handleTabDropResult(result, splitViewState)
+                            },
+                            // Composed HERE rather than inside the bar: this is where the
+                            // workspace manager and the window's project dialog already are, and
+                            // a tab bar has no business knowing about either. It reaches the bar
+                            // as a slot. See VerticalBarWindowControls.
+                            // Settings / Search / Sign Out (and the launcher, when it joins them)
+                            // at the very foot of the bar, under the split map - the placement
+                            // that displaces the floating cluster wherever this bar is on screen.
+                            // The tab bar is the leftmost column when no strip is on, so its top
+                            // is what the lights would land on.
+                            // Offset past an open plugin panel, which sits between the strip and
+                            // this bar: with one open the bar is the THIRD column and well clear
+                            // of the box, and the 28dp gap it used to keep was pure dead space.
+                            verticalBarTopInset = trafficLights.columnInset(columns.bar),
+                            // The panel itself is second when it is open, so the clearance moves
+                            // onto it - this is what the lights were landing on.
+                            leftPanelTopInset = trafficLights.columnInset(columns.panel),
+                            onDrawerVisibleChange = { visible -> drawerVisible = visible },
+                            onBarRailedChange = { railed -> barRailed = railed },
+                            verticalBarBelowMap = {
+                                VerticalBarHostActions(
+                                    actions =
+                                        focusQuickActionsFooter(
+                                            placement = quickActionsPlacement,
+                                            onShowSettings = { state.settingsWindow.open() },
+                                            onShowSearch = { state.showGlobalSearchDialog = true },
+                                            onSignOut = { state.showLogoutDialog = true },
+                                            toolLauncher = hostToolLauncher,
+                                        ),
+                                )
+                            },
+                            verticalBarFooter = {
+                                VerticalBarWindowControls(
+                                    // `drawn`, not the preference: a top bar focus mode has
+                                    // cleared is not on screen, and the project and workspace
+                                    // pickers live nowhere else.
+                                    topBarHidden = !drawn.showTopBar,
+                                    project = selectedProject,
+                                    onOpenProject = { state.showProjectDialog = true },
+                                    workspaceManager = workspaceManager,
+                                    onApplyWorkspace = applyWorkspaceAndPreserve,
+                                    getCurrentWorkspace = {
+                                        extractCurrentWorkspace(splitViewState, selectedProject.path)
+                                    },
+                                    onShowTopOfMind = { state.showTopOfMindDialog = true },
+                                )
+                            },
+                        )
 
                         // Settings / Search / Sign Out, which the top bar otherwise owns outright.
                         // The FLOATING half of the placement: reached only when focus mode has

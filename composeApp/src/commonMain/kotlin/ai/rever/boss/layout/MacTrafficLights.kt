@@ -2,10 +2,6 @@ package ai.rever.boss.layout
 
 import ai.rever.boss.window.TabBarPosition
 import ai.rever.boss.window.WindowAppearanceSettings
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -59,6 +55,18 @@ enum class TrafficLightInset {
     LEFT_COLUMNS,
 
     /**
+     * Nothing down the left is wide enough to hold the box, so there is no column to inset.
+     *
+     * The caller draws the full-width title row for this, which is what keeps the buttons off the
+     * content. Two alternatives were tried and are worse. Padding the content costs the same
+     * height across the whole width, and the content is where a browser's native surface lives.
+     * Indenting whatever row happens to be in the corner - the leftmost pane's tab strip - moves
+     * that row's contents but leaves the buttons ON the pane: its focus boundary is drawn behind
+     * them, so the active pane loses the top-left corner of its own outline.
+     */
+    CONTENT,
+
+    /**
      * The update banner is up, and it is drawn above every bar and column, so it is what the
      * lights land on.
      *
@@ -82,6 +90,10 @@ enum class TrafficLightInset {
  * first control, or a 28dp gap above a column that needed none - and all of them are only visible
  * on macOS, which is not where most of this is developed.
  */
+// Six inputs and a table of cases, which is the shape this wants: each one is a piece of chrome
+// that can be over, beside or under the buttons, and folding any of them into a data class would
+// put the case analysis somewhere the tests cannot reach it as directly.
+@Suppress("LongParameterList")
 fun macTrafficLightInset(
     appearance: WindowAppearanceSettings,
     isMacOs: Boolean,
@@ -93,6 +105,24 @@ fun macTrafficLightInset(
      * same empty band by another route.
      */
     bannerVisible: Boolean = false,
+    /**
+     * Whether the vertical bar is down to its slim rail.
+     *
+     * Take it from the MEASURED rail state (`SplitViewPanel.onBarRailedChange`), not from the
+     * `tabBarCollapsed` preference: a bar also rails itself when the window is too narrow for a
+     * full one, and a window that asked the preference read an auto-railed bar as a full column
+     * and let the buttons land on the pane beside it.
+     */
+    barCollapsed: Boolean = false,
+    /**
+     * Whether a plugin panel is open on the left.
+     *
+     * It counts as a column, and a wide one - which is what lets a window with a collapsed rail
+     * carry the clearance in its columns instead of falling back to the title row.
+     */
+    leftPanelOpen: Boolean = false,
+    /** One icon rail's width at the current density. See [leftChromeWidth]. */
+    stripWidth: Dp = ChromeDimens.MIN_STRIP_WIDTH,
 ): TrafficLightInset {
     val base =
         when {
@@ -113,21 +143,16 @@ fun macTrafficLightInset(
                 TrafficLightInset.TOP_BAR
             }
 
-            // Everything else: the lights are over the window's left edge, so every column that
-            // falls inside the box keeps clear of it - see [columnInset], which each caller asks
-            // with its own offset.
-            //
-            // No width test any more, and no title-row fallback. Requiring the columns to add up
-            // to TRAFFIC_LIGHT_WIDTH first meant a collapsed rail - 40dp, and what the shipped
-            // default becomes as soon as the bar is collapsed - fell through to a full-width 26dp
-            // title row, so "Show Title Bar = off" was not true on macOS. It also made that row
-            // appear and disappear on a window RESIZE, since the bar rails itself as the window
-            // narrows: the content jumped 26dp mid-drag.
-            //
-            // What the columns do not cover is the honest remainder - the lights sit over
-            // whatever is beside them, which macOS draws and handles either way.
-            else -> {
+            // Only when the columns can actually hold the box. Insetting chrome narrower than
+            // the lights protects part of the corner and leaves the rest on the pane behind it,
+            // which is worse than not trying: the buttons end up over content that cannot be
+            // inset, and over the active pane's own focus outline.
+            leftChromeWidth(appearance, barCollapsed, stripWidth, leftPanelOpen) >= TRAFFIC_LIGHT_WIDTH -> {
                 TrafficLightInset.LEFT_COLUMNS
+            }
+
+            else -> {
+                TrafficLightInset.CONTENT
             }
         }
 
@@ -165,18 +190,19 @@ fun TrafficLightInset.bannerStartInset(): Dp = if (this == TrafficLightInset.BAN
 fun TrafficLightInset.barStartInset(): Dp = if (this == TrafficLightInset.TOP_BAR) TRAFFIC_LIGHT_WIDTH else 0.dp
 
 /**
- * Whether the full-width title row has to be drawn: only when the user asked for it.
+ * Whether the full-width title row has to be drawn.
  *
- * It used to be drawn as a FALLBACK as well, whenever the left columns came to less than the light
- * box. Two things were wrong with that. "Show Title Bar = off" stopped being true on macOS the
- * moment the tab bar was collapsed, which is one click and the state a lot of windows sit in. And
- * because the bar also rails itself when a window narrows, the row appeared and vanished on a
- * RESIZE - a 26dp jump of the whole window's content, mid-drag, in both directions.
+ * True when the user asked for it, and true for [TrafficLightInset.CONTENT] - there is no column
+ * wide enough to inset, so the row is what keeps the buttons off the pane.
  *
- * The clearance now goes on whichever columns are actually under the box, however narrow they are,
- * and whatever they do not cover is left to macOS.
+ * The row is a real cost: it is 26dp of the window's full width to protect one 78x28dp corner, and
+ * because the bar rails itself as a window narrows, it appears and disappears during a resize
+ * drag. Both were the reason for trying to remove it. The reason it stays is that the alternatives
+ * put the buttons on the pane itself, where they cover the active pane's focus outline and cannot
+ * be moved out of the way - so the answer is to make CONTENT rarer, by counting every column that
+ * can hold them, rather than to stop drawing the row.
  */
-fun TrafficLightInset.needsTitleRow(showTitleBar: Boolean): Boolean = showTitleBar
+fun TrafficLightInset.needsTitleRow(showTitleBar: Boolean): Boolean = showTitleBar || this == TrafficLightInset.CONTENT
 
 /** Where each left-hand column starts, for [columnInset]. */
 data class LeftColumnOffsets(
@@ -210,38 +236,32 @@ fun leftColumnOffsets(
 }
 
 /**
- * The clearance answer for this window, for chrome too deep in the tree to be handed it.
+ * How much chrome runs down the window's left edge, which decides whether the corner can be
+ * protected by insetting columns at all.
  *
- * Provided once by the scaffold. The columns down the left edge are reached by parameter, because
- * the scaffold composes them directly - but the row of tab chips at the top of a pane is inside the
- * split tree, and threading a Dp through SplitViewPanel, the pane tree and each pane to reach it
- * would be a parameter on everything in between that none of them have any use for.
+ * The icon strip is one [stripWidth]; the vertical tab bar is its configured width, or the same
+ * rail width when collapsed; an open plugin panel is counted as [TRAFFIC_LIGHT_WIDTH], since it is
+ * a sidebar hundreds of dp wide and the only way to make it narrower than the box is to drag it to
+ * its 20dp floor deliberately. A bar in TOP position contributes nothing.
+ *
+ * [stripWidth] is passed in rather than read here, because it is the DENSITY's value and this is
+ * pure: the shipped Comfortable preset is 40dp, not the 36dp floor. Measuring with the floor made
+ * a strip plus a rail 72dp and fell back to the title row, where what is drawn is 80dp and fits.
+ * The default is the floor, which is the conservative direction: it can only over-reserve.
  */
-val LocalTrafficLightInset = staticCompositionLocalOf { TrafficLightInset.NONE }
-
-/**
- * The start inset for a ROW that has measured itself at [originInWindow], or null before it has.
- *
- * Self-locating, because whether a row is under the lights is a question about where it ended up:
- * the top row of the leftmost pane is, the same row in a pane one split to the right is not, and
- * the difference is decided by a split tree and a user's drag rather than by any setting.
- *
- * Null until measured, so a row that has not been positioned yet reserves nothing rather than
- * reserving the full width and visibly snapping back on its second frame.
- */
-@Composable
-fun trafficLightStartInset(originInWindow: Offset?): Dp? {
-    val density = LocalDensity.current
-    return when {
-        // Something above this row already holds the lights, or there is nothing to hold.
-        LocalTrafficLightInset.current != TrafficLightInset.LEFT_COLUMNS -> 0.dp
-
-        originInWindow == null -> null
-
-        // Below the box entirely: a row further down the window is never under them, whatever its
-        // x is - which is what keeps a browser toolbar or any second row from indenting itself.
-        with(density) { originInWindow.y.toDp() } >= TRAFFIC_LIGHT_HEIGHT -> 0.dp
-
-        else -> with(density) { (TRAFFIC_LIGHT_WIDTH - originInWindow.x.toDp()).coerceAtLeast(0.dp) }
-    }
+internal fun leftChromeWidth(
+    appearance: WindowAppearanceSettings,
+    barCollapsed: Boolean,
+    stripWidth: Dp = ChromeDimens.MIN_STRIP_WIDTH,
+    leftPanelOpen: Boolean = false,
+): Dp {
+    val strip = if (appearance.showLeftStrip) stripWidth else 0.dp
+    val panel = if (leftPanelOpen) TRAFFIC_LIGHT_WIDTH else 0.dp
+    val bar =
+        when {
+            appearance.tabBarPosition != TabBarPosition.LEFT -> 0.dp
+            barCollapsed -> stripWidth
+            else -> appearance.tabBarVerticalWidth.dp
+        }
+    return strip + panel + bar
 }

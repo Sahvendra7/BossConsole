@@ -66,7 +66,8 @@ class MacTrafficLightsTest {
     }
 
     @Test
-    fun `the columns take it when nothing is above them`() {
+    fun `the columns take it when they are wide enough`() {
+        // A full-width tab bar is 200dp on its own, and a strip beside it only adds to that.
         assertEquals(TrafficLightInset.LEFT_COLUMNS, macTrafficLightInset(bare, isMacOs = true))
         assertEquals(
             TrafficLightInset.LEFT_COLUMNS,
@@ -75,15 +76,53 @@ class MacTrafficLightsTest {
     }
 
     @Test
-    fun `narrow left chrome no longer falls back to a title row`() {
-        // The reported bug. A collapsed bar is one rail, well under the 78dp box, and that used to
-        // produce a full-width title row - on the shipped macOS default, with the setting off.
+    fun `a strip beside a collapsed rail is measured at the density's width`() {
+        // 36dp floor vs the 40dp Comfortable actually draws: 72dp falls back, 80dp fits.
+        val stripAndRail = bare.copy(showLeftStrip = true)
+        assertEquals(
+            TrafficLightInset.CONTENT,
+            macTrafficLightInset(stripAndRail, isMacOs = true, barCollapsed = true),
+            "the floor, which is what the default measures",
+        )
+        assertEquals(
+            TrafficLightInset.LEFT_COLUMNS,
+            macTrafficLightInset(stripAndRail, isMacOs = true, barCollapsed = true, stripWidth = 40.dp),
+            "Comfortable, which is what ships",
+        )
+    }
+
+    @Test
+    fun `chrome too narrow to hold the box keeps the title row`() {
+        // The row is a real cost - full width, to protect one corner - and it was removed once on
+        // the reasoning that "Show Title Bar = off" ought to mean off. That was wrong: with no
+        // column wide enough, the buttons land on the PANE, where they sit over the active pane's
+        // focus outline and nothing can be moved out from under them. Indenting the pane's tab
+        // strip moves the chips and leaves the outline broken behind the buttons.
         val stripOnly = bare.copy(showLeftStrip = true, tabBarPosition = TabBarPosition.TOP)
         val answer = macTrafficLightInset(stripOnly, isMacOs = true)
 
-        assertEquals(TrafficLightInset.LEFT_COLUMNS, answer)
-        assertFalse(answer.needsTitleRow(showTitleBar = false), "no row unless the user asked")
-        assertTrue(answer.needsTitleRow(showTitleBar = true), "and the setting still draws one")
+        assertEquals(TrafficLightInset.CONTENT, answer)
+        assertTrue(answer.needsTitleRow(showTitleBar = false), "the row is what holds them here")
+    }
+
+    @Test
+    fun `a collapsed rail alone keeps the title row`() {
+        // The shipped default once the bar is collapsed: one 40dp rail, nothing else down the
+        // left. Half the box would be over the pane, so the row stays.
+        val collapsed = macTrafficLightInset(bare, isMacOs = true, barCollapsed = true)
+
+        assertEquals(TrafficLightInset.CONTENT, collapsed)
+        assertTrue(collapsed.needsTitleRow(showTitleBar = false))
+    }
+
+    @Test
+    fun `an open plugin panel is a column, and a wide one`() {
+        // What makes the row RARER without removing it: a panel is hundreds of dp, so a window
+        // with a collapsed rail and a panel open carries the clearance in its columns.
+        val withPanel = macTrafficLightInset(bare, isMacOs = true, barCollapsed = true, leftPanelOpen = true)
+
+        assertEquals(TrafficLightInset.LEFT_COLUMNS, withPanel)
+        assertFalse(withPanel.needsTitleRow(showTitleBar = false), "no row when a column can hold them")
     }
 
     @Test
@@ -192,10 +231,13 @@ class MacTrafficLightsTest {
     }
 
     @Test
-    fun `no answer draws a title row on its own`() {
-        // The whole point of the change: the row answers to the setting and to nothing else.
+    fun `only CONTENT draws a title row the user did not ask for`() {
         TrafficLightInset.entries.forEach {
-            assertFalse(it.needsTitleRow(showTitleBar = false), "$it must not draw a row by itself")
+            assertEquals(
+                it == TrafficLightInset.CONTENT,
+                it.needsTitleRow(showTitleBar = false),
+                "$it drew the wrong answer with the setting off",
+            )
             assertTrue(it.needsTitleRow(showTitleBar = true), "$it must still honour the setting")
         }
     }
