@@ -156,6 +156,38 @@ class SettingsSearchIndexShapeTest {
         }
     }
 
+    /**
+     * A signpost must not outlive the panel it points at.
+     *
+     * This is the RBAC invariant the rest of the search box already keeps - `SettingsContent` says
+     * "a page the user cannot see is not in `pluginPages`, so it is not searchable either" - and a
+     * signpost is the one entry that could break it, being declared in the index rather than merged
+     * in from a registry. It is also what keeps the click from being a dead end: an unregistered
+     * panel means the plugin is missing, off, incompatible or not permitted, and the row would
+     * raise an empty main window over the Settings window the user was reading.
+     */
+    @Test
+    fun `a signpost is dropped when its panel is not registered`() {
+        val entries = SettingsSearchIndex.builtIn
+        val signposts = entries.filter { it.panel != null }
+        assertTrue(signposts.isNotEmpty(), "nothing to test - the AI provider signpost has gone missing")
+
+        val nothingRegistered = entries.withoutUnreachableSignposts { false }
+        assertTrue(
+            nothingRegistered.none { it.panel != null },
+            "a signpost survived with no panel registered, so a user without the plugin can still " +
+                "click it: ${nothingRegistered.filter { it.panel != null }.map { it.label }}",
+        )
+        assertEquals(
+            entries.size - signposts.size,
+            nothingRegistered.size,
+            "dropping signposts must not drop anything else",
+        )
+
+        // The other direction, so the filter cannot pass by dropping everything.
+        assertEquals(entries, entries.withoutUnreachableSignposts { true })
+    }
+
     /** A signpost navigates out of this window, so it must claim no section, page or control. */
     @Test
     fun `a panel signpost targets a panel and claims no control`() {

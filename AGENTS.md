@@ -240,9 +240,12 @@ plugin. The check is an entry whose `jarPath` still exists.
 
 ### A settings section can offer to install the plugin that serves it
 
-Three sections render a panel that belongs to a plugin - `Settings > AI Providers` (secret-manager),
-`Editor` and `Language servers` (both editor-tab). All three used to say "isn't loaded yet" for
-every reason there was no panel, which is true of exactly one of them. A plugin that was never
+Two sections render a panel that belongs to a plugin - `Editor` and `Language servers`, both
+editor-tab. (`Settings > AI Providers` was a third, served by secret-manager, until that section
+moved into the plugin's own panel; Settings search reaches it through a **panel signpost** now, and
+that entry is filtered on the panel being registered rather than explaining its absence.) Both used
+to say "isn't loaded yet" for every reason there was no panel, which is true of exactly one of
+them. A plugin that was never
 installed, or that the user switched off, does not arrive however long they look at it.
 
 `PluginSettingsUnavailableNotice` now tells the four apart and offers an Install button for the one
@@ -271,8 +274,8 @@ All three orderings are mutation-verified: reversing each one fails a named test
 registered but this version has no panel for that section. Without it a loaded plugin reported
 "isn't loaded yet" forever. Everything else, permissions included, is derived from the plugin id, so
 a new section gets the whole behaviour by naming its plugin. An earlier version took the permissions
-as a parameter and only one of the three sections passed it, which left the other two telling a user
-who cannot access the plugin to go and switch it on.
+as a parameter and only one of the then-three sections passed it, which left the other two telling a
+user who cannot access the plugin to go and switch it on.
 
 **The notice gates on `MissingPluginOffer.isInstalled`, not on "can I reach the API".** Those are
 different questions and they disagree exactly when the plugin is installed but not running - which
