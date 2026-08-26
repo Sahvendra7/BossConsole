@@ -4,6 +4,7 @@ import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.rememberBarContextMenuItems
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.buttons.QuickActionHints
+import ai.rever.boss.components.buttons.ToolboxButton
 import ai.rever.boss.components.dialogs.CommitDialog
 import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
@@ -74,6 +75,7 @@ fun BossDraggableComponent.BossTopBar(
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
     onShowSettings: (() -> Unit)? = null,
+    onOpenToolbox: (() -> Unit)? = null,
     onShowSearch: (() -> Unit)? = null,
     // Required, unlike its neighbours. Those were always callback-only; this one used to open the
     // confirmation itself, and moving that to BossAppState turned Sign Out into a button that
@@ -110,6 +112,7 @@ fun BossDraggableComponent.BossTopBar(
             Spacer(modifier = Modifier.weight(0.1f))
             BossTopRightBar(
                 onShowSettings = onShowSettings,
+                onOpenToolbox = onOpenToolbox,
                 onShowSearch = onShowSearch,
                 onSignOut = onSignOut,
                 toolLauncher = toolLauncher,
@@ -835,6 +838,7 @@ fun BossDraggableComponent.BossTopLeftBar(
 @Composable
 fun BossTopRightBar(
     onShowSettings: (() -> Unit)? = null,
+    onOpenToolbox: (() -> Unit)? = null,
     onShowSearch: (() -> Unit)? = null,
     // Required - see BossTopBar's onSignOut.
     onSignOut: () -> Unit,
@@ -876,6 +880,9 @@ fun BossTopRightBar(
     ) {
         onShowSettings?.invoke()
     }
+
+    // Beside Settings here as everywhere else - see ToolboxButton for why the two sit together.
+    onOpenToolbox?.let { open -> ToolboxButton(onClick = open) }
 
     // The default direction here, unlike the two groups that hint upwards: this bar is at the top
     // of the window, so below it is where there is room.

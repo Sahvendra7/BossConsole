@@ -86,6 +86,7 @@ class FocusModeQuickActionsTest {
                         visible = visible,
                         inset = { inset },
                         onShowSettings = {},
+                        onOpenToolbox = {},
                         onShowSearch = {},
                         onSignOut = {},
                     )
@@ -225,6 +226,7 @@ class FocusModeQuickActionsTest {
                         visible = true,
                         inset = { DpSize.Zero },
                         onShowSettings = { fired += "settings" },
+                        onOpenToolbox = {},
                         onShowSearch = { fired += "search" },
                         onSignOut = { fired += "signOut" },
                     )

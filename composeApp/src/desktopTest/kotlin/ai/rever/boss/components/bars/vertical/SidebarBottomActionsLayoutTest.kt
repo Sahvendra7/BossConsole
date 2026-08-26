@@ -1,5 +1,6 @@
 package ai.rever.boss.components.bars.vertical
 
+import ai.rever.boss.app.FOCUS_QUICK_ACTION_COUNT
 import ai.rever.boss.app.FocusQuickActionsPlacement
 import ai.rever.boss.app.focusQuickActionsRail
 import ai.rever.boss.components.sidebar.SidebarIconRail
@@ -86,11 +87,13 @@ class SidebarBottomActionsLayoutTest {
     /** The real thing the rail is handed in focus mode, not a stand-in for it. */
     private fun quickActions(
         onShowSettings: () -> Unit = {},
+        onOpenToolbox: () -> Unit = {},
         onShowSearch: () -> Unit = {},
         onSignOut: () -> Unit = {},
     ) = focusQuickActionsRail(
         placement = FocusQuickActionsPlacement.RIGHT_RAIL,
         onShowSettings = onShowSettings,
+        onOpenToolbox = onOpenToolbox,
         onShowSearch = onShowSearch,
         onSignOut = onSignOut,
     )
@@ -111,7 +114,7 @@ class SidebarBottomActionsLayoutTest {
         // The divider is emitted above the tagged Column and is outside it, so it is added back
         // rather than measured - bottomSectionHeight counts it, and the rail pays for it.
         val rendered = (rail.bottom - section.top).toDp() + SidebarIconRail.SectionDivider
-        val reserved = SidebarIconRail.bottomSectionHeight(3)
+        val reserved = SidebarIconRail.bottomSectionHeight(FOCUS_QUICK_ACTION_COUNT)
 
         // A tolerance, not exact equality: the span is measured back out of integer pixels at the
         // harness's density, so a fraction of a dp is rounding rather than a wrong reserve. 1dp
@@ -175,6 +178,7 @@ class SidebarBottomActionsLayoutTest {
         mountRail(
             quickActions(
                 onShowSettings = { settings++ },
+                onOpenToolbox = {},
                 onShowSearch = { search++ },
                 onSignOut = { signOut++ },
             ),
@@ -204,7 +208,7 @@ class SidebarBottomActionsLayoutTest {
             "the section is $section but the rail it has to stay inside is $rail",
         )
         assertEquals(
-            SidebarIconRail.bottomSectionHeight(3).value - SidebarIconRail.SectionDivider.value,
+            SidebarIconRail.bottomSectionHeight(FOCUS_QUICK_ACTION_COUNT).value - SidebarIconRail.SectionDivider.value,
             (section.bottom - section.top).toDp().value,
             1f,
             "and it is not squashed to fit either - the slots are what give way",
