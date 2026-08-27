@@ -920,7 +920,7 @@ fun ApplicationScope.BossWindow(
                 // rename would leave this item silently doing nothing rather than
                 // failing to compile.
                 Item(
-                    "Set BOSS as Default App...",
+                    "Default Apps...",
                     onClick = {
                         MenuActionsHandler.triggerOpenSettings(
                             windowId = windowState.id,

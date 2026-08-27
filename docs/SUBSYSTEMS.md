@@ -162,6 +162,15 @@ CoroutineScope(Dispatchers.IO).launch {
 the file types it opens: markdown, shell scripts, web pages and every language its
 editor can highlight.
 
+**Entry Points**:
+- `Settings > Default Apps` - one row per category, with a Repair action when a
+  BOSS component holds the type
+- `Help > Default Apps...` - the same section, from the menu bar. This is the
+  path `DefaultAppsOffer`'s "it does not ask twice" reasoning assumes exists: the
+  first-run offer persists `promptShown` the moment it appears, so a force quit
+  or a closed window counts as asked and the menu is how that user gets back
+- the one-time first-run offer itself, which never appears twice
+
 **Key Files**:
 - `boss-file-types.json` (`composeApp/src/desktopMain/resources`) - the single
   source of truth: five categories, 83 extensions, the macOS UTIs each claims and
