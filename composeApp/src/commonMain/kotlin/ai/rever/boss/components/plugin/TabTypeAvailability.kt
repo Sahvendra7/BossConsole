@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
@@ -63,6 +64,12 @@ object TabTypeAvailability {
 
         // Bounded wait for plugin startup. Without it, every file the OS queues
         // during a cold start would prompt.
+        //
+        // With a status message, because the wait is up to 15 seconds and the user
+        // has just double-clicked something: silence for 15 seconds looks exactly
+        // as dropped as the bug this whole path replaces, only slower. Shown for
+        // the wait only, and replaced by the dialog or the opened tab.
+        StatusMessageManager.showMessage("Waiting for the plugin that opens ${TabTypePlugins.describe(typeId)}...")
         val appearedOnItsOwn =
             awaitRegistryCondition(
                 registry::addChangeListener,

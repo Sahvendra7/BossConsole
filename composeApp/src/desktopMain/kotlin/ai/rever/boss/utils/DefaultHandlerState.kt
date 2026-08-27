@@ -36,6 +36,27 @@ internal sealed interface DefaultHandlerState {
 
     companion object {
         /**
+         * Collapses per-type states into one, preferring the answer the user can
+         * act on.
+         *
+         * [OurEngine] outranks [Other] because it is the answer with a one-click
+         * fix, and it stays true and repairable whether one type in a category is
+         * affected or all of them. An empty collection is [Other] with no name:
+         * nothing to reduce is not "everything is fine".
+         *
+         * Lives here rather than in one of the three platform handlers, each of
+         * which had its own copy of this fold. They agreed, which is the only
+         * reason nothing was broken; a fourth copy would not have.
+         */
+        fun reduce(states: Collection<DefaultHandlerState>): DefaultHandlerState =
+            when {
+                states.isEmpty() -> Other(null)
+                states.all { it.isOurs } -> Ours
+                states.any { it is OurEngine } -> OurEngine
+                else -> states.first { !it.isOurs }
+            }
+
+        /**
          * Classifies a bundle id as reported by Launch Services.
          *
          * Case-insensitive, because bundle identifiers are: the OS will happily

@@ -83,6 +83,10 @@ internal object UrlOpenValidation {
     /** `:1234`, or `:` with nothing after it, which browsers accept as "default port". */
     private fun isValidPortSuffix(suffix: String): Boolean {
         if (!suffix.startsWith(':')) return false
-        return suffix.drop(1).all { it.isDigit() }
+        // `in '0'..'9'`, not Char.isDigit(): isDigit is true for every Unicode
+        // decimal digit, so ":٣३" (Arabic-Indic and Devanagari threes)
+        // validated as a port and the URL reached the browser. Verified with
+        // Character.isDigit on the JDK in use.
+        return suffix.drop(1).all { it in '0'..'9' }
     }
 }

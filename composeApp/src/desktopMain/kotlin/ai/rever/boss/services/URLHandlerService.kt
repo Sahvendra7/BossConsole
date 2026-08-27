@@ -4,6 +4,7 @@ import ai.rever.boss.components.events.URLEventBus
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -120,11 +121,13 @@ actual object URLHandlerService {
         var incremented = false
 
         try {
-            logger.debug(LogCategory.BROWSER, "Received URL", mapOf("url" to url))
+            // Masked, like every equivalent site in DeepLinkHandler. A URL the OS
+            // handed over can carry a token or a session id in its query.
+            logger.debug(LogCategory.BROWSER, "Received URL", mapOf("url" to LogSanitizer.maskUriParams(url)))
 
             // Validate URL
             if (!isValidURL(url)) {
-                logger.warn(LogCategory.BROWSER, "Invalid URL", mapOf("url" to url))
+                logger.warn(LogCategory.BROWSER, "Invalid URL", mapOf("url" to LogSanitizer.maskUriParams(url)))
                 return
             }
 

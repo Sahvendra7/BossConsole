@@ -4,6 +4,8 @@ import ai.rever.boss.utils.DefaultHandlerState
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 /**
@@ -13,43 +15,40 @@ import java.util.concurrent.TimeUnit
  * `Capabilities\FileAssociations` entries for `.htm` and `.html` pointing at the
  * ProgID `BOSS` - and nothing ever created a ProgID called `BOSS`. A
  * `FileAssociations` value naming a ProgID that does not exist cannot resolve, so
- * BOSS never appeared as a candidate for those extensions in Settings, let alone
- * became the default. This creates a real ProgID per extension, which is what
- * makes the `FileAssociations` entry mean something.
+ * BOSS never appeared as a candidate for those extensions, let alone became the
+ * default. This creates a real ProgID per extension, which is what makes the
+ * `FileAssociations` entry mean something.
+ *
+ * **One process, not hundreds.** Registration is a generated `.reg` script
+ * imported in a single `reg import`, and the status is a single
+ * `reg query <FileExts> /s`. The per-`reg add` version ran roughly 415 processes
+ * for a five-category "Set all" and 83 more just to read the status, each with its
+ * own timeout, from a Settings screen and from the first-run offer at startup. See
+ * [WindowsRegistryScript], which also explains the quoting hazard the script form
+ * removes.
  *
  * **Setting the default is the user's, by design of the OS.** Since Windows 10,
- * writing the `UserChoice` key yourself is blocked (it carries a hash the shell
- * verifies, and a mismatch is reverted). So `register` prepares everything and
- * `openDefaultAppsSettings` takes the user to the one place that can finish it -
- * the same shape the existing browser flow already has.
+ * writing the `UserChoice` key yourself is blocked - it carries a hash the shell
+ * verifies, and a mismatch is reverted. So [register] prepares everything and
+ * [openDefaultAppsSettings] takes the user to the one place that can finish it,
+ * called once per user action by `DefaultAppsManager`.
  */
 internal object WindowsFileTypeHandler {
     private val logger = BossLogger.forComponent("WindowsFileTypeHandler")
 
-    private const val PROCESS_TIMEOUT_SECONDS = 15L
-
-    private const val CLASSES_KEY = """HKEY_CURRENT_USER\SOFTWARE\Classes"""
-
-    private const val CAPABILITIES_FILE_ASSOCIATIONS =
-        """HKEY_CURRENT_USER\SOFTWARE\Clients\StartMenuInternet\BOSS\Capabilities\FileAssociations"""
+    private const val PROCESS_TIMEOUT_SECONDS = 30L
 
     private const val FILE_EXTS_KEY =
-        """HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FileExts"""
+        """HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts"""
+
+    /** The ProgID naming rule, in one place. See [WindowsRegistryScript.progIdFor]. */
+    internal fun progIdFor(extension: String): String = WindowsRegistryScript.progIdFor(extension)
 
     /**
-     * ProgID for an extension: `BOSS.md`, `BOSS.kt`.
+     * Writes the ProgIDs and capability entries for [category] in one `reg import`.
      *
-     * One per extension rather than one per category, because `FileAssociations`
-     * and `UserChoice` are both keyed by extension, and a shared ProgID would
-     * make "BOSS opens markdown" and "BOSS opens Kotlin" the same switch.
-     */
-    internal fun progIdFor(extension: String): String = "BOSS.${extension.lowercase()}"
-
-    /**
-     * Creates the ProgIDs and capability entries for [category].
-     *
-     * Idempotent (`reg add /f` overwrites), so it is safe to call on every
-     * attempt rather than tracking what was already written.
+     * Idempotent: `reg import` overwrites the values it names, so this is safe to
+     * call on every attempt rather than tracking what was already written.
      */
     fun register(category: FileTypeCategory): Boolean {
         val appPath = applicationPath()
@@ -61,82 +60,41 @@ internal object WindowsFileTypeHandler {
             return false
         }
 
-        val table = FileTypeCategories.table
-        val extensions = table.extensionsFor(category.id)
+        val extensions = FileTypeCategories.table.extensionsFor(category.id)
         if (extensions.isEmpty()) return true
 
-        var allSucceeded = true
-        extensions.forEach { extension ->
-            if (!registerExtension(extension, category.displayName, appPath)) allSucceeded = false
-        }
+        val script = WindowsRegistryScript.buildScript(extensions, appPath, category.displayName)
 
-        logger.info(
-            LogCategory.SYSTEM,
-            if (allSucceeded) {
-                "Registered Windows file associations"
-            } else {
-                "Registered Windows file associations with failures"
-            },
-            mapOf("category" to category.id, "extensions" to extensions.size),
-        )
-        return allSucceeded
-    }
+        var scriptFile: File? = null
+        return try {
+            // UTF-16LE with a BOM: that is what `reg import` requires of a
+            // "Windows Registry Editor Version 5.00" script. An ANSI file is
+            // mis-read rather than rejected loudly.
+            scriptFile =
+                File.createTempFile("boss-file-types", ".reg").apply {
+                    writeBytes(
+                        byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + script.toByteArray(StandardCharsets.UTF_16LE),
+                    )
+                }
 
-    /**
-     * Writes the ProgID and capability entries for one extension.
-     *
-     * Extracted from [register] so that function stays readable: five `reg add`
-     * invocations per extension, each with its own reason, is not a loop body.
-     *
-     * @return true when every command succeeded. A partial result still leaves
-     *   the extension better off than before, so nothing is rolled back.
-     */
-    private fun registerExtension(
-        extension: String,
-        categoryDisplayName: String,
-        appPath: String,
-    ): Boolean {
-        val progId = progIdFor(extension)
-        val description = "$categoryDisplayName (BOSS)"
-        val commands =
-            listOf(
-                listOf("reg", "add", """$CLASSES_KEY\$progId""", "/ve", "/d", description, "/f"),
-                listOf("reg", "add", """$CLASSES_KEY\$progId\DefaultIcon""", "/ve", "/d", "$appPath,0", "/f"),
-                listOf(
-                    "reg",
-                    "add",
-                    """$CLASSES_KEY\$progId\shell\open\command""",
-                    "/ve",
-                    "/d",
-                    "\"$appPath\" \"%1\"",
-                    "/f",
-                ),
-                // An OpenWithProgids hint puts BOSS in the "Open with" list for the
-                // extension even before it is the default, which is how the user
-                // finds it in the Settings picker at all.
-                listOf(
-                    "reg",
-                    "add",
-                    """$CLASSES_KEY\.$extension\OpenWithProgids""",
-                    "/v",
-                    progId,
-                    "/t",
-                    "REG_NONE",
-                    "/f",
-                ),
-                listOf("reg", "add", CAPABILITIES_FILE_ASSOCIATIONS, "/v", ".$extension", "/d", progId, "/f"),
+            val imported = runSucceeds(listOf("reg", "import", scriptFile.absolutePath))
+            logger.info(
+                LogCategory.SYSTEM,
+                if (imported) {
+                    "Registered Windows file associations"
+                } else {
+                    "Could not import the file-association script"
+                },
+                mapOf("category" to category.id, "extensions" to extensions.size),
             )
-
-        return commands.fold(true) { acc, command ->
-            val ok = runSucceeds(command)
-            if (!ok) {
-                logger.warn(
-                    LogCategory.SYSTEM,
-                    "Registry command failed while registering a file association",
-                    mapOf("extension" to extension),
-                )
-            }
-            ok && acc
+            imported
+        } catch (e: Exception) {
+            logger.warn(LogCategory.SYSTEM, "Could not write the file-association script", error = e)
+            false
+        } finally {
+            // Best effort. The script holds no secrets, but one temp file per
+            // attempt left in %TEMP% is untidy.
+            scriptFile?.delete()
         }
     }
 
@@ -144,18 +102,22 @@ internal object WindowsFileTypeHandler {
      * Who owns [category] according to the shell's per-extension `UserChoice`.
      *
      * Reduced the same way macOS is: BOSS only when every extension points at a
-     * BOSS ProgID. An extension with no `UserChoice` at all reads as
+     * BOSS ProgID. An extension with no `UserChoice` reads as
      * [DefaultHandlerState.Other] with a null id, which is honest - the shell has
-     * no recorded user preference, so the association falls back to whatever the
-     * machine defaults to.
+     * no recorded user preference, so the association falls back to the machine
+     * default.
      */
     fun statusOf(category: FileTypeCategory): DefaultHandlerState {
         val extensions = FileTypeCategories.table.extensionsFor(category.id)
         if (extensions.isEmpty()) return DefaultHandlerState.Other(null)
 
+        // One query over the whole FileExts tree, parsed once, instead of one
+        // process per extension.
+        val choices = userChoices()
+
         val states =
             extensions.map { extension ->
-                val progId = userChoiceProgId(extension)
+                val progId = choices[extension.lowercase()]
                 when {
                     progId == null -> DefaultHandlerState.Other(null)
                     progId.equals(progIdFor(extension), ignoreCase = true) -> DefaultHandlerState.Ours
@@ -163,11 +125,7 @@ internal object WindowsFileTypeHandler {
                 }
             }
 
-        return if (states.all { it.isOurs }) {
-            DefaultHandlerState.Ours
-        } else {
-            states.first { !it.isOurs }
-        }
+        return DefaultHandlerState.reduce(states)
     }
 
     /** Opens Settings > Default apps, the only place Windows lets the default actually change. */
@@ -177,33 +135,26 @@ internal object WindowsFileTypeHandler {
         runSucceeds(listOf("cmd", "/c", "start", "", "ms-settings:defaultapps"))
     }
 
-    private fun userChoiceProgId(extension: String): String? =
-        try {
-            val output =
-                runCapturing(
-                    listOf("reg", "query", """$FILE_EXTS_KEY\.$extension\UserChoice""", "/v", "ProgId"),
-                ) ?: return null
-            // reg query prints "    ProgId    REG_SZ    BOSS.md"
-            output
-                .lineSequence()
-                .firstOrNull { it.contains("ProgId", ignoreCase = true) }
-                ?.trim()
-                ?.split(Regex("\\s{2,}"))
-                ?.lastOrNull()
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
-        } catch (e: Exception) {
-            logger.debug(
-                LogCategory.SYSTEM,
-                "Could not read the shell's file association",
-                mapOf("extension" to extension, "reason" to (e.message ?: "unknown")),
-            )
-            null
-        }
+    /** Every recorded `.ext -> ProgId` the shell holds, or empty when it cannot be read. */
+    private fun userChoices(): Map<String, String> =
+        runCapturing(listOf("reg", "query", FILE_EXTS_KEY, "/s"))
+            ?.let(WindowsRegistryScript::parseUserChoices)
+            ?: emptyMap()
 
+    /**
+     * Runs a command for its exit code, discarding its output.
+     *
+     * `DISCARD` rather than `redirectErrorStream(true)` with nobody reading: an
+     * undrained pipe deadlocks the child as soon as it fills, and the timeout
+     * below cannot rescue it because the child never exits.
+     */
     private fun runSucceeds(command: List<String>): Boolean =
         try {
-            val process = ProcessBuilder(command).redirectErrorStream(true).start()
+            val process =
+                ProcessBuilder(command)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start()
             if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
                 logger.warn(LogCategory.SYSTEM, "Registry command timed out", mapOf("command" to command.first()))
@@ -216,19 +167,35 @@ internal object WindowsFileTypeHandler {
             false
         }
 
+    /**
+     * Runs a command and returns its stdout, or null.
+     *
+     * The reader runs on another thread so the `waitFor` timeout can actually
+     * fire. Reading to EOF first and waiting afterwards - which this did - means a
+     * child that never closes stdout hangs forever and the timeout is decorative.
+     * `MacOSDefaultBrowserHandler` avoids the same trap the same way.
+     */
     private fun runCapturing(command: List<String>): String? =
         try {
-            val process = ProcessBuilder(command).redirectErrorStream(true).start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }
+            val process =
+                ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .start()
+            val output =
+                CompletableFuture.supplyAsync {
+                    process.inputStream.bufferedReader().use { it.readText() }
+                }
+
             if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
+                logger.warn(LogCategory.SYSTEM, "Registry query timed out", mapOf("command" to command.first()))
                 null
             } else if (process.exitValue() != 0) {
                 // A missing key exits non-zero, which is the common case here and
                 // not worth a warning.
                 null
             } else {
-                output
+                output.get(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             }
         } catch (e: Exception) {
             logger.debug(
@@ -244,8 +211,8 @@ internal object WindowsFileTypeHandler {
      *
      * Same resolution the browser registration uses, kept separate rather than
      * shared because that one is `private` and lives in a file about URL schemes;
-     * both would be better off in one place, which is a follow-up rather than
-     * part of this change.
+     * both would be better off in one place, which is a follow-up rather than part
+     * of this change.
      */
     private fun applicationPath(): String? =
         try {

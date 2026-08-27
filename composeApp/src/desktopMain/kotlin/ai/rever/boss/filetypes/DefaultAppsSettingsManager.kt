@@ -7,6 +7,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -42,7 +45,14 @@ internal data class DefaultAppsSettings(
 internal object DefaultAppsSettingsManager {
     private val logger = BossLogger.forComponent("DefaultAppsSettingsManager")
 
-    private val settingsFile = BossDirectories.resolve("default-apps.json")
+    /**
+     * `internal var` so a test can point it at a temp file, matching
+     * `RecentBrowserPagesManager`. There is no other seam: the path is resolved
+     * from `BossDirectories`, and a round-trip test that wrote to the real
+     * `~/.boss/default-apps.json` would clobber the developer's own answer to the
+     * first-run prompt.
+     */
+    internal var settingsFile = BossDirectories.resolve("default-apps.json")
 
     private val json =
         Json {
@@ -53,13 +63,41 @@ internal object DefaultAppsSettingsManager {
     private val _settings = MutableStateFlow(DefaultAppsSettings())
     val settings: StateFlow<DefaultAppsSettings> = _settings.asStateFlow()
 
-    init {
-        settingsFile.parentFile?.mkdirs()
-        load()
+    @Volatile
+    private var loaded = false
+
+    private val loadMutex = Mutex()
+
+    /**
+     * Reads the file once, on IO. Every reader must await this first.
+     *
+     * There is deliberately no filesystem work in an `init` block. This object is
+     * reached from a composable, so an init doing `mkdirs` and `readText` put a
+     * file read on the UI thread at first-window composition - and
+     * [shouldOfferPrompt] read before the load would answer from defaults and
+     * offer a prompt that had already been made.
+     *
+     * Idempotent and safe from several windows at once; the mutex is what stops
+     * two first-launch windows both deciding the prompt has not been shown.
+     */
+    suspend fun ensureLoaded() {
+        if (loaded) return
+        loadMutex.withLock {
+            if (loaded) return@withLock
+            withContext(Dispatchers.IO) { load() }
+            loaded = true
+        }
+    }
+
+    /** Test seam: forget the cached load so the next [ensureLoaded] re-reads. */
+    internal fun resetForTest() {
+        loaded = false
+        _settings.value = DefaultAppsSettings()
     }
 
     private fun load() {
         try {
+            settingsFile.parentFile?.mkdirs()
             if (!settingsFile.exists()) return
             _settings.value = json.decodeFromString<DefaultAppsSettings>(settingsFile.readText())
             logger.debug(
@@ -77,8 +115,16 @@ internal object DefaultAppsSettingsManager {
         }
     }
 
-    /** True when the one-time offer has not been made yet. */
+    /**
+     * True when the one-time offer has not been made yet.
+     *
+     * Only meaningful after [ensureLoaded]; before it this reads the default and
+     * answers true for everybody.
+     */
     fun shouldOfferPrompt(): Boolean = !_settings.value.promptShown
+
+    /** Categories the user has refused, so nothing re-claims them behind their back. */
+    fun declinedCategories(): Set<String> = _settings.value.declinedCategories
 
     suspend fun markPromptShown() {
         update { it.copy(promptShown = true) }
@@ -93,7 +139,10 @@ internal object DefaultAppsSettingsManager {
     }
 
     private suspend fun update(transform: (DefaultAppsSettings) -> DefaultAppsSettings) {
-        _settings.value = transform(_settings.value)
+        // `update`, not a read-modify-write on `.value`: markPromptShown and
+        // markDeclined can run concurrently (the offer dialog records declines
+        // while marking itself shown), and the plain assignment loses one of them.
+        _settings.update(transform)
         save()
     }
 

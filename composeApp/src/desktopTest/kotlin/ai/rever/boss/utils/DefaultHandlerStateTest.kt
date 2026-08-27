@@ -66,7 +66,7 @@ class DefaultHandlerStateTest {
 
     @Test
     fun `the worst answer wins when types in a category disagree`() {
-        val reduce = MacOSDefaultBrowserHandler::reduce
+        val reduce = DefaultHandlerState::reduce
 
         assertEquals(
             DefaultHandlerState.Ours,

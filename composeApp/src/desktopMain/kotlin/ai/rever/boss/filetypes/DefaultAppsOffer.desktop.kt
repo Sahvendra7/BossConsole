@@ -67,18 +67,24 @@ private val logger = BossLogger.forComponent("DefaultAppsOffer")
  */
 @Composable
 internal actual fun DefaultAppsOfferHost(isFirstWindow: Boolean) {
-    // Only the first window, and only when the offer has not been made. Read
-    // once: `shouldOfferPrompt` flips as soon as the dialog appears, and
-    // re-reading it would take the dialog away mid-decision.
-    val eligible = remember { isFirstWindow && DefaultAppsSettingsManager.shouldOfferPrompt() }
-    if (!eligible) return
+    if (!isFirstWindow) return
 
     var unclaimed by remember { mutableStateOf<List<DefaultAppStatus>>(emptyList()) }
     var visible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (!DefaultAppsManager.isSupported()) return@LaunchedEffect
-        val statuses = DefaultAppsManager.statuses().filterNot { it.state.isOurs }
+        // After the load, not in a `remember`: before the file has been read
+        // `shouldOfferPrompt` answers from defaults and would offer a prompt that
+        // was already made and declined on a previous launch.
+        DefaultAppsSettingsManager.ensureLoaded()
+        if (!DefaultAppsSettingsManager.shouldOfferPrompt()) return@LaunchedEffect
+        val declined = DefaultAppsSettingsManager.declinedCategories()
+        val statuses =
+            DefaultAppsManager
+                .statuses()
+                .filterNot { it.state.isOurs }
+                .filterNot { it.category.id in declined }
         if (statuses.isEmpty()) {
             // Everything is already BOSS's. Nothing to ask, and marking the
             // prompt shown would be wrong: if the user later loses an

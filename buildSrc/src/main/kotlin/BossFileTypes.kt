@@ -20,9 +20,10 @@ import java.io.File
  * ships in a plist.
  *
  * **Why two kinds of declaration.** Launch Services can only make an app the
- * default for a *type*, never for a bare extension. 31 of the 83 extensions
+ * default for a *type*, never for a bare extension. 42 of the 83 extensions
  * resolve to a system UTI (`public.python-script`, `net.daringfireball.markdown`
- * and so on) which BOSS claims as-is. The other 41 have no system UTI at all -
+ * and so on) which BOSS claims as-is; that is 31 *distinct* UTIs, because several
+ * extensions share one. The other 41 have no system UTI at all -
  * `UTType(filenameExtension:)` answers with a `dyn.*` placeholder, which cannot
  * be set as a default - so BOSS exports its own type for them, grouped by
  * language, exactly as other editors do for `.kt`, `.rs` and `.tsx`.
@@ -210,6 +211,26 @@ object BossFileTypes {
         val claimed = table.exportedTypes().flatMap { it.extensions }
         require(claimed.size == claimed.distinct().size) {
             "boss-file-types.json: two exported types claim the same extension"
+        }
+
+        // An exported language must live in exactly one category. The generator
+        // groups exported types by language across the WHOLE table, while the
+        // running app (FileTypeCategories.exportedTypeIdsFor) groups by language
+        // WITHIN a category. Those agree only while no language spans two
+        // categories; if one ever did, the single generated UTI would be listed
+        // under both, and claiming one category would silently make BOSS the
+        // default for the other's extensions too. Sibling of the check above:
+        // that one catches a duplicate extension, this catches a duplicate
+        // language.
+        val languagesPerCategory =
+            table.extensions
+                .filter { it.systemType == null }
+                .groupBy({ it.language }, { it.category })
+                .mapValues { (_, categories) -> categories.distinct() }
+        val spanning = languagesPerCategory.filterValues { it.size > 1 }
+        require(spanning.isEmpty()) {
+            "boss-file-types.json: exported language(s) span more than one category, " +
+                "which would make one UTI claim extensions in both: $spanning"
         }
     }
 

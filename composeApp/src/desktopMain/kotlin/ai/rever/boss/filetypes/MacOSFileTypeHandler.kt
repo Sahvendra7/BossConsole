@@ -9,7 +9,7 @@ import ai.rever.boss.utils.mac.LaunchServices
 /**
  * Reads and writes the macOS default handler for a whole [FileTypeCategory].
  *
- * A category is several types - "Source code and config" is 31 system UTIs plus
+ * A category is several types - "Source code and config" is 26 system UTIs plus
  * 24 BOSS exports - and Launch Services stores an answer per type, so both the
  * status and the set are a fold over the list rather than one call.
  */
@@ -35,12 +35,7 @@ internal object MacOSFileTypeHandler {
 
         if (owners.isEmpty()) return DefaultHandlerState.Other(null)
 
-        val states = owners.map { DefaultHandlerState.of(it) }
-        return when {
-            states.all { it.isOurs } -> DefaultHandlerState.Ours
-            states.any { it is DefaultHandlerState.OurEngine } -> DefaultHandlerState.OurEngine
-            else -> states.first { !it.isOurs }
-        }
+        return DefaultHandlerState.reduce(owners.map { DefaultHandlerState.of(it) })
     }
 
     /**

@@ -105,7 +105,7 @@ internal object DefaultAppsManager {
      * type the desktop entry already declares - so claiming a category without
      * that step records an association that can never match a file.
      */
-    suspend fun claim(category: FileTypeCategory): ClaimOutcome =
+    private suspend fun claim(category: FileTypeCategory): ClaimOutcome =
         withContext(Dispatchers.IO) {
             try {
                 when {
@@ -126,11 +126,16 @@ internal object DefaultAppsManager {
                         // Registering is all BOSS may do; Windows 10+ verifies a
                         // hash on the UserChoice key and reverts anything written
                         // directly, so the user finishes in Settings.
+                        //
+                        // Deliberately does NOT open Settings here. This runs once
+                        // per category and claimAll maps it over the selection, so
+                        // taking the five-category first-run offer launched
+                        // ms-settings:defaultapps five times. Opening it is the
+                        // batch's job, once - see openSettingsForUserAction.
                         WindowsFileTypeHandler.register(category)
-                        WindowsFileTypeHandler.openDefaultAppsSettings()
                         ClaimOutcome.NeedsUserAction(
-                            "Windows does not let an app make itself the default. Settings has been opened: " +
-                                "choose BOSS under Default apps to finish.",
+                            "Windows does not let an app make itself the default. " +
+                                "Choose BOSS under Default apps in the Settings window to finish.",
                         )
                     }
 
@@ -157,11 +162,48 @@ internal object DefaultAppsManager {
             }
         }
 
-    /** Claims several categories, reporting the worst outcome. */
+    /**
+     * Claims several categories, reporting the worst outcome, and opens the OS
+     * settings page at most once if any of them needs the user.
+     *
+     * An empty batch is [ClaimOutcome.Failed], not [ClaimOutcome.Claimed]:
+     * reporting "BOSS now opens every type" having claimed nothing is the kind of
+     * false success a third call site inherits without noticing. Both current
+     * callers guard on a non-empty list, so this is a guard rather than a
+     * behaviour change.
+     */
     suspend fun claimAll(categories: List<FileTypeCategory>): ClaimOutcome {
+        if (categories.isEmpty()) return ClaimOutcome.Failed("There was nothing to change.")
+
         val outcomes = categories.map { claim(it) }
-        return outcomes.firstOrNull { it is ClaimOutcome.Failed }
-            ?: outcomes.firstOrNull { it is ClaimOutcome.NeedsUserAction }
-            ?: ClaimOutcome.Claimed
+        val worst =
+            outcomes.firstOrNull { it is ClaimOutcome.Failed }
+                ?: outcomes.firstOrNull { it is ClaimOutcome.NeedsUserAction }
+                ?: ClaimOutcome.Claimed
+        if (worst is ClaimOutcome.NeedsUserAction) openSettingsForUserAction()
+        return worst
+    }
+
+    /**
+     * Claims one category and opens the settings page if it needs the user.
+     *
+     * The single-row entry point, so a row's Set button behaves like the batch
+     * without every caller having to remember the second step.
+     */
+    suspend fun claimOne(category: FileTypeCategory): ClaimOutcome {
+        val outcome = claim(category)
+        if (outcome is ClaimOutcome.NeedsUserAction) openSettingsForUserAction()
+        return outcome
+    }
+
+    /**
+     * Opens the OS page where the user finishes the job, on the platforms that
+     * have one. Called at most once per user action - see [claimAll].
+     */
+    private fun openSettingsForUserAction() {
+        if (isWindows) WindowsFileTypeHandler.openDefaultAppsSettings()
+        // macOS has no settings page for an arbitrary content type (the route is
+        // Finder's Get Info) and Linux has no single page at all, so on both the
+        // instruction text is the whole of the guidance.
     }
 }

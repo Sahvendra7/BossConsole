@@ -86,6 +86,13 @@ internal object LaunchServices {
             // JNA missing from the runtime classpath entirely (a stripped build).
             logger.warn(LogCategory.SYSTEM, "JNA unavailable; Launch Services calls unavailable", error = e)
             null
+        } catch (e: Throwable) {
+            // isAvailable() is meant to be the gate that cannot itself fail. An
+            // unexpected JNA or linker problem must degrade to "unavailable"
+            // rather than propagate out of a lazy initialiser and take the
+            // Settings screen with it.
+            logger.warn(LogCategory.SYSTEM, "Unexpected failure binding CoreServices", error = e)
+            null
         }
     }
 
@@ -98,18 +105,22 @@ internal object LaunchServices {
     fun isAvailable(): Boolean = coreServices != null
 
     /** Bundle id currently registered for [scheme] (for example "http"), or null. */
-    fun defaultHandlerForScheme(scheme: String): String? =
-        withCFString(scheme) { cfScheme ->
-            val services = coreServices ?: return@withCFString null
+    fun defaultHandlerForScheme(scheme: String): String? {
+        // Hoisted above withCFString: reads unambiguously, and allocates no
+        // CFString at all when the framework is not bound.
+        val services = coreServices ?: return null
+        return withCFString(scheme) { cfScheme ->
             copiedString { services.LSCopyDefaultHandlerForURLScheme(cfScheme) }
         }
+    }
 
     /** Bundle id currently registered for [contentType] (a UTI), or null. */
-    fun defaultHandlerForContentType(contentType: String): String? =
-        withCFString(contentType) { cfType ->
-            val services = coreServices ?: return@withCFString null
+    fun defaultHandlerForContentType(contentType: String): String? {
+        val services = coreServices ?: return null
+        return withCFString(contentType) { cfType ->
             copiedString { services.LSCopyDefaultRoleHandlerForContentType(cfType, ROLES_ALL) }
         }
+    }
 
     /**
      * Makes [bundleId] the handler for [scheme]. True when the OS accepted it.
@@ -122,29 +133,34 @@ internal object LaunchServices {
     fun setDefaultHandlerForScheme(
         scheme: String,
         bundleId: String,
-    ): Boolean =
-        withCFString(scheme) { cfScheme ->
+    ): Boolean {
+        // Hoisted, which also removes a `return@withCFString false` whose label
+        // resolved to the inner of two nested `withCFString` calls: correct, but
+        // not something a reader should have to work out.
+        val services = coreServices ?: return false
+        return withCFString(scheme) { cfScheme ->
             withCFString(bundleId) { cfBundle ->
-                val services = coreServices ?: return@withCFString false
                 val status = services.LSSetDefaultHandlerForURLScheme(cfScheme, cfBundle)
                 logStatus("scheme", scheme, bundleId, status)
                 status == NO_ERR
             }
         }
+    }
 
     /** Makes [bundleId] the handler for the UTI [contentType]. True when the OS accepted it. */
     fun setDefaultHandlerForContentType(
         contentType: String,
         bundleId: String,
-    ): Boolean =
-        withCFString(contentType) { cfType ->
+    ): Boolean {
+        val services = coreServices ?: return false
+        return withCFString(contentType) { cfType ->
             withCFString(bundleId) { cfBundle ->
-                val services = coreServices ?: return@withCFString false
                 val status = services.LSSetDefaultRoleHandlerForContentType(cfType, ROLES_ALL, cfBundle)
                 logStatus("contentType", contentType, bundleId, status)
                 status == NO_ERR
             }
         }
+    }
 
     private fun logStatus(
         kind: String,

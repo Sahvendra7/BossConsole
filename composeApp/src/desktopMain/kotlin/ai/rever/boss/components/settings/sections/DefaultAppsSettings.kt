@@ -4,6 +4,7 @@ import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.boss.filetypes.ClaimOutcome
 import ai.rever.boss.filetypes.DefaultAppStatus
 import ai.rever.boss.filetypes.DefaultAppsManager
+import ai.rever.boss.filetypes.DefaultAppsSettingsManager
 import ai.rever.boss.filetypes.FileTypeCategory
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.utils.DefaultHandlerState
@@ -50,7 +51,7 @@ import kotlinx.coroutines.launch
  * Settings > Default Apps: which file types and links BOSS opens.
  *
  * One row per category rather than per type, because BOSS claims 83 extensions
- * and 55 macOS UTIs and nobody sets 83 switches. See `boss-file-types.json` for
+ * and 56 macOS UTIs and nobody sets 83 switches. See `boss-file-types.json` for
  * the grouping and why it is a resource.
  *
  * The row that matters most is the one saying a **BOSS component** holds the
@@ -75,14 +76,22 @@ fun DefaultAppsSettings() {
     val scope = rememberCoroutineScope()
     val supported = remember { DefaultAppsManager.isSupported() }
 
+    var declined by remember { mutableStateOf<Set<String>>(emptySet()) }
+
     suspend fun refresh() {
         loading = true
         statuses = DefaultAppsManager.statuses()
+        declined = DefaultAppsSettingsManager.declinedCategories()
         loading = false
     }
 
     LaunchedEffect(Unit) {
-        if (supported) refresh() else loading = false
+        if (!supported) {
+            loading = false
+            return@LaunchedEffect
+        }
+        DefaultAppsSettingsManager.ensureLoaded()
+        refresh()
     }
 
     SettingsSection(
@@ -108,10 +117,16 @@ fun DefaultAppsSettings() {
             fun claim(
                 busyId: String,
                 what: String,
+                clearDeclineFor: Collection<String> = emptyList(),
                 block: suspend () -> ClaimOutcome,
             ) = scope.launch {
                 busyCategoryId = busyId
                 message = null
+                // Pressing Set on a row is the user changing their mind, so the
+                // refusal recorded when they dismissed the first-run offer has to
+                // go - otherwise "Set all" would keep skipping a category they
+                // have since asked for by hand.
+                if (clearDeclineFor.isNotEmpty()) DefaultAppsSettingsManager.clearDeclined(clearDeclineFor)
                 message = block().describe(what)
                 busyCategoryId = null
                 refresh()
@@ -123,9 +138,11 @@ fun DefaultAppsSettings() {
                     busyCategoryId = busyCategoryId,
                     loading = loading,
                     onSet = { status ->
-                        claim(status.category.id, status.category.displayName) {
-                            DefaultAppsManager.claim(status.category)
-                        }
+                        claim(
+                            busyId = status.category.id,
+                            what = status.category.displayName,
+                            clearDeclineFor = listOf(status.category.id),
+                        ) { DefaultAppsManager.claimOne(status.category) }
                     },
                 )
 
@@ -133,10 +150,11 @@ fun DefaultAppsSettings() {
 
                 SectionActions(
                     statuses = statuses,
+                    declined = declined,
                     busy = busyCategoryId != null,
                     onRefresh = { scope.launch { refresh() } },
-                    onSetAll = { unclaimed ->
-                        claim(busyId = "", what = "every type") { DefaultAppsManager.claimAll(unclaimed) }
+                    onSetAll = { toClaim ->
+                        claim(busyId = "", what = "every type") { DefaultAppsManager.claimAll(toClaim) }
                     },
                 )
 
@@ -197,11 +215,20 @@ private fun CategoryList(
 @Composable
 private fun SectionActions(
     statuses: List<DefaultAppStatus>,
+    declined: Set<String>,
     busy: Boolean,
     onRefresh: () -> Unit,
     onSetAll: (List<FileTypeCategory>) -> Unit,
 ) {
-    val unclaimed = statuses.filterNot { it.state.isOurs }.map { it.category }
+    // Refused categories are excluded, which is what DefaultAppsSettings'
+    // `declinedCategories` was documented to do and did not: "Set all" claimed
+    // exactly what the user had just said no to. A row's own Set button still
+    // works and clears the refusal.
+    val unclaimed =
+        statuses
+            .filterNot { it.state.isOurs }
+            .map { it.category }
+            .filterNot { it.id in declined }
 
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(

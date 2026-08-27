@@ -17,14 +17,20 @@ import kotlin.test.assertTrue
  * be extracted, or the file opens twice.
  */
 class OsOpenArgumentsTest {
-    /** Pretend every path ending `.md` or `.kt` exists, nothing else does. */
-    private val exists: (String) -> Boolean = { it.endsWith(".md") || it.endsWith(".kt") }
+    /** Every path ending `.md` or `.kt` is a file, `/proj` is a directory, nothing else exists. */
+    private val kindOf: (String) -> OsOpenArguments.OpenTargetKind = { path ->
+        when {
+            path.endsWith(".md") || path.endsWith(".kt") -> OsOpenArguments.OpenTargetKind.FILE
+            path.trimEnd('/').endsWith("/proj") -> OsOpenArguments.OpenTargetKind.DIRECTORY
+            else -> OsOpenArguments.OpenTargetKind.ABSENT
+        }
+    }
 
-    private fun links(vararg args: String) = OsOpenArguments.deepLinksFrom(arrayOf(*args), exists)
+    private fun links(vararg args: String) = OsOpenArguments.deepLinksFrom(arrayOf(*args), kindOf)
 
     @Test
     fun `no args means nothing to open`() {
-        assertTrue(OsOpenArguments.deepLinksFrom(emptyArray(), exists).isEmpty())
+        assertTrue(OsOpenArguments.deepLinksFrom(emptyArray(), kindOf).isEmpty())
     }
 
     @Test
@@ -107,8 +113,14 @@ class OsOpenArgumentsTest {
 
     @Test
     fun `a percent-escaped file URL is decoded`() {
-        val existsSpaced: (String) -> Boolean = { it == "/tmp/my notes.md" }
-        val result = OsOpenArguments.deepLinksFrom(arrayOf("file:///tmp/my%20notes.md"), existsSpaced)
+        val spaced: (String) -> OsOpenArguments.OpenTargetKind = { path ->
+            if (path == "/tmp/my notes.md") {
+                OsOpenArguments.OpenTargetKind.FILE
+            } else {
+                OsOpenArguments.OpenTargetKind.ABSENT
+            }
+        }
+        val result = OsOpenArguments.deepLinksFrom(arrayOf("file:///tmp/my%20notes.md"), spaced)
         assertEquals(1, result.size)
         // Re-encoded for the deep link, so the space survives the round trip
         // rather than truncating the path.
@@ -128,7 +140,43 @@ class OsOpenArgumentsTest {
     fun `a file URL naming another host is refused`() {
         // A path on another machine. Dropping the host and opening the local path
         // of the same name would open the wrong file.
-        assertTrue(OsOpenArguments.deepLinksFrom(arrayOf("file://fileserver/tmp/notes.md")) { true }.isEmpty())
+        assertTrue(
+            OsOpenArguments
+                .deepLinksFrom(arrayOf("file://fileserver/tmp/notes.md")) { OsOpenArguments.OpenTargetKind.FILE }
+                .isEmpty(),
+        )
+    }
+
+    @Test
+    fun `a directory becomes a folder link`() {
+        // `boss://folder` and `boss folder` both exist, so dropping a project
+        // folder on the app should do something. The file-only predicate made it
+        // silently do nothing.
+        val result = links("/home/me/proj")
+        assertEquals(1, result.size)
+        assertTrue(result.single().startsWith("boss://folder?path="), result.single())
+        assertTrue(result.single().contains("proj"))
+    }
+
+    @Test
+    fun `a folder URL from a file manager becomes a folder link`() {
+        assertTrue(links("file:///home/me/proj").single().startsWith("boss://folder?path="))
+    }
+
+    @Test
+    fun `a subcommand name only counts as the first non-flag argument`() {
+        // `args.any { it in CLI_SUBCOMMANDS }` matched at ANY position, so an OS
+        // open request whose path happened to be exactly one of these names was
+        // dropped as a CLI call. The KDoc always said "first non-flag argument".
+        assertTrue(links("file", "/tmp/a.md").isEmpty(), "a real CLI call is still left to Clikt")
+        assertTrue(links("--verbose", "url", "https://example.com").isEmpty())
+
+        // ...but a path argument that merely equals a subcommand name is not one.
+        val kindWithOddName: (String) -> OsOpenArguments.OpenTargetKind = { path ->
+            if (path == "terminal") OsOpenArguments.OpenTargetKind.FILE else OsOpenArguments.OpenTargetKind.ABSENT
+        }
+        val result = OsOpenArguments.deepLinksFrom(arrayOf("/tmp/a.md", "terminal"), kindWithOddName)
+        assertEquals(1, result.size, "the second arg names a real file and should open: $result")
     }
 
     @Test

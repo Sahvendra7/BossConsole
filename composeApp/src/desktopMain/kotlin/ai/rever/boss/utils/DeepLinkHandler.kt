@@ -98,6 +98,15 @@ internal fun routedDeepLinkHost(uri: String): DeepLinkHost? = deepLinkHostOf(uri
 internal fun fileDeepLinkFor(path: String): String = BOSS_SCHEME + "file?path=" + URLEncoder.encode(path, "UTF-8")
 
 /**
+ * The `boss://folder` link that opens [path] in the codebase panel.
+ *
+ * The counterpart of [fileDeepLinkFor] for a directory. Dropping a project folder
+ * on the app, or double-clicking one with BOSS as its handler, previously produced
+ * no link at all because the argv scan recognised only regular files.
+ */
+internal fun folderDeepLinkFor(path: String): String = BOSS_SCHEME + "folder?path=" + URLEncoder.encode(path, "UTF-8")
+
+/**
  * The window a [host]'s handler should act on: resolved through
  * [resolveWindowId] for hosts that resolve at dispatch, null for hosts that
  * resolve downstream when their queued command runs.

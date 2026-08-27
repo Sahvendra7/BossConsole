@@ -748,16 +748,40 @@ can highlight. Three consumers read it and one test pins it:
   regex, because `buildSrc` compiles first and cannot see the real object.)
 
 **Launch Services can only make an app the default for a *type*, never for an
-extension.** 31 of the 83 extensions resolve to a system UTI which BOSS claims
-as-is; the other 41 have no system UTI (`UTType(filenameExtension:)` answers with
-a `dyn.*` placeholder, which cannot be set as a default), so BOSS exports its own
-type for them, grouped by language. The per-extension answers in the resource are
+extension.** 42 of the 83 extensions resolve to a system UTI, which BOSS claims
+as-is - 31 distinct UTIs, since several extensions share one (`.cpp`, `.cc` and
+`.cxx` are all `public.c-plus-plus-source`). The other 41 have no system UTI
+(`UTType(filenameExtension:)` answers with a `dyn.*` placeholder, which cannot be
+set as a default), so BOSS exports its own type for them, grouped by language into
+24 declarations. The per-extension answers in the resource are
 **measured, not derived**, and three of them are the reason: `.ts` resolves to
 `public.mpeg-2-transport-stream` (a video container), `.as` to
 `com.apple.applesingle-archive` (a binary archive) and `.edn` to `com.adobe.edn`.
 Claiming any of those would make BOSS the default application for a format it
 cannot open, so they are recorded as `rejectedSystemType` and get an exported type
 instead.
+
+**Windows registration is one `reg import`, not hundreds of `reg add`s.**
+`WindowsRegistryScript` generates a `.reg` script and `WindowsFileTypeHandler`
+imports it in a single process; the status is one `reg query <FileExts> /s` parsed
+once. The per-`reg add` version ran on the order of 415 processes for a
+five-category "Set all" plus 83 more to read the status, each with its own
+timeout, from a Settings screen and from the first-run offer at startup.
+
+It also removes a quoting hazard rather than trying to get it right: the
+`shell\open\command` value is `"C:\path\BOSS.exe" "%1"`, a string that both
+begins and ends with a double quote, and Java's Windows `ProcessImpl` treats an
+argument in that shape as already quoted and passes it through unescaped - so
+`reg` would have stored only the exe path and treated `"%1"` as a stray token,
+killing the one write that makes a double-clicked file reach BOSS. That premise
+could not be verified on a mac (the JDK ships only the Unix `ProcessImpl`), which
+is itself a reason to prefer the form where the question cannot arise. In a `.reg`
+file the value is escaped by `regEscape` and never passes through a command line.
+
+**The three platform handlers share one fold.** `DefaultHandlerState.reduce` is
+the single definition of "BOSS only when every type in the category is BOSS, and
+`OurEngine` outranks `Other`". Each handler had its own copy; they agreed, which
+is the only reason nothing was broken, and a fourth copy would not have.
 
 **The engine bundle used to be a second app called "BOSS".**
 `~/.boss/boss-chromium/BOSS.app` is the branded JxBrowser engine, and being

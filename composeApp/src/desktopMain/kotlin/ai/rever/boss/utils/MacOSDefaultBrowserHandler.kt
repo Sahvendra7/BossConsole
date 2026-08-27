@@ -79,21 +79,17 @@ object MacOSDefaultBrowserHandler {
      * whether one scheme or all three are affected.
      */
     internal suspend fun browserHandlerState(): Result<DefaultHandlerState> =
-        browserHandlerStates().map { schemeStates ->
-            val contentTypeState = DefaultHandlerState.of(defaultHandlerForContentType(WEB_PAGE_CONTENT_TYPE))
-            reduce(schemeStates.values + contentTypeState)
-        }
-
-    /**
-     * Collapses per-target states into one, preferring the answer that tells the
-     * user something they can act on.
-     */
-    internal fun reduce(states: Collection<DefaultHandlerState>): DefaultHandlerState =
-        when {
-            states.isEmpty() -> DefaultHandlerState.Other(null)
-            states.all { it.isOurs } -> DefaultHandlerState.Ours
-            states.any { it is DefaultHandlerState.OurEngine } -> DefaultHandlerState.OurEngine
-            else -> states.first { !it.isOurs }
+        withContext(Dispatchers.IO) {
+            // Inside the IO block, not in a `Result.map` on the result of
+            // browserHandlerStates(). `map` is inline and runs on the CALLER's
+            // dispatcher after that withContext has already returned, so the
+            // content-type read - a native Launch Services call - was landing on
+            // Dispatchers.Main via DefaultBrowserSection's LaunchedEffect. Exactly
+            // what DefaultAppsManager's KDoc and docs/THREADING.md forbid.
+            browserHandlerStates().map { schemeStates ->
+                val contentTypeState = DefaultHandlerState.of(defaultHandlerForContentType(WEB_PAGE_CONTENT_TYPE))
+                DefaultHandlerState.reduce(schemeStates.values + contentTypeState)
+            }
         }
 
     /**

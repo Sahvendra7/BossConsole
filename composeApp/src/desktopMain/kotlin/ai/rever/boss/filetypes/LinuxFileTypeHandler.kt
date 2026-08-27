@@ -3,6 +3,7 @@ package ai.rever.boss.filetypes
 import ai.rever.boss.utils.DefaultHandlerState
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 /**
@@ -78,7 +79,7 @@ internal object LinuxFileTypeHandler {
                 }
             }
 
-        return if (states.all { it.isOurs }) DefaultHandlerState.Ours else states.first { !it.isOurs }
+        return DefaultHandlerState.reduce(states)
     }
 
     private fun queryDefault(mimeType: String): String? =
@@ -87,14 +88,21 @@ internal object LinuxFileTypeHandler {
                 ProcessBuilder("xdg-mime", "query", "default", mimeType)
                     .redirectErrorStream(true)
                     .start()
-            val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+            // Read on another thread so the waitFor timeout can actually fire.
+            // Reading to EOF first and waiting afterwards - which this did - means
+            // an xdg-mime that never closes stdout hangs forever and the 15 s bound
+            // is decorative.
+            val output =
+                CompletableFuture.supplyAsync {
+                    process.inputStream.bufferedReader().use { it.readText().trim() }
+                }
             if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
                 null
             } else if (process.exitValue() != 0) {
                 null
             } else {
-                output.ifEmpty { null }
+                output.get(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS).ifEmpty { null }
             }
         } catch (e: Exception) {
             // xdg-utils absent is normal on a minimal install, and it is the
@@ -109,7 +117,14 @@ internal object LinuxFileTypeHandler {
 
     private fun runSucceeds(command: List<String>): Boolean =
         try {
-            val process = ProcessBuilder(command).redirectErrorStream(true).start()
+            // DISCARD rather than redirectErrorStream(true) with nobody reading:
+            // an undrained pipe deadlocks the child as soon as it fills, and the
+            // timeout cannot rescue a child that never exits.
+            val process =
+                ProcessBuilder(command)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start()
             if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
                 logger.warn(LogCategory.SYSTEM, "xdg command timed out", mapOf("command" to command.joinToString(" ")))

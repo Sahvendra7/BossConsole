@@ -261,6 +261,30 @@ internal fun BossAppEventBusEffects(state: BossAppState) {
                 if (MissingHandlerPluginEventBus.wasDeclined(prompt.missing.pluginId)) {
                     return@collect
                 }
+                // Resolved on its own since it was raised: the plugin may have been
+                // installed from the Toolbox, or registration may simply have run
+                // past the first bounded wait. TabTypeAvailability's second wait
+                // then completes and the deferred open succeeds - and without this
+                // the queued dialog still appeared, offering to install a plugin
+                // that is now running. The dependency-bus collector guards the
+                // analogous case by re-checking isInstalled.
+                //
+                // Compared on the type STRING, not by looking up a TabTypeId:
+                // TabTypeId is a data class whose equality includes pluginId and
+                // defaultOrder, so a constructed one misses a type that is plainly
+                // registered - the trap panelid-defaultorder-silent-miss records.
+                val alreadyRegistered =
+                    state.tabRegistry.getAllTabTypes().any { candidate ->
+                        candidate.typeId.typeId == prompt.missing.tabTypeId
+                    }
+                if (alreadyRegistered) {
+                    logger.debug(
+                        LogCategory.UI,
+                        "Not asking about a tab-type plugin that has since registered",
+                        mapOf("plugin" to prompt.missing.pluginId, "tabType" to prompt.missing.tabTypeId),
+                    )
+                    return@collect
+                }
                 state.resolvingMissingHandlerPlugin = false
                 state.missingHandlerPluginError = null
                 state.pendingMissingHandlerPlugin = prompt

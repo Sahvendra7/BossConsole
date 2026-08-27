@@ -255,6 +255,7 @@
     <ID>LongMethod:CrashReportService.kt$CrashReportService$private suspend fun submitViaProxy(report: CrashReport): ProxyResult</ID>
     <ID>LongMethod:CrossDeviceAuthenticationDialog.kt$@Composable fun CrossDeviceAuthenticationDialog( qrCodeUrl: String?, challenge: String?, sessionId: String? = null, onDismiss: () -&gt; Unit, onSuccess: () -&gt; Unit, onCreateFluckTab: ((FluckTabInfo) -&gt; Unit)? = null, )</ID>
     <ID>LongMethod:Dashboard.kt$@Composable fun Dashboard( onOpenFile: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onOpenProject: (Project) -&gt; Unit, selectedProject: Project = Project("No Project", "", 0L), onNewTab: () -&gt; Unit, onNewTerminal: () -&gt; Unit, onNewWindow: () -&gt; Unit, onOpenProjectDialog: () -&gt; Unit, onOpenFileDialog: () -&gt; Unit, onNewProject: () -&gt; Unit, onApplySplitTemplate: (SplitTemplate) -&gt; Unit, onActivatePlugin: (String) -&gt; Unit, onShowSettings: (() -&gt; Unit)? = null, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:DefaultAppsSettings.kt$@Composable fun DefaultAppsSettings()</ID>
     <ID>LongMethod:DefaultBrowserSection.kt$@Composable fun DefaultBrowserSection()</ID>
     <ID>LongMethod:DefaultPlugin.kt$DefaultPlugin$private fun loadExternalPlugins()</ID>
     <ID>LongMethod:DefaultPlugin.kt$DefaultPlugin$private fun registerKernelPluginServices()</ID>
@@ -1109,7 +1110,7 @@
     <ID>ReturnCount:McpToolRegistryImpl.kt$McpToolRegistryCore$private fun permitted(def: McpToolDefinition): Boolean</ID>
     <ID>ReturnCount:MenuShortcutBridge.kt$MenuShortcutBridge$fun getKeyShortcut(actionId: String): androidx.compose.ui.input.key.KeyShortcut?</ID>
     <ID>ReturnCount:NewTabDialog.kt$private fun validateFilePath( path: String, basePath: String? = null, ): String?</ID>
-    <ID>ReturnCount:OsOpenArguments.kt$OsOpenArguments$fun deepLinksFrom( args: Array&lt;String&gt;, exists: (String) -&gt; Boolean = { File(it).isFile }, ): List&lt;String&gt;</ID>
+    <ID>ReturnCount:OsOpenArguments.kt$OsOpenArguments$fun deepLinksFrom( args: Array&lt;String&gt;, kindOf: (String) -&gt; OpenTargetKind = ::openTargetKindOf, ): List&lt;String&gt;</ID>
     <ID>ReturnCount:PanelComponentStore.kt$PanelComponentStore$fun getOrCreateComponent(panelId: PanelId): PanelComponentWithUI?</ID>
     <ID>ReturnCount:PanelComponentStore.kt$PanelComponentStore$fun resetComponent(panelId: PanelId): Boolean</ID>
     <ID>ReturnCount:PasskeyAuthService.kt$PasskeyAuthService$suspend fun authenticateWithPasskey( email: String? = null, credentialId: String? = null, ): Result&lt;Unit&gt;</ID>
@@ -1161,6 +1162,7 @@
     <ID>ReturnCount:WebsiteMatchingUtil.kt$WebsiteMatchingUtil$fun extractMainDomain(url: String): String?</ID>
     <ID>ReturnCount:WindowsDefaultBrowserHandler.kt$WindowsDefaultBrowserHandler$private fun registerAsBrowserCandidate(): Boolean</ID>
     <ID>ReturnCount:WindowsFileTypeHandler.kt$WindowsFileTypeHandler$fun register(category: FileTypeCategory): Boolean</ID>
+    <ID>ReturnCount:WindowsRegistryScript.kt$WindowsRegistryScript$private fun userChoiceExtensionOf(keyLine: String): String?</ID>
     <ID>ReturnCount:WorkspacePlaceholders.kt$WorkspacePlaceholders$private fun getGitRemoteUrl(projectPath: String): String</ID>
     <ID>SpreadOperator:CrashHandler.kt$CrashHandler$(javaBin, *getRestartArgs())</ID>
     <ID>SpreadOperator:DesktopGitService.kt$GitService$(projectPath, *args.toTypedArray())</ID>
@@ -1288,6 +1290,7 @@
     <ID>TooGenericExceptionCaught:LLMProvidersSettings.kt$e: Exception</ID>
     <ID>TooGenericExceptionCaught:LLMSettings.kt$LLMSettings$e: Exception</ID>
     <ID>TooGenericExceptionCaught:LastSessionCoordinator.kt$LastSessionCoordinator$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:LaunchServices.kt$LaunchServices$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:LinuxDefaultBrowserHandler.kt$LinuxDefaultBrowserHandler$e: Exception</ID>
     <ID>TooGenericExceptionCaught:LinuxFileTypeHandler.kt$LinuxFileTypeHandler$e: Exception</ID>
     <ID>TooGenericExceptionCaught:LockedBrowser.kt$LockedBrowser$e: Exception</ID>

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.Json
  * One group of things BOSS can be made the default handler for, as the Settings
  * screen and the registration code see it.
  *
- * Categories, not individual types: BOSS claims 83 extensions and 55 macOS UTIs,
+ * Categories, not individual types: BOSS claims 83 extensions and 56 macOS UTIs,
  * and a screen with 83 rows is not a screen anybody sets. What the user actually
  * decides is "should BOSS open my markdown" - five such decisions, each of which
  * expands to the list of types underneath it.

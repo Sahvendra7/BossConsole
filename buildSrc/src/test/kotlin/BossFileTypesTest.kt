@@ -237,6 +237,51 @@ class BossFileTypesTest {
     }
 
     @Test
+    fun `an exported language spanning two categories is refused`() {
+        // The generator groups exported types by language across the WHOLE table
+        // while the app groups by language WITHIN a category, so a language in two
+        // categories would produce one UTI listed under both - and claiming one
+        // category would silently make BOSS the default for the other's
+        // extensions. Unreachable with today's data; this is what keeps it so.
+        val spanning =
+            """
+            {
+              "exportedTypePrefix": "ai.rever.boss",
+              "exportedTypeSuffix": "-source",
+              "categories": [
+                {"id": "source-code", "displayName": "Source", "description": "d",
+                 "schemes": [], "extraContentTypes": [], "mimeTypes": [], "systemTypeRank": "Default"},
+                {"id": "markdown", "displayName": "Markdown", "description": "d",
+                 "schemes": [], "extraContentTypes": [], "mimeTypes": [], "systemTypeRank": "Default"}
+              ],
+              "languageNames": {"kotlin": "Kotlin"},
+              "extensions": [
+                {"ext": "kt", "language": "kotlin", "category": "source-code"},
+                {"ext": "kts", "language": "kotlin", "category": "markdown"}
+              ]
+            }
+            """.trimIndent()
+        val failure = assertFailsWith<IllegalArgumentException> { BossFileTypes.parse(spanning) }
+        assertTrue(
+            failure.message.orEmpty().contains("span more than one category"),
+            "unexpected message: ${failure.message}",
+        )
+    }
+
+    @Test
+    fun `the shipped table keeps every exported language in one category`() {
+        val perLanguage =
+            table.extensions
+                .filter { it.systemType == null }
+                .groupBy({ it.language }, { it.category })
+                .mapValues { (_, categories) -> categories.distinct() }
+        assertTrue(
+            perLanguage.all { (_, categories) -> categories.size == 1 },
+            "exported languages span categories: ${perLanguage.filterValues { it.size > 1 }}",
+        )
+    }
+
+    @Test
     fun `claiming and rejecting the same extension's type is refused`() {
         assertFailsWith<IllegalArgumentException> {
             BossFileTypes.parse(

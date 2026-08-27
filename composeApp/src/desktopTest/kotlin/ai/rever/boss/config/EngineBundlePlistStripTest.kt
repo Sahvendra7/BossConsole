@@ -60,17 +60,51 @@ class EngineBundlePlistStripTest {
     }
 
     @Test
-    fun `the deletes precede the re-sign, or they break the signature`() {
+    fun `the deletes precede the re-sign in every macOS job`() {
+        // Split per job before comparing. Comparing first-occurrence indices
+        // across the whole file constrained only the FIRST macOS job - while the
+        // test above exists precisely because patching one mac job and not the
+        // other is the expected mistake. So the ordering check has to be per job
+        // too, or it inherits the same blind spot it was written to cover.
+        val jobs = macJobSections()
+        assertEquals(2, jobs.size, "expected two macOS build jobs, found ${jobs.size}")
+
+        jobs.forEachIndexed { index, section ->
+            val delete = section.indexOf("""Delete :CFBundleURLTypes""")
+            val resign = section.indexOf("""Re-signing with identity""")
+            assertTrue(delete > 0, "macOS job $index has no CFBundleURLTypes delete")
+            assertTrue(resign > 0, "macOS job $index has no re-sign step")
+            assertTrue(
+                delete < resign,
+                "macOS job $index: the plist edit must come BEFORE the re-sign; after it, the edit breaks " +
+                    "the code signature and the engine fails codesign --verify (or worse, ships mis-signed)",
+            )
+        }
+    }
+
+    /**
+     * The workflow text split into one section per macOS build job.
+     *
+     * Keyed on the job headers rather than a line count so it survives edits
+     * elsewhere in the file.
+     */
+    private fun macJobSections(): List<String> {
         val text = workflow()
-        val firstDelete = text.indexOf("""Delete :CFBundleURLTypes""")
-        val firstResign = text.indexOf("""Re-signing with identity""")
-        assertTrue(firstDelete > 0, "no CFBundleURLTypes delete found")
-        assertTrue(firstResign > 0, "no re-sign step found")
-        assertTrue(
-            firstDelete < firstResign,
-            "the plist edit must come BEFORE the re-sign; after it, the edit breaks the code signature " +
-                "and the engine fails codesign --verify (or worse, ships mis-signed)",
-        )
+        val headers = listOf("  build-macos-arm64:", "  build-macos-x64:")
+        val starts = headers.map { text.indexOf(it) }
+        assertTrue(starts.all { it >= 0 }, "could not find both macOS job headers; were they renamed?")
+
+        // Each section runs to the start of the next top-level job, so a delete
+        // belonging to a later job cannot satisfy an earlier one.
+        val jobStarts =
+            Regex("""(?m)^  [a-z0-9-]+:$""")
+                .findAll(text)
+                .map { it.range.first }
+                .toList()
+        return starts.map { start ->
+            val end = jobStarts.firstOrNull { it > start } ?: text.length
+            text.substring(start, end)
+        }
     }
 
     @Test
