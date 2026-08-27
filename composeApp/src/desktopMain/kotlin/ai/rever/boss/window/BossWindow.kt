@@ -10,6 +10,8 @@ import ai.rever.boss.components.dialogs.ImportDataDialog
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.focusmode.FocusModeSettingsManager
+import ai.rever.boss.fullscreen.CapturedFullScreenEffects
+import ai.rever.boss.fullscreen.CapturedFullScreenState
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.menu.MenuShortcutBridge
 import ai.rever.boss.keymap.model.KeymapActions
@@ -338,6 +340,22 @@ fun ApplicationScope.BossWindow(
         // loaded (nothing, usually) rather than what the window is actually showing.
         val workspaces by workspaceManager.workspaces.collectAsState()
         val currentWorkspace by workspaceManager.currentWorkspace.collectAsState()
+
+        // Drives the View item's wording. Read from the shared session rather than a local
+        // flag: the mode can also end without this window asking - focus leaving BOSS, or the
+        // hardwired Escape hold - and the menu has to say so.
+        val capturedSession by CapturedFullScreenState.current.collectAsState()
+        val isCapturing = capturedSession.capturing(windowState.id)
+
+        // Captured full screen: the toggle, the pointer release, and restoring this
+        // window's geometry on the way out. Here rather than in BossAppMenuActionEffects
+        // because covering the display is a composeWindowState change, and that is only in
+        // scope inside this Window block.
+        CapturedFullScreenEffects(
+            windowId = windowState.id,
+            window = window,
+            windowState = composeWindowState,
+        )
 
         // Get split enabled state (whether there are tabs to split)
         val splitEnabledMap by MenuActionsHandler.splitEnabledState.collectAsState()
@@ -785,6 +803,17 @@ fun ApplicationScope.BossWindow(
                             } else {
                                 WindowPlacement.Fullscreen
                             }
+                    },
+                )
+
+                // Deliberately a separate item from the one above, not a mode of it. Plain full
+                // screen covers the display; this also confines the pointer to it and takes the
+                // OS shortcuts, which is not something to hand someone who asked for the first.
+                Item(
+                    if (isCapturing) "Exit Captured Full Screen" else "Enter Captured Full Screen",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.CAPTURED_FULLSCREEN_TOGGLE),
+                    onClick = {
+                        MenuActionsHandler.triggerToggleCapturedFullScreen(windowState.id)
                     },
                 )
             }

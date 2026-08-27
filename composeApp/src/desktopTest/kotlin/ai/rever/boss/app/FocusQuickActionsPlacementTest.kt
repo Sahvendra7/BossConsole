@@ -235,4 +235,38 @@ class FocusQuickActionsPlacementTest {
             // FOCUS_QUICK_ACTION_COUNT counts it and the rail reserves a row for it.
             toolbox = { _, _ -> },
         )
+
+    @Test
+    fun `captured full screen stands the cluster down entirely`() {
+        // The one case where the top bar being gone must NOT summon the replacement. Everywhere
+        // else these actions are rescued because the bar that owns them vanished; here the user
+        // asked for a display holding nothing but content, and a floating always-on-top cluster is
+        // the one thing guaranteed to still be over it.
+        assertEquals(
+            FocusQuickActionsPlacement.NONE,
+            focusQuickActionsPlacement(
+                settings = FocusModeSettings(enabled = true, hideTopBar = true),
+                topBarHidden = true,
+                rightStripHidden = true,
+                showTopBar = false,
+                capturedFullScreen = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `captured full screen overrides even a configuration that would use the rail`() {
+        // Asked first, so it cannot be reasoned about as one more term in focusQuickActionsVisible.
+        // With a right rail present the answer would otherwise be RIGHT_RAIL.
+        assertEquals(
+            FocusQuickActionsPlacement.NONE,
+            focusQuickActionsPlacement(
+                settings = FocusModeSettings(enabled = true, hideTopBar = true),
+                topBarHidden = true,
+                rightStripHidden = false,
+                showTopBar = false,
+                capturedFullScreen = true,
+            ),
+        )
+    }
 }

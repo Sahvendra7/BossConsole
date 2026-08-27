@@ -167,6 +167,11 @@ internal enum class FocusQuickActionsPlacement {
  * nowhere. It reads as "permanent" for the same reason `hides(RIGHT)` does, so it belongs in the
  * same test rather than in the reveal flags.
  */
+// Six inputs, each an independent condition about a different piece of chrome, and the value of the
+// function is that the case analysis is in one place a test can reach. The same call `macTrafficLightInset`
+// makes, for the same reason: bundling them into a data class would move the analysis somewhere less
+// visible without removing an input.
+@Suppress("LongParameterList")
 internal fun focusQuickActionsPlacement(
     settings: FocusModeSettings,
     topBarHidden: Boolean,
@@ -183,8 +188,26 @@ internal fun focusQuickActionsPlacement(
      * rails itself on a narrow window is decided during layout rather than in settings.
      */
     verticalTabBar: Boolean = false,
+    /**
+     * Whether this window is in captured full screen, in which case the answer is always
+     * [FocusQuickActionsPlacement.NONE].
+     *
+     * A THIRD reason the top bar is absent, and the one case where the cluster must NOT replace it.
+     * Everywhere else these actions are rescued precisely because the bar that owns them is gone -
+     * that is what this file is for. Captured full screen is different in kind: the user asked for
+     * the display to hold nothing but content, and a floating always-on-top cluster is the one
+     * thing guaranteed to still be over it. Sign Out does not become unreachable, it becomes one
+     * shortcut away, which is the bargain the mode is.
+     *
+     * Asked FIRST, so it cannot be mistaken for another term in [focusQuickActionsVisible]. It is
+     * not one: it overrides rather than contributes, and the two absences it sits beside are
+     * already documented here as non-symmetric.
+     */
+    capturedFullScreen: Boolean = false,
 ): FocusQuickActionsPlacement =
     when {
+        capturedFullScreen -> FocusQuickActionsPlacement.NONE
+
         !focusQuickActionsVisible(settings, topBarHidden, showTopBar) -> FocusQuickActionsPlacement.NONE
 
         // Rail first, unchanged: where there is a right rail these have always gone in it, and it

@@ -98,6 +98,14 @@ fun BossDraggableComponent.BossTopBar(
      * shows through, which is white.
      */
     startInset: Dp = 0.dp,
+    /**
+     * Drawn at the very start of the row, after [startInset].
+     *
+     * Where the captured-full-screen button goes when there is no title row to hold it, which is
+     * the default on Windows and Linux and the macOS case where this bar carries the light
+     * clearance. After the inset, so on macOS it still lands just past the buttons.
+     */
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val items = rememberBarContextMenuItems(ChromeBar.TOP)
 
@@ -105,6 +113,7 @@ fun BossDraggableComponent.BossTopBar(
         // The 36dp is the bar's own long-standing indent; the lights need more than that, so this
         // takes whichever is larger rather than adding them and pushing the content twice as far.
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = maxOf(TOP_BAR_START_INDENT, startInset))) {
+            leading?.invoke()
             BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject, onCloneProject)
             Spacer(modifier = Modifier.weight(1f))
             // Run/debug controls (Issue #91 / #321)
