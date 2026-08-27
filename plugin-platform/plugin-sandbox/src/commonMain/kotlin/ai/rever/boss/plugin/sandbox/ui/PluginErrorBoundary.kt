@@ -385,17 +385,12 @@ fun PluginErrorBoundary(
                 PluginCrashRegistry.recordCrash(pluginId, e)
             }
         }
-    // Mounted/disposed is recorded HERE rather than at the two call sites, because this boundary
-    // is what every plugin surface goes through - a tab, a sidebar panel, and whatever is added
-    // next. The unload path waits on it: Compose disposes a removed tab on a later frame, and that
-    // frame is what runs the plugin's own onDispose lambdas, which cannot resolve once its
-    // classloader has closed. See PluginUiMountRegistry.
+    // Unregistering the crash interceptor covers the WHOLE boundary, fallback included: it has to
+    // stay armed while the fallback is on screen, because Restart re-enters content() through this
+    // same boundary. Mount counting deliberately does NOT live here - it is in the content branch
+    // below, because the two have different lifetimes.
     DisposableEffect(pluginId) {
-        PluginUiMountRegistry.onMounted(pluginId)
-        onDispose {
-            PluginUiMountRegistry.onDisposed(pluginId)
-            crashRegistration?.invoke()
-        }
+        onDispose { crashRegistration?.invoke() }
     }
 
     // Check sandbox state — if DISABLED (e.g. binary incompatibility), show error
@@ -468,6 +463,26 @@ fun PluginErrorBoundary(
             },
         )
     } else {
+        // Mounted/disposed is recorded in THIS branch rather than above the if, because the
+        // registry answers one question - "is plugin code composed?" - and a boundary rendering
+        // the fallback composes none of it. Such a boundary has no plugin onDispose lambdas for
+        // the unload path to wait on, so counting it held the wait open for nothing: every unload
+        // of a crashed plugin paid the full timeout, on the path (crash recovery) that could least
+        // afford the delay. PluginRenderRecovery.registerMounted sits in this branch for the
+        // mirror-image reason; the two now agree on what "mounted" means.
+        //
+        // Recorded at the boundary rather than at the call sites because this is what every
+        // plugin surface goes through - a tab, a sidebar panel, and whatever is added next.
+        //
+        // FIRST in the branch and OUTSIDE CompositionLocalProvider, so it stays the outermost
+        // remember here: Compose dispatches observers inner-before-outer, so the count drops
+        // LAST, after the plugin's own onDispose lambdas have run. That ordering is the whole
+        // point of the registry - see its KDoc.
+        DisposableEffect(pluginId) {
+            PluginUiMountRegistry.onMounted(pluginId)
+            onDispose { PluginUiMountRegistry.onDisposed(pluginId) }
+        }
+
         // Note: Heartbeats are recorded automatically by the sandbox's heartbeat job
         // (InProcessPluginSandbox.startHeartbeatJob), so we don't need to record them here.
 

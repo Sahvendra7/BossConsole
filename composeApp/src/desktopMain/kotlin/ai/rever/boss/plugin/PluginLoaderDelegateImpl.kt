@@ -585,9 +585,12 @@ class PluginLoaderDelegateImpl(
         // anything mounted" wait could never come true while one was open.
         val owners = sandboxed.map { (_, _, pluginId) -> pluginId }.toSet()
         if (tabs.isEmpty()) {
-            // Still waits: a plugin whose only surface is a sidebar panel has no tabs to close,
-            // and its boundary disposes on a later frame exactly like a tab's would.
-            awaitPluginUiDisposal(owners)
+            // Nothing to await, and the call that used to be here could never say otherwise:
+            // `owners` comes out of the same scan as `tabs`, so no tabs means no owners, and
+            // awaitDisposed returns immediately on an empty set. A panel-only plugin is NOT
+            // covered here - its panel is not in `owners` in either branch, and it stays mounted
+            // across a swap by design. Covering it would mean sourcing owners from
+            // PanelSandboxRegistry too, which is a change to what this waits for, not a comment.
             return 0
         }
         logger.info(
@@ -612,8 +615,16 @@ class PluginLoaderDelegateImpl(
     suspend fun teardownPluginTabs(pluginId: String): Int {
         val tabs = findOpenTabs(pluginId)
         if (tabs.isEmpty()) {
-            // No tabs is not "nothing to wait for": this plugin's sidebar panel is a boundary too,
-            // and its loader is about to close whether or not it had a tab open.
+            // No tabs is not "nothing to wait for": a surface of this plugin can be mounted with
+            // no tab open, and its loader is about to close either way.
+            //
+            // KNOWN GAP, sidebar panels. Nothing removes the panel before this runs - the
+            // registration drops in TrackingPluginContext.unregisterAll(), which happens inside
+            // the unload, after this has returned. So a plugin with a panel on screen waits the
+            // full timeout, logs a warning that reads like the fix failed, unloads anyway, and its
+            // panel still disposes against a closed loader. Closing that needs a panel-removal
+            // step ahead of this call. The wait is kept because it is correct for every other
+            // surface and errs toward waiting, which is the safe direction.
             awaitPluginUiDisposal(setOf(pluginId))
             return 0
         }
@@ -638,7 +649,9 @@ class PluginLoaderDelegateImpl(
      * runs the plugin's own onDispose lambdas, which cannot resolve once its classloader has gone.
      *
      * Hoisted out of [closeTabsOnEdt] because it is not about tabs: a plugin whose only surface is
-     * a sidebar panel has no tabs to close and the same race to lose.
+     * a sidebar panel has no tabs to close and the same race to lose. Note that it does not yet
+     * WIN that race for panels - see the known gap in [teardownPluginTabs] - the hoist is what
+     * makes fixing it a change at one call site rather than a restructure.
      */
     private suspend fun awaitPluginUiDisposal(pluginIds: Set<String>) {
         if (PluginUiMountRegistry.awaitDisposed(pluginIds, UI_DISPOSAL_TIMEOUT_MS)) return

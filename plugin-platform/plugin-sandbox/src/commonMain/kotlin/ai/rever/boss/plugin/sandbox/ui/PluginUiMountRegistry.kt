@@ -28,6 +28,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Counted rather than flagged, because one plugin can have several surfaces up at once - a tab in
  * each of two windows, a tab and a sidebar panel - and they dispose independently.
  *
+ * "Mounted" means **plugin code is composed**, not "a boundary exists". A boundary rendering the
+ * error fallback does not count: it composes none of the plugin, so it has no plugin `onDispose`
+ * lambdas for an unload to wait on, and counting it only made every unload of a crashed plugin pay
+ * the full timeout - worst on crash recovery, which closes tabs before disabling. That is why the
+ * registering effect lives in the boundary's content branch rather than above it.
+ *
  * **The count must drop LAST**, after the plugin's own `onDispose` lambdas have run, or this
  * reports "disposed" while the very lambdas the caller is waiting for are still to execute. That
  * holds today because the registering effect is the OUTERMOST one in the boundary and Compose
