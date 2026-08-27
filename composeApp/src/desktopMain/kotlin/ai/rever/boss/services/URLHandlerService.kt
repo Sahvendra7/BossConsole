@@ -215,44 +215,20 @@ actual object URLHandlerService {
     }
 
     /**
-     * Validate that a URL is acceptable for opening
+     * Validate that a URL is acceptable for opening.
      *
-     * Only allows http:// and https:// URLs for security.
-     *
-     * @param url The URL to validate
-     * @return true if the URL is valid and should be opened
+     * Delegates to [UrlOpenValidation], which is pure and tested. The rules used
+     * to live inline here and one of them was wrong: it required the host to
+     * contain a `.`, so `http://localhost:3000` was dropped with a log line and
+     * no tab, on an app whose users click that link more than any other.
      */
-    private fun isValidURL(url: String): Boolean {
-        // Only allow http and https URLs
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            return false
-        }
-
-        // Basic URL validation - must have at least a protocol and domain
+    private fun isValidURL(url: String): Boolean =
         try {
-            // Simple validation: check for protocol and domain separator
-            val protocolEnd = url.indexOf("://")
-            if (protocolEnd < 0) return false
-
-            val afterProtocol = url.substring(protocolEnd + 3)
-            if (afterProtocol.isEmpty()) return false
-
-            // Must have at least a domain name
-            val domainEnd = afterProtocol.indexOfAny(charArrayOf('/', '?', '#'))
-            val domain =
-                if (domainEnd >= 0) {
-                    afterProtocol.substring(0, domainEnd)
-                } else {
-                    afterProtocol
-                }
-
-            // Domain must not be empty and should contain at least one character
-            return domain.isNotEmpty() && domain.contains(".")
+            UrlOpenValidation.isOpenable(url)
         } catch (e: Exception) {
             logger.warn(LogCategory.BROWSER, "URL validation error", error = e)
-            return false
+            false
         }
-    }
 
     /**
      * Extract domain name from URL for display as tab title

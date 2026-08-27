@@ -55,8 +55,52 @@ object CLISecurityValidator {
     }
 
     /**
+     * Validates a path that will be **read**, never handed to a shell.
+     *
+     * Separate from [isValidPath] because that one's rules are the right rules
+     * for a path that ends up inside a command line and the wrong rules for a
+     * file the user just double-clicked in Finder. `isValidPath` rejects any
+     * path containing `..`, `$`, `&`, `;`, `|` or a backtick, so a real file
+     * called `Q&A notes.md`, `pay$.sh` or anything under a directory with an
+     * ampersand in its name could not be opened at all - it failed the check and
+     * the open was dropped with a log line and no window.
+     *
+     * The dropped rules bought nothing on this path. There is no shell, so shell
+     * metacharacters are ordinary filename characters; and `..` cannot be a
+     * traversal defence when every caller may pass an absolute path anyway, so
+     * canonicalising is both stricter and correct. What remains is what actually
+     * matters: no NUL (which truncates the path in any native call underneath),
+     * and a path that resolves.
+     *
+     * Callers still check `exists()`, `isFile()` and `canRead()` afterwards;
+     * this decides only whether the string is a usable path at all.
+     */
+    fun isValidOpenTargetPath(path: String): Boolean {
+        if (path.isBlank()) return false
+        if (path.contains('\u0000')) return false
+
+        // canonicalFile resolves `..` and symlinks and throws on a path the
+        // filesystem cannot represent, which is the honest way to reject the
+        // shapes the `..` test was reaching for.
+        return try {
+            java.io
+                .File(path)
+                .canonicalFile
+            true
+        } catch (_: java.io.IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
+    /**
      * Validates file path for security.
      * Prevents path traversal attacks and other malicious patterns.
+     *
+     * For a path that is only going to be **read** (opening a file in the
+     * editor), use [isValidOpenTargetPath]: these rules assume the path may
+     * reach a shell and reject legal filenames that never would.
      */
     fun isValidPath(path: String): Boolean {
         // Check for null bytes
