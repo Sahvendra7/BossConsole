@@ -184,7 +184,8 @@ editor can highlight.
 - `DefaultAppsSettings.kt` - Settings > Default Apps
 - `DefaultAppsOffer.desktop.kt` - the one-time first-run offer
 - `DefaultBrowserManager.kt` + `DefaultBrowserSection.kt` - the browser-only
-  facade, still used by Settings > Browser
+  facade behind Settings > Browser. Reads `DefaultHandlerState`, not a boolean,
+  so it cannot tell a user who set BOSS as their browser that they did not
 
 **Platform Behavior**:
 - macOS: `LSSetDefaultRoleHandlerForContentType` / `LSSetDefaultHandlerForURLScheme`
