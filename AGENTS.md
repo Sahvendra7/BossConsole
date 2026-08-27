@@ -777,6 +777,31 @@ future engines are clean. And `DefaultHandlerState` is a three-way answer -
 what actually happened and offered a Repair rather than "BOSS is not your default
 browser", which is the wrong story to tell somebody who did set it.
 
+**An existing install cannot be fixed by a version number.** The engine fix ships
+inside a *rebuild* of an already-published engine, so `version.txt` reads the same
+before and after and `ChromiumAutoDownloader.isChromiumInstalled`'s equality test
+short-circuits. So that function also asks the extracted bundle what it actually
+declares (`declaresBrowserTypes`): on macOS, an `Info.plist` still carrying
+`CFBundleURLTypes` or `CFBundleDocumentTypes` invalidates the directory and the
+existing download path replaces it. Three things about that check:
+
+- It sits beside the execute-bit check in the same function, which exists for the
+  same reason: catching a cached engine that is the right *version* and the wrong
+  *content*.
+- It is **bounded to one attempt per version** by a marker outside the engine
+  directory (`~/.boss/boss-chromium.types-repair`; a re-download replaces the
+  directory itself). Without it, an engine that still declares the keys after the
+  re-download - the rebuild never published, or published unrepaired - would
+  re-fetch ~160 MB on every launch, silently.
+- It **fails closed**: an unreadable or absent plist answers false, because
+  forcing a large download over a file we could not read is the worse mistake.
+  It matches `<key>NAME</key>` rather than the bare key name, so a comment or a
+  string value naming the key is not a declaration.
+
+`lsregister -u` on the engine bundle was tried first and does nothing: it returns
+0 and the bundle is still a candidate for `https` and `public.html` afterwards, so
+there is no download-free way to take it out of Launch Services.
+
 Launch Services is reached through `utils/mac/LaunchServices.kt`, bound with JNA.
 It replaced a `swift <tempfile>` shell-out per call, which needed Xcode installed
 and so could not work at all on most machines; the Swift scripts remain only as a
