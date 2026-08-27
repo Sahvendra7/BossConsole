@@ -81,6 +81,26 @@ CREATE TABLE IF NOT EXISTS "public"."screenshot_shares" (
 
 ALTER TABLE "public"."screenshot_shares" OWNER TO "postgres";
 
+-- The CREATE TABLE above is IF NOT EXISTS, so on a database where this table was
+-- created BEFORE the password feature it is a no-op and the two password columns
+-- never appear. plpgsql bodies are not name-resolved at CREATE time, so every
+-- function below would still be created happily and then fail at runtime with
+-- "column password_hash does not exist". Adding them explicitly is what makes
+-- re-running this file actually converge.
+ALTER TABLE "public"."screenshot_shares"
+    ADD COLUMN IF NOT EXISTS "password_hash" "text",
+    ADD COLUMN IF NOT EXISTS "failed_password_attempts" integer DEFAULT 0 NOT NULL;
+
+DO $do$
+BEGIN
+    ALTER TABLE public.screenshot_shares
+        ADD CONSTRAINT screenshot_shares_failed_attempts_check
+        CHECK (failed_password_attempts >= 0);
+EXCEPTION WHEN duplicate_object THEN
+    NULL;
+END
+$do$;
+
 COMMENT ON TABLE "public"."screenshot_shares" IS 'One shared, annotated screenshot. image_data is the flattened image -- PNG from the plugin today, though share_screenshot() also accepts image/jpeg and nothing verifies the bytes match the declared mime_type. Stored inline because plugins have no Storage upload path. org_id records which shared organisation made the share eligible -- it is provenance, not a live authorization check: removal from the org does not retract an already-sent share. (Recall is a separate matter and is available -- see delete_screenshot_share.)';
 
 COMMENT ON COLUMN "public"."screenshot_shares"."expires_at" IS 'Default 14 days. Enforced on read by list_*/get_screenshot_image, which filter on expires_at > now(); physical removal is separate and lags by a one-day grace window (trigger_cleanup_expired_screenshot_shares, the same probabilistic-on-insert pattern as organisation_handoff_tokens). A share therefore stops being reachable exactly at expires_at, whether or not its row has been collected yet. Projected by list_* so the plugin can show "expires in N days".';
@@ -250,6 +270,12 @@ COMMENT ON FUNCTION "public"."list_shareable_recipients"("text", integer) IS 'Di
 -- ============================================================================
 -- SECTION 3: share_screenshot -- the write path
 -- ============================================================================
+
+-- Adding p_password CHANGED THE SIGNATURE, so the CREATE OR REPLACE below defines
+-- a NEW overload rather than replacing the old one -- and the old one keeps its
+-- grant to `authenticated`. Left in place, the 6-argument version is a live
+-- bypass: it stores no password_hash and skips the send quota entirely.
+DROP FUNCTION IF EXISTS "public"."share_screenshot"("uuid", "text", "text", integer, integer, "text");
 
 CREATE OR REPLACE FUNCTION "public"."share_screenshot"(
     "p_recipient_id" "uuid",
@@ -455,6 +481,12 @@ ALTER FUNCTION "public"."list_sent_screenshots"(integer, integer) OWNER TO "post
 -- ============================================================================
 -- SECTION 5: get_screenshot_image -- fetches bytes, marks read as a side effect
 -- ============================================================================
+
+-- Same overload trap, and here it is the serious one: the single-argument version
+-- has no password check at all and stays EXECUTE-able by `authenticated`, so a
+-- recipient could read the image bytes of a protected share just by calling the
+-- old signature. Dropping it is what makes the gate real rather than advisory.
+DROP FUNCTION IF EXISTS "public"."get_screenshot_image"("uuid");
 
 CREATE OR REPLACE FUNCTION "public"."get_screenshot_image"("p_share_id" "uuid", "p_password" "text" DEFAULT NULL::"text")
 RETURNS "jsonb"
