@@ -31,8 +31,12 @@ class CapturedButtonGeometryTest {
     private val minimiseFrame = Frame(x = 31, y = 41, size = 16)
     private val zoomFrame = Frame(x = 54, y = 41, size = 16)
 
-    /** The visible circle, which is smaller than the 16pt accessibility frame around it. */
-    private val visibleDiameter = 12
+    /**
+     * The DRAWN circle, measured from a 2x screen capture scanned along the centre line: the three
+     * lights are 14pt across. Smaller than their 16pt accessibility frame, and larger than the 12pt
+     * the button first used - which is what made it visibly the wrong size beside them.
+     */
+    private val visibleDiameter = 14
 
     private data class Frame(
         val x: Int,
@@ -56,6 +60,16 @@ class CapturedButtonGeometryTest {
     @Test
     fun `the pitch is 23pt, not the 20 that was assumed`() {
         assertEquals(23.0, pitch, "This is the number both wrong versions of the constant got wrong")
+        assertEquals(TRAFFIC_LIGHT_PITCH, pitch.dp)
+        assertEquals(TRAFFIC_LIGHT_FIRST_CENTRE, closeFrame.centreX.dp)
+    }
+
+    @Test
+    fun `the drawn circle matches the lights, not their accessibility frame`() {
+        // The button drew a 12pt circle next to 14pt lights and read as the wrong size. The frame
+        // is 16, so neither the frame nor a guess would have produced the right answer.
+        assertEquals(visibleDiameter.dp, TRAFFIC_LIGHT_DIAMETER)
+        assertEquals(16, closeFrame.size, "the accessibility frame, which is NOT what is drawn")
     }
 
     @Test

@@ -2,6 +2,7 @@ package ai.rever.boss.components.bars.horizontal
 
 import ai.rever.boss.components.overlays.HoverTooltipBox
 import ai.rever.boss.components.overlays.TooltipPlacement
+import ai.rever.boss.layout.TRAFFIC_LIGHT_DIAMETER
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,9 +46,6 @@ private val TRAFFIC_LIGHT_BLUE = Color(0xFF2F7CF6)
 
 private val TRAFFIC_LIGHT_BLUE_HOVER = Color(0xFF1B63D6)
 
-/** Diameter of a macOS traffic light. */
-private val BUTTON_DIAMETER = 12.dp
-
 /** Test tag - see `CapturedFullScreenButtonTest`. */
 const val CAPTURED_FULLSCREEN_BUTTON_TAG = "captured-fullscreen-button"
 
@@ -79,7 +77,7 @@ fun CapturedFullScreenButton(
             modifier =
                 Modifier
                     .testTag(CAPTURED_FULLSCREEN_BUTTON_TAG)
-                    .size(BUTTON_DIAMETER)
+                    .size(TRAFFIC_LIGHT_DIAMETER)
                     .align(Alignment.Center)
                     .clip(CircleShape)
                     .background(if (hovered) TRAFFIC_LIGHT_BLUE_HOVER else TRAFFIC_LIGHT_BLUE)
