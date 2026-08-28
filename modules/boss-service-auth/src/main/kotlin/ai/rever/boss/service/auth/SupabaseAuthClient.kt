@@ -2,12 +2,18 @@ package ai.rever.boss.service.auth
 
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.exception.AuthErrorCode
+import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.exceptions.RestException
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Wraps the Supabase Kotlin client to provide auth operations for AuthServiceGrpcImpl.
@@ -49,17 +55,87 @@ class SupabaseAuthClient(
      * Sends a magic link to the given email.
      * Returns [AuthResult.MagicLinkSent] immediately — the actual session arrives
      * when the user clicks the link and the deep-link callback updates state.
+     *
+     * Transient failures are retried, and the failure message is prose rather than
+     * supabase-kt's raw dump - see [SEND_RETRY_BACKOFF] and [describeSendFailure].
      */
-    suspend fun sendMagicLink(email: String): AuthResult =
-        try {
-            client.auth.signInWith(OTP) {
-                this.email = email
+    suspend fun sendMagicLink(email: String): AuthResult {
+        var retries = 0
+        while (true) {
+            try {
+                client.auth.signInWith(OTP) {
+                    this.email = email
+                }
+                return AuthResult.MagicLinkSent(email)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val backoff = SEND_RETRY_BACKOFF.getOrNull(retries)?.takeIf { isTransientSendFailure(e) }
+                logger.error(
+                    "Magic link send failed for {} (attempt {}, retrying: {})",
+                    maskEmail(email),
+                    retries + 1,
+                    backoff != null,
+                    e,
+                )
+                if (backoff == null) return AuthResult.Failure(describeSendFailure(e))
+                delay(backoff)
+                retries++
             }
-            AuthResult.MagicLinkSent(email)
-        } catch (e: Exception) {
-            logger.error("Magic link send failed for {}", maskEmail(email), e)
-            AuthResult.Failure(e.message ?: "Magic link failed")
         }
+    }
+
+    /**
+     * Whether [error] is worth another attempt.
+     *
+     * Supabase hands the message to SMTP inside the `/otp` request and does not retry that hop, so
+     * a mail-provider hiccup comes back as a 500 (2026-08-24: Gmail answered
+     * `451 4.3.0 Mail server temporarily rejected message`, and the identical request minutes later
+     * went through). A 4xx is a settled answer and asking again would only spend more of the
+     * sender's hourly email budget.
+     */
+    private fun isTransientSendFailure(error: Throwable) = error is RestException && error.statusCode in SERVER_ERRORS
+
+    /**
+     * One sentence about a failed send, for whoever is looking at the sign-in screen.
+     *
+     * supabase-kt builds [RestException.message] out of the error code, the request URL and the
+     * whole request header list. That dump travels over gRPC as `errorMessage` and lands on screen,
+     * so keep it in the log and hand the caller prose.
+     */
+    private fun describeSendFailure(error: Throwable): String {
+        if (isTransientSendFailure(error)) return TRANSIENT_SEND_MESSAGE
+        return when ((error as? AuthRestException)?.errorCode) {
+            AuthErrorCode.UserNotFound -> {
+                "No account found with this email address"
+            }
+
+            AuthErrorCode.EmailAddressInvalid -> {
+                "That email address doesn't look valid. Please check it and try again."
+            }
+
+            AuthErrorCode.EmailAddressNotAuthorized -> {
+                "This email address isn't allowed to sign in."
+            }
+
+            AuthErrorCode.UserBanned -> {
+                "This account has been suspended. Please contact support."
+            }
+
+            AuthErrorCode.SignupDisabled, AuthErrorCode.EmailProviderDisabled, AuthErrorCode.OtpDisabled -> {
+                "Email sign-in is currently unavailable. Please try again later."
+            }
+
+            AuthErrorCode.OverEmailSendRateLimit, AuthErrorCode.OverRequestRateLimit -> {
+                "Too many attempts. Please wait a few minutes before trying again."
+            }
+
+            // The server's own description ("Error sending magic link email") reads fine alone.
+            else -> {
+                (error as? AuthRestException)?.errorDescription?.takeIf { it.isNotBlank() } ?: "Magic link failed"
+            }
+        }
+    }
 
     /** Signs out and clears the local session. Errors are logged but not re-thrown. */
     suspend fun signOut() {
@@ -109,6 +185,19 @@ class SupabaseAuthClient(
     }
 
     private fun maskEmail(email: String): String = if (email.length > 3) "${email.take(3)}***" else "***"
+
+    private companion object {
+        /**
+         * How long to wait between magic-link send attempts, one entry per retry - so two retries,
+         * three attempts in all. The first wait also clears Supabase's `smtp_max_frequency` (1s),
+         * which keeps a retry from turning a transient failure into a rate-limit failure.
+         */
+        private val SEND_RETRY_BACKOFF = listOf(2.seconds, 5.seconds)
+
+        private val SERVER_ERRORS = 500..599
+
+        private const val TRANSIENT_SEND_MESSAGE = "We couldn't send the email just now. Please try again in a minute."
+    }
 }
 
 sealed class AuthResult {

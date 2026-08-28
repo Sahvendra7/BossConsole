@@ -1031,6 +1031,10 @@ kotlin {
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
             implementation(libs.junit.jupiter)
+            // Test-only: supabase-kt's auth exceptions carry the HttpResponse that produced
+            // them, so asserting on what a failed sign-in tells the user means minting a real
+            // response. MockEngine is the supported way to get one without a socket.
+            implementation(libs.ktor.client.mock)
             // Compose UI testing (createComposeRule / onNodeWithText), so renderer
             // behaviour can be asserted against a real composition instead of
             // reasoned about. The API is JUnit 4 only; this module runs on the
