@@ -22,6 +22,27 @@ val TRAFFIC_LIGHT_HEIGHT: Dp = 28.dp
 val TRAFFIC_LIGHT_WIDTH: Dp = 78.dp
 
 /**
+ * Where a fourth button in the traffic-light cluster starts, measured from the window's left edge.
+ *
+ * Derived from the cluster's real geometry rather than nudged until it looked right: macOS puts the
+ * first button's centre 20pt in and spaces them 20pt apart, so the three centres are at 20, 40 and
+ * 60 and a fourth on the same pitch is centred at 80. A 12pt circle centred there spans 74 to 86.
+ *
+ * The first version of this sat at `TRAFFIC_LIGHT_WIDTH - 8`, i.e. 70, which left four points
+ * between it and the zoom button instead of the eight the OS leaves between its own - close enough
+ * to read as crowded rather than as part of the row.
+ */
+val CAPTURED_BUTTON_START: Dp = 74.dp
+
+/**
+ * Where chrome must start when the captured-full-screen button is drawn beside the lights.
+ *
+ * [TRAFFIC_LIGHT_WIDTH] covers the three OS buttons; the fourth one extends past it, so anything
+ * laid out after the cluster has to clear 86 plus the same 6pt of air the box already allows.
+ */
+val TRAFFIC_LIGHT_WIDTH_WITH_BUTTON: Dp = 92.dp
+
+/**
  * Which piece of chrome has to keep clear of the traffic lights, if any.
  *
  * The lights occupy a BOX - about 78dp wide and 28dp tall in the window's top-left corner - not a

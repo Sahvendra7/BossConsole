@@ -94,13 +94,27 @@ private interface CoreGraphicsPointer : Library {
  * nothing to leave in place. Parallels keeps one too.
  */
 private object MacPresentationOptions {
+    const val AUTO_HIDE_DOCK = 1L shl 0
     const val HIDE_DOCK = 1L shl 1
+    const val AUTO_HIDE_MENU_BAR = 1L shl 2
     const val HIDE_MENU_BAR = 1L shl 3
     const val DISABLE_APPLE_MENU = 1L shl 4
     const val DISABLE_PROCESS_SWITCHING = 1L shl 5
 
     /** The set this mode applies. Verified to set and restore cleanly from a live AWT app. */
     const val KIOSK = HIDE_DOCK or HIDE_MENU_BAR or DISABLE_APPLE_MENU or DISABLE_PROCESS_SWITCHING
+
+    /**
+     * The bits that must be cleared before [KIOSK] is OR-ed onto whatever AppKit currently has.
+     *
+     * Apple documents the invalid combinations as pairings, not as anything to do with full screen:
+     * `AutoHideDock` with `HideDock`, `AutoHideMenuBar` with `HideMenuBar`, and `HideMenuBar`
+     * without `HideDock`. [KIOSK] satisfies the third on its own; these two are what a naive OR
+     * could reintroduce, since a window that has just entered AppKit full screen may well be
+     * sitting on `AutoHideDock`. An invalid set raises an Objective-C exception, which is not
+     * something a JVM reliably survives - so this is avoided by construction rather than caught.
+     */
+    const val AUTO_HIDE_MASK = AUTO_HIDE_DOCK or AUTO_HIDE_MENU_BAR
 
     const val DEFAULT = 0L
 
@@ -129,6 +143,19 @@ private object MacPresentationOptions {
         val appClass = cls("NSApplication") ?: return null
         val shared = sel("sharedApplication") ?: return null
         return send.invokePointer(arrayOf<Any>(appClass, shared))
+    }
+
+    /** Whatever AppKit currently has, or null if the bridge is unavailable. */
+    fun current(): Long? {
+        val send = msgSend ?: return null
+        val app = nsApp() ?: return null
+        val getter = sel("presentationOptions") ?: return null
+        return try {
+            send.invokeLong(arrayOf<Any>(app, getter))
+        } catch (e: Throwable) {
+            logger.warn(LogCategory.SYSTEM, "presentationOptions read failed", error = e)
+            null
+        }
     }
 
     fun apply(options: Long): Boolean {
@@ -169,7 +196,15 @@ object MacInputCapture : InputCapture {
 
     override fun releasePointer() = confiner.stop()
 
-    override fun grabKeyboard(window: Window): Boolean = MacPresentationOptions.apply(MacPresentationOptions.KIOSK)
+    override fun grabKeyboard(window: Window): Boolean {
+        // Added to what AppKit already has rather than replacing it, because by this point the
+        // window is in real full screen and AppKit owns bits of its own there. The AutoHide bits
+        // are cleared first so the result cannot be one of the documented invalid combinations.
+        val base =
+            (MacPresentationOptions.current() ?: MacPresentationOptions.DEFAULT) and
+                MacPresentationOptions.AUTO_HIDE_MASK.inv()
+        return MacPresentationOptions.apply(base or MacPresentationOptions.KIOSK)
+    }
 
     override fun releaseKeyboard() {
         MacPresentationOptions.apply(MacPresentationOptions.DEFAULT)

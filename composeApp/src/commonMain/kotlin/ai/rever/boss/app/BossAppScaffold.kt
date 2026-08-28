@@ -36,7 +36,9 @@ import ai.rever.boss.fullscreen.CapturedFullScreenHud
 import ai.rever.boss.fullscreen.CapturedFullScreenState
 import ai.rever.boss.handleTabDropResult
 import ai.rever.boss.layout.BossChrome
+import ai.rever.boss.layout.CAPTURED_BUTTON_START
 import ai.rever.boss.layout.ChromeBudgetReadout
+import ai.rever.boss.layout.TRAFFIC_LIGHT_HEIGHT
 import ai.rever.boss.layout.TrafficLightInset
 import ai.rever.boss.layout.asDrawn
 import ai.rever.boss.layout.bannerStartInset
@@ -85,6 +87,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -392,6 +395,17 @@ internal fun BossAppScaffold(
             titleRowWanted = trafficLights.needsTitleRow(appearance.showTitleBar),
         )
 
+    // Which chrome draws the blue button. Asked once, because the first version inferred it at two
+    // call sites and had no answer at all for a window with no title row and no top bar - where the
+    // lights sit over the left columns and the button rendered nowhere.
+    val buttonHost =
+        capturedButtonHost(
+            titleRowDrawn = chrome.titleRow,
+            topBarDrawn = chrome.topBar,
+            captured = captured,
+            isMacOs = SystemUtils.isMacOS,
+        )
+
     // Where each left column starts, so it can ask whether the light box reaches it.
     //
     // The order down the window's left edge is strip, then an open plugin panel, then the vertical
@@ -501,7 +515,10 @@ internal fun BossAppScaffold(
                 if (chrome.titleRow) {
                     BossTitleBar(
                         onToggleMaximize = onToggleMaximize,
-                        leading = capturedFullScreenButton,
+                        leading =
+                            capturedFullScreenButton.takeIf {
+                                buttonHost == CapturedButtonHost.TITLE_ROW
+                            },
                     )
                 }
 
@@ -615,15 +632,20 @@ internal fun BossAppScaffold(
                             toolLauncher = hostToolLauncher,
                             // Clearance for the macOS traffic lights, which are drawn over this
                             // bar's start when there is no title row above it.
-                            startInset = trafficLights.barStartInset(),
-                            // Only when the title row is not drawing it. Both hosts can be on
-                            // screen at once - a macOS window with showTitleBar on has both - and
-                            // two blue buttons is worse than one in the less obvious place.
-                            leading =
-                                if (chrome.titleRow) {
-                                    null
+                            // The bar's own traffic-light indent, pulled back to where a fourth
+                            // button starts when this bar is the one drawing it. The button then
+                            // occupies the rest of the cluster's width and the bar's first real
+                            // control follows it, rather than the button being pushed out past the
+                            // whole light box and reading as unrelated to it.
+                            startInset =
+                                if (buttonHost == CapturedButtonHost.TOP_BAR && trafficLights.barStartInset() > 0.dp) {
+                                    CAPTURED_BUTTON_START
                                 } else {
-                                    capturedFullScreenButton
+                                    trafficLights.barStartInset()
+                                },
+                            leading =
+                                capturedFullScreenButton.takeIf {
+                                    buttonHost == CapturedButtonHost.TOP_BAR
                                 },
                             onShowSearch = {
                                 state.showGlobalSearchDialog = true
@@ -868,6 +890,21 @@ internal fun BossAppScaffold(
 
                 // The way out, for a mode that has hidden the menu bar and every bar that holds
                 // the blue button. Last in the Box so it draws above the content it is explaining.
+                // No bar is drawing it, so it goes in the traffic lights' own clearance band -
+                // the strip the columns beneath are already inset out of. See CapturedButtonHost.
+                if (buttonHost == CapturedButtonHost.OVERLAY) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .padding(start = CAPTURED_BUTTON_START)
+                                .height(TRAFFIC_LIGHT_HEIGHT),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        capturedFullScreenButton()
+                    }
+                }
+
                 CapturedFullScreenHud(session = capturedSession)
             }
 

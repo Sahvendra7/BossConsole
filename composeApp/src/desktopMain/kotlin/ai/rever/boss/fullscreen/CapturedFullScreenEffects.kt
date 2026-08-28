@@ -15,23 +15,18 @@ import java.awt.Window
 
 /**
  * Everything captured full screen needs from inside a window's composition: the toggle, the pointer
- * release, and putting the window's geometry back.
+ * release, and putting the window's placement back.
  *
  * Its own composable rather than another block in `BossWindow`, which is already long, and because
- * the geometry half only makes sense next to the grab half that `CapturedFullScreenController`
+ * the placement half only makes sense next to the grab half that `CapturedFullScreenController`
  * owns.
  *
- * ## Why the window is resized rather than sent to `WindowPlacement.Fullscreen`
- *
- * On macOS the mode hides the Dock and the menu bar itself, through the presentation options in
- * `MacInputCapture`, so there is nothing left for AppKit full screen to add - and a probe of
- * `com.apple.eawt.Application.requestToggleFullScreen` from a JVM blocked and never returned, twice.
- * Covering the display by setting position and size is the path that was measured to work, it
- * enters and leaves with no Space transition, and it keeps one state machine instead of two.
- *
- * `GraphicsConfiguration.bounds` is in logical points, the same unit as [WindowState.size], so the
- * conversion is a straight `.dp` - the same assumption `BossWindow`'s own fit-to-content sizing
- * already makes.
+ * The mode uses **real** full screen - `WindowPlacement.Fullscreen`, which Compose implements
+ * through skiko's `NSWindow toggleFullScreen:` and which `View > Enter Full Screen` has always
+ * used here. An earlier version sized the window to the display instead, on the strength of a probe
+ * where `com.apple.eawt.Application.requestToggleFullScreen` blocked; that probe tested a path
+ * Compose does not take, and a display-sized window is not the same thing anyway - it keeps its
+ * title bar and stays in the current Space.
  */
 @Composable
 fun CapturedFullScreenEffects(
@@ -52,12 +47,16 @@ fun CapturedFullScreenEffects(
                     restore.applyTo(windowState)
                 } else {
                     restore.captureFrom(windowState)
-                    val bounds = CapturedFullScreenController.displayBoundsOf(window)
-                    // Placement first: a Maximized or Fullscreen window ignores an explicit size,
-                    // the same ordering BossWindow's fit-to-content sizing documents.
-                    windowState.placement = WindowPlacement.Floating
-                    windowState.position = WindowPosition(bounds.x.dp, bounds.y.dp)
-                    windowState.size = DpSize(bounds.width.dp, bounds.height.dp)
+                    // Real full screen, not a window sized to the display.
+                    //
+                    // The first version of this did the latter, on the strength of a probe where
+                    // `com.apple.eawt.Application.requestToggleFullScreen` blocked and never
+                    // returned. That probe tested the wrong thing: Compose does not go through
+                    // eawt. `WindowPlacement.Fullscreen` reaches skiko, which calls NSWindow's
+                    // `toggleFullScreen:` - the same path `View > Enter Full Screen` in this app
+                    // has always used. A resized window is also not equivalent: it keeps its title
+                    // bar and its Space, so it reads as a big window rather than as full screen.
+                    windowState.placement = WindowPlacement.Fullscreen
                     CapturedFullScreenController.enter(windowId, window)
                 }
             }
