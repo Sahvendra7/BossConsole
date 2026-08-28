@@ -1,12 +1,10 @@
 package ai.rever.boss.fullscreen
 
+import ai.rever.boss.components.overlays.OverlayCorner
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.plugin.ui.BossTheme
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -34,12 +32,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 /** How long the bar stays up after entering, before it takes the pointer to bring it back. */
 internal const val HUD_DWELL_MS = 6000L
+
+/** Upper bounds for the overlay window, before its content measures. See [OverlayCorner]. */
+internal val HUD_MAX_WIDTH = 620.dp
+
+internal val HUD_MAX_HEIGHT = 240.dp
 
 /** Height of the strip at the top of the window that reveals the bar. */
 internal val HUD_REVEAL_STRIP_HEIGHT = 24.dp
@@ -101,13 +105,27 @@ internal fun capturedHudLines(
  * the one place it must not be. A reveal bar costs nothing until the pointer asks for it, which is
  * also how Parallels surfaces its own controls in the same mode.
  *
- * ## The Windows caveat
+ * ## Heavyweight, and why the reveal strip is still best-effort
  *
- * The strip is ordinary Compose hover, so it shares the gap the focus-mode strips document: under a
- * HARDWARE_ACCELERATED browser surface the pointer never crosses it, because the page composites
- * above the Compose scene. That is why the bar dwells for [HUD_DWELL_MS] on entry rather than
- * relying on the reveal, and why the hold-Escape line is always present rather than shown only when
- * something has gone wrong.
+ * The bar itself goes through [OverlayCorner], so on the HARDWARE_ACCELERATED path it is its own
+ * always-on-top window and layers ABOVE the browser surface. Drawn in place it was invisible over
+ * any browser tab - composed, measured, behind the page - which is the whole reason the mode looked
+ * like it showed nothing on entry.
+ *
+ * [OverlayCorner] rather than `OverlayHud`: a HUD is parent-sized and swallows every click beneath
+ * it, which is only acceptable for something up while a key is held. This bar lingers for
+ * [HUD_DWELL_MS] and carries buttons, so its window must cover no more than itself.
+ *
+ * **The reveal strip is NOT heavyweight and cannot see the pointer over a browser surface.** It is
+ * ordinary Compose hover, so the page composites above it and the pointer never crosses it. That is
+ * not a Windows-only gap any more - hardware rendering is the default on macOS and Linux too - and
+ * in this mode the chrome is hidden, so content starts at the window's top edge and the strip is
+ * behind it whenever the front tab is a browser. Over Compose content it works.
+ *
+ * So the dwell on entry is the reliable half, and the shortcuts and the hardwired hold are what the
+ * reminder always names. Making the strip heavyweight would fix it at the cost of an always-on-top
+ * window swallowing clicks along the window's top edge for the whole session, which is a worse
+ * trade for content the user asked to have the display to itself.
  *
  * @param exitButton the blue button, which leaves the mode.
  * @param actions Settings / Toolbox / Search / Sign Out, built by `focusQuickActionButtons` so this
@@ -146,20 +164,29 @@ fun BoxScope.CapturedFullScreenHud(
                 .hoverable(stripInteraction),
     )
 
-    AnimatedVisibility(
-        visible = dwelling || nearTop || onBar,
-        enter = fadeIn(),
-        exit = fadeOut(),
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp),
-    ) {
-        CapturedControlBar(
-            lines = capturedHudLines(keymap, session.limitations),
-            exitButton = exitButton,
-            actions = actions,
-            // Hovering the bar itself keeps it up, so a pointer travelling from the strip down to a
-            // button does not dismiss the thing it is reaching for.
-            modifier = Modifier.hoverable(barInteraction),
-        )
+    // Composed only while wanted, because on the heavyweight path this IS a window: an
+    // AnimatedVisibility around it would keep an always-on-top window alive at zero alpha.
+    if (dwelling || nearTop || onBar) {
+        OverlayCorner(
+            alignment = Alignment.TopCenter,
+            // A generous upper bound, per OverlayCorner: too small and the content measures
+            // clipped, then the window settles at the clipped size. Five action buttons plus the
+            // exit button, over up to five lines of reminder.
+            initialSize = DpSize(HUD_MAX_WIDTH, HUD_MAX_HEIGHT),
+            // Clicks reach a non-focusable AWT window, so the buttons work. Focusable would make
+            // the main window inactive for as long as the bar is up, and BOSS treats focus leaving
+            // as a reason to end the session.
+            focusable = false,
+        ) {
+            CapturedControlBar(
+                lines = capturedHudLines(keymap, session.limitations),
+                exitButton = exitButton,
+                actions = actions,
+                // Hovering the bar itself keeps it up, so a pointer travelling from the strip down
+                // to a button does not dismiss the thing it is reaching for.
+                modifier = Modifier.padding(top = 16.dp).hoverable(barInteraction),
+            )
+        }
     }
 }
 
