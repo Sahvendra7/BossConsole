@@ -237,14 +237,11 @@ class FocusQuickActionsPlacementTest {
         )
 
     @Test
-    fun `captured full screen stands the cluster down entirely`() {
-        // NONE here means "not as a floating cluster", not "not at all". The cluster is a
-        // heavyweight always-on-top window with no click-through, which is the one thing that must
-        // not sit permanently over full-screen content; CapturedFullScreenHud raises the same four
-        // actions in its reveal bar instead. Dropping them outright left Toolbox and Sign Out with
-        // no route at all - see the KDoc on the parameter.
+    fun `captured full screen keeps the actions in the cluster they already use`() {
+        // Not NONE. Dropping them left Toolbox unreachable on macOS - its menu is in the menu bar,
+        // which the mode hides - and Sign Out unreachable everywhere, since it has no shortcut.
         assertEquals(
-            FocusQuickActionsPlacement.NONE,
+            FocusQuickActionsPlacement.FLOATING,
             focusQuickActionsPlacement(
                 settings = FocusModeSettings(enabled = true, hideTopBar = true),
                 topBarHidden = true,
@@ -256,16 +253,35 @@ class FocusQuickActionsPlacementTest {
     }
 
     @Test
-    fun `captured full screen overrides even a configuration that would use the rail`() {
-        // Asked first, so it cannot be reasoned about as one more term in focusQuickActionsVisible.
-        // With a right rail present the answer would otherwise be RIGHT_RAIL.
+    fun `captured full screen never answers a placement that renders into hidden chrome`() {
+        // The trap this branch exists for. With a right strip configured the normal answer is
+        // RIGHT_RAIL, and captured full screen draws no rail - so the actions would be handed to a
+        // bar that is not composed, which is the v9.4.13 regression for the third time. FLOATING is
+        // the only placement that owns its own surface.
         assertEquals(
-            FocusQuickActionsPlacement.NONE,
+            FocusQuickActionsPlacement.FLOATING,
             focusQuickActionsPlacement(
                 settings = FocusModeSettings(enabled = true, hideTopBar = true),
                 topBarHidden = true,
                 rightStripHidden = false,
                 showTopBar = false,
+                capturedFullScreen = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `captured full screen shows them even when the top bar is switched on`() {
+        // focusQuickActionsVisible would answer false here - the bar is neither hidden by the
+        // preference nor cleared by focus mode - but the mode hides it anyway. Asking capture first
+        // is what stops a user who keeps the top bar losing these four on entering.
+        assertEquals(
+            FocusQuickActionsPlacement.FLOATING,
+            focusQuickActionsPlacement(
+                settings = FocusModeSettings(enabled = false),
+                topBarHidden = false,
+                rightStripHidden = true,
+                showTopBar = true,
                 capturedFullScreen = true,
             ),
         )

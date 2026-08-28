@@ -85,25 +85,20 @@ internal fun capturedHudLines(
  * The control bar for a captured session: shown on entry, and again whenever the pointer reaches the
  * top edge.
  *
- * ## Why it carries Settings, Toolbox, Search and Sign Out
+ * ## What it does NOT carry
  *
- * The first version of this mode hid them, on the reasoning that the display should hold nothing but
- * content. That reasoning was wrong, and in a way this repository has already paid for once. The
- * mode hides the menu bar through the macOS presentation options **and** every bar the window
- * draws, so with the actions gone as well:
+ * Settings, Toolbox, Tools, Search and Sign Out are **not** here. They stay in the floating
+ * quick-actions cluster they already use whenever the bar that owns them is gone - see
+ * `focusQuickActionsPlacement`, which answers FLOATING while captured.
  *
- * - **Toolbox had no route at all** on macOS. It is a menu-bar menu, and the menu bar is hidden.
- * - **Sign Out had no route at all**, on any platform. It is raised only from the top bar and from
- *   the quick-actions cluster, and it has no keyboard shortcut - the native View menu has no item
- *   for it either.
+ * Two earlier versions got this wrong in opposite directions. The first dropped the actions
+ * entirely, which left Toolbox with no route at all on macOS (its menu is in the menu bar, which
+ * this mode hides) and Sign Out with no route anywhere, since it has no shortcut - the
+ * `docs/release-notes/v9.4.13.md:47` regression by another door. The second put them in this bar,
+ * which fixed reachability by giving four buttons a second home and moving them out from under the
+ * user on entering the mode. A mode is not a reason to relocate controls.
  *
- * That is exactly the regression `docs/release-notes/v9.4.13.md:47` records, where hiding the top
- * bar left Sign Out rendered nowhere, arrived at a second time by a different route.
- *
- * They live **here** rather than in the floating quick-actions cluster because that cluster is a
- * heavyweight always-on-top window with no click-through: permanently over full-screen content is
- * the one place it must not be. A reveal bar costs nothing until the pointer asks for it, which is
- * also how Parallels surfaces its own controls in the same mode.
+ * What is left here is what belongs only to this mode: the way out, and the reminder naming it.
  *
  * ## Heavyweight, and why the reveal strip is still best-effort
  *
@@ -128,8 +123,8 @@ internal fun capturedHudLines(
  * trade for content the user asked to have the display to itself.
  *
  * @param exitButton the blue button, which leaves the mode.
- * @param actions Settings / Toolbox / Search / Sign Out, built by `focusQuickActionButtons` so this
- *   bar and the ordinary chrome cannot show a different set.
+ * @param actions extra controls belonging to the mode itself. Empty today, and deliberately not
+ *   where the window's ordinary actions go - see above.
  */
 @Composable
 fun BoxScope.CapturedFullScreenHud(

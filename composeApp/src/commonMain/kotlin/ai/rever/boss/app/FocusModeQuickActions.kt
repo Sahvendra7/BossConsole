@@ -192,19 +192,22 @@ internal fun focusQuickActionsPlacement(
      * Whether this window is in captured full screen, in which case the answer is always
      * [FocusQuickActionsPlacement.NONE].
      *
-     * A THIRD reason the top bar is absent, and the one case where THIS rendering of the actions is
-     * wrong - not the actions themselves.
+     * A THIRD reason the top bar is absent, answered with [FocusQuickActionsPlacement.FLOATING].
      *
-     * The cluster is a heavyweight always-on-top window with no click-through, and permanently over
-     * full-screen content is the one place it must not be. So captured full screen answers NONE
-     * here, and `CapturedFullScreenHud` raises the same four from [focusQuickActionButtons] in its
-     * top-edge reveal bar instead.
+     * **These actions keep the position they already have.** Two earlier versions moved them: the
+     * first dropped them entirely, which left Toolbox with no route at all on macOS (its menu is in
+     * the menu bar, which this mode hides) and Sign Out with no route anywhere, since it is raised
+     * only from the top bar and this cluster and has no shortcut - the
+     * `docs/release-notes/v9.4.13.md:47` regression by another door. The second put them in the
+     * mode's own top-edge bar, which fixed reachability by inventing a second home for four buttons
+     * that already have one. A mode is not a reason to move controls.
      *
-     * **That bar is not optional.** An earlier version simply dropped the actions, which left
-     * Toolbox with no route at all on macOS - its menu lives in the menu bar, which this mode hides
-     * - and Sign Out with no route on any platform, since it is raised only from the top bar and
-     * this cluster and has no shortcut. That is the `docs/release-notes/v9.4.13.md:47` regression
-     * reached a second time by a different door.
+     * **FLOATING specifically, not the normal answer for these settings.** The other three
+     * placements render INTO chrome - the right rail, the vertical tab bar's foot - and captured
+     * full screen draws none of it, so answering RIGHT_RAIL here would put the actions in a bar
+     * that is not composed, which is the same regression a third time. The floating cluster is the
+     * one placement that owns its own surface, and it is already what this window uses whenever the
+     * bar that holds these actions is gone.
      *
      * Asked FIRST, so it cannot be mistaken for another term in [focusQuickActionsVisible]. It is
      * not one: it overrides rather than contributes, and the two absences it sits beside are
@@ -213,7 +216,7 @@ internal fun focusQuickActionsPlacement(
     capturedFullScreen: Boolean = false,
 ): FocusQuickActionsPlacement =
     when {
-        capturedFullScreen -> FocusQuickActionsPlacement.NONE
+        capturedFullScreen -> FocusQuickActionsPlacement.FLOATING
 
         !focusQuickActionsVisible(settings, topBarHidden, showTopBar) -> FocusQuickActionsPlacement.NONE
 
