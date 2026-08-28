@@ -238,10 +238,11 @@ class FocusQuickActionsPlacementTest {
 
     @Test
     fun `captured full screen stands the cluster down entirely`() {
-        // The one case where the top bar being gone must NOT summon the replacement. Everywhere
-        // else these actions are rescued because the bar that owns them vanished; here the user
-        // asked for a display holding nothing but content, and a floating always-on-top cluster is
-        // the one thing guaranteed to still be over it.
+        // NONE here means "not as a floating cluster", not "not at all". The cluster is a
+        // heavyweight always-on-top window with no click-through, which is the one thing that must
+        // not sit permanently over full-screen content; CapturedFullScreenHud raises the same four
+        // actions in its reveal bar instead. Dropping them outright left Toolbox and Sign Out with
+        // no route at all - see the KDoc on the parameter.
         assertEquals(
             FocusQuickActionsPlacement.NONE,
             focusQuickActionsPlacement(

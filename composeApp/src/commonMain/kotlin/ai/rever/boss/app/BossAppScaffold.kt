@@ -905,7 +905,28 @@ internal fun BossAppScaffold(
                     }
                 }
 
-                CapturedFullScreenHud(session = capturedSession)
+                CapturedFullScreenHud(
+                    session = capturedSession,
+                    // Shown "capturing", so its tooltip reads as the way out rather than the way in.
+                    exitButton = capturedFullScreenButton.takeIf { captured },
+                    // The same four the ordinary chrome raises, built by the same function so this
+                    // bar and the top bar cannot come to show a different set. Without them the mode
+                    // has no route to Toolbox at all (its menu is in the hidden menu bar) and none
+                    // to Sign Out (which has no shortcut anywhere) - the v9.4.13 regression again.
+                    actions =
+                        if (captured) {
+                            focusQuickActionButtons(
+                                hintDirection = bottom,
+                                onShowSettings = { state.settingsWindow.open() },
+                                onShowSearch = { state.showGlobalSearchDialog = true },
+                                onSignOut = { state.showLogoutDialog = true },
+                                toolbox = hostToolbox,
+                                toolLauncher = hostToolLauncher,
+                            )
+                        } else {
+                            emptyList()
+                        },
+                )
             }
 
             // MRU tab-switcher overlay (Ctrl+Tab in most-recently-used mode)

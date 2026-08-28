@@ -192,12 +192,19 @@ internal fun focusQuickActionsPlacement(
      * Whether this window is in captured full screen, in which case the answer is always
      * [FocusQuickActionsPlacement.NONE].
      *
-     * A THIRD reason the top bar is absent, and the one case where the cluster must NOT replace it.
-     * Everywhere else these actions are rescued precisely because the bar that owns them is gone -
-     * that is what this file is for. Captured full screen is different in kind: the user asked for
-     * the display to hold nothing but content, and a floating always-on-top cluster is the one
-     * thing guaranteed to still be over it. Sign Out does not become unreachable, it becomes one
-     * shortcut away, which is the bargain the mode is.
+     * A THIRD reason the top bar is absent, and the one case where THIS rendering of the actions is
+     * wrong - not the actions themselves.
+     *
+     * The cluster is a heavyweight always-on-top window with no click-through, and permanently over
+     * full-screen content is the one place it must not be. So captured full screen answers NONE
+     * here, and `CapturedFullScreenHud` raises the same four from [focusQuickActionButtons] in its
+     * top-edge reveal bar instead.
+     *
+     * **That bar is not optional.** An earlier version simply dropped the actions, which left
+     * Toolbox with no route at all on macOS - its menu lives in the menu bar, which this mode hides
+     * - and Sign Out with no route on any platform, since it is raised only from the top bar and
+     * this cluster and has no shortcut. That is the `docs/release-notes/v9.4.13.md:47` regression
+     * reached a second time by a different door.
      *
      * Asked FIRST, so it cannot be mistaken for another term in [focusQuickActionsVisible]. It is
      * not one: it overrides rather than contributes, and the two absences it sits beside are

@@ -14,10 +14,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.Divider
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
@@ -35,10 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
-/** How long the reminder stays up after entering. */
+/** How long the bar stays up after entering, before it takes the pointer to bring it back. */
 internal const val HUD_DWELL_MS = 6000L
 
-/** Height of the strip at the top of the window that brings the reminder back. */
+/** Height of the strip at the top of the window that reveals the bar. */
 internal val HUD_REVEAL_STRIP_HEIGHT = 24.dp
 
 /**
@@ -59,8 +62,7 @@ internal fun capturedHudLines(
     val lines = mutableListOf<String>()
     // Falls back to the hold when the action has been unbound entirely, rather than printing an
     // empty chord: an unbound exit is exactly when someone needs to be told the other way out.
-    lines +=
-        if (exit != null) "$exit to leave captured full screen" else "Hold Esc to leave captured full screen"
+    lines += if (exit != null) "$exit to leave captured full screen" else "Hold Esc to leave captured full screen"
     if (release != null) lines += "$release to release the pointer"
     lines += "Hold Esc for 2 seconds if you get stuck"
 
@@ -76,37 +78,65 @@ internal fun capturedHudLines(
 }
 
 /**
- * The reminder shown on entering captured full screen, and again when the pointer goes to the top
- * edge.
+ * The control bar for a captured session: shown on entry, and again whenever the pointer reaches the
+ * top edge.
  *
- * **Not decoration.** The mode hides the menu bar, so on macOS the View menu is not reachable while
- * it runs, and the chrome that holds the blue button is gone by design - which leaves the two
- * shortcuts and the hardwired hold as the only ways out. Something has to say what they are.
+ * ## Why it carries Settings, Toolbox, Search and Sign Out
  *
- * The top-edge strip is the second chance for anyone who missed the first. It is a plain Compose
- * hover, so it shares the known gap the focus-mode strips document: on Windows the pointer never
- * crosses it over a HARDWARE_ACCELERATED browser surface. That is the reason the reminder dwells
- * for [HUD_DWELL_MS] on entry rather than relying on the strip, and the reason the hold-Escape line
- * is always present rather than shown only when something has gone wrong.
+ * The first version of this mode hid them, on the reasoning that the display should hold nothing but
+ * content. That reasoning was wrong, and in a way this repository has already paid for once. The
+ * mode hides the menu bar through the macOS presentation options **and** every bar the window
+ * draws, so with the actions gone as well:
+ *
+ * - **Toolbox had no route at all** on macOS. It is a menu-bar menu, and the menu bar is hidden.
+ * - **Sign Out had no route at all**, on any platform. It is raised only from the top bar and from
+ *   the quick-actions cluster, and it has no keyboard shortcut - the native View menu has no item
+ *   for it either.
+ *
+ * That is exactly the regression `docs/release-notes/v9.4.13.md:47` records, where hiding the top
+ * bar left Sign Out rendered nowhere, arrived at a second time by a different route.
+ *
+ * They live **here** rather than in the floating quick-actions cluster because that cluster is a
+ * heavyweight always-on-top window with no click-through: permanently over full-screen content is
+ * the one place it must not be. A reveal bar costs nothing until the pointer asks for it, which is
+ * also how Parallels surfaces its own controls in the same mode.
+ *
+ * ## The Windows caveat
+ *
+ * The strip is ordinary Compose hover, so it shares the gap the focus-mode strips document: under a
+ * HARDWARE_ACCELERATED browser surface the pointer never crosses it, because the page composites
+ * above the Compose scene. That is why the bar dwells for [HUD_DWELL_MS] on entry rather than
+ * relying on the reveal, and why the hold-Escape line is always present rather than shown only when
+ * something has gone wrong.
+ *
+ * @param exitButton the blue button, which leaves the mode.
+ * @param actions Settings / Toolbox / Search / Sign Out, built by `focusQuickActionButtons` so this
+ *   bar and the ordinary chrome cannot show a different set.
  */
 @Composable
-fun BoxScope.CapturedFullScreenHud(session: CapturedFullScreen) {
+fun BoxScope.CapturedFullScreenHud(
+    session: CapturedFullScreen,
+    exitButton: (@Composable () -> Unit)? = null,
+    actions: List<@Composable () -> Unit> = emptyList(),
+) {
     if (!session.active) return
 
     val keymap by KeymapSettingsManager.currentSettings.collectAsState()
     val stripInteraction = remember { MutableInteractionSource() }
+    val barInteraction = remember { MutableInteractionSource() }
     val nearTop by stripInteraction.collectIsHoveredAsState()
+    val onBar by barInteraction.collectIsHoveredAsState()
     var dwelling by remember { mutableStateOf(true) }
 
-    // Restarted per session, so re-entering shows the reminder again.
+    // Restarted per session, so re-entering shows the bar again.
     LaunchedEffect(session.windowId) {
         dwelling = true
         delay(HUD_DWELL_MS)
         dwelling = false
     }
 
-    // The strip is always present while captured, even while the card is up, so moving to the top
-    // edge holds the card open instead of letting it time out under the pointer.
+    // Always present while captured, even while the bar is up, so moving to the top edge holds it
+    // open instead of letting it time out from under the pointer.
     Box(
         modifier =
             Modifier
@@ -117,30 +147,62 @@ fun BoxScope.CapturedFullScreenHud(session: CapturedFullScreen) {
     )
 
     AnimatedVisibility(
-        visible = dwelling || nearTop,
+        visible = dwelling || nearTop || onBar,
         enter = fadeIn(),
         exit = fadeOut(),
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp),
+        modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp),
     ) {
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = BossTheme.colors.raised,
-            elevation = 8.dp,
+        CapturedControlBar(
+            lines = capturedHudLines(keymap, session.limitations),
+            exitButton = exitButton,
+            actions = actions,
+            // Hovering the bar itself keeps it up, so a pointer travelling from the strip down to a
+            // button does not dismiss the thing it is reaching for.
+            modifier = Modifier.hoverable(barInteraction),
+        )
+    }
+}
+
+/** The revealed card: the way out, the actions the hidden chrome owned, and the shortcut reminder. */
+@Composable
+private fun CapturedControlBar(
+    lines: List<String>,
+    exitButton: (@Composable () -> Unit)?,
+    actions: List<@Composable () -> Unit>,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = BossTheme.colors.raised,
+        elevation = 8.dp,
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                capturedHudLines(keymap, session.limitations).forEachIndexed { index, line ->
-                    Text(
-                        text = line,
-                        color = if (index == 0) BossTheme.colors.textPrimary else BossTheme.colors.textSecondary,
-                        fontSize = if (index == 0) 14.sp else 12.sp,
-                        fontWeight = if (index == 0) FontWeight.Medium else FontWeight.Normal,
-                        textAlign = TextAlign.Center,
-                    )
+            if (exitButton != null || actions.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    exitButton?.invoke()
+                    if (exitButton != null && actions.isNotEmpty()) {
+                        Divider(color = BossTheme.colors.line, modifier = Modifier.height(20.dp).width(1.dp))
+                    }
+                    actions.forEach { it() }
                 }
+            }
+
+            lines.forEachIndexed { index, line ->
+                Text(
+                    text = line,
+                    color = if (index == 0) BossTheme.colors.textPrimary else BossTheme.colors.textSecondary,
+                    fontSize = if (index == 0) 13.sp else 11.sp,
+                    fontWeight = if (index == 0) FontWeight.Medium else FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
