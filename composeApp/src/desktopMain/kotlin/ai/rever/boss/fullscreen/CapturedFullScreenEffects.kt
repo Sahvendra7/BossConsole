@@ -10,7 +10,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import java.awt.Window
 
 /**
@@ -43,8 +45,8 @@ fun CapturedFullScreenEffects(
             .filter { it == windowId }
             .collect {
                 if (CapturedFullScreenState.current.value.capturing(windowId)) {
+                    // Geometry is NOT restored here. The effect below does it, on every route out.
                     CapturedFullScreenController.exit()
-                    restore.applyTo(windowState)
                 } else {
                     restore.captureFrom(windowState)
                     // Real full screen, not a window sized to the display.
@@ -59,6 +61,25 @@ fun CapturedFullScreenEffects(
                     windowState.placement = WindowPlacement.Fullscreen
                     CapturedFullScreenController.enter(windowId, window)
                 }
+            }
+    }
+
+    // The window comes out of full screen when the SESSION ends, whichever route ended it.
+    //
+    // This was inside the toggle branch, which meant only the button and the shortcut restored the
+    // window. The focus guard, the dispose path and the hardwired Escape hold all released the
+    // pointer and keyboard and left the window in AppKit full screen - so the chrome came back with
+    // no traffic lights, and pressing the button then re-entered and recorded Fullscreen as the
+    // thing to go back to, which made it permanent. Observed in the log as
+    // "Focus left BOSS, releasing capture" with no restore after it.
+    LaunchedEffect(windowId) {
+        CapturedFullScreenState.current
+            .map { it.capturing(windowId) }
+            .distinctUntilChanged()
+            .collect { capturing ->
+                // A no-op until something has actually been saved, so the first emission - always
+                // false - cannot move a window that never entered the mode.
+                if (!capturing) restore.applyTo(windowState)
             }
     }
 
@@ -102,7 +123,11 @@ class PreCaptureGeometry {
     fun captureFrom(state: WindowState) {
         size = state.size
         position = state.position
-        placement = state.placement
+        // Never record Fullscreen as the thing to go back to. A window that is already in full
+        // screen - which is what a session left behind by a non-toggle exit looks like - would
+        // otherwise save Fullscreen, and leaving the mode would put it straight back, permanently.
+        placement =
+            if (state.placement == WindowPlacement.Fullscreen) WindowPlacement.Floating else state.placement
     }
 
     fun applyTo(state: WindowState) {
@@ -113,12 +138,13 @@ class PreCaptureGeometry {
         val savedPosition = position
         val savedPlacement = placement
         if (savedSize == null || savedPosition == null || savedPlacement == null) return
-        // Size and position before placement: a window going back to Maximized still needs the
-        // right un-maximised geometry underneath it, which is the ordering BossWindow's Restore
-        // request uses for the same reason.
+        // Placement FIRST here, unlike BossWindow's fit-to-content Restore which sets size first.
+        // That path goes Floating -> Maximized, where the un-maximised size has to be in place
+        // underneath. This one comes out of full screen, where size and position mean nothing until
+        // the window has left it.
+        state.placement = savedPlacement
         state.size = savedSize
         state.position = savedPosition
-        state.placement = savedPlacement
         size = null
         position = null
         placement = null
