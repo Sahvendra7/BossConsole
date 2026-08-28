@@ -1,15 +1,6 @@
 package ai.rever.boss.services.auth
 
-import io.github.jan.supabase.auth.exception.AuthRestException
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.statement.HttpResponse
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -53,6 +44,10 @@ class EmailAuthServiceFailureTest {
         assertTrue(raw.contains("Headers:"), "supabase-kt no longer dumps request headers into message")
         assertTrue(raw.contains("URL:"), "supabase-kt no longer dumps the request URL into message")
 
+        // We deliberately keep logging this exception in full. That is only safe while supabase-kt
+        // truncates header values; if it ever stops, the log picks up a live bearer token.
+        assertFalse(raw.contains(TEST_BEARER_TOKEN), "supabase-kt now echoes the bearer token into the message we log")
+
         val shown = EmailAuthService.describeSendFailure(failure)
 
         assertEquals("We couldn't send the email just now. Please try again in a minute.", shown)
@@ -66,7 +61,7 @@ class EmailAuthServiceFailureTest {
         val rateLimited =
             authFailure(HttpStatusCode.TooManyRequests, "over_email_send_rate_limit", "Email rate limit exceeded")
         assertEquals(
-            "Too many attempts. Please wait a few minutes before trying again.",
+            "Too many sign-in emails have been sent recently. Please try again in an hour.",
             EmailAuthService.describeSendFailure(rateLimited),
         )
     }
@@ -81,22 +76,4 @@ class EmailAuthServiceFailureTest {
         assertEquals("Signups are limited to invited addresses", shown)
         assertFalse(shown.contains("Headers:"), "sign-in screen still shows the request dump")
     }
-
-    /** The 2026-08-24 shape: Supabase could not hand the message to SMTP, so it answered 500. */
-    private fun mailSendFailure(): AuthRestException =
-        authFailure(HttpStatusCode.InternalServerError, "unexpected_failure", "Error sending magic link email")
-
-    private fun authFailure(
-        status: HttpStatusCode,
-        code: String,
-        description: String,
-    ): AuthRestException = AuthRestException(code, description, responseWith(status))
-
-    private fun responseWith(status: HttpStatusCode): HttpResponse =
-        runBlocking {
-            HttpClient(MockEngine { respond(content = "", status = status) })
-                .post("https://project.supabase.co/auth/v1/otp") {
-                    header(HttpHeaders.Authorization, "Bearer test-token")
-                }
-        }
 }

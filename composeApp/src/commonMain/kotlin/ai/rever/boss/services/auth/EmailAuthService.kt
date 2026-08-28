@@ -13,6 +13,7 @@ import io.github.jan.supabase.exceptions.RestException
 import kotlinx.coroutines.delay
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /**
  * Handles email-based authentication operations
@@ -21,13 +22,30 @@ internal object EmailAuthService {
     private val logger = BossLogger.forComponent("EmailAuthService")
 
     /**
-     * How long to wait between magic-link send attempts, one entry per retry - so two retries,
-     * three attempts in all.
+     * How long to wait between magic-link send attempts, one entry per retry - so one retry, two
+     * attempts in all.
      *
-     * The first wait also clears Supabase's `smtp_max_frequency` (1s), which keeps a retry from
-     * turning a transient failure into a rate-limit failure.
+     * The wait is at least 2s on purpose: it clears Supabase's `smtp_max_frequency` (1s), which
+     * keeps a retry from turning a transient failure into a rate-limit failure.
+     *
+     * Deliberately short. Every attempt asks Supabase to send another email, so the ceiling has to
+     * stay under whatever `rate_limit_email_sent` is set to for the project - a number that lives
+     * in the Supabase dashboard, not in this repo. It reads 2/hour today and is not enforced at
+     * that value (a 29-day log sweep found no `over_email_send_rate_limit` at all, and one hour on
+     * 2026-08-24 carried 7 sends), but the ceiling stays low so this code is correct either way.
      */
-    private val SEND_RETRY_BACKOFF = listOf(2.seconds, 5.seconds)
+    private val SEND_RETRY_BACKOFF = listOf(2.seconds)
+
+    /**
+     * Stop retrying once this much has elapsed, measured from the first attempt.
+     *
+     * The failure worth retrying is fast - Supabase answered the 2026-08-24 one in 6.4s - whereas
+     * a send that burns the full 30s request timeout (`SupabaseConfig`) has already spent longer
+     * than anyone will wait, and a second attempt would only double a spinner that is already too
+     * long. Retrying only the fast failures keeps the worst case near the single-request timeout
+     * it had before this loop existed.
+     */
+    private val SEND_RETRY_BUDGET = 15.seconds
 
     private val SERVER_ERRORS = 500..599
 
@@ -54,6 +72,8 @@ internal object EmailAuthService {
                     Result.failure(error)
                 },
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error(LogCategory.AUTH, "Email verification processing failed", error = e)
             Result.failure(Exception("Failed to process email verification: ${e.message}"))
@@ -63,38 +83,45 @@ internal object EmailAuthService {
      * Send magic link to user's email for passwordless authentication
      * This works for both new signups and existing users (including unconfirmed ones)
      */
-    suspend fun sendMagicLink(email: String): Result<Unit> {
-        logger.info(LogCategory.AUTH, "Sending magic link", mapOf("email" to LogSanitizer.maskEmail(email)))
-        logger.debug(LogCategory.AUTH, "Using Supabase endpoint", mapOf("url" to SupabaseConfig.client.supabaseUrl))
+    suspend fun sendMagicLink(email: String): Result<Unit> = sendMagicLink(email, send = ::requestMagicLink)
 
+    /**
+     * The retry loop, with the send and the clock passed in so it can be driven in a test without a
+     * live Supabase client - and so [SEND_RETRY_BUDGET], which reads wall-clock time, is reachable
+     * from one. Production calls go through [sendMagicLink].
+     */
+    internal suspend fun sendMagicLink(
+        email: String,
+        timeSource: TimeSource = TimeSource.Monotonic,
+        send: suspend (String) -> Unit,
+    ): Result<Unit> {
+        logger.info(LogCategory.AUTH, "Sending magic link", mapOf("email" to LogSanitizer.maskEmail(email)))
+
+        val startedAt = timeSource.markNow()
         var retries = 0
         while (true) {
             try {
-                // signInWith(OTP) handles multiple cases:
-                // 1. New user - creates unconfirmed user and sends signup link
-                // 2. Existing confirmed user - sends login link
-                // 3. Existing unconfirmed user - resends signup/confirmation link
-                SupabaseConfig.client.auth.signInWith(OTP) {
-                    this.email = email
-                    // The createUser flag is true by default, which means:
-                    // - If user doesn't exist, create them (signup)
-                    // - If user exists (confirmed or not), just send the link
-                }
-
+                send(email)
                 logger.info(LogCategory.AUTH, "Magic link sent successfully", mapOf("attempt" to retries + 1))
                 return Result.success(Unit)
             } catch (e: CancellationException) {
-                // Cancellation means the screen went away, not that the send failed. Retrying it
-                // would keep work running after the caller is gone.
+                // Cancellation is the caller walking away, not a send failure. Rethrowing is what
+                // structured concurrency requires; note that CoreLoginViewModel's scope is never
+                // cancelled today, so nothing actually interrupts this loop yet.
                 throw e
             } catch (e: Exception) {
-                val backoff = SEND_RETRY_BACKOFF.getOrNull(retries)?.takeIf { isTransientSendFailure(e) }
+                val elapsed = startedAt.elapsedNow()
+                val backoff =
+                    SEND_RETRY_BACKOFF
+                        .getOrNull(retries)
+                        ?.takeIf { isTransientSendFailure(e) && elapsed < SEND_RETRY_BUDGET }
                 logger.warn(
                     LogCategory.AUTH,
                     "Magic link sending failed",
                     mapOf(
                         "exceptionType" to (e::class.simpleName ?: "unknown"),
                         "attempt" to retries + 1,
+                        "elapsedMs" to elapsed.inWholeMilliseconds,
                         "willRetry" to (backoff != null),
                     ),
                     error = e,
@@ -103,6 +130,21 @@ internal object EmailAuthService {
                 delay(backoff)
                 retries++
             }
+        }
+    }
+
+    /** The real send. signInWith(OTP) handles multiple cases:
+     * 1. New user - creates unconfirmed user and sends signup link
+     * 2. Existing confirmed user - sends login link
+     * 3. Existing unconfirmed user - resends signup/confirmation link
+     */
+    private suspend fun requestMagicLink(email: String) {
+        logger.debug(LogCategory.AUTH, "Using Supabase endpoint", mapOf("url" to SupabaseConfig.client.supabaseUrl))
+        SupabaseConfig.client.auth.signInWith(OTP) {
+            this.email = email
+            // The createUser flag is true by default, which means:
+            // - If user doesn't exist, create them (signup)
+            // - If user exists (confirmed or not), just send the link
         }
     }
 
@@ -115,6 +157,14 @@ internal object EmailAuthService {
      * identical request six minutes later went through untouched. Anything answered with a 4xx -
      * rate limits, validation, disabled signups - is a settled answer, and asking again would only
      * spend more of the sender's hourly email budget.
+     *
+     * [SessionRecoveryPolicy.actionFor] answers the same question for a session refresh and answers
+     * it differently on purpose, so the two are worth reading together. It retries a bare transport
+     * failure; this does not. A refresh is idempotent, so re-asking after a dropped connection
+     * costs nothing, whereas a send that died mid-flight may already have handed the message to
+     * SMTP - retrying it risks a second email, or a second charge against the send budget, to fix a
+     * failure that may not have happened. The practical cost is that a connection reset or an
+     * `HttpRequestTimeoutException` is not a [RestException] and so is *not* retried here.
      */
     internal fun isTransientSendFailure(error: Throwable) = error is RestException && error.statusCode in SERVER_ERRORS
 
@@ -148,7 +198,14 @@ internal object EmailAuthService {
                 "Email sign-in is currently unavailable. Please try again later."
             }
 
-            AuthErrorCode.OverEmailSendRateLimit, AuthErrorCode.OverRequestRateLimit -> {
+            // Split on purpose: `rate_limit_email_sent` is an hourly budget, so "a few minutes" is
+            // wrong advice - and MagicLinkWaitingScreen's resend cooldown tops out at 600s, which
+            // would invite a retry that fails again.
+            AuthErrorCode.OverEmailSendRateLimit -> {
+                "Too many sign-in emails have been sent recently. Please try again in an hour."
+            }
+
+            AuthErrorCode.OverRequestRateLimit -> {
                 "Too many attempts. Please wait a few minutes before trying again."
             }
 
@@ -257,6 +314,9 @@ internal object EmailAuthService {
             logger.info(LogCategory.AUTH, "Magic link verification complete")
 
             Result.success(true)
+        } catch (e: CancellationException) {
+            // Same reason as the send path: cancellation is not a verification failure.
+            throw e
         } catch (e: Exception) {
             logger.warn(
                 LogCategory.AUTH,
