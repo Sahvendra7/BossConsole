@@ -2,6 +2,7 @@ package ai.rever.boss.components.bars.horizontal
 
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.layout.CAPTURED_BUTTON_START
+import ai.rever.boss.layout.CAPTURED_BUTTON_TOP
 import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -48,8 +49,10 @@ fun BossTitleBar(
             Box(
                 modifier =
                     Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = CAPTURED_BUTTON_START),
+                        // Top, not CenterStart: the lights sit 16pt below the window's edge, which
+                        // is not the middle of a 26dp row. See CAPTURED_BUTTON_TOP.
+                        .align(Alignment.TopStart)
+                        .padding(start = CAPTURED_BUTTON_START, top = CAPTURED_BUTTON_TOP),
                 contentAlignment = Alignment.Center,
             ) { it() }
         }

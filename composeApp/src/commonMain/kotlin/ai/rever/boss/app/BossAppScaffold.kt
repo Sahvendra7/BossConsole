@@ -37,8 +37,8 @@ import ai.rever.boss.fullscreen.CapturedFullScreenState
 import ai.rever.boss.handleTabDropResult
 import ai.rever.boss.layout.BossChrome
 import ai.rever.boss.layout.CAPTURED_BUTTON_START
+import ai.rever.boss.layout.CAPTURED_BUTTON_TOP
 import ai.rever.boss.layout.ChromeBudgetReadout
-import ai.rever.boss.layout.TRAFFIC_LIGHT_HEIGHT
 import ai.rever.boss.layout.TrafficLightInset
 import ai.rever.boss.layout.asDrawn
 import ai.rever.boss.layout.bannerStartInset
@@ -897,9 +897,7 @@ internal fun BossAppScaffold(
                         modifier =
                             Modifier
                                 .align(Alignment.TopStart)
-                                .padding(start = CAPTURED_BUTTON_START)
-                                .height(TRAFFIC_LIGHT_HEIGHT),
-                        contentAlignment = Alignment.Center,
+                                .padding(start = CAPTURED_BUTTON_START, top = CAPTURED_BUTTON_TOP),
                     ) {
                         capturedFullScreenButton()
                     }
