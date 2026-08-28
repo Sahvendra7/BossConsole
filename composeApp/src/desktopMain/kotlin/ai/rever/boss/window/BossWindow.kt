@@ -809,13 +809,20 @@ fun ApplicationScope.BossWindow(
                 // Deliberately a separate item from the one above, not a mode of it. Plain full
                 // screen covers the display; this also confines the pointer to it and takes the
                 // OS shortcuts, which is not something to hand someone who asked for the first.
-                Item(
-                    if (isCapturing) "Exit Captured Full Screen" else "Enter Captured Full Screen",
-                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.CAPTURED_FULLSCREEN_TOGGLE),
-                    onClick = {
-                        MenuActionsHandler.triggerToggleCapturedFullScreen(windowState.id)
-                    },
-                )
+                //
+                // Absent, not disabled, when the feature is off: a greyed row invites the question
+                // "why can I not use this" with no answer beside it, and the setting that turns it
+                // on is in Settings > Appearance rather than in this menu. Still shown while a
+                // session is somehow running, so the menu is never the thing that traps someone.
+                if (appearanceSettings.capturedFullScreenEnabled || isCapturing) {
+                    Item(
+                        if (isCapturing) "Exit Captured Full Screen" else "Enter Captured Full Screen",
+                        shortcut = shortcutBridge.getKeyShortcut(KeymapActions.CAPTURED_FULLSCREEN_TOGGLE),
+                        onClick = {
+                            MenuActionsHandler.triggerToggleCapturedFullScreen(windowState.id)
+                        },
+                    )
+                }
             }
 
             // Plugin Menu - Dynamically populated from PanelRegistry

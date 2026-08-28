@@ -17,7 +17,14 @@ class CapturedButtonHostTest {
         topBar: Boolean = false,
         captured: Boolean = false,
         isMacOs: Boolean = true,
-    ) = capturedButtonHost(titleRowDrawn = titleRow, topBarDrawn = topBar, captured = captured, isMacOs = isMacOs)
+        enabled: Boolean = true,
+    ) = capturedButtonHost(
+        titleRowDrawn = titleRow,
+        topBarDrawn = topBar,
+        captured = captured,
+        isMacOs = isMacOs,
+        enabled = enabled,
+    )
 
     @Test
     fun `the title row wins when it is drawn`() {
@@ -56,6 +63,21 @@ class CapturedButtonHostTest {
         assertEquals(CapturedButtonHost.NONE, host(titleRow = true, captured = true))
         assertEquals(CapturedButtonHost.NONE, host(topBar = true, captured = true))
         assertEquals(CapturedButtonHost.NONE, host(captured = true))
+    }
+
+    @Test
+    fun `the feature is off by default, so no button is drawn anywhere`() {
+        // The default install must not show it at all - not greyed, not inert, absent.
+        assertEquals(CapturedButtonHost.NONE, host(titleRow = true, enabled = false))
+        assertEquals(CapturedButtonHost.NONE, host(topBar = true, enabled = false))
+        assertEquals(CapturedButtonHost.NONE, host(enabled = false))
+    }
+
+    @Test
+    fun `the gate outranks capture`() {
+        // Order matters: the disable path ends any running session, so a captured window cannot
+        // survive the setting going off, and asking the gate first is what keeps the two agreeing.
+        assertEquals(CapturedButtonHost.NONE, host(titleRow = true, captured = true, enabled = false))
     }
 
     @Test

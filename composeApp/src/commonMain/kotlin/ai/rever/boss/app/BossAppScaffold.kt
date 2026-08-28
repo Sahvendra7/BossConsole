@@ -404,6 +404,7 @@ internal fun BossAppScaffold(
             topBarDrawn = chrome.topBar,
             captured = captured,
             isMacOs = SystemUtils.isMacOS,
+            enabled = appearance.capturedFullScreenEnabled,
         )
 
     // Where each left column starts, so it can ask whether the light box reaches it.

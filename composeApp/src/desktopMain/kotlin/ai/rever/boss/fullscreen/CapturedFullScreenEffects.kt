@@ -1,6 +1,7 @@
 package ai.rever.boss.fullscreen
 
 import ai.rever.boss.window.MenuActionsHandler
+import ai.rever.boss.window.WindowAppearanceSettingsManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,6 +48,13 @@ fun CapturedFullScreenEffects(
                 if (CapturedFullScreenState.current.value.capturing(windowId)) {
                     // Geometry is NOT restored here. The effect below does it, on every route out.
                     CapturedFullScreenController.exit()
+                } else if (!WindowAppearanceSettingsManager.currentSettings.value.capturedFullScreenEnabled) {
+                    // The single gate on ENTERING. The button is already absent when the feature is
+                    // off, but the shortcut and the View item are not the button - a keymap entry
+                    // survives the setting, and gating only what is drawn would leave Cmd+Alt+F
+                    // taking the pointer on an install that never opted in. Leaving is deliberately
+                    // NOT gated: a session must always be escapable, whatever the setting says.
+                    return@collect
                 } else {
                     restore.captureFrom(windowState)
                     // Real full screen, not a window sized to the display.
@@ -60,6 +68,20 @@ fun CapturedFullScreenEffects(
                     // bar and its Space, so it reads as a big window rather than as full screen.
                     windowState.placement = WindowPlacement.Fullscreen
                     CapturedFullScreenController.enter(windowId, window)
+                }
+            }
+    }
+
+    // Switching the feature off ends any session it is running, rather than leaving a window
+    // captured by something the settings say is unavailable. The restore effect below then puts the
+    // window back, as for any other exit route.
+    LaunchedEffect(windowId) {
+        WindowAppearanceSettingsManager.currentSettings
+            .map { it.capturedFullScreenEnabled }
+            .distinctUntilChanged()
+            .collect { enabled ->
+                if (!enabled && CapturedFullScreenState.current.value.capturing(windowId)) {
+                    CapturedFullScreenController.exit()
                 }
             }
     }

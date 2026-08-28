@@ -47,8 +47,18 @@ internal fun capturedButtonHost(
     topBarDrawn: Boolean,
     captured: Boolean,
     isMacOs: Boolean,
+    /**
+     * `WindowAppearanceSettings.capturedFullScreenEnabled`, which is **off by default**.
+     *
+     * Asked before everything else, including [captured]: a window cannot be capturing while the
+     * feature is off, because switching it off ends the session. Answering NONE first is what makes
+     * the button absent rather than present-and-inert for the default install.
+     */
+    enabled: Boolean,
 ): CapturedButtonHost =
     when {
+        !enabled -> CapturedButtonHost.NONE
+
         captured -> CapturedButtonHost.NONE
 
         titleRowDrawn -> CapturedButtonHost.TITLE_ROW
