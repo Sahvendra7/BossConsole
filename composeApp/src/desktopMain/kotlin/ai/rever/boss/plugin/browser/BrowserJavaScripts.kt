@@ -89,6 +89,51 @@ object BrowserJavaScripts {
         """.trimIndent()
 
     /**
+     * Put the video a call is actually showing into Picture-in-Picture.
+     *
+     * Returns `"entered"` on success and a short reason otherwise, so the caller can tell whether
+     * a pop-out is ours to close later.
+     *
+     * Picking the element is the whole difficulty, and [enablePictureInPicture] gets it wrong on a
+     * call: it takes the first `<video>` over 100x100, and a meeting page has many - the
+     * self-view, one per participant, and a screen share. So this scores them instead:
+     *
+     * - **A live `srcObject` is required.** Every participant tile is a `MediaStream`; a `<video>`
+     *   with a `src` is an advert or a background loop, never the call.
+     * - **Muted loses heavily.** The self-view is always muted (you do not echo yourself), and it
+     *   is the one tile nobody wants popped out.
+     * - **Bigger wins**, by painted area, because the speaker's tile is the large one.
+     * - Zero-dimension and `disablePictureInPicture` elements are skipped: a video that has not
+     *   produced a frame rejects with `InvalidStateError`, which is the same failure as picking
+     *   nothing but harder to read in a log.
+     */
+    val enterCallPictureInPicture =
+        """
+        (function () {
+            if (document.pictureInPictureElement) return 'already';
+            var best = null;
+            var bestScore = -1;
+            var videos = document.querySelectorAll('video');
+            for (var i = 0; i < videos.length; i++) {
+                var v = videos[i];
+                if (!v.srcObject) continue;
+                if (v.disablePictureInPicture) continue;
+                if (!v.videoWidth || !v.videoHeight) continue;
+                var score = v.videoWidth * v.videoHeight;
+                if (v.muted) score = score / 1000;
+                if (score > bestScore) { bestScore = score; best = v; }
+            }
+            if (!best) return 'no call video';
+            try {
+                best.requestPictureInPicture();
+                return 'entered';
+            } catch (e) {
+                return 'failed: ' + e.name;
+            }
+        })()
+        """.trimIndent()
+
+    /**
      * Enable Picture-in-Picture mode for videos on the page.
      *
      * Attempts to find and activate PiP on:

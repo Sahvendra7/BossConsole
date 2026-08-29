@@ -43,11 +43,14 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.ObjectClosedException
 import com.teamdev.jxbrowser.browser.Browser
+import com.teamdev.jxbrowser.browser.MediaStreamType
 import com.teamdev.jxbrowser.browser.callback.CreatePopupCallback
 import com.teamdev.jxbrowser.browser.callback.OpenPopupCallback
 import com.teamdev.jxbrowser.browser.callback.ShowContextMenuCallback
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
 import com.teamdev.jxbrowser.browser.event.FaviconChanged
+import com.teamdev.jxbrowser.browser.event.MediaStreamCaptureStarted
+import com.teamdev.jxbrowser.browser.event.MediaStreamCaptureStopped
 import com.teamdev.jxbrowser.browser.event.RenderProcessTerminated
 import com.teamdev.jxbrowser.browser.event.TitleChanged
 import com.teamdev.jxbrowser.engine.Engine
@@ -1190,6 +1193,19 @@ internal class BrowserHandleImpl(
                         }
                     pageInjectJob.getAndSet(followUp)?.cancel()
                 }
+            }
+
+        // Device capture, which is how this tab says "I am in a call". Chrome gates its auto
+        // Picture-in-Picture on exactly this (MediaStreamCaptureIndicator::IsCapturingUserMedia),
+        // and it is device capture only - a screen share goes through captureSessions() instead,
+        // which is why Chrome's rule does not fire for getDisplayMedia either.
+        subscriptions +=
+            browser.on(MediaStreamCaptureStarted::class.java) { event ->
+                capturedMediaOf(event.mediaStreamType())?.let(captureTracker::started)
+            }
+        subscriptions +=
+            browser.on(MediaStreamCaptureStopped::class.java) { event ->
+                capturedMediaOf(event.mediaStreamType())?.let(captureTracker::stopped)
             }
 
         // Title changed
@@ -2836,6 +2852,96 @@ internal class BrowserHandleImpl(
     // PICTURE IN PICTURE
     // ============================================================
 
+    /** What this page is capturing, and therefore whether it is in a call. */
+    private val captureTracker = CaptureTracker()
+
+    /**
+     * Set while a pop-out this class opened is on screen. A pop-out the user opened by hand is
+     * not ours to close, so only the ones we entered are restored on the way back - the same rule
+     * Chrome applies through its 5-second activation window.
+     */
+    private val autoPoppedOut = AtomicBoolean(false)
+
+    /**
+     * Grants the page a transient user activation by sending it real input.
+     *
+     * Both Picture-in-Picture APIs refuse without a gesture, and a tab switch has none. Chrome
+     * has the same problem and solves it inside Blink - `MediaSession::DidReceiveAction` calls
+     * `LocalFrame::NotifyUserActivation` before invoking the page's handler - which is browser
+     * code no embedder can reach. Dispatched input is the equivalent here: it travels Chromium's
+     * real input pipeline, so the renderer treats it as a genuine gesture.
+     *
+     * **Mouse, not keyboard.** Measured on a dev build: a press/release pair set
+     * `navigator.userActivation.isActive` on every page tried, while `KeyPressed` of F13 or Space
+     * worked on one page and not another. A key also risks meaning something - Meet binds letters
+     * to the mic, the camera and the chat box.
+     *
+     * The click lands at the very top-left corner, which is chrome in every video-call UI worth
+     * naming, and no drag follows it.
+     */
+    private fun mintUserActivation() {
+        val corner = Point.of(1, 1)
+        runCatching {
+            browser.dispatch(MouseMoved.newBuilder(corner).build())
+            browser.dispatch(
+                MousePressed
+                    .newBuilder(corner)
+                    .button(MouseButton.PRIMARY)
+                    .clickCount(1)
+                    .build(),
+            )
+            browser.dispatch(
+                MouseReleased
+                    .newBuilder(corner)
+                    .button(MouseButton.PRIMARY)
+                    .clickCount(1)
+                    .build(),
+            )
+        }.onFailure {
+            logger.debug(LogCategory.BROWSER, "Could not mint activation", mapOf("error" to it.toString()))
+        }
+    }
+
+    /**
+     * Called when this tab's surface leaves composition, which is the host's only signal that a
+     * tab was backgrounded - nothing tells Chromium the page is hidden, so `visibilitychange`
+     * never fires and the page cannot notice this for itself.
+     */
+    private fun onSurfaceHidden() {
+        if (!isValid) return
+        val url = runCatching { browser.url() }.getOrDefault("")
+        if (!shouldAutoPictureInPicture(url, captureTracker.isCapturing(), autoPoppedOut.get())) return
+        autoPictureInPictureScope.launch {
+            // A tab dragged between windows disposes one surface and composes another, in
+            // unspecified order, so a move momentarily looks exactly like a background. Waiting
+            // lets the new surface arrive and cancel this.
+            delay(AUTO_PIP_SETTLE_MS)
+            if (composedSurfaces.get() > 0 || !isValid) return@launch
+            if (!captureTracker.isCapturing()) return@launch
+            mintUserActivation()
+            val entered =
+                runCatching {
+                    browser.mainFrame().orElse(null)?.executeJavaScript<String>(
+                        BrowserJavaScripts.enterCallPictureInPicture,
+                    )
+                }.getOrNull()
+            if (entered == AUTO_PIP_ENTERED) autoPoppedOut.set(true)
+            logger.debug(LogCategory.BROWSER, "Auto Picture-in-Picture on hide", mapOf("result" to (entered ?: "null")))
+        }
+    }
+
+    /** Called when this tab's surface is composed again - the user came back. */
+    private fun onSurfaceShown() {
+        if (!autoPoppedOut.compareAndSet(true, false)) return
+        autoPictureInPictureScope.launch {
+            runCatching {
+                browser.mainFrame().orElse(null)?.executeJavaScript<Unit>(
+                    "if (document.pictureInPictureElement) { document.exitPictureInPicture(); }",
+                )
+            }
+        }
+    }
+
     override fun requestPictureInPicture() {
         if (!isValid) return
         browser.mainFrame().ifPresent { frame ->
@@ -3062,9 +3168,15 @@ internal class BrowserHandleImpl(
             // frame-stall probe must not judge a view that is not on screen, because Chromium
             // serves no frames to one. See composedSurfaces.
             composedSurfaces.incrementAndGet()
+            // Third consumer of the same signal, and the only one the user can see: this is the
+            // host's sole notion of "the tab was switched away from". Nothing tells Chromium the
+            // page is hidden - JxBrowser exposes no visibility API - so the page never fires
+            // visibilitychange and cannot pop itself out the way it would in Chrome.
+            onSurfaceShown()
             onDispose {
                 visitTracker.setVisible(false)
                 composedSurfaces.decrementAndGet()
+                onSurfaceHidden()
             }
         }
 
@@ -3625,8 +3737,34 @@ internal class BrowserHandleImpl(
          */
         private val retractionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+        /**
+         * Runs the pop-out handoff. Not tied to any handle's scope: the work is started from a
+         * composition that is in the middle of going away, which is exactly the scope that would
+         * cancel it. One per process rather than one per browser, like [retractionScope].
+         */
+        private val autoPictureInPictureScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+        /** Maps the engine's capture type onto the one [CaptureTracker] counts. */
+        private fun capturedMediaOf(type: MediaStreamType): CapturedMedia? =
+            when (type) {
+                MediaStreamType.AUDIO -> CapturedMedia.AUDIO
+                MediaStreamType.VIDEO -> CapturedMedia.VIDEO
+                else -> null
+            }
+
         /** Best-effort cap on [loadUrlAndWait]; returns (no throw) if a load runs long. */
         private const val LOAD_TIMEOUT_MS = 30_000L
+
+        /**
+         * How long a backgrounded tab waits before popping out. A tab dragged to another window
+         * disposes one surface and composes the next in unspecified order, so a move is
+         * momentarily indistinguishable from a background; this is long enough for the new
+         * surface to arrive and short enough that a real tab switch feels immediate.
+         */
+        private const val AUTO_PIP_SETTLE_MS = 400L
+
+        /** What [BrowserJavaScripts.enterCallPictureInPicture] returns when a pop-out opened. */
+        private const val AUTO_PIP_ENTERED = "entered"
 
         /**
          * How long an adopted popup waits for its main-frame navigation to name a destination
