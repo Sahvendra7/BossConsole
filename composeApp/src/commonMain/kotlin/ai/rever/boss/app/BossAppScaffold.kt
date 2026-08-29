@@ -493,6 +493,7 @@ internal fun BossAppScaffold(
                     onInstallUpdate = { downloadPath ->
                         updateHandle.installUpdateInBackground(downloadPath)
                     },
+                    onCancelDownload = { updateHandle.cancelDownload() },
                     onDismiss = {
                         val currentState = updateState
                         if (currentState is UpdateState.UpdateAvailable) {

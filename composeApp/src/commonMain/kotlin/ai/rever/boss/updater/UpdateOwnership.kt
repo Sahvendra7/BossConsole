@@ -56,6 +56,19 @@ interface UpdateHandle {
 
     fun installUpdateInBackground(downloadPath: String)
 
+    /**
+     * Abandon a download in progress.
+     *
+     * Reaches [UpdateManager.cancelDownload] directly rather than through
+     * `DownloadCenter.cancel(APP_UPDATE_ID)`, even though the row carries the same
+     * action: the row exists only while [UpdateDownloadCenterMirror] is running, and
+     * a banner button whose behaviour depends on a collector being live is one that
+     * silently does nothing when it is not. Both surfaces end at the same manager
+     * method, which is idempotent, so pressing Cancel in the banner and in the
+     * dialog is one cancel however they interleave.
+     */
+    fun cancelDownload()
+
     fun dismissVersionInBackground(version: Version)
 
     fun dismissDialogOnly()
@@ -280,6 +293,14 @@ class UpdateCoordinator internal constructor(
 
         override fun downloadUpdateInBackground(updateInfo: UpdateInfo) {
             if (guard("downloadUpdateInBackground")) manager.downloadUpdateInBackground(updateInfo)
+        }
+
+        override fun cancelDownload() {
+            // Not launchInBackground: cancelDownload only cancels the download job and
+            // is not itself suspending, so wrapping it would put the cancel behind a
+            // dispatch for no reason - and the point of this button is that the bar
+            // stops immediately.
+            if (guard("cancelDownload")) manager.cancelDownload()
         }
 
         override fun dismissDialogOnly() {

@@ -1,9 +1,11 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.components.dialogs.DownloadCenterDialog
 import ai.rever.boss.layout.TRAFFIC_LIGHT_HEIGHT
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.utils.Version
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -43,6 +45,7 @@ fun UpdateBanner(
     onCheckForUpdates: () -> Unit = {},
     onDownloadUpdate: (UpdateInfo) -> Unit = {},
     onInstallUpdate: (String) -> Unit = {},
+    onCancelDownload: () -> Unit = {},
     onDismiss: () -> Unit = {},
 ) {
     when (updateState) {
@@ -56,7 +59,11 @@ fun UpdateBanner(
         }
 
         is UpdateState.Downloading -> {
-            DownloadProgressBanner(startInset = startInset, progress = updateState.progress)
+            DownloadProgressBanner(
+                startInset = startInset,
+                progress = updateState.progress,
+                onCancel = onCancelDownload,
+            )
         }
 
         is UpdateState.ReadyToInstall -> {
@@ -152,7 +159,13 @@ private fun UpdateAvailableBanner(
 private fun DownloadProgressBanner(
     startInset: Dp,
     progress: Float,
+    onCancel: () -> Unit,
 ) {
+    // Per-window, exactly as the bottom bar's item is: the dialog opens in the window
+    // that was clicked, while the transfers behind it are process-wide, so two windows
+    // can both have it open on the same rows.
+    var showDialog by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = BossTheme.colors.panel,
@@ -161,6 +174,12 @@ private fun DownloadProgressBanner(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    // The banner opens the download center, matching the bottom bar's
+                    // progress item - this is the app's own update, so it is one row in
+                    // the same dialog rather than a separate surface. Cancel below is a
+                    // TextButton and consumes its own press, so hitting it does not also
+                    // open the dialog behind it.
+                    .clickable { showDialog = true }
                     .bannerPad(startInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -186,7 +205,20 @@ private fun DownloadProgressBanner(
                 color = BossTheme.colors.ok,
                 backgroundColor = BossTheme.colors.raised,
             )
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(
+                onClick = onCancel,
+                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.textSecondary),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                modifier = Modifier.height(28.dp),
+            ) {
+                Text("Cancel", fontSize = 11.sp)
+            }
         }
+    }
+
+    if (showDialog) {
+        DownloadCenterDialog(onDismiss = { showDialog = false })
     }
 }
 
