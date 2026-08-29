@@ -46,6 +46,7 @@ fun UpdateBanner(
     onDownloadUpdate: (UpdateInfo) -> Unit = {},
     onInstallUpdate: (String) -> Unit = {},
     onCancelDownload: () -> Unit = {},
+    onDiscardDownload: () -> Unit = {},
     onDismiss: () -> Unit = {},
 ) {
     when (updateState) {
@@ -70,6 +71,7 @@ fun UpdateBanner(
             ReadyToInstallBanner(
                 startInset = startInset,
                 onInstall = { onInstallUpdate(updateState.downloadPath) },
+                onDiscard = onDiscardDownload,
             )
         }
 
@@ -226,7 +228,11 @@ private fun DownloadProgressBanner(
 private fun ReadyToInstallBanner(
     startInset: Dp,
     onInstall: () -> Unit,
+    onDiscard: () -> Unit,
 ) {
+    // Per-window, as on the downloading banner and the bottom bar's item.
+    var showDialog by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = BossTheme.colors.panel,
@@ -235,6 +241,7 @@ private fun ReadyToInstallBanner(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .clickable { showDialog = true }
                     .bannerPad(startInset),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -256,15 +263,32 @@ private fun ReadyToInstallBanner(
                 )
             }
 
-            TextButton(
-                onClick = onInstall,
-                colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.warn),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                modifier = Modifier.height(28.dp),
-            ) {
-                Text("Install Now", fontSize = 11.sp)
+            Row {
+                TextButton(
+                    onClick = onInstall,
+                    colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.warn),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Text("Install Now", fontSize = 11.sp)
+                }
+                // "Cancel", not "Discard", because the download center's dialog calls the same
+                // action Cancel on this row and so does the banner one state earlier. The word
+                // is doing less work than the consistency is: one action, three surfaces.
+                TextButton(
+                    onClick = onDiscard,
+                    colors = ButtonDefaults.textButtonColors(contentColor = BossTheme.colors.textSecondary),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Text("Cancel", fontSize = 11.sp)
+                }
             }
         }
+    }
+
+    if (showDialog) {
+        DownloadCenterDialog(onDismiss = { showDialog = false })
     }
 }
 

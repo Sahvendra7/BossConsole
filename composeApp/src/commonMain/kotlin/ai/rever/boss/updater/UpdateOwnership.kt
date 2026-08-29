@@ -69,6 +69,16 @@ interface UpdateHandle {
      */
     fun cancelDownload()
 
+    /**
+     * Throw away an update that downloaded but was never installed.
+     *
+     * Separate from [cancelDownload] because the two abandon different things and only one of
+     * them is free: cancelling stops bytes arriving, while this deletes an artifact that is
+     * already on disk. [UpdateManager.discardDownload] suspends for that delete, which is why
+     * this is one of the fire-and-forget variants and [cancelDownload] is not.
+     */
+    fun discardDownloadInBackground()
+
     fun dismissVersionInBackground(version: Version)
 
     fun dismissDialogOnly()
@@ -293,6 +303,10 @@ class UpdateCoordinator internal constructor(
 
         override fun downloadUpdateInBackground(updateInfo: UpdateInfo) {
             if (guard("downloadUpdateInBackground")) manager.downloadUpdateInBackground(updateInfo)
+        }
+
+        override fun discardDownloadInBackground() {
+            if (guard("discardDownloadInBackground")) manager.launchInBackground { manager.discardDownload() }
         }
 
         override fun cancelDownload() {
