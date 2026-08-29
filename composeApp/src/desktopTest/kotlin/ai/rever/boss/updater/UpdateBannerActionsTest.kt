@@ -1,9 +1,16 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.downloads.DownloadCenter
+import ai.rever.boss.plugin.api.TransferKind
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -66,6 +73,64 @@ class UpdateBannerActionsTest {
 
         rule.onNodeWithText("Install Now").performClick()
         assertEquals(listOf("discard", "install"), pressed)
+    }
+
+    @Before
+    @After
+    fun clearCenter() = DownloadCenter.reset()
+
+    /** The dialog only renders rows, so it needs one to be distinguishable from nothing. */
+    private fun seedAppUpdateRow() {
+        DownloadCenter.begin(
+            id = DownloadCenter.APP_UPDATE_ID,
+            title = "BOSS v9.5.3",
+            kind = TransferKind.APP_UPDATE,
+            detail = "Application update",
+        )
+    }
+
+    @Test
+    fun `clicking the banner opens the download center, and Cancel does not`() {
+        seedAppUpdateRow()
+        setBanner(UpdateState.Downloading(progress = 0.4f))
+
+        rule.onNodeWithText("Minimize").assertDoesNotExist()
+
+        // Cancel is a TextButton inside the clickable row. If it stopped consuming its own press,
+        // one click would both cancel the download AND open the dialog behind it.
+        rule.onNodeWithText("Cancel").performClick()
+        assertEquals(listOf("cancel"), pressed)
+        rule.onNodeWithText("Minimize").assertDoesNotExist()
+
+        rule.onNodeWithText("Downloading... 40%").performClick()
+        rule.onNodeWithText("Minimize").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the dialog survives the download finishing`() {
+        seedAppUpdateRow()
+        var state by mutableStateOf<UpdateState>(UpdateState.Downloading(progress = 0.9f))
+        rule.setContent {
+            UpdateBanner(
+                updateState = state,
+                onInstallUpdate = { pressed += "install" },
+                onCancelDownload = { pressed += "cancel" },
+                onDiscardDownload = { pressed += "discard" },
+            )
+        }
+
+        rule.onNodeWithText("Downloading... 90%").performClick()
+        rule.onNodeWithText("Minimize").assertIsDisplayed()
+
+        // The regression: showDialog used to live inside the Downloading branch, so finishing the
+        // download disposed that subtree and took the open dialog with it - at the exact moment
+        // its row gained an Install button. The row itself survives the transition, and the bottom
+        // bar keeps its dialog open across it, so the banner's copy was the only thing vanishing.
+        state = UpdateState.ReadyToInstall(downloadPath = "/tmp/BOSS.dmg")
+        rule.waitForIdle()
+
+        rule.onNodeWithText("Minimize").assertIsDisplayed()
+        rule.onNodeWithText("Install Now").assertIsDisplayed()
     }
 
     @Test

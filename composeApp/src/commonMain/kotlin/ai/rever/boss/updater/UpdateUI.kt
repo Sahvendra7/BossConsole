@@ -49,6 +49,21 @@ fun UpdateBanner(
     onDiscardDownload: () -> Unit = {},
     onDismiss: () -> Unit = {},
 ) {
+    // Hoisted ABOVE the `when`, and this is load-bearing rather than tidiness. Held inside a
+    // branch, the state it exists to show is what destroys it: a download finishing moves
+    // Downloading -> ReadyToInstall, that branch leaves composition, and an open dialog vanishes
+    // at the exact moment its row gains an Install button. Pressing Install then does it again
+    // (-> Installing -> no banner). The DownloadCenter row survives both transitions, and the
+    // bottom bar's item keeps its dialog open across them, so the banner's copy was the only
+    // thing disappearing - reintroducing one step later the very asymmetry this set out to remove.
+    //
+    // Surviving branch changes means inheriting the hazard DownloadCenterStatusItem documents,
+    // where a dialog whose subtree is removed cannot dismiss itself. It does not apply here:
+    // nothing early-returns this composable, so DownloadCenterDialog's own
+    // LaunchedEffect(transfers.isEmpty()) is always alive to dispatch.
+    var showDialog by remember { mutableStateOf(false) }
+    val openDownloadCenter = { showDialog = true }
+
     when (updateState) {
         is UpdateState.UpdateAvailable -> {
             UpdateAvailableBanner(
@@ -64,6 +79,7 @@ fun UpdateBanner(
                 startInset = startInset,
                 progress = updateState.progress,
                 onCancel = onCancelDownload,
+                onOpenDownloadCenter = openDownloadCenter,
             )
         }
 
@@ -72,6 +88,7 @@ fun UpdateBanner(
                 startInset = startInset,
                 onInstall = { onInstallUpdate(updateState.downloadPath) },
                 onDiscard = onDiscardDownload,
+                onOpenDownloadCenter = openDownloadCenter,
             )
         }
 
@@ -89,6 +106,13 @@ fun UpdateBanner(
         }
 
         else -> { /* No banner for other states */ }
+    }
+
+    // Outside the `when`, so a state change cannot take the dialog with it. Rendered even for
+    // the states that draw no banner: Installing draws nothing here but still has a row, and a
+    // dialog opened from the ready banner should survive pressing Install inside it.
+    if (showDialog) {
+        DownloadCenterDialog(onDismiss = { showDialog = false })
     }
 }
 
@@ -162,12 +186,8 @@ private fun DownloadProgressBanner(
     startInset: Dp,
     progress: Float,
     onCancel: () -> Unit,
+    onOpenDownloadCenter: () -> Unit,
 ) {
-    // Per-window, exactly as the bottom bar's item is: the dialog opens in the window
-    // that was clicked, while the transfers behind it are process-wide, so two windows
-    // can both have it open on the same rows.
-    var showDialog by remember { mutableStateOf(false) }
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = BossTheme.colors.panel,
@@ -181,7 +201,7 @@ private fun DownloadProgressBanner(
                     // the same dialog rather than a separate surface. Cancel below is a
                     // TextButton and consumes its own press, so hitting it does not also
                     // open the dialog behind it.
-                    .clickable { showDialog = true }
+                    .clickable(onClick = onOpenDownloadCenter)
                     .bannerPad(startInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -218,10 +238,6 @@ private fun DownloadProgressBanner(
             }
         }
     }
-
-    if (showDialog) {
-        DownloadCenterDialog(onDismiss = { showDialog = false })
-    }
 }
 
 @Composable
@@ -229,10 +245,8 @@ private fun ReadyToInstallBanner(
     startInset: Dp,
     onInstall: () -> Unit,
     onDiscard: () -> Unit,
+    onOpenDownloadCenter: () -> Unit,
 ) {
-    // Per-window, as on the downloading banner and the bottom bar's item.
-    var showDialog by remember { mutableStateOf(false) }
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = BossTheme.colors.panel,
@@ -241,7 +255,7 @@ private fun ReadyToInstallBanner(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .clickable { showDialog = true }
+                    .clickable(onClick = onOpenDownloadCenter)
                     .bannerPad(startInset),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -285,10 +299,6 @@ private fun ReadyToInstallBanner(
                 }
             }
         }
-    }
-
-    if (showDialog) {
-        DownloadCenterDialog(onDismiss = { showDialog = false })
     }
 }
 

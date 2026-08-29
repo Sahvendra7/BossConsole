@@ -272,6 +272,11 @@ class UpdateCoordinator internal constructor(
         manager.shutdown()
     }
 
+    // One delegate per handle capability is the shape of this class, not debt: every method is a
+    // two-line `guard(...)` forward to the shared manager, and UpdateHandleGuardTest requires it
+    // stay that way. Suppressed here rather than baselined so the reason sits with the code - a
+    // baseline row reads as legacy for a class that is deliberately built like this.
+    @Suppress("TooManyFunctions")
     private inner class WindowUpdateHandle(
         override val windowId: String,
     ) : UpdateHandle {

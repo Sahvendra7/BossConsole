@@ -1449,7 +1449,6 @@
     <ID>TooManyFunctions:TrackingPluginContext.kt$TrackingPluginContext : PluginContext</ID>
     <ID>TooManyFunctions:UpdateInstaller.kt$UpdateInstaller</ID>
     <ID>TooManyFunctions:UpdateManager.kt$UpdateManager</ID>
-    <ID>TooManyFunctions:UpdateOwnership.kt$UpdateCoordinator$WindowUpdateHandle : UpdateHandle</ID>
     <ID>TooManyFunctions:WindowManager.kt$WindowManager</ID>
     <ID>TooManyFunctions:WorkspaceManager.kt$WorkspaceManager</ID>
     <ID>UnusedParameter:AWTKeyboardInterceptor.kt$AWTKeyboardInterceptor$matcher: KeymapMatcher</ID>
