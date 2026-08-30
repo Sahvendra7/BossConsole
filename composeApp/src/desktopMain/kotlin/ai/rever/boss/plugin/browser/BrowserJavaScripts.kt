@@ -169,105 +169,120 @@ object BrowserJavaScripts {
         """.trimIndent()
 
     val enterCallPictureInPicture =
-        """
-        (function () {
-            window.__bossPip = { state: 'pending', picked: null, activation: null, videos: 0, route: null };
-            if (document.pictureInPictureElement) { window.__bossPip.state = 'already'; return 'already'; }
-            if (window.documentPictureInPicture && documentPictureInPicture.window) {
-                window.__bossPip.state = 'already'; return 'already';
-            }
-            window.__bossPip.activation =
-                navigator.userActivation ? navigator.userActivation.isActive : 'unknown';
+        (
+            fillPopOutFunction + "\n" +
+                """
+                (function () {
+                    window.__bossPip = { state: 'pending', picked: null, activation: null, videos: 0, route: null,
+                        t0: performance.now(), tHandler: null, tWindow: null, tFilled: null };
+                    if (document.pictureInPictureElement) { window.__bossPip.state = 'already'; return 'already'; }
+                    if (window.documentPictureInPicture && documentPictureInPicture.window) {
+                        window.__bossPip.state = 'already'; return 'already';
+                    }
+                    window.__bossPip.activation =
+                        navigator.userActivation ? navigator.userActivation.isActive : 'unknown';
 
-            var best = null;
-            var bestScore = -1;
-            var videos = document.querySelectorAll('video');
-            window.__bossPip.videos = videos.length;
-            for (var i = 0; i < videos.length; i++) {
-                var v = videos[i];
-                if (!v.srcObject) continue;
-                if (v.disablePictureInPicture) continue;
-                if (!v.videoWidth || !v.videoHeight) continue;
-                var score = v.videoWidth * v.videoHeight;
-                if (v.muted) score = score / 1000;
-                if (score > bestScore) { bestScore = score; best = v; }
-            }
-            if (!best) { window.__bossPip.state = 'no call video'; return 'no call video'; }
-            window.__bossPip.picked = best.videoWidth + 'x' + best.videoHeight;
+                    var best = null;
+                    var bestScore = -1;
+                    var videos = document.querySelectorAll('video');
+                    window.__bossPip.videos = videos.length;
+                    for (var i = 0; i < videos.length; i++) {
+                        var v = videos[i];
+                        if (!v.srcObject) continue;
+                        if (v.disablePictureInPicture) continue;
+                        if (!v.videoWidth || !v.videoHeight) continue;
+                        var score = v.videoWidth * v.videoHeight;
+                        if (v.muted) score = score / 1000;
+                        if (score > bestScore) { bestScore = score; best = v; }
+                    }
+                    if (!best) { window.__bossPip.state = 'no call video'; return 'no call video'; }
+                    window.__bossPip.picked = best.videoWidth + 'x' + best.videoHeight;
 
-            function poppedOut() {
-                return !!document.pictureInPictureElement ||
-                    !!(window.documentPictureInPicture && documentPictureInPicture.window);
-            }
+                    function poppedOut() {
+                        return !!document.pictureInPictureElement ||
+                            !!(window.documentPictureInPicture && documentPictureInPicture.window);
+                    }
 
-            function native(reason) {
-                if (poppedOut()) return;
-                window.__bossPip.route = 'native' + (reason ? ' (' + reason + ')' : '');
-                try {
-                    HTMLVideoElement.prototype.requestPictureInPicture.call(best)
-                        .then(function () { window.__bossPip.state = 'entered'; })
-                        .catch(function (e) { window.__bossPip.state = 'rejected: ' + e.name + ': ' + e.message; });
-                } catch (e) {
-                    window.__bossPip.state = 'threw: ' + e.name;
-                }
-            }
+                    function native(reason) {
+                        if (poppedOut()) return;
+                        window.__bossPip.route = 'native' + (reason ? ' (' + reason + ')' : '');
+                        try {
+                            HTMLVideoElement.prototype.requestPictureInPicture.call(best)
+                                .then(function () { window.__bossPip.state = 'entered'; })
+                                .catch(function (e) { window.__bossPip.state = 'rejected: ' + e.name + ': ' + e.message; });
+                        } catch (e) {
+                            window.__bossPip.state = 'threw: ' + e.name;
+                        }
+                    }
 
-            // Prefer the SITE's own Picture-in-Picture when it has installed one.
-            //
-            // Google Meet replaces requestPictureInPicture with an own property on the element,
-            // and that override is the entry point to Meet's real pop-out - participant tiles,
-            // mute, camera, leave, chat, captions - built as a Document PiP window. It is what
-            // Chrome ends up invoking through the media-session action, so calling it is what
-            // makes this match Chrome rather than floating a lone video tile.
-            //
-            // It gets a deadline, because the same override hangs forever when its Document PiP
-            // window cannot be shown. The native call is the fallback, and the minted activation
-            // lasts five seconds, so it is still valid when the deadline fires.
-            // Chrome's own route: invoke the site's media-session handler, which is what opens
-            // Meet's real pop-out. Calling requestPictureInPicture() on the element is NOT what
-            // Chrome does, and on Meet that method is an own-property override that never settles.
-            var handler = window.__bossPipEnterHandler;
-            if (typeof handler !== 'function') { native('no media-session handler'); return 'requested'; }
+                    // Prefer the SITE's own Picture-in-Picture when it has installed one.
+                    //
+                    // Google Meet replaces requestPictureInPicture with an own property on the element,
+                    // and that override is the entry point to Meet's real pop-out - participant tiles,
+                    // mute, camera, leave, chat, captions - built as a Document PiP window. It is what
+                    // Chrome ends up invoking through the media-session action, so calling it is what
+                    // makes this match Chrome rather than floating a lone video tile.
+                    //
+                    // It gets a deadline, because the same override hangs forever when its Document PiP
+                    // window cannot be shown. The native call is the fallback, and the minted activation
+                    // lasts five seconds, so it is still valid when the deadline fires.
+                    // Chrome's own route: invoke the site's media-session handler, which is what opens
+                    // Meet's real pop-out. Calling requestPictureInPicture() on the element is NOT what
+                    // Chrome does, and on Meet that method is an own-property override that never settles.
+                    var handler = window.__bossPipEnterHandler;
+                    if (typeof handler !== 'function') { native('no media-session handler'); return 'requested'; }
 
-            window.__bossPip.route = 'site';
-            var settled = false;
-            try {
-                // Shaped like the details Chrome passes. `contentoccluded` is the reason it uses
-                // when the tab stopped being the active one, which is exactly this case.
-                handler({ action: 'enterpictureinpicture', enterPictureInPictureReason: 'contentoccluded' });
-            } catch (e) {
-                settled = true;
-                native('handler threw ' + e.name);
-            }
-            // Poll rather than wait out the whole deadline: the site opens its window
-            // asynchronously, and the caller reads this state back on its own clock. Settling
-            // only at the deadline meant the read happened first and every site-route pop-out
-            // was recorded as a failure - so nothing closed it again on the way back.
-            var waited = 0;
-            var tick = setInterval(function () {
-                if (poppedOut()) {
-                    window.__bossPip.state = 'entered';
-                    clearInterval(tick);
-                    return;
-                }
-                if (settled) { clearInterval(tick); return; }
-                waited += $SITE_PIP_POLL_MS;
-                if (waited >= $SITE_PIP_DEADLINE_MS) {
-                    clearInterval(tick);
-                    native('site timed out');
-                }
-            }, $SITE_PIP_POLL_MS);
-            return 'requested';
-        })()
-        """.trimIndent()
-            .replace("${'$'}SITE_PIP_DEADLINE_MS", SITE_PIP_DEADLINE_MS.toString())
-            .replace("${'$'}SITE_PIP_POLL_MS", SITE_PIP_POLL_MS.toString())
+                    window.__bossPip.route = 'site';
+                    var settled = false;
+                    try {
+                        // Shaped like the details Chrome passes. `contentoccluded` is the reason it uses
+                        // when the tab stopped being the active one, which is exactly this case.
+                        handler({ action: 'enterpictureinpicture', enterPictureInPictureReason: 'contentoccluded' });
+                        window.__bossPip.tHandler = Math.round(performance.now() - window.__bossPip.t0);
+                    } catch (e) {
+                        settled = true;
+                        native('handler threw ' + e.name);
+                    }
+                    // Poll rather than wait out the whole deadline: the site opens its window
+                    // asynchronously, and the caller reads this state back on its own clock. Settling
+                    // only at the deadline meant the read happened first and every site-route pop-out
+                    // was recorded as a failure - so nothing closed it again on the way back.
+                    var waited = 0;
+                    var tick = setInterval(function () {
+                        if (poppedOut()) {
+                            window.__bossPip.state = 'entered';
+                            window.__bossPip.tWindow = Math.round(performance.now() - window.__bossPip.t0);
+                            clearInterval(tick);
+                            // Filled here, in the same pass, rather than waiting for the host to come
+                            // back with a second script. This is what makes the pop-out appear with
+                            // content in it instead of blank for a beat first.
+                            try {
+                                window.__bossPip.filled = __bossFillPip();
+                                window.__bossPip.tFilled = Math.round(performance.now() - window.__bossPip.t0);
+                            } catch (e) {
+                                window.__bossPip.filled = 'threw ' + e.name;
+                            }
+                            return;
+                        }
+                        if (settled) { clearInterval(tick); return; }
+                        waited += $SITE_PIP_POLL_MS;
+                        if (waited >= $SITE_PIP_DEADLINE_MS) {
+                            clearInterval(tick);
+                            native('site timed out');
+                        }
+                    }, $SITE_PIP_POLL_MS);
+                    return 'requested';
+                })()
+                """.trimIndent()
+                    .replace("${'$'}SITE_PIP_DEADLINE_MS", SITE_PIP_DEADLINE_MS.toString())
+                    .replace("${'$'}SITE_PIP_POLL_MS", SITE_PIP_POLL_MS.toString())
+        )
 
     /** How long the site's own Picture-in-Picture gets before we fall back to the video tile. */
     const val SITE_PIP_DEADLINE_MS = 1500
 
     /** How often the site route is checked for having opened a window. */
-    const val SITE_PIP_POLL_MS = 100
+    const val SITE_PIP_POLL_MS = 40
 
     /**
      * Reads back what [enterCallPictureInPicture] actually achieved.
@@ -316,220 +331,215 @@ object BrowserJavaScripts {
      * `aria-label` matching is the weak part and is known to be: it is English-only, so on a
      * localised Meet the controls simply do not appear and the tiles still do.
      */
-    val populateCallPictureInPicture =
-        """
-        (function () {
-            var w = window.documentPictureInPicture && documentPictureInPicture.window;
-            if (!w) return 'no window';
-            var doc = w.document;
-            if (doc.querySelector('[data-boss-pip]')) return 'already populated';
 
-            function findButton(pattern) {
-                var all = document.querySelectorAll('button[aria-label],[role=button][aria-label]');
-                for (var i = 0; i < all.length; i++) {
-                    if (pattern.test(all[i].getAttribute('aria-label') || '')) return all[i];
+    /**
+     * The filling routine, as a declaration so it can be called from inside the enter script
+     * rather than on a second round trip from the host.
+     *
+     * That distinction is the whole latency budget: a browser opens its pop-out synchronously,
+     * while a host-side `executeJavaScript` plus the delay before it was most of the gap between
+     * the tab going away and the window having anything in it.
+     */
+    private val fillPopOutFunction: String
+        get() =
+            """
+            function __bossFillPip() {
+                var w = window.documentPictureInPicture && documentPictureInPicture.window;
+                if (!w) return 'no window';
+                var doc = w.document;
+                if (doc.querySelector('[data-boss-pip]')) return 'already populated';
+                // Leave a site that fills its own pop-out completely alone. Meet's leftovers are an
+                // off-screen accessibility node, so presence of children proves nothing - only a
+                // child that actually occupies space means somebody else is drawing here.
+                var existing = doc.body ? doc.body.children : [];
+                for (var e = 0; e < existing.length; e++) {
+                    var box = existing[e].getBoundingClientRect();
+                    if (box.height > 0 && box.width > 0) return 'site populated it';
                 }
-                return null;
-            }
 
-            var root = doc.createElement('div');
-            root.setAttribute('data-boss-pip', '1');
-            root.setAttribute(
-                'style',
-                'position:fixed;inset:0;margin:0;background:#202124;color:#e8eaed;' +
-                    'font:13px system-ui,-apple-system,sans-serif;display:flex;flex-direction:column'
-            );
+                function findButton(pattern) {
+                    var all = document.querySelectorAll('button[aria-label],[role=button][aria-label]');
+                    for (var i = 0; i < all.length; i++) {
+                        if (pattern.test(all[i].getAttribute('aria-label') || '')) return all[i];
+                    }
+                    return null;
+                }
 
-            var tiles = doc.createElement('div');
-            tiles.setAttribute(
-                'style',
-                'flex:1;display:grid;gap:6px;padding:8px 8px 4px;min-height:0;' +
-                    'grid-template-columns:repeat(auto-fit,minmax(120px,1fr))'
-            );
-            root.appendChild(tiles);
+                var root = doc.createElement('div');
+                root.setAttribute('data-boss-pip', '1');
+                root.setAttribute(
+                    'style',
+                    'position:fixed;inset:0;margin:0;background:#202124;color:#e8eaed;' +
+                        'font:13px system-ui,-apple-system,sans-serif;display:flex;flex-direction:column'
+                );
 
-            // A local track carries a deviceId; a remote one does not. Remote participants are
-            // what a pop-out is for, so they lead and the self-view only appears alone.
-            var local = [];
-            var remote = [];
-            var sources = document.querySelectorAll('video');
-            for (var i = 0; i < sources.length; i++) {
-                var v = sources[i];
-                if (!v.srcObject || !v.videoWidth || !v.videoHeight) continue;
-                var track = v.srcObject.getVideoTracks()[0];
-                if (!track || track.readyState !== 'live') continue;
-                var isLocal = false;
-                try { isLocal = !!(track.getSettings() || {}).deviceId; } catch (e) { isLocal = false; }
-                // Carry the source tile's own mirroring across. Meet flips the self-view - a
-                // preview of yourself should read like a mirror - and leaves everyone else alone,
-                // so copying the computed transform per tile reproduces exactly that without
-                // deciding anything about which tile is which.
-                var flipped = false;
-                try {
-                    flipped = (getComputedStyle(v).transform || '').indexOf('-1') === 7;
-                } catch (e) { flipped = false; }
-                // Meet writes the participant's name inside the tile; the pop-out shows it in the
-                // same corner Chrome's does. Read from the nearest ancestor that has one rather
-                // than a class name, since Meet's are obfuscated.
-                var name = '';
-                try {
-                    var scope = v.closest('[data-participant-id]') || v.parentElement;
-                    for (var hops = 0; scope && hops < 4 && !name; hops++) {
-                        var texts = scope.querySelectorAll('div,span');
-                        for (var t = 0; t < texts.length; t++) {
-                            var candidate = (texts[t].textContent || '').trim();
-                            if (candidate && candidate.length < 40 && texts[t].children.length === 0) {
-                                name = candidate;
-                                break;
-                            }
+                var tiles = doc.createElement('div');
+                tiles.setAttribute(
+                    'style',
+                    'flex:1;display:grid;gap:6px;padding:8px 8px 4px;min-height:0;' +
+                        'grid-template-columns:repeat(auto-fit,minmax(120px,1fr))'
+                );
+                root.appendChild(tiles);
+
+                // A local track carries a deviceId; a remote one does not. Remote participants are
+                // what a pop-out is for, so they lead and the self-view only appears alone.
+                var local = [];
+                var remote = [];
+                var sources = document.querySelectorAll('video');
+                for (var i = 0; i < sources.length; i++) {
+                    var v = sources[i];
+                    if (!v.srcObject || !v.videoWidth || !v.videoHeight) continue;
+                    var track = v.srcObject.getVideoTracks()[0];
+                    if (!track || track.readyState !== 'live') continue;
+                    var isLocal = false;
+                    try { isLocal = !!(track.getSettings() || {}).deviceId; } catch (e) { isLocal = false; }
+                    // Carry the source tile's own mirroring across. Meet flips the self-view - a
+                    // preview of yourself should read like a mirror - and leaves everyone else alone,
+                    // so copying the computed transform per tile reproduces exactly that without
+                    // deciding anything about which tile is which.
+                    var flipped = false;
+                    try {
+                        flipped = (getComputedStyle(v).transform || '').indexOf('-1') === 7;
+                    } catch (e) { flipped = false; }
+                    // No participant name. Meet renders one, but the only text inside a tile's
+                    // subtree is its own control labels - "Reframe", "Backgrounds and effects" - so
+                    // every heuristic tried put a button caption where a person's name belongs, which
+                    // is worse than leaving it out. It needs a real selector, not a guess.
+                    (isLocal ? local : remote).push({ stream: v.srcObject, mirrored: flipped });
+                }
+                var streams = remote.length ? remote : local;
+                if (!streams.length) return 'no live tiles';
+
+                for (var j = 0; j < streams.length && j < $MAX_PIP_TILES; j++) {
+                    var card = doc.createElement('div');
+                    card.setAttribute(
+                        'style',
+                        'position:relative;background:#3c4043;border-radius:10px;overflow:hidden;' +
+                            'min-height:0;display:flex;align-items:center;justify-content:center'
+                    );
+                    var tile = doc.createElement('video');
+                    tile.autoplay = true;
+                    tile.playsInline = true;
+                    tile.muted = true;
+                    tile.srcObject = streams[j].stream;
+                    tile.setAttribute(
+                        'style',
+                        'width:100%;height:100%;background:#000;border-radius:6px'
+                    );
+                    // contain, not cover: Chrome letterboxes a pop-out rather than cropping heads out
+                    // of frame, and a 480px window crops hard.
+                    tile.style.setProperty('object-fit', 'contain', 'important');
+                    // Set explicitly either way, and as important: Meet's own stylesheets are in
+                    // this window (it copies them before abandoning the pop-out) and one of them
+                    // mirrors `video`, which would otherwise flip every tile including remote ones.
+                    // An inline style attribute loses to a stylesheet rule, so this cannot be folded
+                    // into the style string above.
+                    var mirror = streams[j].mirrored ? 'scaleX(-1)' : 'none';
+                    tile.style.setProperty('transform', mirror, 'important');
+                    tile.style.setProperty('-webkit-transform', mirror, 'important');
+                    card.appendChild(tile);
+                    tiles.appendChild(card);
+                }
+
+                var bar = doc.createElement('div');
+                bar.setAttribute(
+                    'style',
+                    'display:flex;gap:8px;justify-content:center;align-items:center;' +
+                        'padding:10px 8px 12px;background:#202124'
+                );
+                root.appendChild(bar);
+
+                // Meet's icons are ligatures in its own "Google Symbols" font, and its stylesheets are
+                // already inside this window - it copies them before abandoning the pop-out. So the
+                // real icon node is cloned rather than an icon name being hardcoded: the glyph is
+                // exactly Meet's, and the ligature text flips itself (mic <-> mic_off) as state
+                // changes, which a hardcoded name could not do.
+                function iconOf(button) {
+                    return button.querySelector('i.google-symbols, .google-symbols, i[class*=symbols]');
+                }
+
+                // The set and order Chrome's pop-out shows: mic, camera, present, more, hang up.
+                var controls = [
+                    { key: 'mic', match: /microphone/i, danger: false },
+                    { key: 'cam', match: /camera/i, danger: false },
+                    { key: 'present', match: /present now|share screen|presenting/i, danger: false },
+                    { key: 'more', match: /more options|^more$/i, danger: false },
+                    { key: 'leave', match: /leave call|hang up/i, danger: true }
+                ];
+                var live = [];
+                for (var c = 0; c < controls.length; c++) {
+                    (function (spec) {
+                        var source = findButton(spec.match);
+                        if (!source) return;
+                        var btn = doc.createElement('button');
+                        btn.title = source.getAttribute('aria-label') || spec.key;
+                        btn.setAttribute('aria-label', btn.title);
+                        // Hang up is a wider pill, the rest are circles - Chrome's shape.
+                        btn.setAttribute(
+                            'style',
+                            (spec.danger ? 'width:56px;border-radius:18px;' : 'width:36px;border-radius:50%;') +
+                                'height:36px;border:0;cursor:pointer;' +
+                                'display:flex;align-items:center;justify-content:center;' +
+                                'font-size:18px;line-height:1;padding:0'
+                        );
+                        var sourceIcon = iconOf(source);
+                        if (sourceIcon) {
+                            btn.appendChild(sourceIcon.cloneNode(true));
+                        } else {
+                            btn.textContent = spec.key;
+                            btn.style.fontSize = '11px';
                         }
-                        scope = scope.parentElement;
-                    }
-                } catch (e) { name = ''; }
-                (isLocal ? local : remote).push({ stream: v.srcObject, mirrored: flipped, name: name });
-            }
-            var streams = remote.length ? remote : local;
-            if (!streams.length) return 'no live tiles';
-
-            for (var j = 0; j < streams.length && j < $MAX_PIP_TILES; j++) {
-                var card = doc.createElement('div');
-                card.setAttribute(
-                    'style',
-                    'position:relative;background:#3c4043;border-radius:10px;overflow:hidden;' +
-                        'min-height:0;display:flex;align-items:center;justify-content:center'
-                );
-                var tile = doc.createElement('video');
-                tile.autoplay = true;
-                tile.playsInline = true;
-                tile.muted = true;
-                tile.srcObject = streams[j].stream;
-                tile.setAttribute(
-                    'style',
-                    'width:100%;height:100%;background:#000;border-radius:6px'
-                );
-                // contain, not cover: Chrome letterboxes a pop-out rather than cropping heads out
-                // of frame, and a 480px window crops hard.
-                tile.style.setProperty('object-fit', 'contain', 'important');
-                // Set explicitly either way, and as important: Meet's own stylesheets are in
-                // this window (it copies them before abandoning the pop-out) and one of them
-                // mirrors `video`, which would otherwise flip every tile including remote ones.
-                // An inline style attribute loses to a stylesheet rule, so this cannot be folded
-                // into the style string above.
-                var mirror = streams[j].mirrored ? 'scaleX(-1)' : 'none';
-                tile.style.setProperty('transform', mirror, 'important');
-                tile.style.setProperty('-webkit-transform', mirror, 'important');
-                card.appendChild(tile);
-                if (streams[j].name) {
-                    var label = doc.createElement('div');
-                    label.textContent = streams[j].name;
-                    label.setAttribute(
-                        'style',
-                        'position:absolute;left:10px;bottom:8px;color:#fff;font:500 13px system-ui;' +
-                            'text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;' +
-                            'max-width:calc(100% - 20px);overflow:hidden;text-overflow:ellipsis;' +
-                            'white-space:nowrap'
-                    );
-                    card.appendChild(label);
+                        btn.onclick = function () {
+                            var target = findButton(spec.match) || source;
+                            target.click();
+                        };
+                        bar.appendChild(btn);
+                        live.push({ spec: spec, btn: btn });
+                    })(controls[c]);
                 }
-                tiles.appendChild(card);
-            }
 
-            var bar = doc.createElement('div');
-            bar.setAttribute(
-                'style',
-                'display:flex;gap:8px;justify-content:center;align-items:center;' +
-                    'padding:10px 8px 12px;background:#202124'
-            );
-            root.appendChild(bar);
-
-            // Meet's icons are ligatures in its own "Google Symbols" font, and its stylesheets are
-            // already inside this window - it copies them before abandoning the pop-out. So the
-            // real icon node is cloned rather than an icon name being hardcoded: the glyph is
-            // exactly Meet's, and the ligature text flips itself (mic <-> mic_off) as state
-            // changes, which a hardcoded name could not do.
-            function iconOf(button) {
-                return button.querySelector('i.google-symbols, .google-symbols, i[class*=symbols]');
-            }
-
-            // The set and order Chrome's pop-out shows: mic, camera, present, more, hang up.
-            var controls = [
-                { key: 'mic', match: /microphone/i, danger: false },
-                { key: 'cam', match: /camera/i, danger: false },
-                { key: 'present', match: /present now|share screen|presenting/i, danger: false },
-                { key: 'more', match: /more options|^more$/i, danger: false },
-                { key: 'leave', match: /leave call|hang up/i, danger: true }
-            ];
-            var live = [];
-            for (var c = 0; c < controls.length; c++) {
-                (function (spec) {
-                    var source = findButton(spec.match);
-                    if (!source) return;
-                    var btn = doc.createElement('button');
-                    btn.title = source.getAttribute('aria-label') || spec.key;
-                    btn.setAttribute('aria-label', btn.title);
-                    // Hang up is a wider pill, the rest are circles - Chrome's shape.
-                    btn.setAttribute(
-                        'style',
-                        (spec.danger ? 'width:56px;border-radius:18px;' : 'width:36px;border-radius:50%;') +
-                            'height:36px;border:0;cursor:pointer;' +
-                            'display:flex;align-items:center;justify-content:center;' +
-                            'font-size:18px;line-height:1;padding:0'
-                    );
-                    var sourceIcon = iconOf(source);
-                    if (sourceIcon) {
-                        btn.appendChild(sourceIcon.cloneNode(true));
-                    } else {
-                        btn.textContent = spec.key;
-                        btn.style.fontSize = '11px';
-                    }
-                    btn.onclick = function () {
-                        var target = findButton(spec.match) || source;
-                        target.click();
-                    };
-                    bar.appendChild(btn);
-                    live.push({ spec: spec, btn: btn });
-                })(controls[c]);
-            }
-
-            // Meet owns the state; the pop-out only reflects it. Polling rather than observing
-            // because the button is replaced, not mutated, when Meet re-renders its bar.
-            function sync() {
-                for (var k = 0; k < live.length; k++) {
-                    var entry = live[k];
-                    var source = findButton(entry.spec.match);
-                    if (!source) continue;
-                    var muted = source.getAttribute('data-is-muted') === 'true';
-                    var sourceIcon = iconOf(source);
-                    var ourIcon = entry.btn.firstElementChild;
-                    if (sourceIcon && ourIcon && ourIcon.textContent !== sourceIcon.textContent) {
-                        ourIcon.textContent = sourceIcon.textContent;
-                    }
-                    var label = source.getAttribute('aria-label');
-                    if (label) {
-                        entry.btn.title = label;
-                        entry.btn.setAttribute('aria-label', label);
-                    }
-                    if (entry.spec.danger) {
-                        entry.btn.style.background = '#d93025';
-                        entry.btn.style.color = '#fff';
-                    } else {
-                        entry.btn.style.background = muted ? '#f9dedc' : '#3c4043';
-                        entry.btn.style.color = muted ? '#8c1d18' : '#e8eaed';
+                // Meet owns the state; the pop-out only reflects it. Polling rather than observing
+                // because the button is replaced, not mutated, when Meet re-renders its bar.
+                function sync() {
+                    for (var k = 0; k < live.length; k++) {
+                        var entry = live[k];
+                        var source = findButton(entry.spec.match);
+                        if (!source) continue;
+                        var muted = source.getAttribute('data-is-muted') === 'true';
+                        var sourceIcon = iconOf(source);
+                        var ourIcon = entry.btn.firstElementChild;
+                        if (sourceIcon && ourIcon && ourIcon.textContent !== sourceIcon.textContent) {
+                            ourIcon.textContent = sourceIcon.textContent;
+                        }
+                        var label = source.getAttribute('aria-label');
+                        if (label) {
+                            entry.btn.title = label;
+                            entry.btn.setAttribute('aria-label', label);
+                        }
+                        if (entry.spec.danger) {
+                            entry.btn.style.background = '#d93025';
+                            entry.btn.style.color = '#fff';
+                        } else {
+                            entry.btn.style.background = muted ? '#f9dedc' : '#3c4043';
+                            entry.btn.style.color = muted ? '#8c1d18' : '#e8eaed';
+                        }
                     }
                 }
-            }
-            sync();
-            var timer = w.setInterval(sync, $PIP_SYNC_MS);
-            w.addEventListener('pagehide', function () { w.clearInterval(timer); });
+                sync();
+                var timer = w.setInterval(sync, $PIP_SYNC_MS);
+                w.addEventListener('pagehide', function () { w.clearInterval(timer); });
 
-            doc.body.style.cssText = 'margin:0;overflow:hidden;background:#202124';
-            doc.body.appendChild(root);
-            return 'populated ' + Math.min(streams.length, $MAX_PIP_TILES) + ' tile(s), ' +
-                live.length + ' control(s)';
-        })()
-        """.trimIndent()
-            .replace("${'$'}MAX_PIP_TILES", MAX_PIP_TILES.toString())
-            .replace("${'$'}PIP_SYNC_MS", PIP_SYNC_MS.toString())
+                doc.body.style.cssText = 'margin:0;overflow:hidden;background:#202124';
+                doc.body.appendChild(root);
+                return 'populated ' + Math.min(streams.length, $MAX_PIP_TILES) + ' tile(s), ' +
+                    live.length + ' control(s)';
+            }
+            """.trimIndent()
+                .replace("${'$'}MAX_PIP_TILES", MAX_PIP_TILES.toString())
+                .replace("${'$'}PIP_SYNC_MS", PIP_SYNC_MS.toString())
+
+    /** The same routine as a standalone call, kept as the host-side safety net. */
+    val populateCallPictureInPicture = fillPopOutFunction + "\n__bossFillPip()"
 
     /** How many participant tiles a pop-out shows before it stops being readable. */
     const val MAX_PIP_TILES = 4

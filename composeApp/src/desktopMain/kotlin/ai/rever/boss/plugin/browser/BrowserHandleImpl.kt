@@ -2756,9 +2756,17 @@ internal class BrowserHandleImpl(
                     scope.launch {
                         try {
                             val url = withTimeoutOrNull(POPUP_URL_TIMEOUT_MS) { urlDeferred.await() }
-                            // Brief grace period for the POST upload callback to fire after URL is known.
-                            // For POST navigations the upload fires within tens of ms of the navigation.
-                            val capture = withTimeoutOrNull(POPUP_UPLOAD_GRACE_MS) { captureDeferred.await() }
+                            // The upload grace only buys something when there IS a navigation to
+                            // carry a body. A popup that named no URL is a content window - a
+                            // Document Picture-in-Picture one, or an opener writing into it - and
+                            // making it sit through this before it can be shown is dead time in
+                            // front of the user.
+                            val capture =
+                                if (url == null) {
+                                    null
+                                } else {
+                                    withTimeoutOrNull(POPUP_UPLOAD_GRACE_MS) { captureDeferred.await() }
+                                }
 
                             val nav = popupDestination(url, createTargetUrl, capture)
 
@@ -2940,27 +2948,64 @@ internal class BrowserHandleImpl(
      */
     private fun buildPopOutDragBar(frame: JFrame): javax.swing.JComponent {
         val bar = javax.swing.JPanel(java.awt.BorderLayout())
-        bar.background = java.awt.Color(0x17, 0x17, 0x17)
+        bar.background = java.awt.Color(0x1F, 0x1F, 0x1F)
         bar.preferredSize = java.awt.Dimension(0, POP_OUT_BAR_HEIGHT)
-        bar.border = javax.swing.BorderFactory.createEmptyBorder(0, 8, 0, 4)
+        bar.border = javax.swing.BorderFactory.createEmptyBorder(0, 12, 0, 6)
 
-        val title = javax.swing.JLabel(frame.title)
-        title.foreground = java.awt.Color(0x9A, 0xA0, 0xA6)
+        // The ORIGIN, not the page title. A browser's own pop-out names the site, and on a
+        // floating window with no address bar that is the only thing saying what it belongs to.
+        val title = javax.swing.JLabel(popOutOriginLabel())
+        title.foreground = java.awt.Color(0xE8, 0xEA, 0xED)
         title.font = title.font.deriveFont(java.awt.Font.PLAIN, POP_OUT_BAR_FONT_SIZE)
         bar.add(title, java.awt.BorderLayout.CENTER)
 
-        val close = javax.swing.JButton("\u00d7")
-        close.foreground = java.awt.Color(0xE8, 0xEA, 0xED)
-        close.background = bar.background
-        close.isBorderPainted = false
-        close.isFocusPainted = false
-        close.isContentAreaFilled = false
-        close.font = close.font.deriveFont(java.awt.Font.PLAIN, POP_OUT_CLOSE_FONT_SIZE)
-        close.toolTipText = "Close"
-        close.addActionListener {
-            frame.dispatchEvent(java.awt.event.WindowEvent(frame, java.awt.event.WindowEvent.WINDOW_CLOSING))
+        // Right-aligned, evenly spaced, tight against the edge. A Swing button reserves margin
+        // and border insets by default, which is what spread these across the whole bar instead
+        // of grouping them in the corner: every one has to be sized explicitly.
+        val actions = javax.swing.JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0))
+        actions.isOpaque = false
+
+        // Point size per glyph, not one for both: an arrow and a multiplication sign carry very
+        // different ink at the same size, and matching the numbers left the arrow visibly smaller
+        // than the close. These are chosen to look equal, not to be equal.
+        fun barButton(
+            glyph: String,
+            tip: String,
+            pointSize: Float,
+            onClick: () -> Unit,
+        ): javax.swing.JButton {
+            val button = javax.swing.JButton(glyph)
+            button.foreground = java.awt.Color(0xE8, 0xEA, 0xED)
+            button.isBorderPainted = false
+            button.isFocusPainted = false
+            button.isContentAreaFilled = false
+            button.isOpaque = false
+            button.margin = java.awt.Insets(0, 0, 0, 0)
+            button.border = javax.swing.BorderFactory.createEmptyBorder()
+            button.preferredSize = java.awt.Dimension(POP_OUT_ICON_SIZE, POP_OUT_ICON_SIZE)
+            button.font = button.font.deriveFont(java.awt.Font.PLAIN, pointSize)
+            button.toolTipText = tip
+            button.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+            button.horizontalAlignment = javax.swing.SwingConstants.CENTER
+            button.addActionListener { onClick() }
+            return button
         }
-        bar.add(close, java.awt.BorderLayout.EAST)
+
+        actions.add(
+            barButton("\u2921", "Back to tab", POP_OUT_ARROW_FONT_SIZE) {
+                returnToTab()
+                frame.dispatchEvent(
+                    java.awt.event.WindowEvent(frame, java.awt.event.WindowEvent.WINDOW_CLOSING),
+                )
+            },
+        )
+
+        val close =
+            barButton("\u00d7", "Close", POP_OUT_CLOSE_FONT_SIZE) {
+                frame.dispatchEvent(java.awt.event.WindowEvent(frame, java.awt.event.WindowEvent.WINDOW_CLOSING))
+            }
+        actions.add(close)
+        bar.add(actions, java.awt.BorderLayout.EAST)
 
         val origin = java.awt.Point()
         val drag =
@@ -2980,9 +3025,31 @@ internal class BrowserHandleImpl(
         title.addMouseMotionListener(drag)
         bar.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.MOVE_CURSOR)
 
-        // The frame keeps its title in sync with the page; the bar has to follow.
-        frame.addPropertyChangeListener("title") { title.text = frame.title }
         return bar
+    }
+
+    /** The host of the page this pop-out belongs to, which is what a browser shows here. */
+    private fun popOutOriginLabel(): String =
+        runCatching {
+            java.net
+                .URI(browser.url())
+                .host
+                .orEmpty()
+                .removePrefix("www.")
+        }.getOrDefault("")
+
+    /**
+     * Brings the window holding this tab back to the front.
+     *
+     * Stated rather than implied: this raises the WINDOW, it does not re-select the tab inside it.
+     * Selecting a tab lives in the host's split-view state, which this class has no route to - the
+     * tab belongs to the browser plugin, and reaching it would mean a new callback on the plugin
+     * API and the release chain that goes with one. Raising the window is the half that is
+     * available without that, and returning to the tab by hand still restores the call as before.
+     */
+    private fun returnToTab() {
+        runCatching { WindowFocusManager.focusWindow(currentWindowId) }
+        runCatching { browser.focus() }
     }
 
     /**
@@ -3157,6 +3224,7 @@ internal class BrowserHandleImpl(
             ),
         )
         if (!eligible) return
+        val hiddenAt = System.nanoTime()
         autoPictureInPictureScope.launch {
             // A tab dragged between windows disposes one surface and composes another, in
             // unspecified order, so a move momentarily looks exactly like a background. Waiting
@@ -3174,22 +3242,49 @@ internal class BrowserHandleImpl(
             // so the call's synchronous return says only that we asked. Read the settled state
             // back instead - trusting the synchronous return is how this logged "entered" while
             // no window ever appeared.
-            delay(AUTO_PIP_RESULT_MS)
-            val verdict =
-                runCatching {
-                    browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                        BrowserJavaScripts.readCallPictureInPictureResult,
-                    )
-                }.getOrNull() ?: ""
+            //
+            // Polled, not waited out. Fixed delays here cost over three seconds before the
+            // pop-out had anything in it, and a browser's own is immediate. Every step now ends
+            // the moment its answer arrives, and the filling below is idempotent, so a poll that
+            // fires once too often costs nothing.
+            val verdict = awaitPopOutVerdict()
             val entered = verdict.contains("\"state\":\"$AUTO_PIP_ENTERED\"")
             if (entered) autoPoppedOut.set(true)
             if (entered) fillEmptySitePopOut()
             logger.debug(
                 LogCategory.BROWSER,
                 "Auto Picture-in-Picture on hide",
-                mapOf("entered" to entered.toString(), "detail" to verdict),
+                mapOf(
+                    "entered" to entered.toString(),
+                    "msFromHide" to ((System.nanoTime() - hiddenAt) / 1_000_000L).toString(),
+                    "detail" to verdict,
+                ),
             )
         }
+    }
+
+    /**
+     * Waits for the pop-out script to reach an outcome, and reports what it was.
+     *
+     * Polled rather than waited out, and it stops on **any** settled state rather than only on
+     * success: a script that had already given up - no call video, or a rejection - otherwise
+     * cost the entire poll budget before anything else could run, which measured as two seconds
+     * of nothing happening.
+     */
+    private suspend fun awaitPopOutVerdict(): String {
+        var verdict = ""
+        repeat(AUTO_PIP_POLL_ATTEMPTS) {
+            if (!verdict.contains("\"state\"") || verdict.contains("\"state\":\"$AUTO_PIP_PENDING\"")) {
+                delay(AUTO_PIP_POLL_MS)
+                verdict =
+                    runCatching {
+                        browser.mainFrame().orElse(null)?.executeJavaScript<String>(
+                            BrowserJavaScripts.readCallPictureInPictureResult,
+                        )
+                    }.getOrNull() ?: ""
+            }
+        }
+        return verdict
     }
 
     /**
@@ -3201,7 +3296,9 @@ internal class BrowserHandleImpl(
      * is left alone entirely.
      */
     private suspend fun fillEmptySitePopOut() {
-        delay(SITE_POPULATE_GRACE_MS)
+        // A safety net, not the main path. The enter script fills the window in the same pass
+        // that opens it; this only covers a pop-out that appeared after the in-page poll gave up.
+        if (!isValid) return
         val result =
             runCatching {
                 browser.mainFrame().orElse(null)?.executeJavaScript<String>(
@@ -4046,10 +4143,13 @@ internal class BrowserHandleImpl(
          * momentarily indistinguishable from a background; this is long enough for the new
          * surface to arrive and short enough that a real tab switch feels immediate.
          */
-        private const val AUTO_PIP_SETTLE_MS = 400L
+        private const val AUTO_PIP_SETTLE_MS = 80L
 
         /** The settled state [BrowserJavaScripts.readCallPictureInPictureResult] reports on success. */
         private const val AUTO_PIP_ENTERED = "entered"
+
+        /** The one state that means the script is still working; everything else is an outcome. */
+        private const val AUTO_PIP_PENDING = "pending"
 
         /**
          * How long the pop-out gets to settle before its outcome is read back.
@@ -4057,7 +4157,10 @@ internal class BrowserHandleImpl(
          * Must outlast [BrowserJavaScripts.SITE_PIP_DEADLINE_MS], or a site-route pop-out is read
          * while still pending, recorded as a failure, and never closed again on the way back.
          */
-        private const val AUTO_PIP_RESULT_MS = BrowserJavaScripts.SITE_PIP_DEADLINE_MS + 400L
+        private const val AUTO_PIP_POLL_MS = 100L
+
+        /** Bounds the poll at roughly the site deadline plus the fallback's own attempt. */
+        private const val AUTO_PIP_POLL_ATTEMPTS = 20
 
         /** Size of a floating popup window that asked for no geometry of its own. */
         private const val FLOATING_POPUP_WIDTH = 480
@@ -4065,13 +4168,6 @@ internal class BrowserHandleImpl(
         private const val FLOATING_POPUP_HEIGHT = 320
 
         private const val FLOATING_POPUP_INSET = 40
-
-        /**
-         * How long the site gets to fill its own pop-out before we do it for it. Long enough that
-         * a site which is merely slow is not overwritten, short enough that a blank window is not
-         * what the user sees.
-         */
-        private const val SITE_POPULATE_GRACE_MS = 900L
 
         /** Bounds on a page-supplied pop-out size, so a bad number cannot make an unusable window. */
         private const val MIN_PIP_EDGE = 120
@@ -4085,11 +4181,28 @@ internal class BrowserHandleImpl(
 
         private const val POP_OUT_CLOSE_FONT_SIZE = 15f
 
+        /** Larger than the close glyph on purpose: the arrow carries far less ink at equal size. */
+        private const val POP_OUT_ARROW_FONT_SIZE = 19f
+
+        /** Edge of a square icon button in the pop-out's strip. */
+        private const val POP_OUT_ICON_SIZE = 24
+
         /**
          * How long an adopted popup waits for its main-frame navigation to name a destination
          * before falling back to the URL recorded at popup-creation time.
          */
-        private const val POPUP_URL_TIMEOUT_MS = 3_000L
+
+        /**
+         * How long an adopted popup waits for its main-frame navigation to name a destination.
+         *
+         * Short on purpose. `NavigationStarted` fires when a navigation BEGINS, not when it
+         * finishes, so a real link popup answers within a few frames however slow the network is
+         * - the old three seconds bought nothing for those and were paid in full by every
+         * Document Picture-in-Picture window, which never navigates at all and so could not be
+         * shown until the wait expired. That was seconds of blank screen for the one case where
+         * the user is watching.
+         */
+        private const val POPUP_URL_TIMEOUT_MS = 600L
 
         /**
          * Grace period for the popup's main-frame upload to arrive once its URL is known, so a
