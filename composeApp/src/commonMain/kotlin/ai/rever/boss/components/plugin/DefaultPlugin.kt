@@ -1233,6 +1233,35 @@ private class ApiActiveTabsProviderAdapter(
     override val activeTabs: kotlinx.coroutines.flow.StateFlow<List<ActiveTabData>> = _activeTabs
 
     init {
+        // Bring a tab back when its pop-out asks. This adapter is the only per-window object
+        // holding all three things the answer needs - the split state to select in, the
+        // workspace to enumerate against, and the window id to filter by - which is why the
+        // collector lives here rather than beside the button that raises the request.
+        scope.launch {
+            ai.rever.boss.plugin.browser.PopOutReturnRequests.requests.collect { request ->
+                if (request.windowId != windowId) return@collect
+                runCatching {
+                    val panelId =
+                        splitViewState
+                            .collectAllActiveTabs(workspaceManager, windowId)
+                            .firstOrNull { it.tabInfo.id == request.tabId }
+                            ?.panelId
+                    if (panelId != null) {
+                        splitViewState.selectTabInPanel(request.tabId, panelId)
+                    } else {
+                        // The tab is gone, or lives in another window that will answer instead.
+                        tabsLogger.debug(
+                            LogCategory.UI,
+                            "Pop-out asked for a tab this window does not have",
+                            mapOf("tabId" to request.tabId),
+                        )
+                    }
+                }.onFailure {
+                    tabsLogger.warn(LogCategory.UI, "Could not return to a pop-out's tab", error = it)
+                }
+            }
+        }
+
         // Start polling loop (like bundled LLMRpaIntegration.kt does)
         // This ensures dynamic plugins receive tab updates
         scope.launch {
