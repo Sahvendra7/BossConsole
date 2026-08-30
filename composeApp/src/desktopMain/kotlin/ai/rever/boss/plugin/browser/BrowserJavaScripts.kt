@@ -100,8 +100,10 @@ object BrowserJavaScripts {
      *
      * - **A live `srcObject` is required.** Every participant tile is a `MediaStream`; a `<video>`
      *   with a `src` is an advert or a background loop, never the call.
-     * - **Muted loses heavily.** The self-view is always muted (you do not echo yourself), and it
-     *   is the one tile nobody wants popped out.
+     * - **Muted loses heavily.** Intended to demote the self-view, and worth keeping for sites
+     *   where it discriminates - but measured on a live Meet call it does not: Meet routes call
+     *   audio separately, so *every* tile is muted and the penalty applies uniformly, leaving
+     *   size to decide. Do not read this line as "the muted one is the self-view".
      * - **Bigger wins**, by painted area, because the speaker's tile is the large one.
      * - Zero-dimension and `disablePictureInPicture` elements are skipped: a video that has not
      *   produced a frame rejects with `InvalidStateError`, which is the same failure as picking
@@ -110,10 +112,14 @@ object BrowserJavaScripts {
     val enterCallPictureInPicture =
         """
         (function () {
-            if (document.pictureInPictureElement) return 'already';
+            window.__bossPip = { state: 'pending', picked: null, activation: null, videos: 0 };
+            if (document.pictureInPictureElement) { window.__bossPip.state = 'already'; return 'already'; }
+            window.__bossPip.activation =
+                navigator.userActivation ? navigator.userActivation.isActive : 'unknown';
             var best = null;
             var bestScore = -1;
             var videos = document.querySelectorAll('video');
+            window.__bossPip.videos = videos.length;
             for (var i = 0; i < videos.length; i++) {
                 var v = videos[i];
                 if (!v.srcObject) continue;
@@ -123,14 +129,38 @@ object BrowserJavaScripts {
                 if (v.muted) score = score / 1000;
                 if (score > bestScore) { bestScore = score; best = v; }
             }
-            if (!best) return 'no call video';
+            if (!best) { window.__bossPip.state = 'no call video'; return 'no call video'; }
+            window.__bossPip.picked = best.videoWidth + 'x' + best.videoHeight;
             try {
-                best.requestPictureInPicture();
-                return 'entered';
+                // Through the PROTOTYPE, never `best.requestPictureInPicture()`. Google Meet
+                // installs its own `requestPictureInPicture` as an OWN property on the video
+                // element, shadowing Chromium's. Meet's version returns a promise that never
+                // settles - it is waiting for the browser to drive Meet's Document PiP through
+                // the media-session `enterpictureinpicture` action, which is chrome/browser code
+                // no embedder can fire. Calling the instance method therefore hangs forever with
+                // no error, which reads exactly like a broken engine and is not.
+                HTMLVideoElement.prototype.requestPictureInPicture.call(best)
+                    .then(function () { window.__bossPip.state = 'entered'; })
+                    .catch(function (e) { window.__bossPip.state = 'rejected: ' + e.name + ': ' + e.message; });
             } catch (e) {
-                return 'failed: ' + e.name;
+                window.__bossPip.state = 'threw: ' + e.name;
             }
+            return 'requested';
         })()
+        """.trimIndent()
+
+    /**
+     * Reads back what [enterCallPictureInPicture] actually achieved.
+     *
+     * Separate because `requestPictureInPicture()` returns a **promise**, and `executeJavaScript`
+     * cannot await one. Reporting the synchronous return as success is how this shipped a log
+     * line saying `entered` while no window ever appeared: a rejected promise is not a throw, so
+     * the try/catch around the call sees nothing. The state is settled asynchronously and read
+     * back a beat later.
+     */
+    val readCallPictureInPictureResult =
+        """
+        JSON.stringify(window.__bossPip || { state: 'no attempt recorded' })
         """.trimIndent()
 
     /**
@@ -176,8 +206,10 @@ object BrowserJavaScripts {
             if (targetVideo) {
                 if (document.pictureInPictureElement) {
                     document.exitPictureInPicture();
-                } else if (targetVideo.requestPictureInPicture) {
-                    targetVideo.requestPictureInPicture().catch(err => {
+                } else if (HTMLVideoElement.prototype.requestPictureInPicture) {
+                    // Prototype, not instance: a page can shadow this per element, and Google
+                    // Meet does - its override never settles. See enterCallPictureInPicture.
+                    HTMLVideoElement.prototype.requestPictureInPicture.call(targetVideo).catch(err => {
                         console.error('PiP failed:', err);
                     });
                 }

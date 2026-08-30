@@ -582,6 +582,23 @@ internal class BrowserHandleImpl(
     private val composedSurfaces = AtomicInteger(0)
 
     /**
+     * What this page is capturing, and therefore whether it is in a call.
+     *
+     * Declared here, above [init], on purpose: `setupEventListeners()` subscribes to the capture
+     * events from the constructor. The subscription lambdas read this field when an event
+     * arrives rather than when they are created, so a later declaration happens to work - but
+     * only by accident, and a refactor that touched it inside the lambda would NPE.
+     */
+    private val captureTracker = CaptureTracker()
+
+    /**
+     * Set while a pop-out this class opened is on screen. A pop-out the user opened by hand is
+     * not ours to close, so only the ones we entered are restored on the way back - the same rule
+     * Chrome applies through its 5-second activation window.
+     */
+    private val autoPoppedOut = AtomicBoolean(false)
+
+    /**
      * The AWT window this handle's view is bound to, for the on-screen half of [viewComposed].
      * Null until [Content] resolves one, and treated as "assume showing" while it is.
      */
@@ -1201,11 +1218,31 @@ internal class BrowserHandleImpl(
         // which is why Chrome's rule does not fire for getDisplayMedia either.
         subscriptions +=
             browser.on(MediaStreamCaptureStarted::class.java) { event ->
-                capturedMediaOf(event.mediaStreamType())?.let(captureTracker::started)
+                val media = capturedMediaOf(event.mediaStreamType())
+                media?.let(captureTracker::started)
+                logger.debug(
+                    LogCategory.BROWSER,
+                    "Capture started",
+                    mapOf(
+                        "handleId" to id,
+                        "media" to media.toString(),
+                        "capturing" to captureTracker.isCapturing().toString(),
+                    ),
+                )
             }
         subscriptions +=
             browser.on(MediaStreamCaptureStopped::class.java) { event ->
-                capturedMediaOf(event.mediaStreamType())?.let(captureTracker::stopped)
+                val media = capturedMediaOf(event.mediaStreamType())
+                media?.let(captureTracker::stopped)
+                logger.debug(
+                    LogCategory.BROWSER,
+                    "Capture stopped",
+                    mapOf(
+                        "handleId" to id,
+                        "media" to media.toString(),
+                        "capturing" to captureTracker.isCapturing().toString(),
+                    ),
+                )
             }
 
         // Title changed
@@ -2852,16 +2889,6 @@ internal class BrowserHandleImpl(
     // PICTURE IN PICTURE
     // ============================================================
 
-    /** What this page is capturing, and therefore whether it is in a call. */
-    private val captureTracker = CaptureTracker()
-
-    /**
-     * Set while a pop-out this class opened is on screen. A pop-out the user opened by hand is
-     * not ours to close, so only the ones we entered are restored on the way back - the same rule
-     * Chrome applies through its 5-second activation window.
-     */
-    private val autoPoppedOut = AtomicBoolean(false)
-
     /**
      * Grants the page a transient user activation by sending it real input.
      *
@@ -2903,14 +2930,43 @@ internal class BrowserHandleImpl(
     }
 
     /**
-     * Called when this tab's surface leaves composition, which is the host's only signal that a
-     * tab was backgrounded - nothing tells Chromium the page is hidden, so `visibilitychange`
-     * never fires and the page cannot notice this for itself.
+     * Called when this tab's surface leaves composition - the host's signal that a tab was
+     * backgrounded.
+     *
+     * The page *can* see this for itself: `document.visibilityState` does flip to `hidden` on a
+     * BOSS tab switch (measured), because Chromium derives visibility from the native widget
+     * detaching even though nothing here calls a visibility API. So the trigger is not what the
+     * page lacks.
+     *
+     * What it lacks is a **gesture**. Both Picture-in-Picture APIs refuse without transient user
+     * activation, and a tab switch carries none - so a page-side `visibilitychange` listener
+     * could notice the switch and still not be allowed to act on it. Chrome closes that gap
+     * inside Blink, minting an activation before invoking the site's media-session handler; an
+     * embedder has to mint one itself, which is why this lives in Kotlin.
      */
     private fun onSurfaceHidden() {
         if (!isValid) return
         val url = runCatching { browser.url() }.getOrDefault("")
-        if (!shouldAutoPictureInPicture(url, captureTracker.isCapturing(), autoPoppedOut.get())) return
+        val capturing = captureTracker.isCapturing()
+        val eligible = shouldAutoPictureInPicture(url, capturing, autoPoppedOut.get())
+        // Minted here, synchronously, while onDispose is still running and the surface has not
+        // finished tearing down. Doing it only after the settle delay below gave activation on
+        // some switches and not others - a gesture granted to a view that is already gone does
+        // not stick. The 5s transient-activation window comfortably outlives the delay, and it
+        // is minted again before the request as a second chance.
+        if (eligible) mintUserActivation()
+        logger.debug(
+            LogCategory.BROWSER,
+            "Tab hidden, auto Picture-in-Picture gate",
+            mapOf(
+                "handleId" to id,
+                "eligible" to eligible.toString(),
+                "capturing" to capturing.toString(),
+                "poppedOut" to autoPoppedOut.get().toString(),
+                "url" to LogSanitizer.maskUriParams(url),
+            ),
+        )
+        if (!eligible) return
         autoPictureInPictureScope.launch {
             // A tab dragged between windows disposes one surface and composes another, in
             // unspecified order, so a move momentarily looks exactly like a background. Waiting
@@ -2919,14 +2975,29 @@ internal class BrowserHandleImpl(
             if (composedSurfaces.get() > 0 || !isValid) return@launch
             if (!captureTracker.isCapturing()) return@launch
             mintUserActivation()
-            val entered =
+            runCatching {
+                browser.mainFrame().orElse(null)?.executeJavaScript<String>(
+                    BrowserJavaScripts.enterCallPictureInPicture,
+                )
+            }
+            // requestPictureInPicture returns a promise and executeJavaScript cannot await one,
+            // so the call's synchronous return says only that we asked. Read the settled state
+            // back instead - trusting the synchronous return is how this logged "entered" while
+            // no window ever appeared.
+            delay(AUTO_PIP_RESULT_MS)
+            val verdict =
                 runCatching {
                     browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                        BrowserJavaScripts.enterCallPictureInPicture,
+                        BrowserJavaScripts.readCallPictureInPictureResult,
                     )
-                }.getOrNull()
-            if (entered == AUTO_PIP_ENTERED) autoPoppedOut.set(true)
-            logger.debug(LogCategory.BROWSER, "Auto Picture-in-Picture on hide", mapOf("result" to (entered ?: "null")))
+                }.getOrNull() ?: ""
+            val entered = verdict.contains("\"state\":\"$AUTO_PIP_ENTERED\"")
+            if (entered) autoPoppedOut.set(true)
+            logger.debug(
+                LogCategory.BROWSER,
+                "Auto Picture-in-Picture on hide",
+                mapOf("entered" to entered.toString(), "detail" to verdict),
+            )
         }
     }
 
@@ -3168,10 +3239,10 @@ internal class BrowserHandleImpl(
             // frame-stall probe must not judge a view that is not on screen, because Chromium
             // serves no frames to one. See composedSurfaces.
             composedSurfaces.incrementAndGet()
-            // Third consumer of the same signal, and the only one the user can see: this is the
-            // host's sole notion of "the tab was switched away from". Nothing tells Chromium the
-            // page is hidden - JxBrowser exposes no visibility API - so the page never fires
-            // visibilitychange and cannot pop itself out the way it would in Chrome.
+            // Third consumer of the same signal, and the only one the user can see: this is where
+            // "the tab was switched away from" is noticed. The page sees the switch too - its
+            // visibilityState really does go hidden - but it cannot act on it without a gesture,
+            // which is what onSurfaceHidden mints.
             onSurfaceShown()
             onDispose {
                 visitTracker.setVisible(false)
@@ -3763,8 +3834,11 @@ internal class BrowserHandleImpl(
          */
         private const val AUTO_PIP_SETTLE_MS = 400L
 
-        /** What [BrowserJavaScripts.enterCallPictureInPicture] returns when a pop-out opened. */
+        /** The settled state [BrowserJavaScripts.readCallPictureInPictureResult] reports on success. */
         private const val AUTO_PIP_ENTERED = "entered"
+
+        /** How long the pop-out promise gets to settle before its outcome is read back. */
+        private const val AUTO_PIP_RESULT_MS = 700L
 
         /**
          * How long an adopted popup waits for its main-frame navigation to name a destination
