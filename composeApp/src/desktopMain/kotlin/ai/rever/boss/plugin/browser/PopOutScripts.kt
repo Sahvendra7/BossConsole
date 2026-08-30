@@ -148,6 +148,23 @@ internal object PopOutScripts {
                     // off does not have. A Document PiP window needs neither, and filling it is
                     // already our job - so this is the branch that makes a pop-out appear at all,
                     // rather than the one that makes it the site's.
+                    // Only for a page that actually has a call in it. Eligibility is "capturing
+                    // audio or video on https", which a dictation box, a voice note or a
+                    // whiteboard holding the microphone all satisfy - and those have no tiles, so
+                    // popping them out produced an empty window offering to mute something the
+                    // user never asked to pop out. Deliberately NOT gated on video capture, which
+                    // was the other candidate fix: a call joined with the camera off captures no
+                    // video at all, and that is exactly the case this feature was extended to
+                    // cover.
+                    function hasCall() {
+                        var tiles = document.querySelectorAll('[data-participant-id]');
+                        for (var i = 0; i < tiles.length; i++) {
+                            if (tiles[i].getBoundingClientRect().width > 1) return true;
+                        }
+                        return false;
+                    }
+                    if (!hasCall()) { window.__bossPip.state = 'no call'; return 'no call'; }
+
                     function ownWindow(reason) {
                         if (poppedOut()) return;
                         window.__bossPip.route = 'own' + (reason ? ' (' + reason + ')' : '');
@@ -241,13 +258,16 @@ internal object PopOutScripts {
                     return 'requested';
                 })()
                 """.trimIndent()
-                    .replace("${'$'}SITE_PIP_DEADLINE_MS", SITE_PIP_DEADLINE_MS.toString())
-                    .replace("${'$'}SITE_PIP_POLL_MS", SITE_PIP_POLL_MS.toString())
-                    .replace("${'$'}OWN_PIP_WIDTH", OWN_PIP_WIDTH.toString())
-                    .replace("${'$'}OWN_PIP_HEIGHT", OWN_PIP_HEIGHT.toString())
         )
 
     /** How long the site's own Picture-in-Picture gets before we fall back to the video tile. */
+    // These four MUST stay `const val`. They are interpolated into the raw strings above as
+    // `${'$'}NAME` templates, and a compile-time constant resolves even though it is declared
+    // after its use. Drop `const` from any of them and the template reads an uninitialized
+    // member as 0 - `setInterval(..., 0)` and a deadline already expired on the first tick, so
+    // the site route dies instantly and silently. (There used to be a `.replace` chain here that
+    // looked like it did the substitution; it was searching for text interpolation had already
+    // consumed, so it did nothing and hid this requirement.)
     const val SITE_PIP_DEADLINE_MS = 1500
 
     /** How often the site route is checked for having opened a window. */

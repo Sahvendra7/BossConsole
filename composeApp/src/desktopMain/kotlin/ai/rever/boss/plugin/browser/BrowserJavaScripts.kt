@@ -89,34 +89,6 @@ object BrowserJavaScripts {
         """.trimIndent()
 
     /**
-     * Fills a Document Picture-in-Picture window with the call, when the site opened one and then
-     * left it empty.
-     *
-     * Google Meet accepts the `enterpictureinpicture` action, opens its window, copies its
-     * stylesheets in - and stops. Its own pop-out never arrives, and the window stays blank. So
-     * this builds the equivalent: the video tiles plus the controls people actually reach for.
-     *
-     * **Nothing is moved out of the page.** A `MediaStream` can feed any number of `<video>`
-     * elements, so the tiles here are new elements sharing the page's streams. Moving Meet's own
-     * nodes across would have been closer to what Meet does and far more destructive - the call UI
-     * would vanish from the tab, and putting it back correctly on every exit path is the kind of
-     * thing that fails once and loses somebody their meeting.
-     *
-     * The controls are proxies: each one clicks the real button in the page, so Meet stays the
-     * only thing that actually mutes a microphone or leaves a call.
-     *
-     * Two signals do the work, and neither is a class name, because Meet's are obfuscated and
-     * change:
-     * - `track.getSettings().deviceId` is present only on a **local** capture track, which is how
-     *   your own tile is told from everyone else's without guessing at markup.
-     * - `data-is-muted` on the mic and camera buttons is Meet's own state, so the pop-out's
-     *   buttons cannot drift out of sync with the page's.
-     *
-     * `aria-label` matching is the weak part and is known to be: it is English-only, so on a
-     * localised Meet the controls simply do not appear and the tiles still do.
-     */
-
-    /**
      * Enable Picture-in-Picture mode for videos on the page.
      *
      * Attempts to find and activate PiP on:

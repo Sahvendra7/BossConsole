@@ -608,6 +608,9 @@ internal class BrowserHandleImpl(
      */
     private val autoPoppedOut = AtomicBoolean(false)
 
+    /** Set while a pop-out attempt is outstanding, so the popup handler can recognise its window. */
+    private val popOutPending = AtomicBoolean(false)
+
     /** Serves the pop-out's controls while one of ours is open. */
     @Volatile private var popOutActionJob: Job? = null
 
@@ -1116,6 +1119,15 @@ internal class BrowserHandleImpl(
                 // on a page. A mistyped host (youtube.como) commits an error page and still
                 // fires all three, so without this it gets recorded as a visited page.
                 recordNavigationOutcome(event)
+
+                // A main-frame navigation ends whatever call the old document was in, so the
+                // capture counts start again. Without this the tab stays "in a call" for as long
+                // as the engine's stop events say so, and ONE missed MediaStreamCaptureStopped -
+                // a renderer crash, a page swapped out mid-call - leaves it permanently eligible,
+                // costing a synthetic click and a poll on every later tab switch, forever.
+                if (event.isInMainFrame) {
+                    captureTracker.clear()
+                }
 
                 _isLoading = false
                 loadingListeners.forEach { listener ->
@@ -2674,18 +2686,6 @@ internal class BrowserHandleImpl(
                 // pairs creates with opens in order, so skipping the claim on one branch would
                 // hand the next link's tab a URL meant for this window.
                 val createTargetUrl = popupTargets.claim()
-                // TEMPORARY probe: which branch does a Document PiP window take?
-                logger.warn(
-                    LogCategory.BROWSER,
-                    "PROBE OpenPopup",
-                    mapOf(
-                        "bounds" to initialBounds.toString(),
-                        "empty" to (initialBounds == Rect.empty()).toString(),
-                        "popupUrl" to targetUrl,
-                        "claimed" to (createTargetUrl ?: "none"),
-                    ),
-                )
-
                 // Check if popup has specific window dimensions
                 val isEmptyBounds = initialBounds == Rect.empty()
 
@@ -2787,6 +2787,25 @@ internal class BrowserHandleImpl(
                             if (cleanedUp.compareAndSet(false, true)) {
                                 urlSubscriptions.forEach { runCatching { it.unsubscribe() } }
                                 pendingPopupCaptures.remove(popupBrowser)
+                            }
+
+                            if (nav == null && !popOutRequestInFlight()) {
+                                // A URL-less popup with no pop-out pending keeps this file's
+                                // older, conservative behaviour: dropped. `usablePopupUrl` is
+                                // http(s)-only deliberately, so `nav == null` also covers
+                                // `file:`, `data:`, `blob:` and custom schemes - showing those
+                                // as chrome-less always-on-top windows would be a real
+                                // escalation, and the label on such a window reads the OPENER's
+                                // host, so a page could `window.open()` with no URL, be shown,
+                                // then assign `location` afterwards and render arbitrary content
+                                // under someone else's hostname.
+                                logger.debug(
+                                    LogCategory.BROWSER,
+                                    "Dropping a URL-less popup with no pop-out pending",
+                                    mapOf("handleId" to id),
+                                )
+                                if (!popupBrowser.isClosed) popupBrowser.close()
+                                return@launch
                             }
 
                             if (nav == null) {
@@ -3141,6 +3160,23 @@ internal class BrowserHandleImpl(
     }
 
     /**
+     * Whether this handle is currently trying to pop a call out.
+     *
+     * Gates the "show a URL-less popup as a window" branch. Without it, EVERY popup that names
+     * no usable URL is shown as an undecorated always-on-top window - and `usablePopupUrl` is
+     * http(s)-only on purpose, so that set includes `file:`, `data:`, `blob:` and custom schemes
+     * which this file previously dropped. The drag bar's label reads the OPENER's host
+     * ([popOutOriginLabel]) and nothing watches the popup's navigation after it is shown, so a
+     * page could open a URL-less popup, be granted the window, and only then assign
+     * `location` - arbitrary content in a chrome-less always-on-top window wearing someone
+     * else's hostname.
+     *
+     * True while [onSurfaceHidden] has a pop-out attempt outstanding, which is the only case the
+     * branch exists to serve.
+     */
+    private fun popOutRequestInFlight(): Boolean = popOutPending.get() || autoPoppedOut.get()
+
+    /**
      * Shows a popup browser in its own Swing window.
      *
      * Two callers with different needs. An OAuth or payment popup asked for a size and position
@@ -3322,34 +3358,44 @@ internal class BrowserHandleImpl(
             if (composedSurfaces.get() > 0 || !isValid) return@launch
             if (!captureTracker.isCapturing()) return@launch
             mintUserActivation()
-            runCatching {
-                browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                    PopOutScripts.enterCallPictureInPicture,
+            // Raised BEFORE the request, because the popup arrives while it is still running:
+            // Chromium delivers the Document PiP window synchronously from requestWindow, and
+            // the popup handler consults this to tell that window apart from every other popup
+            // that names no URL. Cleared in the finally, so a failed request cannot leave the
+            // handler permanently willing to show URL-less popups as windows.
+            popOutPending.set(true)
+            try {
+                runCatching {
+                    browser.mainFrame().orElse(null)?.executeJavaScript<String>(
+                        PopOutScripts.enterCallPictureInPicture,
+                    )
+                }
+                // requestPictureInPicture returns a promise and executeJavaScript cannot await one,
+                // so the call's synchronous return says only that we asked. Read the settled state
+                // back instead - trusting the synchronous return is how this logged "entered" while
+                // no window ever appeared.
+                //
+                // Polled, not waited out. Fixed delays here cost over three seconds before the
+                // pop-out had anything in it, and a browser's own is immediate. Every step now ends
+                // the moment its answer arrives, and the filling below is idempotent, so a poll that
+                // fires once too often costs nothing.
+                val verdict = awaitPopOutVerdict()
+                val entered = verdict.contains("\"state\":\"$AUTO_PIP_ENTERED\"")
+                if (entered) autoPoppedOut.set(true)
+                if (entered) fillEmptySitePopOut()
+                if (entered) servePopOutActions()
+                logger.debug(
+                    LogCategory.BROWSER,
+                    "Auto Picture-in-Picture on hide",
+                    mapOf(
+                        "entered" to entered.toString(),
+                        "msFromHide" to ((System.nanoTime() - hiddenAt) / 1_000_000L).toString(),
+                        "detail" to verdict,
+                    ),
                 )
+            } finally {
+                popOutPending.set(false)
             }
-            // requestPictureInPicture returns a promise and executeJavaScript cannot await one,
-            // so the call's synchronous return says only that we asked. Read the settled state
-            // back instead - trusting the synchronous return is how this logged "entered" while
-            // no window ever appeared.
-            //
-            // Polled, not waited out. Fixed delays here cost over three seconds before the
-            // pop-out had anything in it, and a browser's own is immediate. Every step now ends
-            // the moment its answer arrives, and the filling below is idempotent, so a poll that
-            // fires once too often costs nothing.
-            val verdict = awaitPopOutVerdict()
-            val entered = verdict.contains("\"state\":\"$AUTO_PIP_ENTERED\"")
-            if (entered) autoPoppedOut.set(true)
-            if (entered) fillEmptySitePopOut()
-            if (entered) servePopOutActions()
-            logger.debug(
-                LogCategory.BROWSER,
-                "Auto Picture-in-Picture on hide",
-                mapOf(
-                    "entered" to entered.toString(),
-                    "msFromHide" to ((System.nanoTime() - hiddenAt) / 1_000_000L).toString(),
-                    "detail" to verdict,
-                ),
-            )
         }
     }
 
@@ -4358,7 +4404,7 @@ internal class BrowserHandleImpl(
          * Must outlast [PopOutScripts.SITE_PIP_DEADLINE_MS], or a site-route pop-out is read
          * while still pending, recorded as a failure, and never closed again on the way back.
          */
-        private const val AUTO_PIP_POLL_MS = 100L
+        internal const val AUTO_PIP_POLL_MS = 100L
 
         /** How often a pop-out is asked whether one of its controls was pressed. */
         private const val POP_OUT_ACTION_POLL_MS = 120L
@@ -4367,7 +4413,7 @@ internal class BrowserHandleImpl(
         private const val POP_OUT_CLOSE_FALLBACK_MS = 600L
 
         /** Bounds the poll at roughly the site deadline plus the fallback's own attempt. */
-        private const val AUTO_PIP_POLL_ATTEMPTS = 20
+        internal const val AUTO_PIP_POLL_ATTEMPTS = 20
 
         /** Size of a floating popup window that asked for no geometry of its own. */
         private const val FLOATING_POPUP_WIDTH = 480

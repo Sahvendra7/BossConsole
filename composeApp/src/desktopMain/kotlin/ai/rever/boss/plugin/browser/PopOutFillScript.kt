@@ -351,8 +351,6 @@ internal object PopOutFillScript {
                     live.length + ' control(s)';
             }
             """.trimIndent()
-                .replace("${'$'}MAX_PIP_TILES", MAX_PIP_TILES.toString())
-                .replace("${'$'}PIP_SYNC_MS", PIP_SYNC_MS.toString())
 
     /** The same routine as a standalone call, kept as the host-side safety net. */
     val populateCallPictureInPicture = fillPopOutFunction + "\n__bossFillPip()"

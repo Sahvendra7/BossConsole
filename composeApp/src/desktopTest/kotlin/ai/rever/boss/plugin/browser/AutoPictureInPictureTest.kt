@@ -130,4 +130,19 @@ class AutoPictureInPictureTest {
 
         assertFalse(tracker.isCapturing())
     }
+
+    @Test
+    fun `the pop-out poll outlasts the site route's own deadline`() {
+        // The poll has to still be running when the site route gives up, or a site-route pop-out
+        // is read while pending, recorded as a failure, and never closed again on the way back -
+        // stranding the window on screen after the user returns. Two files, two constants,
+        // nothing else connecting them: raising the deadline alone silently reintroduces it.
+        val pollBudgetMs = BrowserHandleImpl.AUTO_PIP_POLL_MS * BrowserHandleImpl.AUTO_PIP_POLL_ATTEMPTS
+
+        assertTrue(
+            pollBudgetMs > PopOutScripts.SITE_PIP_DEADLINE_MS,
+            "poll budget ${pollBudgetMs}ms must outlast the site deadline " +
+                "${PopOutScripts.SITE_PIP_DEADLINE_MS}ms",
+        )
+    }
 }
