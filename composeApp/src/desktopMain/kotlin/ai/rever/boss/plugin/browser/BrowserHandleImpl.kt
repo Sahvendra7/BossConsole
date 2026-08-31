@@ -612,6 +612,16 @@ internal class BrowserHandleImpl(
     /** The floating window holding this browser's real surface while its tab is backgrounded. */
     @Volatile private var popOutFrame: JFrame? = null
 
+    /**
+     * Answers the plugin's hibernation guard, which cannot see a host window.
+     *
+     * Read off the frame rather than [autoPoppedOut]: that flag is raised before the window
+     * exists and cleared in paths that do not own the frame, while this is true exactly when a
+     * window is on screen holding the surface - which is the fact hibernation needs.
+     */
+    override val isPoppedOut: Boolean
+        get() = popOutFrame != null
+
     /** The Swing view inside [popOutFrame]; detached before the frame is disposed. */
     @Volatile private var popOutView: com.teamdev.jxbrowser.view.swing.BrowserView? = null
 
