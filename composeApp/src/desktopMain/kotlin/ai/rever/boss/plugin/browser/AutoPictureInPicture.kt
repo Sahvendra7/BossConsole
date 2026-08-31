@@ -64,8 +64,12 @@ internal fun shouldAutoPictureInPicture(
     url: String,
     isCapturing: Boolean,
     alreadyPoppedOut: Boolean,
+    enabled: Boolean,
 ): Boolean {
-    if (!isCapturing || alreadyPoppedOut) return false
+    // `enabled` is the user saying "never", where the other two say "not now" - taken as a
+    // parameter rather than read from the settings object so this function stays pure, which is
+    // the only reason the rule is testable at all.
+    if (!enabled || !isCapturing || alreadyPoppedOut) return false
     return url.substringBefore(':', missingDelimiterValue = "").lowercase() == "https"
 }
 

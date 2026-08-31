@@ -4,6 +4,7 @@ import ai.rever.boss.cache.FaviconCache
 import ai.rever.boss.components.overlays.OverlayCorner
 import ai.rever.boss.components.overlays.overlayCornerIsHeavyweight
 import ai.rever.boss.components.window_panel.components.main_window_panels.LocalInMainWindowPanel
+import ai.rever.boss.config.AutoPipSettingsManager
 import ai.rever.boss.config.JxBrowserConfig
 import ai.rever.boss.config.SwipeNavSettingsManager
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
@@ -3179,7 +3180,13 @@ internal class BrowserHandleImpl(
         if (!isValid) return
         val url = runCatching { browser.url() }.getOrDefault("")
         val capturing = captureTracker.isCapturing()
-        val eligible = shouldAutoPictureInPicture(url, capturing, autoPoppedOut.get())
+        val eligible =
+            shouldAutoPictureInPicture(
+                url = url,
+                isCapturing = capturing,
+                alreadyPoppedOut = autoPoppedOut.get(),
+                enabled = AutoPipSettingsManager.isEnabled(),
+            )
         logger.debug(
             LogCategory.BROWSER,
             "Tab hidden, auto Picture-in-Picture gate",

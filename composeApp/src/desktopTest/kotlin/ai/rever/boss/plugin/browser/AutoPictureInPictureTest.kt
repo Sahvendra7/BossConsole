@@ -22,6 +22,7 @@ class AutoPictureInPictureTest {
                 url = "https://meet.google.com/abc-defg-hij",
                 isCapturing = true,
                 alreadyPoppedOut = false,
+                enabled = true,
             ),
         )
     }
@@ -34,6 +35,7 @@ class AutoPictureInPictureTest {
                 url = "https://www.youtube.com/watch?v=abc",
                 isCapturing = false,
                 alreadyPoppedOut = false,
+                enabled = true,
             ),
         )
     }
@@ -46,6 +48,7 @@ class AutoPictureInPictureTest {
                 url = "https://meet.google.com/abc-defg-hij",
                 isCapturing = true,
                 alreadyPoppedOut = true,
+                enabled = true,
             ),
         )
     }
@@ -54,12 +57,17 @@ class AutoPictureInPictureTest {
     fun `only https pages qualify`() {
         for (url in listOf("http://meet.example.com/x", "file:///tmp/call.html", "about:blank", "")) {
             assertFalse(
-                shouldAutoPictureInPicture(url, isCapturing = true, alreadyPoppedOut = false),
+                shouldAutoPictureInPicture(url, isCapturing = true, alreadyPoppedOut = false, enabled = true),
                 "$url should not qualify",
             )
         }
         assertTrue(
-            shouldAutoPictureInPicture("HTTPS://meet.example.com/x", isCapturing = true, alreadyPoppedOut = false),
+            shouldAutoPictureInPicture(
+                "HTTPS://meet.example.com/x",
+                isCapturing = true,
+                alreadyPoppedOut = false,
+                enabled = true,
+            ),
             "the scheme comparison must be case-insensitive",
         )
     }
@@ -207,4 +215,18 @@ class AutoPictureInPictureTest {
     }
 
     // endregion
+
+    @Test
+    fun `the setting switches the whole feature off`() {
+        // Every other input says "pop out" - capturing, https, nothing open yet. Only the setting
+        // refuses, and it refuses regardless of the rest: "never", where the others say "not now".
+        assertFalse(
+            shouldAutoPictureInPicture(
+                url = "https://meet.google.com/abc",
+                isCapturing = true,
+                alreadyPoppedOut = false,
+                enabled = false,
+            ),
+        )
+    }
 }
