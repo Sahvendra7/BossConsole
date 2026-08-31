@@ -125,7 +125,16 @@ intellij-platform = "243.21565.199"
 #
 # Superset of 1.0.84: both additions are new declarations with a null default on PluginContext,
 # so nothing a host module or an installed plugin resolves has been withdrawn.
-boss-plugin-api = "1.0.85"
+#
+# 1.0.87 adds ActiveTabsProvider.moveTabToWorkspace + liveWorkspaceIds + supportsTabTransfer, which
+# this branch implements in SplitViewState. A window RUNS several workspaces at once and shows one,
+# so activeTabs has always reported tabs from workspaces that are not on screen - but every write
+# path (findPanel, getAllPanels, selectTabInPanel) read the current tree only, so nothing could act
+# on them. Same forced order as above: api first (boss-plugin-api#44 cuts v1.0.87), then this,
+# **and this pin 404s CI until that release exists**. 1.0.86 was doc-only.
+#
+# Superset of 1.0.85: three defaulted members on an existing interface, nothing withdrawn.
+boss-plugin-api = "1.0.87"
 
 [libraries]
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
