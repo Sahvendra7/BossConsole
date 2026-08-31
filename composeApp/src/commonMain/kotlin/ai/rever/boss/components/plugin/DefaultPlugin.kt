@@ -893,8 +893,58 @@ class DefaultPlugin(
      */
     fun isPluginDisabled(pluginId: String) = sandboxManager.isPluginDisabled(pluginId)
 
+    /**
+     * Selects the tab a pop-out asked to return to, for this window.
+     *
+     * The request travels in-process ([PopOutReturnRequests]) rather than through a new plugin
+     * API: the host cannot select a tab it cannot name - the tab is a dynamic plugin's component
+     * type - but this class can, and the handle already learns its tab id when the plugin
+     * registers a fullscreen handler.
+     *
+     * A request naming another window is ignored here and answered by that window's own
+     * collector. A request nobody can answer is logged rather than dropped silently, which is
+     * how "Back-to-tab does nothing" would otherwise present.
+     */
+    private fun startPopOutReturnCollector() {
+        val splitView = splitViewState
+        val workspaces = workspaceManager
+        val ownWindowId = _windowId
+        if (splitView == null || workspaces == null || ownWindowId == null) return
+        pluginScope.launch {
+            ai.rever.boss.plugin.browser.PopOutReturnRequests.requests
+                .collect { request ->
+                    if (request.windowId != ownWindowId) return@collect
+                    runCatching {
+                        val panelId =
+                            splitView
+                                .collectAllActiveTabs(workspaces, ownWindowId)
+                                .firstOrNull { it.tabInfo.id == request.tabId }
+                                ?.panelId
+                        if (panelId != null) {
+                            splitView.selectTabInPanel(request.tabId, panelId)
+                        } else {
+                            logger.debug(
+                                LogCategory.UI,
+                                "Pop-out asked for a tab this window does not have",
+                                mapOf("tabId" to request.tabId),
+                            )
+                        }
+                    }.onFailure {
+                        logger.warn(LogCategory.UI, "Could not return to a pop-out's tab", error = it)
+                    }
+                }
+        }
+    }
+
     init {
         logger.info(LogCategory.SYSTEM, "Initializing DefaultPlugin with sandboxed contexts")
+
+        // Back-to-tab, started per window and unconditionally. This used to run from
+        // ApiActiveTabsProviderAdapter's init, which is created `by lazy` behind
+        // activeTabsProvider - a property that exists for one plugin - so where nothing read it
+        // the adapter was never built, nobody collected, and the pop-out's Back-to-tab button
+        // silently degraded to raising the window.
+        startPopOutReturnCollector()
 
         // ============================================================
         // REGISTER PLUGIN LOADER DELEGATE
@@ -1231,61 +1281,6 @@ private class ApiActiveTabsProviderAdapter(
     private val tabsLogger = BossLogger.forComponent("ActiveTabsProvider")
     private val _activeTabs = kotlinx.coroutines.flow.MutableStateFlow<List<ActiveTabData>>(emptyList())
     override val activeTabs: kotlinx.coroutines.flow.StateFlow<List<ActiveTabData>> = _activeTabs
-
-    init {
-        // Bring a tab back when its pop-out asks. This adapter is the only per-window object
-        // holding all three things the answer needs - the split state to select in, the
-        // workspace to enumerate against, and the window id to filter by - which is why the
-        // collector lives here rather than beside the button that raises the request.
-        scope.launch {
-            ai.rever.boss.plugin.browser.PopOutReturnRequests.requests.collect { request ->
-                if (request.windowId != windowId) return@collect
-                runCatching {
-                    val panelId =
-                        splitViewState
-                            .collectAllActiveTabs(workspaceManager, windowId)
-                            .firstOrNull { it.tabInfo.id == request.tabId }
-                            ?.panelId
-                    if (panelId != null) {
-                        splitViewState.selectTabInPanel(request.tabId, panelId)
-                    } else {
-                        // The tab is gone, or lives in another window that will answer instead.
-                        tabsLogger.debug(
-                            LogCategory.UI,
-                            "Pop-out asked for a tab this window does not have",
-                            mapOf("tabId" to request.tabId),
-                        )
-                    }
-                }.onFailure {
-                    tabsLogger.warn(LogCategory.UI, "Could not return to a pop-out's tab", error = it)
-                }
-            }
-        }
-
-        // Start polling loop (like bundled LLMRpaIntegration.kt does)
-        // This ensures dynamic plugins receive tab updates
-        scope.launch {
-            var consecutiveFailures = 0
-            while (isActive) {
-                try {
-                    refreshTabs()
-                    consecutiveFailures = 0
-                } catch (e: Exception) {
-                    consecutiveFailures++
-                    tabsLogger.warn(
-                        LogCategory.GENERAL,
-                        "Failed to refresh tabs",
-                        mapOf(
-                            "consecutiveFailures" to consecutiveFailures,
-                        ),
-                        error = e,
-                    )
-                }
-                // Base interval 2s, +1s per failure, max 10s
-                delay(minOf(2000L + (consecutiveFailures * 1000L), 10000L))
-            }
-        }
-    }
 
     override suspend fun refreshTabs() {
         val tabs = splitViewState.collectAllActiveTabs(workspaceManager, windowId)

@@ -13,7 +13,6 @@ import ai.rever.boss.plugin.window.LocalWindowId
 import ai.rever.boss.tabfullscreen.FullscreenBrowserWindow
 import ai.rever.boss.tabfullscreen.TabFullscreenStateManager
 import ai.rever.boss.utils.MacOSGestureHandler
-import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -100,10 +99,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -1134,8 +1131,8 @@ internal class BrowserHandleImpl(
                 // was in, so the capture counts start again. Without this the tab stays "in a
                 // call" for as long as the engine's stop events say so, and ONE missed
                 // MediaStreamCaptureStopped - a renderer crash, a page swapped out mid-call -
-                // leaves it permanently eligible, costing a synthetic click and a poll on every
-                // later tab switch, forever.
+                // leaves it permanently eligible, so every later tab switch pops the tab out
+                // over a call that ended long ago.
                 //
                 // Same-document navigations are excluded, and that exclusion is load-bearing:
                 // NavigationFinished fires for pushState/replaceState too, and Google Meet
@@ -3009,69 +3006,6 @@ internal class BrowserHandleImpl(
     }
 
     /**
-     * The strip an undecorated pop-out is resized by.
-     *
-     * Taking the title bar off takes the window manager's resize edges with it, and the content
-     * below is a native browser surface that consumes its own mouse events - so, as with dragging,
-     * the handle has to be a real Swing component rather than a listener on the frame.
-     *
-     * Resize is from the bottom-right corner and keeps the top-left pinned, which is what a
-     * browser's own pop-out does and means the window never walks across the screen as it is
-     * resized.
-     */
-
-    /** Which part of the grip strip a pointer is over: the two corners resize, the rest is the edge. */
-    private enum class GripZone { LEFT, BOTTOM, RIGHT }
-
-    private fun gripZoneAt(
-        x: Int,
-        width: Int,
-    ): GripZone =
-        when {
-            x <= POP_OUT_GRIP_CORNER -> GripZone.LEFT
-            x >= width - POP_OUT_GRIP_CORNER -> GripZone.RIGHT
-            else -> GripZone.BOTTOM
-        }
-
-    private fun gripCursorFor(zone: GripZone): java.awt.Cursor =
-        java.awt.Cursor.getPredefinedCursor(
-            when (zone) {
-                GripZone.LEFT -> java.awt.Cursor.SW_RESIZE_CURSOR
-                GripZone.RIGHT -> java.awt.Cursor.SE_RESIZE_CURSOR
-                GripZone.BOTTOM -> java.awt.Cursor.S_RESIZE_CURSOR
-            },
-        )
-
-    /**
-     * The frame's new bounds for a drag of [dx], [dy] from [from] in [zone].
-     *
-     * The left corner keeps the RIGHT edge still: the window's x moves by exactly what the width
-     * loses, so a drag past the minimum stops growing instead of walking the window sideways.
-     */
-    private fun resizedPopOutBounds(
-        from: java.awt.Rectangle,
-        zone: GripZone,
-        dx: Int,
-        dy: Int,
-    ): java.awt.Rectangle {
-        val height = (from.height + dy).coerceAtLeast(MIN_PIP_EDGE)
-        return when (zone) {
-            GripZone.RIGHT -> {
-                java.awt.Rectangle(from.x, from.y, (from.width + dx).coerceAtLeast(MIN_PIP_EDGE), height)
-            }
-
-            GripZone.LEFT -> {
-                val width = (from.width - dx).coerceAtLeast(MIN_PIP_EDGE)
-                java.awt.Rectangle(from.x + (from.width - width), from.y, width, height)
-            }
-
-            GripZone.BOTTOM -> {
-                java.awt.Rectangle(from.x, from.y, from.width, height)
-            }
-        }
-    }
-
-    /**
      * The strip along the bottom of an undecorated pop-out, which is how it is resized.
      *
      * Three zones rather than one. The whole strip used to carry the bottom-RIGHT resize cursor
@@ -3136,7 +3070,15 @@ internal class BrowserHandleImpl(
      */
     private fun returnToTab() {
         runCatching { WindowFocusManager.focusWindow(currentWindowId) }
-        ownerTabId?.let { tabId -> PopOutReturnRequests.request(currentWindowId, tabId) }
+        ownerTabId?.let { tabId ->
+            if (!PopOutReturnRequests.request(currentWindowId, tabId)) {
+                logger.warn(
+                    LogCategory.BROWSER,
+                    "Back-to-tab request was dropped",
+                    mapOf("handleId" to id, "tabId" to tabId),
+                )
+            }
+        }
         runCatching { browser.focus() }
     }
 
@@ -3291,6 +3233,16 @@ internal class BrowserHandleImpl(
             if (popOutFrame == null) autoPoppedOut.set(false)
             return
         }
+        // Re-checked HERE, on the EDT, and not only before the flag was raised. The settle
+        // coroutine tests composedSurfaces and then raises autoPoppedOut, and a tab re-composed
+        // between those two steps finds the flag still false - so onSurfaceShown returns early,
+        // this opens over a tab the user is looking at, and the one signal that would have
+        // closed it has already fired. Taking the surface from a visible tab leaves it blank
+        // behind an always-on-top window that has to be dismissed by hand.
+        if (composedSurfaces.get() > 0) {
+            autoPoppedOut.set(false)
+            return
+        }
         try {
             val frame = JFrame()
             frame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
@@ -3346,10 +3298,18 @@ internal class BrowserHandleImpl(
                 frame.contentPane.remove(it)
             }
             frame.contentPane.revalidate()
-            frame.isAlwaysOnTop = false
-            frame.dispose()
         } catch (e: Exception) {
-            logger.error(LogCategory.BROWSER, "Error closing the surface pop-out", error = e)
+            logger.error(LogCategory.BROWSER, "Error detaching the surface pop-out view", error = e)
+        } finally {
+            // In a finally, because popOutFrame was nulled above: if the detach throws - and
+            // ObjectClosedException from a concurrently closing browser is live here - a dispose
+            // inside the try would be skipped and nothing could ever close this window again.
+            // Its own close button routes through this function, which now returns at the null
+            // check, so it would sit undecorated and always-on-top for the rest of the session.
+            runCatching {
+                frame.isAlwaysOnTop = false
+                frame.dispose()
+            }
         }
         // The release delay is FullscreenBrowserWindow's SWING_RELEASE_DELAY: the disposed
         // Swing view needs a beat to let go of the rendering surface. Then the repair is the
@@ -4057,7 +4017,16 @@ internal class BrowserHandleImpl(
     }
 
     override fun dispose() {
-        SwingUtilities.invokeLater { closeSurfacePopOut() }
+        // Synchronously, and before the guard below: invokeLater would let browser.close() run
+        // first, and closing the browser under a still-attached Swing view is exactly the
+        // ordering that leaves an undecorated always-on-top window on screen with nothing able
+        // to dispose it. On the EDT already (dispose comes from composition teardown) this runs
+        // inline; off it, the close is waited for rather than posted.
+        if (SwingUtilities.isEventDispatchThread()) {
+            closeSurfacePopOut()
+        } else {
+            runCatching { SwingUtilities.invokeAndWait { closeSurfacePopOut() } }
+        }
         if (!disposed.compareAndSet(false, true)) return
         rendererPid.onGone()
         // Shut the interaction bridge FIRST. Its only gate is this authority, and the
@@ -4208,7 +4177,7 @@ internal class BrowserHandleImpl(
          * momentarily indistinguishable from a background; this is long enough for the new
          * surface to arrive and short enough that a real tab switch feels immediate.
          */
-        private const val AUTO_PIP_SETTLE_MS = 80L
+        private const val AUTO_PIP_SETTLE_MS = 100L
 
         /** The surface pop-out's initial size; the resize grip takes it from there. */
         private const val SURFACE_POP_OUT_WIDTH = 480
@@ -4227,9 +4196,6 @@ internal class BrowserHandleImpl(
 
         private const val FLOATING_POPUP_INSET = 40
 
-        /** Bounds on a page-supplied pop-out size, so a bad number cannot make an unusable window. */
-        private const val MIN_PIP_EDGE = 120
-
         /** Height of the drag strip on an undecorated pop-out. */
         private const val POP_OUT_BAR_HEIGHT = 30
 
@@ -4246,9 +4212,6 @@ internal class BrowserHandleImpl(
         /** Height of the resize grip along the bottom of an undecorated pop-out. */
         private const val POP_OUT_GRIP_HEIGHT = 10
 
-        /** How wide each corner zone of the resize strip is. */
-        private const val POP_OUT_GRIP_CORNER = 28
-
         /**
          * How long an adopted popup waits for its main-frame navigation to name a destination
          * before falling back to the URL recorded at popup-creation time.
@@ -4264,7 +4227,7 @@ internal class BrowserHandleImpl(
          * shown until the wait expired. That was seconds of blank screen for the one case where
          * the user is watching.
          */
-        private const val POPUP_URL_TIMEOUT_MS = 600L
+        private const val POPUP_URL_TIMEOUT_MS = 3_000L
 
         /**
          * Grace period for the popup's main-frame upload to arrive once its URL is known, so a

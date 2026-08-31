@@ -36,9 +36,12 @@ object PopOutReturnRequests {
     fun request(
         windowId: String,
         tabId: String,
-    ) {
-        if (windowId.isEmpty() || tabId.isEmpty()) return
-        _requests.tryEmit(Request(windowId, tabId))
+    ): Boolean {
+        if (windowId.isEmpty() || tabId.isEmpty()) return false
+        // The result is returned rather than discarded: a full buffer means a press was dropped,
+        // and Back-to-tab doing nothing with no trace is the failure this whole path is prone to.
+        // The caller logs it, the way PluginDependencyEventBus logs its own refusals.
+        return _requests.tryEmit(Request(windowId, tabId))
     }
 
     private const val REQUEST_BUFFER = 4

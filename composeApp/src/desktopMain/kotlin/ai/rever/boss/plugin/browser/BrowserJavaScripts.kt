@@ -133,7 +133,8 @@ object BrowserJavaScripts {
                     document.exitPictureInPicture();
                 } else if (HTMLVideoElement.prototype.requestPictureInPicture) {
                     // Prototype, not instance: a page can shadow this per element, and Google
-                    // Meet does - its override never settles. See enterCallPictureInPicture.
+                    // Meet does - its own override returns a promise that never settles, so an
+                    // instance call hangs silently with no window and no rejection.
                     HTMLVideoElement.prototype.requestPictureInPicture.call(targetVideo).catch(err => {
                         console.error('PiP failed:', err);
                     });

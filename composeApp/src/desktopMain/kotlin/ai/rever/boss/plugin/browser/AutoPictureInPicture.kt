@@ -68,3 +68,60 @@ internal fun shouldAutoPictureInPicture(
     if (!isCapturing || alreadyPoppedOut) return false
     return url.substringBefore(':', missingDelimiterValue = "").lowercase() == "https"
 }
+
+/** Which part of the grip strip a pointer is over: the two corners resize, the rest is the edge. */
+internal enum class GripZone { LEFT, BOTTOM, RIGHT }
+
+internal fun gripZoneAt(
+    x: Int,
+    width: Int,
+): GripZone =
+    when {
+        x <= GRIP_CORNER_WIDTH -> GripZone.LEFT
+        x >= width - GRIP_CORNER_WIDTH -> GripZone.RIGHT
+        else -> GripZone.BOTTOM
+    }
+
+internal fun gripCursorFor(zone: GripZone): java.awt.Cursor =
+    java.awt.Cursor.getPredefinedCursor(
+        when (zone) {
+            GripZone.LEFT -> java.awt.Cursor.SW_RESIZE_CURSOR
+            GripZone.RIGHT -> java.awt.Cursor.SE_RESIZE_CURSOR
+            GripZone.BOTTOM -> java.awt.Cursor.S_RESIZE_CURSOR
+        },
+    )
+
+/**
+ * The frame's new bounds for a drag of [dx], [dy] from [from] in [zone].
+ *
+ * The left corner keeps the RIGHT edge still: the window's x moves by exactly what the width
+ * loses, so a drag past the minimum stops growing instead of walking the window sideways.
+ */
+internal fun resizedPopOutBounds(
+    from: java.awt.Rectangle,
+    zone: GripZone,
+    dx: Int,
+    dy: Int,
+): java.awt.Rectangle {
+    val height = (from.height + dy).coerceAtLeast(MIN_POP_OUT_EDGE)
+    return when (zone) {
+        GripZone.RIGHT -> {
+            java.awt.Rectangle(from.x, from.y, (from.width + dx).coerceAtLeast(MIN_POP_OUT_EDGE), height)
+        }
+
+        GripZone.LEFT -> {
+            val width = (from.width - dx).coerceAtLeast(MIN_POP_OUT_EDGE)
+            java.awt.Rectangle(from.x + (from.width - width), from.y, width, height)
+        }
+
+        GripZone.BOTTOM -> {
+            java.awt.Rectangle(from.x, from.y, from.width, height)
+        }
+    }
+}
+
+/** How wide each corner zone of a pop-out's resize strip is. */
+internal const val GRIP_CORNER_WIDTH = 28
+
+/** The smallest a pop-out may be resized to, on either edge. */
+internal const val MIN_POP_OUT_EDGE = 120

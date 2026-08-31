@@ -1,6 +1,8 @@
 package ai.rever.boss.plugin.browser
 
+import java.awt.Rectangle
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -130,4 +132,79 @@ class AutoPictureInPictureTest {
 
         assertFalse(tracker.isCapturing())
     }
+
+    // region resize grip geometry
+
+    @Test
+    fun `each zone of the grip strip answers for itself`() {
+        // The shipped bug this pins: the whole strip carried bottom-right semantics, so the
+        // bottom-LEFT corner promised a resize that grew the window away from the pointer.
+        assertEquals(GripZone.LEFT, gripZoneAt(x = 0, width = 400))
+        assertEquals(GripZone.LEFT, gripZoneAt(x = GRIP_CORNER_WIDTH, width = 400))
+        assertEquals(GripZone.BOTTOM, gripZoneAt(x = 200, width = 400))
+        assertEquals(GripZone.RIGHT, gripZoneAt(x = 400 - GRIP_CORNER_WIDTH, width = 400))
+        assertEquals(GripZone.RIGHT, gripZoneAt(x = 400, width = 400))
+    }
+
+    @Test
+    fun `a strip narrower than two corners still resolves`() {
+        // Left is tested first, so a strip too narrow for both corners reads as LEFT rather
+        // than falling through to an unreachable BOTTOM.
+        assertEquals(GripZone.LEFT, gripZoneAt(x = 10, width = 30))
+    }
+
+    @Test
+    fun `the right corner grows right and down, leaving the origin alone`() {
+        val from = Rectangle(100, 50, 400, 300)
+
+        val to = resizedPopOutBounds(from, GripZone.RIGHT, dx = 60, dy = 40)
+
+        assertEquals(Rectangle(100, 50, 460, 340), to)
+    }
+
+    @Test
+    fun `the bottom edge changes height only`() {
+        val from = Rectangle(100, 50, 400, 300)
+
+        val to = resizedPopOutBounds(from, GripZone.BOTTOM, dx = 90, dy = 25)
+
+        assertEquals(Rectangle(100, 50, 400, 325), to)
+    }
+
+    @Test
+    fun `the left corner keeps the right edge still`() {
+        val from = Rectangle(100, 50, 400, 300)
+
+        val to = resizedPopOutBounds(from, GripZone.LEFT, dx = 60, dy = 10)
+
+        assertEquals(340, to.width)
+        assertEquals(160, to.x)
+        // The whole point: x moved by exactly what the width lost.
+        assertEquals(from.x + from.width, to.x + to.width, "the right edge moved")
+    }
+
+    @Test
+    fun `a left drag past the minimum stops instead of walking the window sideways`() {
+        // The classic bug in a hand-rolled left-edge resize: clamping the width while still
+        // moving x drags the window across the screen once it can shrink no further.
+        val from = Rectangle(100, 50, 400, 300)
+
+        val to = resizedPopOutBounds(from, GripZone.LEFT, dx = 9_000, dy = 0)
+
+        assertEquals(MIN_POP_OUT_EDGE, to.width)
+        assertEquals(from.x + from.width, to.x + to.width, "the right edge moved")
+    }
+
+    @Test
+    fun `every zone clamps at the minimum edge`() {
+        val from = Rectangle(0, 0, 400, 300)
+
+        for (zone in GripZone.entries) {
+            val to = resizedPopOutBounds(from, zone, dx = -9_000, dy = -9_000)
+            assertTrue(to.width >= MIN_POP_OUT_EDGE, "$zone let width fall below the minimum")
+            assertTrue(to.height >= MIN_POP_OUT_EDGE, "$zone let height fall below the minimum")
+        }
+    }
+
+    // endregion
 }
