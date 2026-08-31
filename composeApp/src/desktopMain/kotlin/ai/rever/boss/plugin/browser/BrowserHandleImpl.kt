@@ -3036,27 +3036,91 @@ internal class BrowserHandleImpl(
      * browser's own pop-out does and means the window never walks across the screen as it is
      * resized.
      */
+
+    /** Which part of the grip strip a pointer is over: the two corners resize, the rest is the edge. */
+    private enum class GripZone { LEFT, BOTTOM, RIGHT }
+
+    private fun gripZoneAt(
+        x: Int,
+        width: Int,
+    ): GripZone =
+        when {
+            x <= POP_OUT_GRIP_CORNER -> GripZone.LEFT
+            x >= width - POP_OUT_GRIP_CORNER -> GripZone.RIGHT
+            else -> GripZone.BOTTOM
+        }
+
+    private fun gripCursorFor(zone: GripZone): java.awt.Cursor =
+        java.awt.Cursor.getPredefinedCursor(
+            when (zone) {
+                GripZone.LEFT -> java.awt.Cursor.SW_RESIZE_CURSOR
+                GripZone.RIGHT -> java.awt.Cursor.SE_RESIZE_CURSOR
+                GripZone.BOTTOM -> java.awt.Cursor.S_RESIZE_CURSOR
+            },
+        )
+
+    /**
+     * The frame's new bounds for a drag of [dx], [dy] from [from] in [zone].
+     *
+     * The left corner keeps the RIGHT edge still: the window's x moves by exactly what the width
+     * loses, so a drag past the minimum stops growing instead of walking the window sideways.
+     */
+    private fun resizedPopOutBounds(
+        from: java.awt.Rectangle,
+        zone: GripZone,
+        dx: Int,
+        dy: Int,
+    ): java.awt.Rectangle {
+        val height = (from.height + dy).coerceAtLeast(MIN_PIP_EDGE)
+        return when (zone) {
+            GripZone.RIGHT -> {
+                java.awt.Rectangle(from.x, from.y, (from.width + dx).coerceAtLeast(MIN_PIP_EDGE), height)
+            }
+
+            GripZone.LEFT -> {
+                val width = (from.width - dx).coerceAtLeast(MIN_PIP_EDGE)
+                java.awt.Rectangle(from.x + (from.width - width), from.y, width, height)
+            }
+
+            GripZone.BOTTOM -> {
+                java.awt.Rectangle(from.x, from.y, from.width, height)
+            }
+        }
+    }
+
+    /**
+     * The strip along the bottom of an undecorated pop-out, which is how it is resized.
+     *
+     * Three zones rather than one. The whole strip used to carry the bottom-RIGHT resize cursor
+     * and bottom-right semantics, so hovering the bottom-LEFT corner promised a resize that grew
+     * the window away from the pointer. Each zone now shows the cursor for what it actually does:
+     * the corners resize in their own direction, the span between them is a plain bottom edge.
+     */
     private fun buildPopOutResizeGrip(frame: JFrame): javax.swing.JComponent {
         val grip = javax.swing.JPanel(java.awt.BorderLayout())
         grip.background = java.awt.Color(0x1F, 0x1F, 0x1F)
         grip.preferredSize = java.awt.Dimension(0, POP_OUT_GRIP_HEIGHT)
-        grip.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.SE_RESIZE_CURSOR)
+        grip.cursor = gripCursorFor(GripZone.BOTTOM)
 
         val start = java.awt.Point()
-        val startSize = java.awt.Dimension()
+        val startBounds = java.awt.Rectangle()
+        var zone = GripZone.BOTTOM
         val resize =
             object : java.awt.event.MouseAdapter() {
+                override fun mouseMoved(e: java.awt.event.MouseEvent) {
+                    grip.cursor = gripCursorFor(gripZoneAt(e.x, grip.width))
+                }
+
                 override fun mousePressed(e: java.awt.event.MouseEvent) {
+                    zone = gripZoneAt(e.x, grip.width)
                     start.setLocation(e.locationOnScreen)
-                    startSize.setSize(frame.width, frame.height)
+                    startBounds.bounds = frame.bounds
                 }
 
                 override fun mouseDragged(e: java.awt.event.MouseEvent) {
                     val at = e.locationOnScreen
-                    frame.setSize(
-                        (startSize.width + (at.x - start.x)).coerceAtLeast(MIN_PIP_EDGE),
-                        (startSize.height + (at.y - start.y)).coerceAtLeast(MIN_PIP_EDGE),
-                    )
+                    frame.bounds =
+                        resizedPopOutBounds(startBounds, zone, at.x - start.x, at.y - start.y)
                     frame.validate()
                 }
             }
@@ -4226,6 +4290,9 @@ internal class BrowserHandleImpl(
 
         /** Height of the resize grip along the bottom of an undecorated pop-out. */
         private const val POP_OUT_GRIP_HEIGHT = 10
+
+        /** How wide each corner zone of the resize strip is. */
+        private const val POP_OUT_GRIP_CORNER = 28
 
         /**
          * How long an adopted popup waits for its main-frame navigation to name a destination
