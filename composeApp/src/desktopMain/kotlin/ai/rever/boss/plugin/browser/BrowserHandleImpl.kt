@@ -11,6 +11,7 @@ import ai.rever.boss.plugin.api.BrowserNavigationType
 import ai.rever.boss.plugin.api.LocalIsPanelActive
 import ai.rever.boss.plugin.window.LocalWindowId
 import ai.rever.boss.tabfullscreen.FullscreenBrowserWindow
+import ai.rever.boss.tabfullscreen.TabFullscreenStateManager
 import ai.rever.boss.utils.MacOSGestureHandler
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.WindowFocusManager
@@ -608,11 +609,11 @@ internal class BrowserHandleImpl(
      */
     private val autoPoppedOut = AtomicBoolean(false)
 
-    /** Set while a pop-out attempt is outstanding, so the popup handler can recognise its window. */
-    private val popOutPending = AtomicBoolean(false)
+    /** The floating window holding this browser's real surface while its tab is backgrounded. */
+    @Volatile private var popOutFrame: JFrame? = null
 
-    /** Serves the pop-out's controls while one of ours is open. */
-    @Volatile private var popOutActionJob: Job? = null
+    /** The Swing view inside [popOutFrame]; detached before the frame is disposed. */
+    @Volatile private var popOutView: com.teamdev.jxbrowser.view.swing.BrowserView? = null
 
     /**
      * The AWT window this handle's view is bound to, for the on-screen half of [viewComposed].
@@ -1120,12 +1121,19 @@ internal class BrowserHandleImpl(
                 // fires all three, so without this it gets recorded as a visited page.
                 recordNavigationOutcome(event)
 
-                // A main-frame navigation ends whatever call the old document was in, so the
-                // capture counts start again. Without this the tab stays "in a call" for as long
-                // as the engine's stop events say so, and ONE missed MediaStreamCaptureStopped -
-                // a renderer crash, a page swapped out mid-call - leaves it permanently eligible,
-                // costing a synthetic click and a poll on every later tab switch, forever.
-                if (event.isInMainFrame) {
+                // A CROSS-DOCUMENT main-frame navigation ends whatever call the old document
+                // was in, so the capture counts start again. Without this the tab stays "in a
+                // call" for as long as the engine's stop events say so, and ONE missed
+                // MediaStreamCaptureStopped - a renderer crash, a page swapped out mid-call -
+                // leaves it permanently eligible, costing a synthetic click and a poll on every
+                // later tab switch, forever.
+                //
+                // Same-document navigations are excluded, and that exclusion is load-bearing:
+                // NavigationFinished fires for pushState/replaceState too, and Google Meet
+                // rewrites its URL DURING a call - so clearing on those zeroed the counts while
+                // the camera was live, no new capture event ever came, and auto-PiP silently
+                // never fired again for the rest of the call.
+                if (event.isInMainFrame && !event.isSameDocument) {
                     captureTracker.clear()
                 }
 
@@ -2789,62 +2797,24 @@ internal class BrowserHandleImpl(
                                 pendingPopupCaptures.remove(popupBrowser)
                             }
 
-                            if (nav == null && !popOutRequestInFlight()) {
-                                // A URL-less popup with no pop-out pending keeps this file's
-                                // older, conservative behaviour: dropped. `usablePopupUrl` is
-                                // http(s)-only deliberately, so `nav == null` also covers
-                                // `file:`, `data:`, `blob:` and custom schemes - showing those
-                                // as chrome-less always-on-top windows would be a real
-                                // escalation, and the label on such a window reads the OPENER's
-                                // host, so a page could `window.open()` with no URL, be shown,
-                                // then assign `location` afterwards and render arbitrary content
-                                // under someone else's hostname.
+                            if (nav == null) {
+                                // A URL-less popup is dropped, unconditionally - restored old
+                                // behaviour. `usablePopupUrl` is http(s)-only deliberately, so
+                                // this also covers `file:`, `data:`, `blob:` and custom schemes,
+                                // which must never become chrome-less always-on-top windows.
+                                //
+                                // There USED to be a branch here that showed one as a floating
+                                // window, for the Document PiP flow this file no longer uses -
+                                // the pop-out is the tab's real surface now. Left in place, that
+                                // branch produced a second floating window whenever Google Meet,
+                                // genuinely visible inside the surface pop-out, opened its own
+                                // Document PiP on starting a screen share.
                                 logger.debug(
                                     LogCategory.BROWSER,
-                                    "Dropping a URL-less popup with no pop-out pending",
+                                    "Dropping a URL-less popup",
                                     mapOf("handleId" to id),
                                 )
                                 if (!popupBrowser.isClosed) popupBrowser.close()
-                                return@launch
-                            }
-
-                            if (nav == null) {
-                                // No URL does NOT mean nothing to show. A Document
-                                // Picture-in-Picture window arrives exactly here: Chromium hands
-                                // it over as an empty-bounds popup on about:blank and the page
-                                // fills it with DOM, so it never navigates and never will. Closing
-                                // it is what made `documentPictureInPicture.requestWindow()`
-                                // resolve and then show nothing - the promise got its window and
-                                // we destroyed it. `window.open()` followed by document.write has
-                                // the same shape and was lost the same way.
-                                //
-                                // So show it instead, always on top and small: the case this
-                                // serves is a video call popped out of a backgrounded tab.
-                                logger.debug(
-                                    LogCategory.BROWSER,
-                                    "Popup has no URL of its own, showing it as a window",
-                                    mapOf("handleId" to id),
-                                )
-                                // Honour the size the page asked for. The popup itself arrives
-                                // with empty bounds, so the only record of the request is the one
-                                // the document-start wrapper kept on the opener.
-                                val requested =
-                                    runCatching {
-                                        browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                                            PopOutScripts.readRequestedPipSize,
-                                        )
-                                    }.getOrNull()
-                                logger.debug(
-                                    LogCategory.BROWSER,
-                                    "Showing a URL-less popup as a window",
-                                    mapOf("handleId" to id, "requestedSize" to (requested ?: "")),
-                                )
-                                showPopupInWindow(
-                                    popupBrowser = popupBrowser,
-                                    bounds = null,
-                                    alwaysOnTop = true,
-                                    requestedSize = parsePipSize(requested),
-                                )
                                 return@launch
                             }
 
@@ -2932,14 +2902,6 @@ internal class BrowserHandleImpl(
     // PICTURE IN PICTURE
     // ============================================================
 
-    /** Parses the `WxH` the page asked for, ignoring anything unusable. */
-    private fun parsePipSize(raw: String?): java.awt.Dimension? {
-        val parts = raw?.split('x')?.takeIf { it.size == 2 } ?: return null
-        val w = parts[0].trim().toIntOrNull()?.takeIf { it in MIN_PIP_EDGE..MAX_PIP_EDGE }
-        val h = parts[1].trim().toIntOrNull()?.takeIf { it in MIN_PIP_EDGE..MAX_PIP_EDGE }
-        return if (w != null && h != null) java.awt.Dimension(w, h) else null
-    }
-
     /**
      * Positions and sizes a popup window.
      *
@@ -2977,39 +2939,6 @@ internal class BrowserHandleImpl(
      * glass pane ever sees a press. This is also what a browser's own Picture-in-Picture looks
      * like - a thin header over the video, not a full title bar.
      */
-
-    /**
-     * Closes a pop-out the way the page expects: from the page.
-     *
-     * The buttons used to close the Swing frame, which closes the popup **browser** - an
-     * embedder-side kill. The PiP document never unloads gracefully, so the opener never sees
-     * the `pagehide` Google Meet restores its in-tab UI on, and the tab was left saying "Your
-     * Meet call is in another window" with the call gone. `documentPictureInPicture.window
-     * .close()` in the opener is what a browser's own X produces, and Meet's restore follows
-     * from it; Chromium then closes the popup, `BrowserClosed` fires, and the existing
-     * subscription disposes the frame.
-     *
-     * The frame close stays as the fallback, delayed rather than conditional: a popup that is
-     * not a Document PiP window reports `nothing`, and a page too broken to run the script
-     * should still lose its window.
-     */
-    private fun closePopOutViaPage(frame: JFrame) {
-        autoPictureInPictureScope.launch {
-            runCatching {
-                browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                    PopOutScripts.exitCallPictureInPicture,
-                )
-            }
-            delay(POP_OUT_CLOSE_FALLBACK_MS)
-            SwingUtilities.invokeLater {
-                if (frame.isDisplayable) {
-                    frame.dispatchEvent(
-                        java.awt.event.WindowEvent(frame, java.awt.event.WindowEvent.WINDOW_CLOSING),
-                    )
-                }
-            }
-        }
-    }
 
     private fun buildPopOutDragBar(frame: JFrame): javax.swing.JComponent {
         val bar = javax.swing.JPanel(java.awt.BorderLayout())
@@ -3058,14 +2987,19 @@ internal class BrowserHandleImpl(
 
         actions.add(
             barButton("\u2921", "Back to tab", POP_OUT_ARROW_FONT_SIZE) {
+                // Selecting the tab recomposes its surface, which closes this window through
+                // onSurfaceShown - but that only arrives if the selection lands, so the close
+                // below is direct rather than hoped for. Both are idempotent.
                 returnToTab()
-                closePopOutViaPage(frame)
+                closeSurfacePopOut()
             },
         )
 
         val close =
             barButton("\u00d7", "Close", POP_OUT_CLOSE_FONT_SIZE) {
-                closePopOutViaPage(frame)
+                // Closes the window only. The tab stays backgrounded; its next selection
+                // recomposes the surface as any backgrounded tab's would.
+                closeSurfacePopOut()
             }
         actions.add(close)
         bar.add(actions, java.awt.BorderLayout.EAST)
@@ -3158,23 +3092,6 @@ internal class BrowserHandleImpl(
         ownerTabId?.let { tabId -> PopOutReturnRequests.request(currentWindowId, tabId) }
         runCatching { browser.focus() }
     }
-
-    /**
-     * Whether this handle is currently trying to pop a call out.
-     *
-     * Gates the "show a URL-less popup as a window" branch. Without it, EVERY popup that names
-     * no usable URL is shown as an undecorated always-on-top window - and `usablePopupUrl` is
-     * http(s)-only on purpose, so that set includes `file:`, `data:`, `blob:` and custom schemes
-     * which this file previously dropped. The drag bar's label reads the OPENER's host
-     * ([popOutOriginLabel]) and nothing watches the popup's navigation after it is shown, so a
-     * page could open a URL-less popup, be granted the window, and only then assign
-     * `location` - arbitrary content in a chrome-less always-on-top window wearing someone
-     * else's hostname.
-     *
-     * True while [onSurfaceHidden] has a pop-out attempt outstanding, which is the only case the
-     * branch exists to serve.
-     */
-    private fun popOutRequestInFlight(): Boolean = popOutPending.get() || autoPoppedOut.get()
 
     /**
      * Shows a popup browser in its own Swing window.
@@ -3272,46 +3189,6 @@ internal class BrowserHandleImpl(
     }
 
     /**
-     * Grants the page a transient user activation by sending it real input.
-     *
-     * Both Picture-in-Picture APIs refuse without a gesture, and a tab switch has none. Chrome
-     * has the same problem and solves it inside Blink - `MediaSession::DidReceiveAction` calls
-     * `LocalFrame::NotifyUserActivation` before invoking the page's handler - which is browser
-     * code no embedder can reach. Dispatched input is the equivalent here: it travels Chromium's
-     * real input pipeline, so the renderer treats it as a genuine gesture.
-     *
-     * **Mouse, not keyboard.** Measured on a dev build: a press/release pair set
-     * `navigator.userActivation.isActive` on every page tried, while `KeyPressed` of F13 or Space
-     * worked on one page and not another. A key also risks meaning something - Meet binds letters
-     * to the mic, the camera and the chat box.
-     *
-     * The click lands at the very top-left corner, which is chrome in every video-call UI worth
-     * naming, and no drag follows it.
-     */
-    private fun mintUserActivation() {
-        val corner = Point.of(1, 1)
-        runCatching {
-            browser.dispatch(MouseMoved.newBuilder(corner).build())
-            browser.dispatch(
-                MousePressed
-                    .newBuilder(corner)
-                    .button(MouseButton.PRIMARY)
-                    .clickCount(1)
-                    .build(),
-            )
-            browser.dispatch(
-                MouseReleased
-                    .newBuilder(corner)
-                    .button(MouseButton.PRIMARY)
-                    .clickCount(1)
-                    .build(),
-            )
-        }.onFailure {
-            logger.debug(LogCategory.BROWSER, "Could not mint activation", mapOf("error" to it.toString()))
-        }
-    }
-
-    /**
      * Called when this tab's surface leaves composition - the host's signal that a tab was
      * backgrounded.
      *
@@ -3331,12 +3208,6 @@ internal class BrowserHandleImpl(
         val url = runCatching { browser.url() }.getOrDefault("")
         val capturing = captureTracker.isCapturing()
         val eligible = shouldAutoPictureInPicture(url, capturing, autoPoppedOut.get())
-        // Minted here, synchronously, while onDispose is still running and the surface has not
-        // finished tearing down. Doing it only after the settle delay below gave activation on
-        // some switches and not others - a gesture granted to a view that is already gone does
-        // not stick. The 5s transient-activation window comfortably outlives the delay, and it
-        // is minted again before the request as a second chance.
-        if (eligible) mintUserActivation()
         logger.debug(
             LogCategory.BROWSER,
             "Tab hidden, auto Picture-in-Picture gate",
@@ -3349,222 +3220,138 @@ internal class BrowserHandleImpl(
             ),
         )
         if (!eligible) return
-        val hiddenAt = System.nanoTime()
         autoPictureInPictureScope.launch {
             // A tab dragged between windows disposes one surface and composes another, in
             // unspecified order, so a move momentarily looks exactly like a background. Waiting
-            // lets the new surface arrive and cancel this.
+            // lets the new surface arrive and cancel this. The delay doubles as the fullscreen
+            // window's COMPOSE_DETACH_DELAY: JxBrowser allows one rendering surface per browser,
+            // and the Compose one needs a beat to let go before a Swing view can claim it.
             delay(AUTO_PIP_SETTLE_MS)
             if (composedSurfaces.get() > 0 || !isValid) return@launch
             if (!captureTracker.isCapturing()) return@launch
-            mintUserActivation()
-            // Raised BEFORE the request, because the popup arrives while it is still running:
-            // Chromium delivers the Document PiP window synchronously from requestWindow, and
-            // the popup handler consults this to tell that window apart from every other popup
-            // that names no URL. Cleared in the finally, so a failed request cannot leave the
-            // handler permanently willing to show URL-less popups as windows.
-            popOutPending.set(true)
-            try {
-                runCatching {
-                    browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                        PopOutScripts.enterCallPictureInPicture,
-                    )
-                }
-                // requestPictureInPicture returns a promise and executeJavaScript cannot await one,
-                // so the call's synchronous return says only that we asked. Read the settled state
-                // back instead - trusting the synchronous return is how this logged "entered" while
-                // no window ever appeared.
-                //
-                // Polled, not waited out. Fixed delays here cost over three seconds before the
-                // pop-out had anything in it, and a browser's own is immediate. Every step now ends
-                // the moment its answer arrives, and the filling below is idempotent, so a poll that
-                // fires once too often costs nothing.
-                val verdict = awaitPopOutVerdict()
-                val entered = verdict.contains("\"state\":\"$AUTO_PIP_ENTERED\"")
-                if (entered) autoPoppedOut.set(true)
-                if (entered) fillEmptySitePopOut()
-                if (entered) servePopOutActions()
-                logger.debug(
-                    LogCategory.BROWSER,
-                    "Auto Picture-in-Picture on hide",
-                    mapOf(
-                        "entered" to entered.toString(),
-                        "msFromHide" to ((System.nanoTime() - hiddenAt) / 1_000_000L).toString(),
-                        "detail" to verdict,
-                    ),
-                )
-            } finally {
-                popOutPending.set(false)
-            }
+            // A real HTML-fullscreen session owns the one surface this would need.
+            if (TabFullscreenStateManager.fullscreenTabId.value != null) return@launch
+            if (!autoPoppedOut.compareAndSet(false, true)) return@launch
+            SwingUtilities.invokeLater { openSurfacePopOut() }
         }
     }
 
     /**
-     * Serves the controls in a pop-out we built, by sending the page real keystrokes.
+     * Puts the tab's REAL rendering surface in a small always-on-top window.
      *
-     * The buttons cannot act for themselves. Measured on a live call: `element.click()` on Meet's
-     * own control, and a full `pointerdown`/`mousedown`/`pointerup`/`mouseup`/`click` sequence,
-     * both leave `data-is-muted` unchanged - Meet acts only on a **trusted** event, and script
-     * cannot forge one. `Browser.dispatch` can, because it travels Chromium's real input
-     * pipeline, which is the same reason it works for minting activation.
+     * This replaced a Document Picture-in-Picture window we filled with cloned tiles, and the
+     * reason is architectural, measured over a day of failures: a hidden tab is a dead end.
+     * Its DOM never mounts a new element (no rendering pipeline), and Meet's SFU does not even
+     * FORWARD video for tiles the client is not rendering - every remote receiver sat muted
+     * while a participant was visibly on the call. No script can show pixels the server will
+     * not send. With the actual surface visible in this window, the page renders normally,
+     * the SFU subscribes normally, and joins, drops, shares and names are simply the page.
      *
-     * So the pop-out records what was pressed and this loop performs it, using the page's own
-     * keyboard shortcuts. It runs while a pop-out of ours is open and stops with it.
+     * Chrome solves the same problem the same way at a different layer: its PiP window is a
+     * real visible web contents that Meet renders into.
+     *
+     * The reparent follows [ai.rever.boss.tabfullscreen.FullscreenBrowserWindow]: the tab's
+     * Compose view is already out of composition (that is what "backgrounded" means here), the
+     * settle delay above played the role of its COMPOSE_DETACH_DELAY, and on the way back the
+     * tab's view state is recreated - a Compose view whose surface a Swing view has held does
+     * not reconnect by itself.
      */
-    private fun servePopOutActions() {
-        popOutActionJob?.cancel()
-        popOutActionJob =
-            autoPictureInPictureScope.launch {
-                while (currentCoroutineContext().isActive && autoPoppedOut.get() && isValid) {
-                    delay(POP_OUT_ACTION_POLL_MS)
-                    val action =
-                        runCatching {
-                            browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                                PopOutScripts.readPopOutAction,
-                            )
-                        }.getOrNull().orEmpty()
-                    if (action.isNotEmpty()) {
-                        performPopOutAction(action)
-                        logger.debug(
-                            LogCategory.BROWSER,
-                            "Pop-out control performed",
-                            mapOf("handleId" to id, "action" to action),
-                        )
-                    }
-                }
-            }
-    }
-
-    /**
-     * Performs one control the pop-out asked for.
-     *
-     * Mic and camera go through real keystrokes because Meet ignores an untrusted event for
-     * those; the rest are ordinary buttons a synthetic click still drives.
-     */
-    private fun performPopOutAction(action: String) {
-        // A real mouse press first. Dispatched input is the only kind Meet acts on, and of the two
-        // kinds the mouse is the dependable one: MousePressed/MouseReleased mints activation on
-        // every run here, while dispatched KeyPressed was measured working on one page and not
-        // another, because it follows keyboard focus - and when a pop-out is in front, the page
-        // does not have it. The point is verified inside the page before it is used.
-        val point =
-            runCatching {
-                browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                    PopOutScripts.locatePopOutControl(action),
-                )
-            }.getOrNull().orEmpty()
-        if (clickPopOutControlAt(point)) return
-
-        // The control was not hittable - Meet hides its bar when the tab is in the background.
-        // Mic and camera have keyboard shortcuts, so they still work; the rest cannot.
-        val key =
-            when (action) {
-                "mic" -> KeyCode.KEY_CODE_D
-                "cam" -> KeyCode.KEY_CODE_E
-                else -> null
-            }
-        if (key == null) {
-            logger.debug(
-                LogCategory.BROWSER,
-                "Pop-out control not reachable",
-                mapOf("handleId" to id, "action" to action),
-            )
+    private fun openSurfacePopOut() {
+        if (popOutFrame != null || !isValid || browser.isClosed()) {
+            if (popOutFrame == null) autoPoppedOut.set(false)
             return
         }
-        val modifiers =
-            KeyModifiers
-                .newBuilder()
-                .apply { if (SystemUtils.isMacOS) metaDown(true) else controlDown(true) }
-                .build()
-        runCatching {
-            browser.dispatch(KeyPressed.newBuilder(key).keyModifiers(modifiers).build())
-            browser.dispatch(KeyReleased.newBuilder(key).keyModifiers(modifiers).build())
+        try {
+            val frame = JFrame()
+            frame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
+            frame.iconImages = BossWindowIcon.images
+            frame.isAlwaysOnTop = true
+            frame.isUndecorated = true
+            frame.addWindowListener(
+                object : java.awt.event.WindowAdapter() {
+                    override fun windowClosing(e: java.awt.event.WindowEvent?) {
+                        closeSurfacePopOut()
+                    }
+                },
+            )
+            frame.contentPane.layout = java.awt.BorderLayout()
+            frame.contentPane.add(buildPopOutDragBar(frame), java.awt.BorderLayout.NORTH)
+            val view =
+                com.teamdev.jxbrowser.view.swing.BrowserView
+                    .newInstance(browser)
+            frame.contentPane.add(view, java.awt.BorderLayout.CENTER)
+            frame.contentPane.add(buildPopOutResizeGrip(frame), java.awt.BorderLayout.SOUTH)
+            placePopOut(frame, null, java.awt.Dimension(SURFACE_POP_OUT_WIDTH, SURFACE_POP_OUT_HEIGHT))
+            frame.isVisible = true
+            popOutFrame = frame
+            popOutView = view
+            logger.info(
+                LogCategory.BROWSER,
+                "Surface pop-out opened",
+                mapOf("handleId" to id, "tabId" to (ownerTabId ?: "")),
+            )
+        } catch (e: Exception) {
+            logger.error(LogCategory.BROWSER, "Could not open the surface pop-out", error = e)
+            autoPoppedOut.set(false)
         }
     }
 
-    /** Presses the page at [point], given as `x,y`. Returns whether anything was sent. */
-    private fun clickPopOutControlAt(point: String): Boolean {
-        val coords = point.split(",").mapNotNull { it.trim().toIntOrNull() }
-        if (coords.size != 2) return false
-        val at = Point.of(coords[0], coords[1])
-        return runCatching {
-            browser.dispatch(MouseMoved.newBuilder(at).build())
-            browser.dispatch(
-                MousePressed
-                    .newBuilder(at)
-                    .button(MouseButton.PRIMARY)
-                    .clickCount(1)
-                    .build(),
-            )
-            browser.dispatch(
-                MouseReleased
-                    .newBuilder(at)
-                    .button(MouseButton.PRIMARY)
-                    .clickCount(1)
-                    .build(),
-            )
-        }.isSuccess
-    }
-
     /**
-     * Waits for the pop-out script to reach an outcome, and reports what it was.
-     *
-     * Polled rather than waited out, and it stops on **any** settled state rather than only on
-     * success: a script that had already given up - no call video, or a rejection - otherwise
-     * cost the entire poll budget before anything else could run, which measured as two seconds
-     * of nothing happening.
+     * Closes the pop-out and hands the surface back, in [FullscreenBrowserWindow]'s order:
+     * hide and detach the Swing view, dispose the frame, and only after a beat ask the tab to
+     * recreate its view state - the Compose view that existed before the Swing one took the
+     * surface is permanently disconnected, and without the recreation signal the user comes
+     * back to a frozen tab.
      */
-    private suspend fun awaitPopOutVerdict(): String {
-        var verdict = ""
-        repeat(AUTO_PIP_POLL_ATTEMPTS) {
-            if (!verdict.contains("\"state\"") || verdict.contains("\"state\":\"$AUTO_PIP_PENDING\"")) {
-                delay(AUTO_PIP_POLL_MS)
-                verdict =
-                    runCatching {
-                        browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                            PopOutScripts.readCallPictureInPictureResult,
-                        )
-                    }.getOrNull() ?: ""
+    private fun closeSurfacePopOut() {
+        val frame = popOutFrame ?: return
+        popOutFrame = null
+        val view = popOutView
+        popOutView = null
+        autoPoppedOut.set(false)
+        try {
+            view?.let {
+                it.isVisible = false
+                it.repaint()
+                frame.contentPane.remove(it)
             }
+            frame.contentPane.revalidate()
+            frame.isAlwaysOnTop = false
+            frame.dispose()
+        } catch (e: Exception) {
+            logger.error(LogCategory.BROWSER, "Error closing the surface pop-out", error = e)
         }
-        return verdict
-    }
-
-    /**
-     * Builds the pop-out's contents when the site opened a window and then left it blank.
-     *
-     * Google Meet does exactly that: it accepts the action, opens its Document PiP window, copies
-     * its stylesheets, and never moves the call in - so without this the user gets a white
-     * rectangle. Only ever runs against an EMPTY window, so a site that populates its own pop-out
-     * is left alone entirely.
-     */
-    private suspend fun fillEmptySitePopOut() {
-        // A safety net, not the main path. The enter script fills the window in the same pass
-        // that opens it; this only covers a pop-out that appeared after the in-page poll gave up.
-        if (!isValid) return
-        val result =
-            runCatching {
-                browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                    PopOutFillScript.populateCallPictureInPicture,
+        // The release delay is FullscreenBrowserWindow's SWING_RELEASE_DELAY: the disposed
+        // Swing view needs a beat to let go of the rendering surface. Then the repair is the
+        // file's own: bump [viewGeneration], which forces the BrowserView node out of
+        // composition and back - the same re-attach the frame-stall watchdog uses. The view
+        // STATE is deliberately not rebuilt: closing the composed state was tried and produced
+        // a permanently black tab (the composed node held a closed state, and one-view-per-
+        // browser kept the replacement from attaching); a browser.resize() jiggle was tried and
+        // repaired nothing. Re-attaching alone gives the surface its composed bounds back.
+        javax.swing
+            .Timer(SURFACE_RELEASE_DELAY_MS) {
+                viewGeneration += 1
+                logger.info(
+                    LogCategory.BROWSER,
+                    "Surface handed back, view re-attach forced",
+                    mapOf("handleId" to id, "viewGeneration" to viewGeneration.toString()),
                 )
-            }.getOrNull()
-        logger.debug(
+            }.apply {
+                isRepeats = false
+                start()
+            }
+        logger.info(
             LogCategory.BROWSER,
-            "Filled the pop-out",
-            mapOf("handleId" to id, "result" to (result ?: "null")),
+            "Surface pop-out closed",
+            mapOf("handleId" to id, "tabId" to (ownerTabId ?: "")),
         )
     }
 
     /** Called when this tab's surface is composed again - the user came back. */
     private fun onSurfaceShown() {
-        if (!autoPoppedOut.compareAndSet(true, false)) return
-        autoPictureInPictureScope.launch {
-            runCatching {
-                browser.mainFrame().orElse(null)?.executeJavaScript<String>(
-                    PopOutScripts.exitCallPictureInPicture,
-                )
-            }
-        }
+        if (!autoPoppedOut.get()) return
+        SwingUtilities.invokeLater { closeSurfacePopOut() }
     }
 
     override fun requestPictureInPicture() {
@@ -4240,6 +4027,7 @@ internal class BrowserHandleImpl(
     }
 
     override fun dispose() {
+        SwingUtilities.invokeLater { closeSurfacePopOut() }
         if (!disposed.compareAndSet(false, true)) return
         rendererPid.onGone()
         // Shut the interaction bridge FIRST. Its only gate is this authority, and the
@@ -4392,12 +4180,6 @@ internal class BrowserHandleImpl(
          */
         private const val AUTO_PIP_SETTLE_MS = 80L
 
-        /** The settled state [PopOutScripts.readCallPictureInPictureResult] reports on success. */
-        private const val AUTO_PIP_ENTERED = "entered"
-
-        /** The one state that means the script is still working; everything else is an outcome. */
-        private const val AUTO_PIP_PENDING = "pending"
-
         /**
          * How long the pop-out gets to settle before its outcome is read back.
          *
@@ -4406,11 +4188,15 @@ internal class BrowserHandleImpl(
          */
         internal const val AUTO_PIP_POLL_MS = 100L
 
-        /** How often a pop-out is asked whether one of its controls was pressed. */
-        private const val POP_OUT_ACTION_POLL_MS = 120L
+        /** The surface pop-out's initial size; the resize grip takes it from there. */
+        private const val SURFACE_POP_OUT_WIDTH = 480
+        private const val SURFACE_POP_OUT_HEIGHT = 360
 
-        /** How long the page gets to close its own PiP window before the frame is forced shut. */
-        private const val POP_OUT_CLOSE_FALLBACK_MS = 600L
+        /**
+         * How long the disposed Swing view gets to release the rendering surface before the
+         * tab is told to recreate its view state - FullscreenBrowserWindow's SWING_RELEASE_DELAY.
+         */
+        private const val SURFACE_RELEASE_DELAY_MS = 200
 
         /** Bounds the poll at roughly the site deadline plus the fallback's own attempt. */
         internal const val AUTO_PIP_POLL_ATTEMPTS = 20
@@ -4424,8 +4210,6 @@ internal class BrowserHandleImpl(
 
         /** Bounds on a page-supplied pop-out size, so a bad number cannot make an unusable window. */
         private const val MIN_PIP_EDGE = 120
-
-        private const val MAX_PIP_EDGE = 2000
 
         /** Height of the drag strip on an undecorated pop-out. */
         private const val POP_OUT_BAR_HEIGHT = 30

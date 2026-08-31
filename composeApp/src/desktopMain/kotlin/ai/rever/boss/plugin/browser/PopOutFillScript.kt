@@ -22,6 +22,15 @@ internal object PopOutFillScript {
         get() =
             """
             function __bossFillPip() {
+                // From here until the window closes, the page believes it is visible - see the
+                // capture script for why (a hidden tab's DOM is frozen, so joins, leaves and
+                // share changes would never reach these tiles). The visibilitychange dispatch
+                // makes Meet re-read the (now spoofed) state and resume mounting tiles.
+                if (window.__bossPipSpoofVisible === false) {
+                    window.__bossPipSpoofVisible = true;
+                    try { document.dispatchEvent(new Event('visibilitychange')); } catch (e) { }
+                }
+
                 var w = window.documentPictureInPicture && documentPictureInPicture.window;
                 if (!w) return 'no window';
                 var doc = w.document;
@@ -65,25 +74,50 @@ internal object PopOutFillScript {
             // one, an avatar when there is not, and a screen share is simply another tile.
             function readSources() {
                 var found = [];
+                var byId = {};
                 var meetTiles = document.querySelectorAll('[data-participant-id]');
                 for (var m = 0; m < meetTiles.length; m++) {
                     var tileEl = meetTiles[m];
-                    if (tileEl.getBoundingClientRect().width < 1) continue;
+                    // No layout filter here - the third time layout size has lied in this file.
+                    // Meet positions tiles from rAF-driven measurements and rAF is throttled to
+                    // nothing while the tab is hidden, so a tile mounted mid-share stays 0x0
+                    // until the tab is next shown - a screen share started FROM the pop-out
+                    // never appeared in it. The filter's real job, skipping duplicate tiles for
+                    // the same person, is done by the id dedupe below instead.
                     var vid = null;
                     var candidates = tileEl.querySelectorAll('video');
                     for (var q = 0; q < candidates.length; q++) {
                         var cv = candidates[q];
-                        if (!cv.srcObject || !cv.videoWidth || !cv.videoHeight) continue;
+                        if (!cv.srcObject) continue;
                         var vt = cv.srcObject.getVideoTracks()[0];
-                        // A camera turned off leaves the element in place with its track ended or
-                        // muted, so readyState alone still reports a video and the tile would keep
-                        // showing a frozen last frame instead of falling back to the avatar.
+                        // Liveness is judged by the TRACK, never by videoWidth. The element only
+                        // reports a size once it has decoded a frame, and a hidden tab does not
+                        // owe a freshly attached element one - which is how a share started from
+                        // the pop-out, and the camera re-attached after a share stopped, both
+                        // read as "no video" until the tab was next shown. The track's settings
+                        // carry the real dimensions regardless (measured: element 0x0, track
+                        // 1280x720), and the clone plays in the pop-out window, which is visible
+                        // and decodes for itself.
+                        //
+                        // The muted check stays: a camera turned off leaves the element in place
+                        // with its track muted, and readyState alone would keep showing a frozen
+                        // last frame instead of falling back to the avatar.
                         if (!vt || vt.readyState !== 'live' || vt.muted) continue;
                         vid = cv;
                         break;
                     }
                     var isLocal = false;
                     var flipped = false;
+                    var presentation = false;
+                    if (vid) {
+                        try {
+                            // The Screen Capture spec's own signal: getDisplayMedia tracks carry
+                            // displaySurface ('monitor'/'window'/'browser') in their settings and
+                            // camera tracks never do. Not Meet markup, so it survives redesigns.
+                            presentation =
+                                !!(vid.srcObject.getVideoTracks()[0].getSettings() || {}).displaySurface;
+                        } catch (e) { presentation = false; }
+                    }
                     if (vid) {
                         try {
                             isLocal = !!(vid.srcObject.getVideoTracks()[0].getSettings() || {}).deviceId;
@@ -109,16 +143,90 @@ internal object PopOutFillScript {
                         }
                     }
                     if (!vid && !avatar) continue;
-                    found.push({
+                    var entry = {
                         id: tileEl.getAttribute('data-participant-id') || String(m),
                         stream: vid ? vid.srcObject : null,
                         mirrored: flipped,
                         avatar: avatar,
-                        local: isLocal
-                    });
+                        local: isLocal,
+                        presentation: presentation
+                    };
+                    var prev = byId[entry.id];
+                    if (!prev) {
+                        byId[entry.id] = entry;
+                        found.push(entry);
+                    } else if (!prev.stream && entry.stream) {
+                        // Two tiles for one participant: keep the one with live video.
+                        found[found.indexOf(prev)] = entry;
+                        byId[entry.id] = entry;
+                    }
                 }
-                var remoteOnly = found.filter(function (x) { return !x.local; });
-                return remoteOnly.length ? remoteOnly : found;
+                // The DOM is only HALF the sources. A tile mounted while the tab is hidden
+                // never happens - mounting needs the rendering pipeline, which a hidden widget
+                // does not get - so anyone who joins, and any share that starts, while the
+                // pop-out is open exists only as a track. Those come from the document-start
+                // hooks: remote video tracks recorded off RTCPeerConnection (network-driven,
+                // they fire while hidden) and the user's own getDisplayMedia stream. A track
+                // the DOM already shows is skipped by track id, so nothing doubles up once the
+                // tab is shown again and Meet mounts the real tile.
+                var known = {};
+                for (var f = 0; f < found.length; f++) {
+                    if (!found[f].stream) continue;
+                    var kt = found[f].stream.getVideoTracks()[0];
+                    if (kt) known[kt.id] = true;
+                }
+                var domVideos = document.querySelectorAll('video');
+                for (var dv = 0; dv < domVideos.length; dv++) {
+                    var dvt = domVideos[dv].srcObject &&
+                        domVideos[dv].srcObject.getVideoTracks()[0];
+                    if (dvt) known[dvt.id] = true;
+                }
+                var pcs = window.__bossPipPeerConnections || [];
+                for (var pi = 0; pi < pcs.length; pi++) {
+                    var pc = pcs[pi];
+                    if (pc.connectionState === 'closed') continue;
+                    var receivers = [];
+                    try { receivers = pc.getReceivers(); } catch (e) { continue; }
+                    for (var ri = 0; ri < receivers.length; ri++) {
+                        var rt = receivers[ri].track;
+                        if (!rt || rt.kind !== 'video') continue;
+                        if (rt.readyState !== 'live' || rt.muted || known[rt.id]) continue;
+                        found.push({
+                            id: 'track:' + rt.id.slice(0, 8),
+                            stream: new MediaStream([rt]),
+                            mirrored: false,
+                            avatar: null,
+                            local: false,
+                            presentation: !!((rt.getSettings() || {}).displaySurface)
+                        });
+                        known[rt.id] = true;
+                    }
+                }
+                var ls = window.__bossPipLocalShare;
+                if (ls) {
+                    var lst = ls.getVideoTracks()[0];
+                    if (lst && lst.readyState === 'live' && !lst.muted && !known[lst.id]) {
+                        found.push({
+                            id: 'share:local',
+                            stream: ls,
+                            mirrored: false,
+                            avatar: null,
+                            local: true,
+                            presentation: true
+                        });
+                    }
+                }
+
+                // Presentations first - Chrome gives the shared screen the window - then
+                // EVERYONE, with the self view last, the way Meet itself orders a call. There
+                // used to be a remote-preference here that dropped the local tiles whenever any
+                // remote one existed; it was written for the 1:1 case (show the other person,
+                // not yourself) and on a call with several people it silently removed the
+                // user's own tile. The tile cap is the only thing that trims a large call.
+                var shares = found.filter(function (x) { return x.presentation; });
+                var others = found.filter(function (x) { return !x.presentation && !x.local; });
+                var self = found.filter(function (x) { return !x.presentation && x.local; });
+                return shares.concat(others).concat(self);
             }
 
             // Re-rendered rather than built once. A camera toggled mid-call changes a tile from
@@ -130,13 +238,14 @@ internal object PopOutFillScript {
                 // compare per poll rather than rebuilding video elements (which would restart
                 // playback and flicker) several times a second.
                 var signature = streams.slice(0, $MAX_PIP_TILES).map(function (x) {
-                    return x.id + (x.stream ? ':v' + (x.mirrored ? 'm' : '') : ':a');
+                    return x.id +
+                        (x.presentation ? ':s' : x.stream ? ':v' + (x.mirrored ? 'm' : '') : ':a');
                 }).join('|');
                 // An empty signature must never be treated as "already drawn": the window can be
                 // filled before Meet has rebuilt its tiles, and caching that state would leave the
                 // placeholder up for the rest of the call.
                 if (signature && signature === tiles.getAttribute('data-boss-sig')) {
-                    return streams.length;
+                    return streams;
                 }
                 tiles.setAttribute('data-boss-sig', signature);
                 // removeChild, not innerHTML. Google Meet ships a Trusted Types CSP, so ANY
@@ -167,6 +276,9 @@ internal object PopOutFillScript {
                         'position:relative;background:#3c4043;border-radius:10px;overflow:hidden;' +
                             'min-height:0;display:flex;align-items:center;justify-content:center'
                     );
+                    if (streams[j].presentation) {
+                        card.style.gridColumn = '1 / -1';
+                    }
                     if (streams[j].stream) {
                         var tile = doc.createElement('video');
                         tile.autoplay = true;
@@ -194,7 +306,13 @@ internal object PopOutFillScript {
                     }
                     tiles.appendChild(card);
                 }
-                return streams.length;
+                // Chrome gives a shared screen the window rather than an equal split: the
+                // presentation spans every column and takes the lion's share of the height,
+                // with the people tiles in a strip beneath.
+                var hasShare = streams.length && streams[0].presentation;
+                tiles.style.gridTemplateRows =
+                    hasShare && streams.length > 1 ? '3fr 1fr' : '';
+                return streams;
             }
 
             // Deliberately NOT an early return when there is nothing to draw yet. Meet tears its
@@ -229,8 +347,10 @@ internal object PopOutFillScript {
                       onIcon: 'videocam', offIcon: 'videocam_off', slot: 'camActive', danger: false },
                     // Icons are the ligatures Meet's own buttons were measured using
                     // (computer_arrow_up on Share screen), so the glyphs exist in the copied font.
-                    { key: 'present', match: /present now|share screen|presenting/i,
-                      onIcon: 'computer_arrow_up', danger: false },
+                    { key: 'present', action: 'togglescreenshare',
+                      match: /present now|share screen|presenting/i,
+                      onIcon: 'computer_arrow_up', slot: 'screenshareActive',
+                      highlight: true, danger: false },
                     { key: 'leave', action: 'hangup', match: /leave call|hang up/i,
                       onIcon: 'call_end', offIcon: 'call_end', danger: true }
                 ];
@@ -274,6 +394,30 @@ internal object PopOutFillScript {
                         );
                         btn.appendChild(makeIcon(spec.onIcon || 'more_vert'));
                         btn.onclick = function () {
+                            if (spec.key === 'present') {
+                                var share = null;
+                                var current = readSources();
+                                for (var y = 0; y < current.length; y++) {
+                                    if (current[y].presentation) share = current[y];
+                                }
+                                if (share && share.stream) {
+                                    // Stopping a share IS the browser contract: Chrome's own
+                                    // "Stop sharing" bar ends the display track and the site
+                                    // reacts to that. The host-click fallback could not stop one
+                                    // - while presenting, the page's matching control opens a
+                                    // menu in the hidden tab. track.stop() does not fire 'ended'
+                                    // on the stopping side, so it is dispatched explicitly -
+                                    // that event is what Meet's cleanup listens for.
+                                    share.stream.getTracks().forEach(function (t) {
+                                        try {
+                                            t.stop();
+                                            t.dispatchEvent(new Event('ended'));
+                                        } catch (e) { /* a track already ended is fine */ }
+                                    });
+                                    pipLog('stopped share tracks');
+                                    return;
+                                }
+                            }
                             var handler = actionHandler(spec);
                             if (handler) {
                                 // Chrome's own path: DidReceiveAction invokes the site's handler
@@ -305,12 +449,23 @@ internal object PopOutFillScript {
                 function sync() {
                     // Tiles as well as buttons: a camera toggled mid-call has to change the tile,
                     // not only the icon on the button that toggled it.
-                    renderTiles();
+                    var streams = renderTiles();
+                    var presenting = false;
+                    for (var q = 0; q < streams.length; q++) {
+                        if (streams[q].presentation) presenting = true;
+                    }
                     var state = window.__bossPipMediaState || {};
                     for (var k = 0; k < live.length; k++) {
                         var entry = live[k];
                         var spec = entry.spec;
                         var active = spec.slot ? state[spec.slot] : undefined;
+                        if (active === undefined && spec.key === 'present') {
+                            // Meet has never reported screenshare through the media session on
+                            // this build, so the state is DERIVED from the tiles: a presentation
+                            // tile exists iff a share is running. Same source the tiles
+                            // themselves draw from, so the button cannot disagree with them.
+                            active = presenting;
+                        }
                         if (active === undefined) {
                             // Never reported: fall back to the page button when it exists.
                             var source = findButton(spec.match);
@@ -324,6 +479,13 @@ internal object PopOutFillScript {
                         if (spec.danger) {
                             entry.btn.style.background = '#d93025';
                             entry.btn.style.color = '#fff';
+                        } else if (spec.highlight) {
+                            // Present is not a mute: ACTIVE is the notable state, painted Meet's
+                            // way - blue while sharing, neutral otherwise - not the red scheme.
+                            entry.btn.style.background = active ? '#8ab4f8' : '#3c4043';
+                            entry.btn.style.color = active ? '#202124' : '#e8eaed';
+                            entry.btn.title = active ? 'Stop presenting' : 'Present now';
+                            entry.btn.setAttribute('aria-label', entry.btn.title);
                         } else {
                             var muted = active === false;
                             entry.btn.style.background = muted ? '#f9dedc' : '#3c4043';
@@ -343,11 +505,20 @@ internal object PopOutFillScript {
                 }
                 safeSync();
                 var timer = w.setInterval(safeSync, $PIP_SYNC_MS);
-                w.addEventListener('pagehide', function () { w.clearInterval(timer); });
+                w.addEventListener('pagehide', function () {
+                    w.clearInterval(timer);
+                    // The window closing by ANY route ends the spoof - the exit script also
+                    // clears it, but Meet can close its own window and must not leave the page
+                    // permanently exempt from background throttling.
+                    if (window.__bossPipSpoofVisible) {
+                        window.__bossPipSpoofVisible = false;
+                        try { document.dispatchEvent(new Event('visibilitychange')); } catch (e) { }
+                    }
+                });
 
                 doc.body.style.cssText = 'margin:0;overflow:hidden;background:#202124';
                 doc.body.appendChild(root);
-                return 'populated ' + Math.min(streams.length, $MAX_PIP_TILES) + ' tile(s), ' +
+                return 'populated ' + tiles.childElementCount + ' tile(s), ' +
                     live.length + ' control(s)';
             }
             """.trimIndent()

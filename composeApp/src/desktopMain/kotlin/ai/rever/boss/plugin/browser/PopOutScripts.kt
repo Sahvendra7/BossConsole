@@ -68,6 +68,104 @@ internal object PopOutScripts {
                     window.__bossPipLog.push(Date.now() % 100000 + ' ' + line);
                     if (window.__bossPipLog.length > 40) window.__bossPipLog.shift();
                 };
+                // While a pop-out of ours is open, the page is told it is visible. A hidden
+                // tab's DOM is FROZEN: Meet's rendering is rAF-driven and visibility-gated, so
+                // someone joining, leaving or starting a share never reaches the DOM of a hidden
+                // tab - the pop-out showed whatever was mounted at the moment of the switch and
+                // nothing after. Everything that DID keep working (mute state, camera-off)
+                // travels through tracks and the media session, no DOM needed - which is the
+                // tell. Chrome avoids this because Meet renders into the PiP window itself,
+                // which is visible; an embedder cannot get Meet to populate its window, so the
+                // page is kept rendering instead. Off by default and toggled only around our own
+                // pop-out, so a backgrounded tab with no pop-out keeps its normal throttling.
+                window.__bossPipSpoofVisible = false;
+                try {
+                    var vsDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+                    var hidDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden');
+                    if (vsDesc && vsDesc.get && hidDesc && hidDesc.get) {
+                        var origVs = vsDesc.get;
+                        var origHid = hidDesc.get;
+                        Object.defineProperty(Document.prototype, 'visibilityState', {
+                            configurable: true,
+                            get: function () {
+                                return window.__bossPipSpoofVisible ? 'visible' : origVs.call(this);
+                            }
+                        });
+                        Object.defineProperty(Document.prototype, 'hidden', {
+                            configurable: true,
+                            get: function () {
+                                return window.__bossPipSpoofVisible ? false : origHid.call(this);
+                            }
+                        });
+                        // rAF is throttled by REAL visibility, which the getters cannot change,
+                        // so while spoofed-and-actually-hidden it falls back to a timer. Hidden
+                        // timers run at ~1Hz, which is enough for tile layout - the video pixels
+                        // flow through MediaStream clones in the visible pop-out regardless.
+                        var origRaf = window.requestAnimationFrame.bind(window);
+                        var origCaf = window.cancelAnimationFrame.bind(window);
+                        window.requestAnimationFrame = function (cb) {
+                            if (window.__bossPipSpoofVisible && origHid.call(document)) {
+                                return window.setTimeout(function () {
+                                    try { cb(performance.now()); } catch (e) { /* page's own */ }
+                                }, 100);
+                            }
+                            return origRaf(cb);
+                        };
+                        window.cancelAnimationFrame = function (handle) {
+                            // The handle may belong to either space; cancelling in both is safe.
+                            origCaf(handle);
+                            window.clearTimeout(handle);
+                        };
+                    }
+                } catch (e) { /* a page that sealed Document.prototype keeps real visibility */ }
+
+                // The media layer is the only source that keeps flowing while the tab is
+                // hidden. Measured: a NEW participant or share never reaches a hidden tab's DOM
+                // - mounting an element needs the rendering pipeline (layout, Intersection/
+                // ResizeObserver), which Chromium does not run for a hidden widget regardless
+                // of what visibilityState says - but RTCPeerConnection 'track' events fire on
+                // signaling, network-driven. So every remote video track is recorded here and
+                // the pop-out renders tracks the DOM has no tile for.
+                // The CONNECTIONS are recorded, and their receivers are enumerated at read
+                // time - never the 'track' events. Measured on a live call: every track the
+                // event hook had recorded was ended/muted while a remote video was visibly
+                // playing, because Meet pre-creates recvonly transceivers and takes
+                // `receiver.track` directly, a path that fires no event worth having.
+                // `pc.getReceivers()` holds the CURRENT tracks whatever route delivered them.
+                window.__bossPipPeerConnections = [];
+                try {
+                    var OrigPC = window.RTCPeerConnection;
+                    if (OrigPC) {
+                        window.RTCPeerConnection = function (config) {
+                            var pc = new OrigPC(config);
+                            try {
+                                window.__bossPipPeerConnections.push(pc);
+                                log('pc created (' + window.__bossPipPeerConnections.length + ')');
+                            } catch (e) { /* never break the page's call */ }
+                            return pc;
+                        };
+                        window.RTCPeerConnection.prototype = OrigPC.prototype;
+                        // Statics (generateCertificate) keep working through the wrapper.
+                        Object.setPrototypeOf(window.RTCPeerConnection, OrigPC);
+                    }
+                } catch (e) { /* a page that sealed RTCPeerConnection keeps its own */ }
+                // The user's own screen share, same reason: started from the pop-out, the
+                // hidden DOM never mounts its tile, but the stream is handed to the page right
+                // here.
+                try {
+                    var md = navigator.mediaDevices;
+                    if (md && typeof md.getDisplayMedia === 'function') {
+                        var gdm = md.getDisplayMedia.bind(md);
+                        md.getDisplayMedia = function (constraints) {
+                            return gdm(constraints).then(function (stream) {
+                                window.__bossPipLocalShare = stream;
+                                log('getDisplayMedia stream captured');
+                                return stream;
+                            });
+                        };
+                    }
+                } catch (e) { /* keep the page's own capture behaviour */ }
+
                 var original = ms.setActionHandler.bind(ms);
                 ms.setActionHandler = function (action, handler) {
                     try {
@@ -75,10 +173,12 @@ internal object PopOutScripts {
                             window.__bossPipEnterHandler = handler;
                         }
                         if (action === 'togglemicrophone' || action === 'togglecamera' ||
-                            action === 'hangup') {
+                            action === 'hangup' || action === 'togglescreenshare') {
                             window.__bossPipActions[action] = handler;
-                            log('setActionHandler ' + action + ' ' + (handler ? 'set' : 'cleared'));
                         }
+                        // Every registration is logged, not only the kept ones - which actions a
+                        // site registers is exactly what the next control needs measured.
+                        log('setActionHandler ' + action + ' ' + (handler ? 'set' : 'cleared'));
                     } catch (e) { /* never break the page's registration */ }
                     return original(action, handler);
                 };
@@ -87,10 +187,12 @@ internal object PopOutScripts {
                 // in Chrome's own window. Recorded here for the pop-out to read - the authority
                 // on mute state, not the aria of a control bar that may not even be rendered.
                 window.__bossPipMediaState = {};
-                ['setMicrophoneActive', 'setCameraActive'].forEach(function (name) {
+                ['setMicrophoneActive', 'setCameraActive', 'setScreenshareActive']
+                    .forEach(function (name) {
                     if (typeof ms[name] !== 'function') return;
                     var fn = ms[name].bind(ms);
-                    var slot = name === 'setMicrophoneActive' ? 'micActive' : 'camActive';
+                    var slot = name === 'setMicrophoneActive' ? 'micActive'
+                        : name === 'setCameraActive' ? 'camActive' : 'screenshareActive';
                     ms[name] = function (active) {
                         try {
                             window.__bossPipMediaState[slot] = !!active;
@@ -391,6 +493,10 @@ internal object PopOutScripts {
         """
         (function () {
             var closed = [];
+            if (window.__bossPipSpoofVisible) {
+                window.__bossPipSpoofVisible = false;
+                try { document.dispatchEvent(new Event('visibilitychange')); } catch (e) { }
+            }
             if (document.pictureInPictureElement) {
                 document.exitPictureInPicture();
                 closed.push('element');
