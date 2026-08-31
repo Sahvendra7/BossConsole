@@ -2647,7 +2647,6 @@ internal class BrowserHandleImpl(
      *    - Empty bounds (Rect.empty()) indicates target="_blank" or cmd+click → route to new tab
      *    - Non-empty bounds indicates OAuth window or actual popup → allow to proceed
      */
-
     private fun setupPopupHandler() {
         // Phase 1: Allow popup browser creation, and keep the target URL it arrives with.
         // OpenPopupCallback's params carry no URL, so without this the destination has to be
@@ -2857,9 +2856,14 @@ internal class BrowserHandleImpl(
                             if (cleanedUp.compareAndSet(false, true)) {
                                 urlSubscriptions.forEach { it.unsubscribe() }
                                 pendingPopupCaptures.remove(popupBrowser)
-                                if (!popupBrowser.isClosed) {
-                                    popupBrowser.close()
-                                }
+                            }
+                            // OUTSIDE the CAS, deliberately. The happy path now sets cleanedUp
+                            // before it decides what to do with the popup, so a throw after that
+                            // point finds the CAS already lost and would skip the close - leaking
+                            // a Browser and its renderer process. The CAS guards unsubscribe and
+                            // map removal, which must happen once; closing is idempotent.
+                            if (!popupBrowser.isClosed) {
+                                popupBrowser.close()
                             }
                             logger.warn(LogCategory.BROWSER, "Popup handler error", error = e)
                         } finally {
@@ -2920,7 +2924,6 @@ internal class BrowserHandleImpl(
      * glass pane ever sees a press. This is also what a browser's own Picture-in-Picture looks
      * like - a thin header over the video, not a full title bar.
      */
-
     private fun buildPopOutDragBar(frame: JFrame): javax.swing.JComponent {
         val bar = javax.swing.JPanel(java.awt.BorderLayout())
         bar.background = java.awt.Color(0x1F, 0x1F, 0x1F)
@@ -2989,7 +2992,11 @@ internal class BrowserHandleImpl(
         val drag =
             object : java.awt.event.MouseAdapter() {
                 override fun mousePressed(e: java.awt.event.MouseEvent) {
-                    origin.setLocation(e.point)
+                    // Converted to the FRAME's space: this listener is installed on the bar and
+                    // on the title label, and the label sits ~12px in, so storing the raw event
+                    // point made a drag started on the title snap the window by that offset
+                    // before it began tracking.
+                    origin.setLocation(SwingUtilities.convertPoint(e.component, e.point, frame))
                 }
 
                 override fun mouseDragged(e: java.awt.event.MouseEvent) {
@@ -3208,8 +3215,11 @@ internal class BrowserHandleImpl(
             delay(AUTO_PIP_SETTLE_MS)
             if (composedSurfaces.get() > 0 || !isValid) return@launch
             if (!captureTracker.isCapturing()) return@launch
-            // A real HTML-fullscreen session owns the one surface this would need.
-            if (TabFullscreenStateManager.fullscreenTabId.value != null) return@launch
+            // A real HTML-fullscreen session owns the one surface this would need. Compared
+            // against THIS tab: a global check suppressed the pop-out whenever any other tab was
+            // fullscreen, and ownerTabId is known by now.
+            val fullscreenTab = TabFullscreenStateManager.fullscreenTabId.value
+            if (fullscreenTab != null && fullscreenTab == ownerTabId) return@launch
             if (!autoPoppedOut.compareAndSet(false, true)) return@launch
             SwingUtilities.invokeLater { openSurfacePopOut() }
         }
@@ -3235,6 +3245,24 @@ internal class BrowserHandleImpl(
      * tab's view state is recreated - a Compose view whose surface a Swing view has held does
      * not reconnect by itself.
      */
+
+    /**
+     * Closes the pop-out when the browser behind it dies without a dispose().
+     *
+     * `BrowserClosed` sets `disposed = true`, and `dispose()` returns on its first line when that
+     * is already set - so a crashed renderer or an engine recycle never reaches the cleanup.
+     * The tab is backgrounded by definition while popped out, so nothing tears its composition
+     * down either: without this the window stays on screen, undecorated and always-on-top, over
+     * a dead surface. `showPopupInWindow` subscribes to the same event for the same reason.
+     */
+    private fun closePopOutWhenBrowserDies() {
+        runCatching {
+            browser.on(BrowserClosed::class.java) {
+                SwingUtilities.invokeLater { closeSurfacePopOut() }
+            }
+        }
+    }
+
     private fun openSurfacePopOut() {
         if (popOutFrame != null || !isValid || browser.isClosed()) {
             if (popOutFrame == null) autoPoppedOut.set(false)
@@ -3274,6 +3302,7 @@ internal class BrowserHandleImpl(
             frame.isVisible = true
             popOutFrame = frame
             popOutView = view
+            closePopOutWhenBrowserDies()
             logger.info(
                 LogCategory.BROWSER,
                 "Surface pop-out opened",
@@ -3413,6 +3442,13 @@ internal class BrowserHandleImpl(
             tabId = tabId,
             ownerWindowId = ownerWindowId,
             onFullscreenEnter = {
+                // The pop-out is holding this browser's one rendering surface, and fullscreen is
+                // about to reparent it. Closing first hands it back; leaving both would be the
+                // black-surface conflict this file is built around. Pressing a site's own
+                // fullscreen control while a call is popped out is an ordinary thing to do.
+                if (popOutFrame != null) {
+                    closePopOutOnEdt()
+                }
                 logger.info(LogCategory.BROWSER, "Tab entered fullscreen", mapOf("tabId" to tabId, "handleId" to id))
                 onEnterFullscreen()
             },
@@ -4257,17 +4293,13 @@ internal class BrowserHandleImpl(
         /**
          * How long an adopted popup waits for its main-frame navigation to name a destination
          * before falling back to the URL recorded at popup-creation time.
-         */
-
-        /**
-         * How long an adopted popup waits for its main-frame navigation to name a destination.
          *
-         * Short on purpose. `NavigationStarted` fires when a navigation BEGINS, not when it
-         * finishes, so a real link popup answers within a few frames however slow the network is
-         * - the old three seconds bought nothing for those and were paid in full by every
-         * Document Picture-in-Picture window, which never navigates at all and so could not be
-         * shown until the wait expired. That was seconds of blank screen for the one case where
-         * the user is watching.
+         * This was briefly cut to 600ms, for a Document Picture-in-Picture window that never
+         * navigates and so waited out the whole deadline before it could be shown. That flow is
+         * gone - URL-less popups are dropped now, so nothing is waiting to be displayed - and
+         * the short deadline only risked a cold render process missing `NavigationStarted`. Back
+         * at three seconds, which is where it should stay unless something is again blocked on
+         * this expiring.
          */
         private const val POPUP_URL_TIMEOUT_MS = 3_000L
 

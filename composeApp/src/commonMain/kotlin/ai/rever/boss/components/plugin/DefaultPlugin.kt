@@ -930,6 +930,9 @@ class DefaultPlugin(
                             )
                         }
                     }.onFailure {
+                        // Rethrown, not logged: runCatching catches CancellationException too, and
+                        // swallowing it here breaks structured cancellation when the window closes.
+                        if (it is kotlinx.coroutines.CancellationException) throw it
                         logger.warn(LogCategory.UI, "Could not return to a pop-out's tab", error = it)
                     }
                 }
@@ -1279,6 +1282,39 @@ private class ApiActiveTabsProviderAdapter(
     private val scope: CoroutineScope,
 ) : ActiveTabsProvider {
     private val tabsLogger = BossLogger.forComponent("ActiveTabsProvider")
+
+    init {
+        // Start polling loop (like bundled LLMRpaIntegration.kt does)
+        // This ensures dynamic plugins receive tab updates
+        //
+        // Restored after a refactor deleted it: the pop-out return collector was briefly hosted
+        // in this init and, when it moved to DefaultPlugin, this loop went with it. Nothing else
+        // calls refreshTabs() on a schedule - both consumers of the flow only watch it - so
+        // _activeTabs stayed empty for the life of the process and every plugin observing tabs
+        // silently saw none.
+        scope.launch {
+            var consecutiveFailures = 0
+            while (isActive) {
+                try {
+                    refreshTabs()
+                    consecutiveFailures = 0
+                } catch (e: Exception) {
+                    consecutiveFailures++
+                    tabsLogger.warn(
+                        LogCategory.GENERAL,
+                        "Failed to refresh tabs",
+                        mapOf(
+                            "consecutiveFailures" to consecutiveFailures,
+                        ),
+                        error = e,
+                    )
+                }
+                // Base interval 2s, +1s per failure, max 10s
+                delay(minOf(2000L + (consecutiveFailures * 1000L), 10000L))
+            }
+        }
+    }
+
     private val _activeTabs = kotlinx.coroutines.flow.MutableStateFlow<List<ActiveTabData>>(emptyList())
     override val activeTabs: kotlinx.coroutines.flow.StateFlow<List<ActiveTabData>> = _activeTabs
 
