@@ -3286,6 +3286,36 @@ internal class BrowserHandleImpl(
     }
 
     /**
+     * Runs [closeSurfacePopOut] on the EDT, waiting at most [POP_OUT_EDT_TIMEOUT_MS] for it.
+     *
+     * See [dispose] for why the wait is bounded rather than an `invokeAndWait`.
+     */
+    private fun closePopOutOnEdt() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            closeSurfacePopOut()
+            return
+        }
+        val task = java.util.concurrent.FutureTask<Unit> { closeSurfacePopOut() }
+        SwingUtilities.invokeLater(task)
+        try {
+            task.get(POP_OUT_EDT_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            logger.warn(LogCategory.BROWSER, "Interrupted while closing the surface pop-out", error = e)
+        } catch (e: java.util.concurrent.TimeoutException) {
+            // Left queued deliberately: the caller stops waiting, the window still closes once
+            // the EDT is responsive again.
+            logger.warn(
+                LogCategory.BROWSER,
+                "Timed out closing the surface pop-out on the EDT; the close remains queued",
+                error = e,
+            )
+        } catch (e: java.util.concurrent.ExecutionException) {
+            logger.warn(LogCategory.BROWSER, "Closing the surface pop-out failed", error = e)
+        }
+    }
+
+    /**
      * Closes the pop-out and hands the surface back, in [FullscreenBrowserWindow]'s order:
      * hide and detach the Swing view, dispose the frame, and only after a beat ask the tab to
      * recreate its view state - the Compose view that existed before the Swing one took the
@@ -4027,13 +4057,15 @@ internal class BrowserHandleImpl(
         // Synchronously, and before the guard below: invokeLater would let browser.close() run
         // first, and closing the browser under a still-attached Swing view is exactly the
         // ordering that leaves an undecorated always-on-top window on screen with nothing able
-        // to dispose it. On the EDT already (dispose comes from composition teardown) this runs
-        // inline; off it, the close is waited for rather than posted.
-        if (SwingUtilities.isEventDispatchThread()) {
-            closeSurfacePopOut()
-        } else {
-            runCatching { SwingUtilities.invokeAndWait { closeSurfacePopOut() } }
-        }
+        // to dispose it.
+        //
+        // BOUNDED, not invokeAndWait, and copied from FullscreenBrowserWindow's own EDT hop for
+        // the same reason: disposeBrowser is a suspend function, so this can arrive off the EDT,
+        // and an unbounded block there deadlocks the moment the EDT is itself waiting on
+        // anything this thread holds. A timeout turns that into a late cleanup instead of a
+        // frozen app, and the task stays queued so the window is still disposed once the EDT
+        // frees up. On the EDT already - composition teardown - it runs inline.
+        closePopOutOnEdt()
         if (!disposed.compareAndSet(false, true)) return
         rendererPid.onGone()
         // Shut the interaction bridge FIRST. Its only gate is this authority, and the
@@ -4195,6 +4227,9 @@ internal class BrowserHandleImpl(
          * tab is told to recreate its view state - FullscreenBrowserWindow's SWING_RELEASE_DELAY.
          */
         private const val SURFACE_RELEASE_DELAY_MS = 200
+
+        /** How long dispose() waits for the EDT to close the pop-out before giving up on it. */
+        private const val POP_OUT_EDT_TIMEOUT_MS = 2_000L
 
         /** Size of a floating popup window that asked for no geometry of its own. */
         private const val FLOATING_POPUP_WIDTH = 480
