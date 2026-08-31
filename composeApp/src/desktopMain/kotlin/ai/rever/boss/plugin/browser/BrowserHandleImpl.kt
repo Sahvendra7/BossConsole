@@ -809,7 +809,6 @@ internal class BrowserHandleImpl(
         }
 
         setupEventListeners()
-        installMediaSessionPipCapture()
         setupBrowserHandlers()
 
         // A tab exists from here on, whether or not it ever loads a page. Reporting the open
@@ -2641,28 +2640,6 @@ internal class BrowserHandleImpl(
      *    - Non-empty bounds indicates OAuth window or actual popup → allow to proceed
      */
 
-    /**
-     * Holds on to the page's `enterpictureinpicture` media-session handler from the moment it is
-     * registered, so [onSurfaceHidden] can invoke it the way Chrome does.
-     *
-     * Document start, through the shared dispatcher: the wrapper has to be in place before the
-     * page's own scripts call `setActionHandler`, and `injectPageHelpers` runs at
-     * NavigationFinished, which is far too late.
-     */
-    private fun installMediaSessionPipCapture() {
-        val registered =
-            BrowserInjectDispatcher.register(browser) { frame ->
-                if (frame.isMain) {
-                    runCatching {
-                        frame.executeJavaScript<Unit>(PopOutScripts.captureMediaSessionPipHandler)
-                    }
-                }
-            }
-        if (!registered) {
-            logger.debug(LogCategory.BROWSER, "Media-session PiP capture not registered", mapOf("handleId" to id))
-        }
-    }
-
     private fun setupPopupHandler() {
         // Phase 1: Allow popup browser creation, and keep the target URL it arrives with.
         // OpenPopupCallback's params carry no URL, so without this the destination has to be
@@ -2883,11 +2860,7 @@ internal class BrowserHandleImpl(
                     }
                 } else {
                     // Has dimensions = OAuth/payment popup (window.open with features)
-                    showPopupInWindow(
-                        popupBrowser = popupBrowser,
-                        bounds = initialBounds,
-                        alwaysOnTop = false,
-                    )
+                    showPopupInWindow(popupBrowser = popupBrowser, bounds = initialBounds)
                 }
 
                 // Return proceed() to notify the engine we've handled the popup
@@ -3158,21 +3131,21 @@ internal class BrowserHandleImpl(
     }
 
     /**
-     * Shows a popup browser in its own Swing window.
+     * Shows a popup browser in its own decorated Swing window.
      *
-     * Two callers with different needs. An OAuth or payment popup asked for a size and position
-     * and gets them. A popup with no URL and no bounds is, in practice, a Document
-     * Picture-in-Picture window - Chromium delivers one as an empty-bounds popup on `about:blank`
-     * that the opener fills with DOM - so it gets a small always-on-top window near the corner,
-     * which is what a popped-out call wants.
+     * One caller: a popup that asked for geometry, which is an OAuth or payment window. It gets
+     * a normal titled window, and [bounds] is non-null because a popup with no geometry never
+     * reaches here - those are adopted as tabs, or dropped.
      *
-     * @param bounds the popup's requested geometry, or null to place a compact floating window.
+     * This used to take a null [bounds] as well and answer it with a chrome-less always-on-top
+     * window, for the Document Picture-in-Picture flow that the surface pop-out replaced. That
+     * shape is gone rather than merely unreachable: an undecorated, address-bar-less window
+     * showing page-chosen content is worth making impossible to reach by accident, and the
+     * pop-out builds its own frame in [openSurfacePopOut].
      */
     private fun showPopupInWindow(
         popupBrowser: Browser,
-        bounds: Rect?,
-        alwaysOnTop: Boolean,
-        requestedSize: java.awt.Dimension? = null,
+        bounds: Rect,
     ) {
         SwingUtilities.invokeLater {
             try {
@@ -3182,17 +3155,8 @@ internal class BrowserHandleImpl(
                 frame.title = "Popup"
                 frame.defaultCloseOperation = JFrame.DISPOSE_ON_CLOSE
                 frame.iconImages = BossWindowIcon.images
-                frame.isAlwaysOnTop = alwaysOnTop
 
-                if (bounds == null) {
-                    // A floating pop-out is chrome-less, like a browser's own
-                    // Picture-in-Picture: a title bar and traffic lights on a 480px window are
-                    // both ugly and misleading, since this is not a document window. Undecorated
-                    // costs the frame its drag handle, so the listener below restores that.
-                    frame.isUndecorated = true
-                }
-
-                placePopOut(frame, bounds, requestedSize)
+                placePopOut(frame, bounds, null)
 
                 // A popup browser has no handle of its own, so it never went through
                 // setupBrowserHandlers. Claim its file dialogs before the Swing view below
@@ -3202,15 +3166,7 @@ internal class BrowserHandleImpl(
                 val browserView =
                     com.teamdev.jxbrowser.view.swing.BrowserView
                         .newInstance(popupBrowser)
-                if (bounds == null) {
-                    // Undecorated, so it needs its own way to be moved, resized and closed.
-                    frame.contentPane.layout = java.awt.BorderLayout()
-                    frame.contentPane.add(buildPopOutDragBar(frame), java.awt.BorderLayout.NORTH)
-                    frame.contentPane.add(browserView, java.awt.BorderLayout.CENTER)
-                    frame.contentPane.add(buildPopOutResizeGrip(frame), java.awt.BorderLayout.SOUTH)
-                } else {
-                    frame.contentPane.add(browserView)
-                }
+                frame.contentPane.add(browserView)
 
                 // Replaces JxBrowser's built-in Swing context menu, which crashes the EDT here: it
                 // positions itself from getLocationOnScreen() inside an invokeLater, and a popup
@@ -4244,14 +4200,6 @@ internal class BrowserHandleImpl(
          */
         private const val AUTO_PIP_SETTLE_MS = 80L
 
-        /**
-         * How long the pop-out gets to settle before its outcome is read back.
-         *
-         * Must outlast [PopOutScripts.SITE_PIP_DEADLINE_MS], or a site-route pop-out is read
-         * while still pending, recorded as a failure, and never closed again on the way back.
-         */
-        internal const val AUTO_PIP_POLL_MS = 100L
-
         /** The surface pop-out's initial size; the resize grip takes it from there. */
         private const val SURFACE_POP_OUT_WIDTH = 480
         private const val SURFACE_POP_OUT_HEIGHT = 360
@@ -4261,9 +4209,6 @@ internal class BrowserHandleImpl(
          * tab is told to recreate its view state - FullscreenBrowserWindow's SWING_RELEASE_DELAY.
          */
         private const val SURFACE_RELEASE_DELAY_MS = 200
-
-        /** Bounds the poll at roughly the site deadline plus the fallback's own attempt. */
-        internal const val AUTO_PIP_POLL_ATTEMPTS = 20
 
         /** Size of a floating popup window that asked for no geometry of its own. */
         private const val FLOATING_POPUP_WIDTH = 480
