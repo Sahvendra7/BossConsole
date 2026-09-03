@@ -4,7 +4,7 @@ import ai.rever.boss.keymap.handler.KeymapValidator
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.keymap.presets.KeymapPresets
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -146,6 +146,32 @@ class StandardBrowserBindingsTest {
     }
 
     @Test
+    fun `Cmd+L is bound for the browser plugin in BROWSER context only`() {
+        // The layering that keeps Cmd+L working as both Go To Line and Focus Address Bar. The
+        // plugin registers its action with NO default, because a plugin default is GLOBAL and
+        // would consume the chord in an editor; the context can only be expressed here.
+        listOf(
+            "BOSS Default" to KeymapPresets.getBOSSDefault(),
+            "VS Code" to KeymapPresets.getVSCodePreset(),
+            "IntelliJ IDEA" to KeymapPresets.getIntelliJPreset(),
+            "Emacs" to KeymapPresets.getEmacsPreset(),
+        ).forEach { (name, settings) ->
+            val focus = assertNotNull(settings.getBinding(KeymapPresets.FLUCK_FOCUS_ADDRESS_BAR_ACTION), name)
+            assertEquals("L", focus.key, name)
+            assertEquals(listOf("Cmd"), focus.modifiers, name)
+            assertEquals(ShortcutContext.BROWSER, focus.context, "$name must not make it GLOBAL")
+
+            // Where the preset defines Go To Line it stays EDITOR-scoped, whatever chord it
+            // gives it: BOSS Default and IntelliJ use Cmd+L, VS Code uses Cmd+G, and Emacs binds
+            // no editor actions at all. Disjoint contexts are what let the two coexist on one
+            // chord where they do share it.
+            settings.getBinding(KeymapActions.EDITOR_GO_TO_LINE)?.let { goToLine ->
+                assertEquals(ShortcutContext.EDITOR, goToLine.context, name)
+            }
+        }
+    }
+
+    @Test
     fun `no preset ships a conflict`() {
         val presets =
             mapOf(
@@ -169,6 +195,13 @@ class StandardBrowserBindingsTest {
         // getAllActionIds is what the Shortcuts settings screen enumerates; an action missing
         // from the description/category maps renders as "Unknown action" under "Tools".
         KeymapPresets.standardBrowserBindings().forEach { binding ->
+            if (binding.actionId.startsWith("plugin.")) {
+                // A plugin-contributed action is not in the host registry by design, so it
+                // carries its own description on the binding instead of via getDescription.
+                assertTrue(binding.description.isNotBlank(), "${binding.actionId} has no description")
+                assertTrue(binding.category.isNotBlank(), "${binding.actionId} has no category")
+                return@forEach
+            }
             assertTrue(
                 binding.actionId in KeymapActions.getAllActionIds(),
                 "${binding.actionId} is bound but not registered in getAllActionIds()",

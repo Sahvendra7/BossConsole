@@ -365,15 +365,25 @@ internal fun BossAppMenuActionEffects(
     // created purely via the OS menu).
     val activePanelId by splitViewState.activePanelIdState
     val activeTabsComponent = splitViewState.getActiveTabsComponent()
-    val hasActiveTabs =
+    // Read once and derive both flags from it: subscribeAsState has to be called from
+    // composition, not from inside the LaunchedEffects below.
+    val activePanelTabCount =
         if (activeTabsComponent != null) {
             val activeTabsState by activeTabsComponent.tabsState.subscribeAsState()
-            activeTabsState.tabs.isNotEmpty()
+            activeTabsState.tabs.size
         } else {
-            false
+            0
         }
+    val hasActiveTabs = activePanelTabCount > 0
     LaunchedEffect(windowId, activePanelId, hasActiveTabs) {
         MenuActionsHandler.updateSplitEnabled(windowId, hasActiveTabs)
+    }
+
+    // Drives the enabled flag on View > Next/Previous Tab, and the interceptor's gate for the
+    // same chords. Keyed on activePanelId too: moving focus between splits changes the answer
+    // without the tab list itself changing.
+    LaunchedEffect(windowId, activePanelId, activePanelTabCount) {
+        MenuActionsHandler.updateActivePanelTabCount(windowId, activePanelTabCount)
     }
 
     // Track panel count for navigation menu items

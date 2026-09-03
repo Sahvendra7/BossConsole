@@ -1,5 +1,6 @@
 package ai.rever.boss.keymap
 
+import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.presets.KeymapPresets
 import ai.rever.boss.plugin.pathutils.BossDirectories
@@ -127,7 +128,7 @@ actual object KeymapSettingsManager {
             loaded.shortcuts
                 .mapNotNull { (actionId, stored) ->
                     val preset = presetShortcuts[actionId] ?: return@mapNotNull null
-                    val untouched = stored.primaryKeystroke == preset.primaryKeystroke
+                    val untouched = stored.primaryKeystroke.sameChordAs(preset.primaryKeystroke)
                     val gained = preset.alternateKeystrokes.filter { it !in stored.alternateKeystrokes }
                     if (untouched && gained.isNotEmpty()) {
                         actionId to stored.copy(alternateKeystrokes = stored.alternateKeystrokes + gained)
@@ -263,3 +264,16 @@ actual object KeymapSettingsManager {
             }
         }
 }
+
+/**
+ * Same key and same set of modifiers, whatever order they are written in.
+ *
+ * KeyStroke.modifiers is a List, and the keymap file is documented as hand-editable, so
+ * ["Shift","Cmd"] would otherwise read as a rebind and silently miss the alternate top-up.
+ *
+ * Top-level rather than a member of the object: it is a property of two KeyStrokes, and the
+ * object is at its TooManyFunctions threshold.
+ */
+private fun KeyStroke.sameChordAs(other: KeyStroke): Boolean =
+    key.equals(other.key, ignoreCase = true) &&
+        modifiers.map { it.lowercase() }.toSet() == other.modifiers.map { it.lowercase() }.toSet()

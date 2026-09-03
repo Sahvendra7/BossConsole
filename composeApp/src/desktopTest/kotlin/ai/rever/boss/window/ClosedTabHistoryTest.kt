@@ -6,8 +6,8 @@ import ai.rever.boss.plugin.api.TabTypeId
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.graphics.vector.ImageVector
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
+import kotlin.test.BeforeTest
+import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -29,7 +29,7 @@ class ClosedTabHistoryTest {
     private val windowA = "window-a"
     private val windowB = "window-b"
 
-    @BeforeEach
+    @BeforeTest
     fun reset() {
         ClosedTabHistory.clear(windowA)
         ClosedTabHistory.clear(windowB)

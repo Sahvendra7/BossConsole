@@ -229,22 +229,20 @@ object AWTKeyboardInterceptor {
                         return@KeyEventDispatcher false
                     }
 
-                    run {
-                        // Begin (or continue) an MRU tab cycle: remember which modifier is
-                        // sustaining it so its release — and only its release — commits the cycle.
-                        // This arms even when the focused panel has <=1 tab (the component-side
-                        // switchTab/commit then no-op), so the interceptor may briefly believe a
-                        // cycle is active when none is — harmless, and Tab stays swallowed.
-                        if ((binding.actionId == KeymapActions.TAB_NEXT || binding.actionId == KeymapActions.TAB_PREVIOUS) &&
-                            KeymapSettingsManager.currentSettings.value.tabSwitchMode == TabSwitchMode.MRU
-                        ) {
-                            tabCycleActive = true
-                            tabCycleModifierKeyCode = cyclingModifierKeyCode(binding)
-                        }
-                        // Consume the event to prevent it from reaching BossTerm
-                        event.consume()
-                        return@KeyEventDispatcher true
+                    // Begin (or continue) an MRU tab cycle: remember which modifier is
+                    // sustaining it so its release — and only its release — commits the cycle.
+                    // This arms even when the focused panel has <=1 tab (the component-side
+                    // switchTab/commit then no-op), so the interceptor may briefly believe a
+                    // cycle is active when none is — harmless, and Tab stays swallowed.
+                    if ((binding.actionId == KeymapActions.TAB_NEXT || binding.actionId == KeymapActions.TAB_PREVIOUS) &&
+                        KeymapSettingsManager.currentSettings.value.tabSwitchMode == TabSwitchMode.MRU
+                    ) {
+                        tabCycleActive = true
+                        tabCycleModifierKeyCode = cyclingModifierKeyCode(binding)
                     }
+                    // Consume the event to prevent it from reaching BossTerm
+                    event.consume()
+                    return@KeyEventDispatcher true
                 }
 
                 // Plugin-contributed GLOBAL shortcuts (PluginShortcutRegistry).
@@ -501,13 +499,24 @@ object AWTKeyboardInterceptor {
     private fun canonicalKeyName(keyName: String): String =
         when (keyName.lowercase()) {
             "left", "arrowleft", "directionleft" -> "directionleft"
+
             "right", "arrowright", "directionright" -> "directionright"
+
             "up", "arrowup", "directionup" -> "directionup"
+
             "down", "arrowdown", "directiondown" -> "directiondown"
+
             "space", "spacebar" -> "space"
+
             "esc", "escape" -> "escape"
+
             "enter", "return" -> "enter"
-            "plus" -> "plus"
+
+            // A layout with a dedicated + key reports VK_PLUS, which getKeyName spells "Plus".
+            // Folding it onto Equals is what lets such a keyboard reach the Cmd+Shift+Equals
+            // zoom-in alternate; leaving it as its own name looked handled but matched nothing.
+            "plus", "equals" -> "equals"
+
             else -> keyName.lowercase()
         }
 
@@ -606,6 +615,20 @@ object AWTKeyboardInterceptor {
      * Returning false leaves the chord to the focused component. See the panel-navigation
      * branches in [dispatchAction] for why that matters.
      */
+
+    /**
+     * Run [trigger] and claim the event, but only while [windowId]'s active panel has more than
+     * one tab. Returning false leaves the chord to the focused component.
+     */
+    internal fun dispatchIfCanStepTabs(
+        windowId: String,
+        trigger: (String) -> Unit,
+    ): Boolean {
+        if (!MenuActionsHandler.canStepTabs(windowId)) return false
+        trigger(windowId)
+        return true
+    }
+
     internal fun dispatchIfMultiPanel(
         windowId: String,
         trigger: (String) -> Unit,
@@ -617,20 +640,14 @@ object AWTKeyboardInterceptor {
     }
 
     /**
-     * Test seam for [dispatchAction]: whether the interceptor claims [actionId] itself.
-     *
-     * False means the chord is left to propagate — see [HostBindingPrecedenceTest].
-     */
-    internal fun dispatchActionForTest(
-        actionId: String,
-        windowId: String,
-    ): Boolean = dispatchAction(actionId, windowId)
-
-    /**
      * Dispatch an action through MenuActionsHandler.
      * Returns true if the action was handled, false otherwise.
+     *
+     * Internal rather than private so desktopTest can assert which actions the interceptor
+     * claims: returning false is load-bearing, because it is what leaves a chord to the
+     * component that really serves it.
      */
-    private fun dispatchAction(
+    internal fun dispatchAction(
         actionId: String,
         windowId: String,
     ): Boolean =
@@ -661,14 +678,15 @@ object AWTKeyboardInterceptor {
                 true
             }
 
+            // Gated for the same reason as panel navigation below: with one tab there is
+            // nowhere to step, and claiming the chord would take Cmd+Shift+Bracket away from an
+            // editor (where the VS Code and IntelliJ presets put these) for no effect.
             KeymapActions.TAB_NEXT_POSITIONAL -> {
-                MenuActionsHandler.triggerNextTabPositional(windowId)
-                true
+                dispatchIfCanStepTabs(windowId) { MenuActionsHandler.triggerNextTabPositional(it) }
             }
 
             KeymapActions.TAB_PREVIOUS_POSITIONAL -> {
-                MenuActionsHandler.triggerPreviousTabPositional(windowId)
-                true
+                dispatchIfCanStepTabs(windowId) { MenuActionsHandler.triggerPreviousTabPositional(it) }
             }
 
             KeymapActions.TAB_SELECT_LAST -> {

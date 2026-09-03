@@ -175,9 +175,6 @@ object WindowManager {
         val window = _windows.find { it.id == windowId }
         if (window != null) {
             _windows.remove(window)
-            // The window's reopen stack dies with it — nothing can pop it, and its TabInfos
-            // would otherwise be held for the life of the process.
-            ClosedTabHistory.clear(windowId)
             logger.debug(LogCategory.UI, "Closed window", mapOf("windowId" to windowId, "remainingWindows" to _windows.size))
         }
     }

@@ -922,8 +922,37 @@ object KeymapPresets {
                 browserBinding(KeymapActions.BROWSER_BACK, "OpenBracket", listOf("Cmd")),
                 browserBinding(KeymapActions.BROWSER_FORWARD, "CloseBracket", listOf("Cmd")),
                 browserBinding(KeymapActions.BROWSER_DEVTOOLS, "I", listOf("Cmd", "Alt")),
+                // Cmd+L for the fluck browser's Focus Address Bar. The ACTION belongs to the
+                // plugin (the address bar is its UI); the BINDING has to live here, because a
+                // plugin's own defaultBinding is GLOBAL in the host's v1 contract and would
+                // shadow EDITOR_GO_TO_LINE - also Cmd+L, and served by the editor plugin's own
+                // key handling. Only a keymap entry can say "BROWSER context", which is what
+                // makes Cmd+L mean Go To Line in an editor and Focus Address Bar in a browser.
+                //
+                // Harmless when the plugin is absent or disabled: PluginShortcutRegistry.dispatch
+                // returns false for an unowned action id, the interceptor reports the chord
+                // unhandled, and it propagates as before.
+                KeyBinding(
+                    actionId = FLUCK_FOCUS_ADDRESS_BAR_ACTION,
+                    key = "L",
+                    modifiers = listOf("Cmd"),
+                    context = ShortcutContext.BROWSER,
+                    category = KeymapActions.Categories.BROWSER_CONTROLS,
+                    description = "Focus the browser address bar",
+                ),
             )
     }
+
+    /**
+     * The fluck browser plugin's Focus Address Bar action id.
+     *
+     * Spelled out rather than imported because it belongs to a dynamically loaded plugin the host
+     * does not compile against. The plugin pins the same string with a test, and a drift between
+     * the two costs the shortcut and nothing else: an unmatched plugin action id dispatches to
+     * nothing and the chord propagates.
+     */
+    internal const val FLUCK_FOCUS_ADDRESS_BAR_ACTION =
+        "plugin.ai.rever.boss.plugin.dynamic.fluckbrowser.focus_address_bar"
 
     private val NUMBER_KEY_NAMES = listOf("One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight")
 

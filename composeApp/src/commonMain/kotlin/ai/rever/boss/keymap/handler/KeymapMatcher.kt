@@ -186,10 +186,6 @@ class KeymapMatcher(
 
         // Check modifiers
         val required = RequiredModifiers.of(keystroke.modifiers)
-        val hasCmd = required.cmd
-        val hasCtrl = required.ctrl
-        val hasShift = required.shift
-        val hasAlt = required.alt
 
         // Platform-aware modifier matching:
         // - macOS: Cmd key sets isMetaPressed, Ctrl key sets isCtrlPressed
@@ -202,14 +198,14 @@ class KeymapMatcher(
 
         // Match logic: Handle platform-aware Cmd/Ctrl matching
         val primaryModifierMatch =
-            if (hasCmd || hasCtrl) {
+            if (required.cmd || required.ctrl) {
                 if (isMacOS) {
                     // macOS: Cmd matches Meta, Ctrl matches Ctrl
-                    (hasCmd && event.isMetaPressed) || (hasCtrl && event.isCtrlPressed)
+                    (required.cmd && event.isMetaPressed) || (required.ctrl && event.isCtrlPressed)
                 } else {
                     // Linux/Windows: Cmd matches Ctrl (since Ctrl is the primary modifier)
                     // Meta/Super key is rarely used for shortcuts
-                    (hasCmd && event.isCtrlPressed) || (hasCtrl && event.isMetaPressed)
+                    (required.cmd && event.isCtrlPressed) || (required.ctrl && event.isMetaPressed)
                 }
             } else {
                 // Binding doesn't require primary modifier
@@ -219,8 +215,8 @@ class KeymapMatcher(
 
         val modifierMatch =
             primaryModifierMatch &&
-                hasShift == eventShift &&
-                hasAlt == eventAlt
+                required.shift == eventShift &&
+                required.alt == eventAlt
 
         return modifierMatch
     }
@@ -379,6 +375,21 @@ class KeymapMatcher(
                 when (keyName.lowercase()) {
                     "spacebar", "space" -> {
                         "Space"
+                    }
+
+                    // Compose renders Key.LeftBracket / Key.RightBracket as "Left Bracket" and
+                    // "Right Bracket", which matched no binding name: the presets store
+                    // "OpenBracket" / "CloseBracket" (Compose's own Key property names, and what
+                    // the AWT path emits). Latent until the bracket chords arrived - Cmd+[ and
+                    // Cmd+] for browser history, plus the Cmd+Shift+Bracket alternates on
+                    // positional tab stepping - and this matcher is what the Shortcuts screen's
+                    // tester reads, so without these it reports "no match" for a chord that fires.
+                    "open bracket", "openbracket", "left bracket", "leftbracket" -> {
+                        "OpenBracket"
+                    }
+
+                    "close bracket", "closebracket", "right bracket", "rightbracket" -> {
+                        "CloseBracket"
                     }
 
                     "directionleft", "left" -> {

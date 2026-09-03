@@ -62,25 +62,23 @@ object ClosedTabHistory {
         // and two first-closures racing for one window would each build a deque, one silently
         // discarded along with its entry.
         val stack = byWindow.computeIfAbsent(windowId) { ArrayDeque() }
-        val depth =
-            synchronized(stack) {
-                // Re-closing a reopened tab should move it to the top, not add a second copy.
-                stack.removeAll { it.id == tab.id }
-                stack.addFirst(tab)
-                while (stack.size > MAX_ENTRIES) stack.removeLast()
-                stack.size
-            }
-        publishDepth(windowId, depth)
+        synchronized(stack) {
+            // Re-closing a reopened tab should move it to the top, not add a second copy.
+            stack.removeAll { it.id == tab.id }
+            stack.addFirst(tab)
+            while (stack.size > MAX_ENTRIES) stack.removeLast()
+            // Published inside the lock: computing the depth here and publishing outside would
+            // let a concurrent record and pop publish their depths in the opposite order.
+            publishDepth(windowId, stack.size)
+        }
     }
 
     /** Remove and return the most recently closed tab in [windowId], or null if there is none. */
     fun pop(windowId: String): TabInfo? {
         val stack = byWindow[windowId] ?: return null
-        val popped = synchronized(stack) { stack.removeFirstOrNull() }
-        if (popped != null) {
-            publishDepth(windowId, synchronized(stack) { stack.size })
+        return synchronized(stack) {
+            stack.removeFirstOrNull()?.also { publishDepth(windowId, stack.size) }
         }
-        return popped
     }
 
     /** Whether [windowId] has anything to reopen (drives the menu item's enabled state). */

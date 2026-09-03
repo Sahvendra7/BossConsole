@@ -174,6 +174,19 @@ object MenuActionsHandler {
     private val _panelCountState = MutableStateFlow<Map<String, Int>>(emptyMap())
     val panelCountState: StateFlow<Map<String, Int>> = _panelCountState.asStateFlow()
 
+    private val _activePanelTabCountState = MutableStateFlow<Map<String, Int>>(emptyMap())
+
+    /**
+     * How many tabs the ACTIVE panel holds, per window.
+     *
+     * Drives the enabled flag on View > Next Tab / Previous Tab, which must grey out with one
+     * tab rather than no-op: their accelerator is a MenuBar accelerator, so an always-enabled
+     * item consumes its chord window-wide even when stepping cannot do anything. Under BOSS
+     * Default that eats Cmd+Opt+Arrow; under the VS Code and IntelliJ presets the primary falls
+     * back to Cmd+Shift+Bracket, so a single-tab editor would lose those instead.
+     */
+    val activePanelTabCountState: StateFlow<Map<String, Int>> = _activePanelTabCountState.asStateFlow()
+
     /**
      * Update whether split is enabled for a window.
      * Split should be enabled when there are tabs in the active panel.
@@ -203,6 +216,18 @@ object MenuActionsHandler {
      * @param windowId The window ID
      * @param count The number of panels in the window
      */
+
+    /** Publish the active panel's tab count for [activePanelTabCountState]. */
+    fun updateActivePanelTabCount(
+        windowId: String,
+        count: Int,
+    ) {
+        _activePanelTabCountState.value = _activePanelTabCountState.value + (windowId to count)
+    }
+
+    /** Whether tab stepping can do anything in [windowId] right now. */
+    fun canStepTabs(windowId: String): Boolean = (_activePanelTabCountState.value[windowId] ?: 0) > 1
+
     fun updatePanelCount(
         windowId: String,
         count: Int,
@@ -224,6 +249,11 @@ object MenuActionsHandler {
     fun cleanupWindow(windowId: String) {
         _splitEnabledState.value = _splitEnabledState.value - windowId
         _panelCountState.value = _panelCountState.value - windowId
+        _activePanelTabCountState.value = _activePanelTabCountState.value - windowId
+        // Co-located with the other per-window state rather than left to the window-close path
+        // alone: this one holds up to 25 TabInfos per window, so a future close path that
+        // forgot it would strand them for the life of the process.
+        ClosedTabHistory.clear(windowId)
         // If the window was closed before the customize-sidebar request
         // it triggered was handled, drop the orphaned entry so it doesn't
         // accumulate in the map across the session.

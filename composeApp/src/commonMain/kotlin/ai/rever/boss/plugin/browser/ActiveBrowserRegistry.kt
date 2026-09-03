@@ -45,22 +45,37 @@ object ActiveBrowserRegistry {
     private val handles = ConcurrentHashMap<String, BrowserHandle>()
     private val sequencer = AtomicLong(0)
 
-    private val _windowsWithBrowser = MutableStateFlow<Set<String>>(emptySet())
+    private val _windowsWithActiveBrowser = MutableStateFlow<Set<String>>(emptySet())
 
     /**
-     * Windows that currently have a composed browser surface.
+     * Windows where a browser is the surface the user is actually in.
      *
-     * The browser menu items (Back, Forward, Developer Tools) must grey out where there is no
-     * browser, and not merely no-op: a Compose MenuBar accelerator fires from anywhere in the
-     * window regardless of the binding's ShortcutContext, so an always-enabled item silently
+     * The browser menu items (Back, Forward, Developer Tools) must grey out where the chord
+     * should not act, and not merely no-op: a Compose MenuBar accelerator fires from anywhere in
+     * the window regardless of the binding's ShortcutContext, so an always-enabled item silently
      * swallows its chord for every other tab type. Cmd+[ and Cmd+] are outdent/indent in an
      * editor, which is precisely what that would break.
+     *
+     * "Has a browser anywhere" is the wrong test for that, and was the first version of this:
+     * entries arrive from every composed surface, including a sidebar slot and the other half of
+     * a split, so a browser on the left of a split left the items enabled while the user typed in
+     * an editor on the right. [isActiveSurface] is the same pair of flags [selectActiveHandleId]
+     * ranks on, and liveness is the same `isValid` check [activeIn] applies, so the menu cannot
+     * offer an action that then finds nothing to act on.
      */
-    val windowsWithBrowser: StateFlow<Set<String>> = _windowsWithBrowser.asStateFlow()
+    val windowsWithActiveBrowser: StateFlow<Set<String>> = _windowsWithActiveBrowser.asStateFlow()
 
     private fun publishWindows() {
-        _windowsWithBrowser.value = entries.values.map { it.windowId }.toSet()
+        _windowsWithActiveBrowser.value = activeBrowserWindows(entries.values, ::isLive)
     }
+
+    /**
+     * The one definition of "this registration still has a browser behind it", so the menu's
+     * enabled flag and [activeIn]'s dispatch target cannot drift: [activeIn] filtered on
+     * `isValid` while the first version of [publishWindows] did not, which left the menu offering
+     * an action that then found nothing.
+     */
+    private fun isLive(handleId: String): Boolean = handles[handleId]?.isValid == true
 
     /**
      * Record that [handle]'s surface is composed in [windowId].
@@ -120,11 +135,35 @@ object ActiveBrowserRegistry {
 
     /** The browser a window-scoped action should act on in [windowId], or null if there is none. */
     fun activeIn(windowId: String): BrowserHandle? {
-        val liveEntries = entries.values.filter { handles[it.handleId]?.isValid == true }
+        val liveEntries = entries.values.filter { isLive(it.handleId) }
         val handleId = selectActiveHandleId(liveEntries, windowId) ?: return null
         return handles[handleId]?.takeIf { it.isValid }
     }
 }
+
+/**
+ * Which windows have a browser as the surface the user is actually in.
+ *
+ * Extracted as a pure function for the same reason as [selectActiveHandleId]: so the rule is
+ * unit-testable without a JxBrowser `Browser`, which `BrowserHandle` would otherwise require a
+ * ~55-method double to stand in for.
+ *
+ * Deliberately STRICTER than [selectActiveHandleId], which ranks and always returns a candidate
+ * if one exists. This filters: `inMainPanel && panelActive` means the browser is the visible
+ * surface of the panel the user is in, so a sidebar-slot browser or the background half of a
+ * split answers false. The menu items this gates fire their accelerator window-wide regardless
+ * of ShortcutContext, so "a browser exists somewhere" would swallow Cmd+[ and Cmd+] from an
+ * editor. Zoom and Reload stay ungated and keep acting on [selectActiveHandleId]'s broader
+ * answer, which predates this and is out of scope here.
+ */
+internal fun activeBrowserWindows(
+    candidates: Collection<ActiveBrowserRegistry.Entry>,
+    isLive: (String) -> Boolean,
+): Set<String> =
+    candidates
+        .filter { it.inMainPanel && it.panelActive && isLive(it.handleId) }
+        .map { it.windowId }
+        .toSet()
 
 /**
  * Of the live browser surfaces composed in [windowId], which one owns a window-scoped action.

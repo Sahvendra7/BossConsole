@@ -353,8 +353,13 @@ fun ApplicationScope.BossWindow(
         // accelerator fires from anywhere in the window whatever the binding's ShortcutContext,
         // so leaving these enabled would swallow Cmd+[ / Cmd+] in an editor (outdent/indent)
         // for an item that then does nothing.
-        val browserWindows by ActiveBrowserRegistry.windowsWithBrowser.collectAsState()
+        val browserWindows by ActiveBrowserRegistry.windowsWithActiveBrowser.collectAsState()
         val hasBrowser = windowState.id in browserWindows
+
+        // View > Next/Previous Tab: same reasoning as the browser items. stepPositional returns
+        // early below two tabs, so an always-enabled item would consume the chord and do nothing.
+        val activePanelTabCounts by MenuActionsHandler.activePanelTabCountState.collectAsState()
+        val canStepTabs = (activePanelTabCounts[windowState.id] ?: 0) > 1
 
         // Get panel count state (for enabling/disabling panel navigation)
         val panelCountMap by MenuActionsHandler.panelCountState.collectAsState()
@@ -784,6 +789,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerNextTabPositional(windowState.id)
                     },
+                    enabled = canStepTabs,
                 )
                 Item(
                     "Previous Tab",
@@ -791,6 +797,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerPreviousTabPositional(windowState.id)
                     },
+                    enabled = canStepTabs,
                 )
 
                 Separator()
