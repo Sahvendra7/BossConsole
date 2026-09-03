@@ -14,187 +14,286 @@ import kotlin.test.assertTrue
  * interrupt the wait - `executeJavaScript` has no suspension point, so a `withTimeoutOrNull` placed
  * around it is not a bound.
  *
- * Made from `Dispatchers.Main` that is not a slow call, it is a dead application: the EDT parks
- * forever, AppKit's main thread parks behind it, and the macOS menu bar goes with the window. Force
- * quit is the only exit. It happened twice in one morning on 9.5.7 - once through the plugin-facing
- * `executeJavaScript`, once through the co-browse page-event injection's `putProperty` - and the
- * user-visible symptom is indistinguishable from a hung machine.
+ * Made from the EDT that is not a slow call, it is a dead application: the EDT parks forever, AppKit's
+ * main thread parks behind it, and the macOS menu bar goes with the window. Force quit is the only
+ * exit. It happened twice in one morning on 9.5.7, and the user-visible symptom is indistinguishable
+ * from a hung machine.
  *
- * The fix is the pattern the rest of [BrowserHandleImpl] already uses in three places: make the
- * blocking call on a dedicated single daemon thread and, where a result is needed, bound the *wait*
- * from a different one. A wedged renderer then costs one parked thread per tab.
+ * The fix is [BoundedBrowserCall]: the blocking call on a dedicated single daemon thread, and the
+ * wait bounded from a different one.
  *
  * A source check rather than a behaviour one, for the reason [InjectJsCallbackOwnershipTest] gives:
- * the failure mode is a *new call site*, and observing it at runtime needs a real Chromium and a
- * page that genuinely stops answering. Reading the source catches it as it is written.
+ * the failure mode is a *call site*, and observing it at runtime needs a real Chromium and a page
+ * that genuinely stops answering.
  *
- * PR #268 fixed this same hazard for JxBrowser's RPC thread and left the EDT sites in place, which
- * is precisely the kind of half-fix a guard exists to stop. If a Main-thread round trip is ever
- * genuinely wanted, argue with this test - do not route around it.
+ * **Scope: every Kotlin source in the repo.** The first draft walked only `.../plugin/browser`, and
+ * review promptly found a fourth live site one directory over - `DesktopBrowserAccessor`, reached by
+ * plugins through a shipped API - which the guard reported as clean. "The failure mode is a new call
+ * site" is exactly as true of an existing one the walk could not see.
  */
 class BrowserMainThreadRoundTripTest {
-    /** Blocking calls into the renderer. Neither can be interrupted once entered. */
-    private val rendererRoundTrips = listOf("executeJavaScript", "putProperty")
+    /**
+     * Blocking calls into the renderer, matched in call position.
+     *
+     * The leading `.` keeps a declaration (`override suspend fun executeJavaScript(`) or an
+     * interface's signature from reading as a call - there are several, and none of them block.
+     *
+     * The `<` is what separates JxBrowser's blocking `Frame.executeJavaScript` from *our own*
+     * suspend wrapper of the same name. JxBrowser's is generic (`<T> T executeJavaScript(String)`),
+     * so every call to it in this repo spells the type argument out; the suspend wrapper takes none.
+     * Without that distinction this guard flagged `DefaultPlugin`'s adapter, which only delegates to
+     * the wrapper and is exactly what a caller is *supposed* to do.
+     *
+     * Known gap: a JxBrowser call whose type argument was inferred from an expected type would read
+     * as the wrapper and be missed. There are none today, and writing one is not the natural style
+     * here - but it is the way this check goes blind, so it belongs in writing.
+     */
+    private val rendererRoundTrips = listOf(".executeJavaScript<", ".putProperty(")
+
+    /**
+     * Anything that puts the following lambda on the EDT.
+     *
+     * A token list rather than a list of opener forms, because the opener is the part that keeps
+     * changing: `withContext(Dispatchers.Main)`, `launch(Dispatchers.Main)`, `async(...)`,
+     * `Dispatchers.Main.immediate`, `SwingUtilities.invokeLater`, and this package's own `onEdt`
+     * helper are all the same hazard wearing different syntax.
+     */
+    private val mainThreadMarkers = listOf("Dispatchers.Main", "invokeLater", "onEdt")
+
+    /**
+     * Scope constructions that put every launch into them on the EDT, allowed only where reviewed.
+     *
+     * A window of surrounding source has to contain one of these verbatim. Whole-file allowlisting
+     * would have let the very scopes this change moved - `coBrowseScope`, `pageEventScope` - back in
+     * unnoticed, since they lived in a file that has legitimate Main use as well.
+     */
+    private val allowedMainScopes =
+        setOf(
+            // Compose view state for the browser widget. Belongs to the EDT, and makes no renderer
+            // round trip of its own - it drives the AWT component, not the page.
+            "BrowserViewState(browser, MainScope(), awtWindow)",
+        )
+
+    /** How far a `{` may sit from its marker before it plainly belongs to something else. */
+    private val markerToBrace = 60
 
     private fun repoRoot(): File? =
         generateSequence(File("").absoluteFile) { it.parentFile }
             .firstOrNull { File(it, "composeApp/build.gradle.kts").isFile }
 
-    private fun browserSources(root: File): List<File> =
-        File(root, "composeApp/src/desktopMain/kotlin/ai/rever/boss/plugin/browser")
-            .walkTopDown()
+    private fun kotlinSources(root: File): List<File> =
+        sequenceOf("composeApp/src", "plugin-platform", "modules", "server/src")
+            .map { File(root, it) }
+            .filter { it.isDirectory }
+            .flatMap { it.walkTopDown() }
             .filter { it.isFile && it.extension == "kt" }
+            // Build output holds generated copies of the same sources; scanning them doubles the
+            // walk and reports names that are not source files anyone can fix.
+            .filterNot { it.path.replace(File.separatorChar, '/').contains("/build/") }
             .toList()
 
-    /**
-     * Comments and string literals removed, whitespace collapsed.
-     *
-     * Comments go for the reason [InjectJsCallbackOwnershipTest] gives - this KDoc names both the
-     * dispatcher and the call, and matching raw text would flag the explanation as the offence.
-     * String literals go because the brace scan below counts braces: an injected script, or a string
-     * template's own braces, are not block structure, and one of those inside a scanned block would
-     * end it early and make this guard quietly stop guarding.
-     */
-    private fun codeOf(file: File): String =
-        stripStrings(
-            file
-                .readText()
-                .replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL), " ")
-                .lines()
-                // Not substringBefore("//"): that cuts at the "//" inside "https://…" too, which is
-                // a false negative in a guard whose whole value is catching one occurrence.
-                .joinToString(" ") { line -> line.split(Regex("(?<!:)//")).first() },
-        ).replace(Regex("\\s+"), " ")
+    // ---- lexing -------------------------------------------------------------------------------
 
     /**
-     * Every string literal replaced by an empty one, scanned by hand rather than matched.
+     * The file's code with comments and string literals removed, then whitespace collapsed.
      *
-     * The obvious regex - `"(?:\\.|[^"\\])*"` - is a `(?:A|B)*` loop, which java.util.regex walks
-     * recursively: against the multi-kilobyte injected scripts in this package it overflows the
-     * stack, and a guard that dies is worse than one that is wrong. A single pass costs nothing and
-     * handles the raw `"""…"""` strings those scripts are written as, which the regex did not.
+     * One pass, handling all four of line comment / block comment / string / raw string together.
+     * Doing it in two passes - comments first, then strings - was wrong in a way that would have
+     * gone unnoticed: a `//` inside a raw string truncated that physical line, and a JS `//` comment
+     * on a line that also closed its `\"\"\"` would send the string scan to end-of-file and silently
+     * switch this whole guard off. Comments go because this file names both a dispatcher and a
+     * round trip in prose; strings go because an injected script's braces are not block structure.
      */
-    private fun stripStrings(code: String): String {
-        val out = StringBuilder(code.length)
+    private fun codeOf(file: File): String {
+        val src = file.readText()
+        val out = StringBuilder(src.length)
         var i = 0
-        while (i < code.length) {
+        while (i < src.length) {
             i =
                 when {
-                    code.startsWith("\"\"\"", i) -> skipRaw(code, i, out)
-                    code[i] == '"' -> skipQuoted(code, i, out)
-                    else -> copyChar(code, i, out)
+                    src.startsWith("//", i) -> skipLineComment(src, i, out)
+                    src.startsWith("/*", i) -> skipBlockComment(src, i, out)
+                    src.startsWith("\"\"\"", i) -> skipRawString(src, i, out)
+                    src[i] == '"' -> skipString(src, i, out)
+                    src[i] == '\'' -> skipCharLiteral(src, i, out)
+                    else -> copyChar(src, i, out)
                 }
         }
-        return out.toString()
+        return out.toString().replace(Regex("\\s+"), " ")
     }
 
-    /** Past the closing `"""`, or to the end if it is unterminated. */
-    private fun skipRaw(
-        code: String,
+    private fun skipLineComment(
+        src: String,
+        start: Int,
+        out: StringBuilder,
+    ): Int {
+        out.append(' ')
+        val end = src.indexOf('\n', start)
+        return if (end < 0) src.length else end
+    }
+
+    private fun skipBlockComment(
+        src: String,
+        start: Int,
+        out: StringBuilder,
+    ): Int {
+        out.append(' ')
+        val end = src.indexOf("*/", start + 2)
+        return if (end < 0) src.length else end + 2
+    }
+
+    private fun skipRawString(
+        src: String,
         start: Int,
         out: StringBuilder,
     ): Int {
         out.append("\"\"")
-        val end = code.indexOf("\"\"\"", start + 3)
-        return if (end < 0) code.length else end + 3
+        val end = src.indexOf("\"\"\"", start + 3)
+        return if (end < 0) src.length else end + 3
     }
 
-    /** Past the closing `"`, honouring backslash escapes. */
-    private fun skipQuoted(
-        code: String,
+    private fun skipString(
+        src: String,
         start: Int,
         out: StringBuilder,
     ): Int {
         out.append("\"\"")
-        var j = start + 1
-        while (j < code.length && code[j] != '"') j += if (code[j] == '\\') 2 else 1
-        return if (j >= code.length) code.length else j + 1
+        var i = start + 1
+        while (i < src.length && src[i] != '"' && src[i] != '\n') i += if (src[i] == '\\') 2 else 1
+        return if (i >= src.length) src.length else i + 1
+    }
+
+    private fun skipCharLiteral(
+        src: String,
+        start: Int,
+        out: StringBuilder,
+    ): Int {
+        out.append("''")
+        var i = start + 1
+        while (i < src.length && src[i] != '\'' && src[i] != '\n') i += if (src[i] == '\\') 2 else 1
+        return if (i >= src.length) src.length else i + 1
     }
 
     private fun copyChar(
-        code: String,
+        src: String,
         at: Int,
         out: StringBuilder,
     ): Int {
-        out.append(code[at])
+        out.append(src[at])
         return at + 1
     }
 
-    /** The source of every `withContext(Dispatchers.Main) { … }` block in [code], braces balanced. */
-    private fun mainThreadBlocks(code: String): List<String> {
-        val opener = Regex("""withContext\( ?Dispatchers\.Main ?\) ?\{""")
-        return opener
-            .findAll(code)
-            .map { match ->
-                var depth = 0
-                var end = match.range.last
-                for (i in match.range.last until code.length) {
-                    when (code[i]) {
-                        '{' -> {
-                            depth++
-                        }
+    // ---- block finding ------------------------------------------------------------------------
 
-                        '}' -> {
-                            depth--
-                            if (depth == 0) {
-                                end = i
-                                break
-                            }
-                        }
-                    }
-                }
-                code.substring(match.range.first, end + 1)
-            }.toList()
+    /** The source of every lambda dispatched onto the EDT, braces balanced. */
+    private fun mainThreadBlocks(code: String): List<String> =
+        mainThreadMarkers
+            .flatMap { marker -> markerIndices(code, marker) }
+            .mapNotNull { at -> dispatchedBlockAt(code, at) }
+
+    private fun markerIndices(
+        code: String,
+        marker: String,
+    ): List<Int> =
+        generateSequence(code.indexOf(marker)) { prev ->
+            code.indexOf(marker, prev + marker.length).takeIf { it >= 0 }
+        }.takeWhile { it >= 0 }
+            .toList()
+
+    /**
+     * The lambda this marker dispatches, or null when the marker does not open one.
+     *
+     * A `}` or a `fun ` between the marker and the brace means the brace opens something else - most
+     * often the next declaration after a scope built on Main, which is not a dispatched lambda.
+     */
+    private fun dispatchedBlockAt(
+        code: String,
+        at: Int,
+    ): String? {
+        val open = code.indexOf('{', at)
+        val opensALambda =
+            open >= 0 &&
+                open - at <= markerToBrace &&
+                code.substring(at, open).let { between -> !between.contains('}') && !between.contains("fun ") }
+        return if (opensALambda) blockAt(code, open) else null
     }
 
+    private fun blockAt(
+        code: String,
+        open: Int,
+    ): String {
+        var depth = 0
+        for (i in open until code.length) {
+            if (code[i] == '{') depth++
+            if (code[i] == '}') {
+                depth--
+                if (depth == 0) return code.substring(open, i + 1)
+            }
+        }
+        return code.substring(open)
+    }
+
+    private fun windowAround(
+        code: String,
+        at: Int,
+    ): String = code.substring(maxOf(0, at - 80), minOf(code.length, at + 80))
+
+    // ---- the guards ---------------------------------------------------------------------------
+
     @Test
-    fun `no renderer round trip runs inside a Main-thread block`() {
+    fun `no renderer round trip runs on the EDT`() {
         val root = assertNotNull(repoRoot(), "could not locate the repository root")
-        val scanned = browserSources(root)
+        val scanned = kotlinSources(root)
 
         // Deliberately not a skip: a guard that passes when it cannot see the tree is decoration.
-        assertTrue(scanned.size > 5, "only ${scanned.size} files scanned - the walk is not seeing the source")
+        assertTrue(scanned.size > 100, "only ${scanned.size} files scanned - the walk is not seeing the source")
 
         val offenders =
             scanned.flatMap { file ->
                 mainThreadBlocks(codeOf(file))
                     .filter { block -> rendererRoundTrips.any { block.contains(it) } }
-                    .map { block -> "${file.name}: ${block.take(140)}" }
+                    .map { block -> "${file.name}: ${block.take(160)}" }
             }
 
         assertTrue(
             offenders.isEmpty(),
-            "blocking renderer round trip inside withContext(Dispatchers.Main): $offenders. " +
-                "A renderer that does not answer parks the EDT forever, and the AppKit main thread " +
-                "parks behind it - the whole app and the menu bar freeze. Make the call on a " +
-                "dedicated daemon thread (see handleCallDispatcher) and bound the wait from another.",
+            "blocking renderer round trip dispatched onto the EDT: $offenders. A renderer that does " +
+                "not answer parks the EDT forever and the AppKit main thread parks behind it - the " +
+                "whole app and the macOS menu bar freeze. Route it through BoundedBrowserCall.",
         )
     }
 
     @Test
-    fun `no handle scope is built on the Main dispatcher`() {
+    fun `no scope that makes renderer round trips is built on the EDT`() {
         val root = assertNotNull(repoRoot(), "could not locate the repository root")
-        val scanned = browserSources(root)
-        assertTrue(scanned.size > 5, "only ${scanned.size} files scanned - the walk is not seeing the source")
+        val scanned = kotlinSources(root)
+        assertTrue(scanned.size > 100, "only ${scanned.size} files scanned - the walk is not seeing the source")
 
-        // Every scope declared here drives browser work, so a Main-dispatched one puts the round
-        // trips of whatever launches into it on the EDT - which is how the co-browse and page-event
-        // scopes came to freeze the app without any single call site looking wrong.
-        val mainScopes =
-            scanned
-                // A bounded window, not `[^)]*`: the context is built as
-                // `CoroutineScope(SupervisorJob() + Dispatchers.Main)`, and a negated-paren run
-                // stops dead at SupervisorJob's own `)` - so the first version of this guard matched
-                // nothing at all and passed against the very code it was written to catch.
-                .filter { codeOf(it).contains(Regex("""CoroutineScope\(.{0,120}?Dispatchers\.Main""")) }
-                .map { it.name }
-                .sorted()
+        val mainScopePattern = Regex("""MainScope\(\)|CoroutineScope\(.{0,160}?Dispatchers\.Main""")
+
+        val offenders =
+            scanned.flatMap { file ->
+                val code = codeOf(file)
+                // Only files that actually block on a renderer. Main-dispatched scopes are ordinary
+                // and correct throughout the UI; they are a hazard only where a round trip can be
+                // launched into one, which is how coBrowseScope and pageEventScope froze the app.
+                if (rendererRoundTrips.none { code.contains(it) }) {
+                    emptyList()
+                } else {
+                    mainScopePattern
+                        .findAll(code)
+                        .map { windowAround(code, it.range.first) }
+                        .filterNot { window -> allowedMainScopes.any { window.contains(it) } }
+                        .map { "${file.name}: …${it.trim()}…" }
+                        .toList()
+                }
+            }
 
         assertTrue(
-            mainScopes.isEmpty(),
-            "browser scope built on Dispatchers.Main: $mainScopes. Anything launched into it makes " +
-                "its blocking JxBrowser calls on the EDT. Dispatch the scope onto a dedicated " +
-                "thread instead, as coBrowseScope and pageEventScope now are.",
+            offenders.isEmpty(),
+            "EDT-dispatched scope in a file that blocks on the renderer: $offenders. Anything " +
+                "launched into it makes its blocking JxBrowser calls on the EDT. Build it on " +
+                "BoundedBrowserCall.dispatcher, or add the reviewed site to allowedMainScopes.",
         )
     }
 }

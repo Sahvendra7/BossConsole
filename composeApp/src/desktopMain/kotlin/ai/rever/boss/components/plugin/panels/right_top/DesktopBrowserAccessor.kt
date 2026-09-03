@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
+import ai.rever.boss.plugin.browser.BoundedBrowserCall
 import ai.rever.boss.plugin.browser.BrowserServiceImpl
 import ai.rever.boss.plugin.browser.LockedBrowser
 import ai.rever.boss.utils.logging.BossLogger
@@ -59,25 +60,32 @@ actual class BrowserAccessor {
 class DesktopBrowserIntegration(
     internal val browser: LockedBrowser,
 ) : BrowserIntegration {
+    /**
+     * Evaluate [script] in the tab this accessor is pointed at, or null if the renderer did not
+     * answer in time.
+     *
+     * This is the *plugin-facing* path - `DefaultPlugin.getBrowserIntegration` resolves it and
+     * `BrowserIntegrationAdapter.executeJavaScript` hands it out - so it is a shipped API onto the
+     * exact freeze [BoundedBrowserCall] describes. It ran on `Dispatchers.Main`, which meant a
+     * plugin driving a tab parked on a modal `window.prompt` took the EDT, and AppKit's main thread
+     * with it.
+     */
     override suspend fun executeJavaScript(script: String): Any? =
-        withContext(Dispatchers.Main) {
-            try {
-                val mainFrame = browser.mainFrame().orElse(null)
-                if (mainFrame != null) {
-                    mainFrame.executeJavaScript<Any>(script)
-                } else {
-                    null
-                }
-            } catch (e: Exception) {
+        accessorCall.call(
+            JS_CALL_TIMEOUT_MS,
+            onError = { e ->
                 browserAccessorLogger.debug(
                     LogCategory.BROWSER,
                     "executeJavaScript failed - returning null",
                     mapOf("error" to e.toString()),
                 )
-                null
-            }
+            },
+        ) {
+            browser.mainFrame().orElse(null)?.executeJavaScript<Any>(script)
         }
 
+    // Stays on Main: `loadUrl` is answered by the browser process, which page JS cannot block, so
+    // it is not the hazard executeJavaScript above is and gains nothing from queueing behind one.
     override suspend fun navigate(url: String) {
         withContext(Dispatchers.Main) {
             try {
@@ -86,6 +94,21 @@ class DesktopBrowserIntegration(
                 browserAccessorLogger.warn(LogCategory.BROWSER, "navigate failed", mapOf("error" to (e.message ?: "unknown")))
             }
         }
+    }
+
+    private companion object {
+        /**
+         * One per process rather than one per integration.
+         *
+         * These accessors are built and replaced on every tab switch and nothing disposes them, so
+         * a per-instance thread would leak one each time. The cost of sharing is that a wedged tab
+         * makes plugin JS on *other* tabs wait out the deadline too - bounded, and far cheaper than
+         * the thread leak or the frozen app.
+         */
+        private val accessorCall = BoundedBrowserCall("boss-plugin-browser-call")
+
+        /** Matches BrowserHandleImpl's bound on the same class of call. */
+        private const val JS_CALL_TIMEOUT_MS = 10_000L
     }
 
     override fun isBrowserAvailable(): Boolean =
