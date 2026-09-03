@@ -124,6 +124,212 @@ internal fun rankOf(
     return (entry.visitCount * 1000.0) + recencyScore
 }
 
+/**
+ * The terms a query asks for: whitespace-separated and lowercased.
+ *
+ * Multi-term input is how a browser finds a page you remember two words of - "boss pulls"
+ * reaching `github.com/risa-labs-inc/BossConsole/pulls` - and it is why matching cannot be a
+ * single `contains`: the query as one string appears nowhere in that URL.
+ */
+private fun queryTerms(query: String): List<String> = query.lowercase().split(WHITESPACE).filter { it.isNotEmpty() }
+
+private val WHITESPACE = Regex("\\s+")
+
+/**
+ * Whether [i] is where a word begins in [text].
+ *
+ * A run of letters or digits is one word, and a term may only match where such a run starts.
+ * That single rule is what keeps "loc" out of `block` and out of the `…%2Flocalhost…` buried
+ * in an OAuth redirect parameter, both of which a substring match surfaced ahead of the page
+ * the user was actually reaching for.
+ *
+ * A lower-to-upper step counts as a word start too, so "console" still finds `BossConsole`.
+ * Upper-to-lower deliberately does NOT: it would put `%2FLocalhost` straight back.
+ */
+private fun isWordStart(
+    text: String,
+    i: Int,
+): Boolean {
+    if (i == 0) return true
+    val previous = text[i - 1]
+    return !previous.isLetterOrDigit() ||
+        ((previous.isLowerCase() || previous.isDigit()) && text[i].isUpperCase())
+}
+
+/**
+ * Whether [term] starts a word anywhere in [haystack], case-insensitively.
+ */
+internal fun startsWord(
+    haystack: String,
+    term: String,
+): Boolean =
+    if (term.isEmpty() || term.length > haystack.length) {
+        false
+    } else {
+        // `any` short-circuits, so a match near the front costs no more than the old loop did.
+        (0..haystack.length - term.length).any { i ->
+            isWordStart(haystack, i) && haystack.startsWith(term, i, ignoreCase = true)
+        }
+    }
+
+/**
+ * One matched entry with the facts its ranking needs, computed once.
+ *
+ * [canonicalUrlKey] parses, and reading it from inside a comparator would parse the same URL
+ * once per comparison rather than once per entry.
+ */
+private class RankedMatch(
+    val entry: UrlHistoryEntry,
+    val completableRoot: Boolean,
+    val addressPrefix: Boolean,
+    val wordStart: Boolean,
+    val addressMatch: Boolean,
+)
+
+/**
+ * The entries that answer [query], best first.
+ *
+ * Matching follows what a browser's address bar does rather than what is easiest to write:
+ *  - EVERY term must match, and each may match in the address or in the page title.
+ *  - a term that matches at the start of a word (see [startsWord]) outranks one that matches
+ *    mid-word. Both are kept: word starts alone put "loc" one keystroke from a PR titled
+ *    "…block…" out of the list, but they also lost "tube" for youtube.com and "hub" for
+ *    github.com. Mid-word matches are answered, just underneath.
+ *  - the address is matched in its canonical spelling - no scheme, no `www.`, no trailing
+ *    slash - so what the user types lines up with what they see.
+ *
+ * Ranking is four tiers. The first exists so the row on top is the row the field's ghost
+ * text has already filled in - two different proposals on screen at once is one too many,
+ * and it is why the most-visited page on a host does not outrank the host itself while the
+ * host is still being typed:
+ *  1. the host root, on a host the query is a prefix of. This is the completable match: it is
+ *     what `inlineUrlCompletion` fills in, because a host completes before a path does.
+ *  2. the address starts with the whole query. This takes over once the host is typed out and
+ *     the completion moves on to paths, and it subsumes "any other page on a matching host":
+ *     an address always begins with its own authority, so a host prefix is an address prefix.
+ *  3. every term matched at the start of a word, rather than mid-word.
+ *  4. the address matches without help from the title. A page whose URL you are typing beats
+ *     one that merely mentions the words somewhere in its title.
+ *  5. frecency - visits, with recency breaking ties. See [rankOf].
+ *
+ * Prefixes are matched case-INSENSITIVELY. [canonicalUrlKey] lowercases the authority but
+ * leaves the path alone, so a case-sensitive test dropped every mixed-case path out of tier 2
+ * the moment the user typed into it - and then the top row disagreed with the ghost text,
+ * which matches case-insensitively.
+ *
+ * Pure, taking [now], so the tiers can be pinned by a test without a clock or a real history
+ * file.
+ */
+internal fun rankMatches(
+    entries: Collection<UrlHistoryEntry>,
+    query: String,
+    limit: Int,
+    now: Long,
+): List<UrlHistoryEntry> {
+    // A pasted address carries a scheme, and maybe a `www.`, neither of which appears in the
+    // canonical form the entries are matched in - so the whole paste became one term longer
+    // than any address and matched nothing at all. Normalizing the query the same way the
+    // entries are is what makes pasting a URL you visit daily find it.
+    val normalized = if (query.contains("://")) canonicalUrlKey(query) else query.trim()
+    val terms = queryTerms(normalized)
+    if (terms.isEmpty()) return emptyList()
+    val typed = normalized.lowercase()
+
+    return entries
+        // The gate `addUrl` applies to new visits, applied here to what gets SUGGESTED. It
+        // cannot be applied on load: `loadHistory` feeds the map that `saveHistory` writes
+        // back, so dropping an entry there silently purges it from the user's history file.
+        // A `javascript:` or `file://` row in a legacy or tampered file is not something to
+        // offer as a completion the field fills in and Enter opens.
+        .filter { suggestableHost(it.url) != null }
+        .mapNotNull { entry ->
+            val address = canonicalUrlKey(entry.url)
+            // Per-term address hits, computed ONCE. Falling through to the title used to
+            // re-scan the address for every term, which is the common case (most entries
+            // do not match) and measured about a third of the whole matching pass.
+            val addressHits = terms.map { startsWord(address, it) }
+            val addressWordStart = addressHits.all { it }
+            val wordStart =
+                addressWordStart || terms.indices.all { addressHits[it] || startsWord(entry.title, terms[it]) }
+            // The fallback: every term appears SOMEWHERE. Only consulted when no word-start
+            // reading of the query works, so it can never displace a word-start hit.
+            val loose =
+                !wordStart &&
+                    terms.all { address.contains(it, ignoreCase = true) || entry.title.contains(it, ignoreCase = true) }
+            if (!wordStart && !loose) {
+                null
+            } else {
+                RankedMatch(
+                    entry = entry,
+                    // `address == domain` is what makes this the host's own root page rather
+                    // than something under it.
+                    completableRoot =
+                        entry.domain.startsWith(typed, ignoreCase = true) && address == entry.domain,
+                    addressPrefix = address.startsWith(typed, ignoreCase = true),
+                    wordStart = wordStart,
+                    addressMatch =
+                        if (wordStart) {
+                            addressWordStart
+                        } else {
+                            terms.all { address.contains(it, ignoreCase = true) }
+                        },
+                )
+            }
+        }.sortedWith(
+            compareBy(
+                { !it.completableRoot },
+                { !it.addressPrefix },
+                { !it.wordStart },
+                { !it.addressMatch },
+                { -rankOf(it.entry, now) },
+            ),
+        ).take(limit)
+        .map { it.entry }
+}
+
+/**
+ * Drop everything past [MAX_ENTRIES] once [history] has drifted [PRUNE_SLACK] past it.
+ *
+ * The cap used to apply only on the way to disk, so the in-memory map grew with every
+ * distinct page visited for the whole life of the process - and BOSS is a long-lived desktop
+ * app. That was survivable while matching was a `contains` per entry; it is not now that
+ * every keystroke canonicalises and word-scans each one (measured 0.4-1.7ms at 1000 entries,
+ * 7-52ms at 10000, which is a visible stall while typing).
+ *
+ * The slack is what keeps this amortised: pruning is a sort, so doing it on every visit past
+ * the cap would pay O(n log n) per navigation.
+ */
+internal fun pruneIfOversized(
+    history: MutableMap<String, UrlHistoryEntry>,
+    now: Long = System.currentTimeMillis(),
+) {
+    if (history.size <= MAX_ENTRIES + PRUNE_SLACK) return
+    val keep = bestEntries(history.values, MAX_ENTRIES, now).map { distinctPageKey(it.url) }.toSet()
+    history.keys.retainAll(keep)
+}
+
+/**
+ * The [limit] best-ranked entries, best first.
+ *
+ * Top-level and pure so both callers - the file write and the in-memory prune - order the
+ * store the same way, and so the ordering is testable without the object's `init` reading
+ * the developer's real history file.
+ */
+internal fun bestEntries(
+    entries: Collection<UrlHistoryEntry>,
+    limit: Int,
+    now: Long,
+): List<UrlHistoryEntry> = entries.sortedByDescending { rankOf(it, now) }.take(limit)
+
+/** How many entries the store keeps, in memory and on disk. */
+private const val MAX_ENTRIES = 1000
+
+/** How far past [MAX_ENTRIES] the map may drift before a prune, so pruning stays amortised. */
+private const val PRUNE_SLACK = 200
+
+/** Longest stored page title. Attacker-controlled, and word-scanned on every keystroke. */
+private const val MAX_TITLE_LENGTH = 256
+
 object UrlHistoryManager {
     private val logger = BossLogger.forComponent("UrlHistoryManager")
 
@@ -196,10 +402,7 @@ object UrlHistoryManager {
      */
     private fun entriesToPersist(): List<UrlHistoryEntry> {
         val now = System.currentTimeMillis()
-        return history.values
-            .toList()
-            .sortedByDescending { rankOf(it, now) }
-            .take(1000) // Keep only top 1000 entries
+        return bestEntries(history.values, MAX_ENTRIES, now)
     }
 
     /**
@@ -250,7 +453,9 @@ object UrlHistoryManager {
                     // Keep the URL the browser committed over one a caller typed: it is
                     // the spelling we will navigate back to.
                     url = if (url.startsWith("https", ignoreCase = true)) url else existing.url,
-                    title = title.ifBlank { existing.title },
+                    // Capped: a page controls its own title, and the whole thing is
+                    // word-scanned on every keystroke of every URL field.
+                    title = title.ifBlank { existing.title }.take(MAX_TITLE_LENGTH),
                     domain = domain,
                     visitCount = existing.visitCount + 1,
                     lastVisited = System.currentTimeMillis(),
@@ -258,41 +463,20 @@ object UrlHistoryManager {
             } else {
                 UrlHistoryEntry(
                     url = url,
-                    title = title,
+                    title = title.take(MAX_TITLE_LENGTH),
                     domain = domain,
                     visitCount = 1,
                     lastVisited = System.currentTimeMillis(),
                 )
             }
+        pruneIfOversized(history)
     }
 
+    /** See [rankMatches] for the matching and ranking rules. */
     fun getSuggestions(
         query: String,
         limit: Int = 10,
-    ): List<UrlHistoryEntry> {
-        if (query.isBlank()) return emptyList()
-
-        val lowerQuery = query.lowercase()
-        val now = System.currentTimeMillis()
-
-        return history.values
-            .filter { entry ->
-                entry.domain.contains(lowerQuery) ||
-                    entry.url.contains(lowerQuery) ||
-                    entry.title.lowercase().contains(lowerQuery)
-            }.sortedWith(
-                compareBy(
-                    // Prioritize domain starts with query
-                    { !it.domain.startsWith(lowerQuery) },
-                    // Then URL starts with query. Matched against the canonical form —
-                    // no scheme, no `www.` — so a stored `www.` doesn't sink an entry the
-                    // user is plainly typing towards.
-                    { !canonicalUrlKey(it.url).startsWith(lowerQuery) },
-                    // Then by visit count, with recency breaking ties
-                    { -rankOf(it, now) },
-                ),
-            ).take(limit)
-    }
+    ): List<UrlHistoryEntry> = rankMatches(history.values, query, limit, System.currentTimeMillis())
 
     /**
      * Forget a single entry — the URL bar's "don't suggest this again".

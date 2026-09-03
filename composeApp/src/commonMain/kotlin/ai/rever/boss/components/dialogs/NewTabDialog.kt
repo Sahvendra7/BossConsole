@@ -68,8 +68,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -144,8 +146,14 @@ enum class TabType(
     JUPYTER(JupyterTabInfo.TYPE_ID),
 }
 
-// Simple URL parameter encoding
-private fun encodeUrlParameter(input: String): String =
+/**
+ * Encoding for a search query going into a `?q=` parameter.
+ *
+ * Internal so the suggestion provider builds its search row with the same encoder the
+ * confirm path uses - they produced different URLs for the same text, so clicking the row
+ * and pressing Enter searched for different things.
+ */
+internal fun encodeUrlParameter(input: String): String =
     input
         .replace(" ", "+")
         .replace("&", "%26")
@@ -172,6 +180,17 @@ private fun encodeUrlParameter(input: String): String =
  * ships in the external artifact and so needs an api release.
  */
 internal fun NewTabSpec.needsNoInput(): Boolean = inputOptional && inputLabel.isBlank() && inputPlaceholder.isBlank()
+
+/** Whether any modifier is held - a modified key is a different gesture, never an accept. */
+private fun KeyEvent.hasModifiers(): Boolean = isShiftPressed || isMetaPressed || isCtrlPressed || isAltPressed
+
+/**
+ * How long the URL field waits before asking history for suggestions.
+ *
+ * Named so the tests that have to outlast it advance the clock by a multiple of it rather
+ * than by a literal that silently stops being enough.
+ */
+internal const val URL_SUGGESTION_DEBOUNCE_MS = 100L
 
 // Platform-specific URL history provider
 expect object UrlHistoryProvider {
@@ -312,6 +331,46 @@ fun NewTabDialog(
     var selectedSuggestionIndex by remember { mutableStateOf(-1) }
     val listState = rememberLazyListState()
 
+    // The URL field holds a TextFieldValue rather than a plain String for the CURSOR: Right
+    // accepts the completion only at the very end of the input, and anywhere else it has to
+    // stay an ordinary cursor move. The value itself is only ever what the user typed.
+    var urlField by remember { mutableStateOf(TextFieldValue("")) }
+    // The completion the ghost text is offering, or null. Held apart from the field so it
+    // can never feed itself a longer query and walk down the URL one character at a time.
+    var urlCompletion by remember { mutableStateOf<UrlCompletion?>(null) }
+    // A deletion must NOT re-complete: backspacing towards a shorter address should not be
+    // fought by a completion that fills it straight back in. Chrome suppresses inline
+    // completion after a delete for the same reason. Only an edit that ADDS characters
+    // re-arms it.
+    var completionAllowed by remember { mutableStateOf(true) }
+    // Two suppressions, both DERIVED rather than written into state:
+    //  - over a selection the ghost reads as field content that escaped the highlight, and
+    //    Enter would commit the very text the user selected in order to replace it.
+    //  - while a dropdown row is highlighted, that row is the proposal; two on screen at
+    //    once is one too many.
+    // Deriving them is what keeps the ghost steady. As state writes they fought the write
+    // in `onValueChange`: every keystroke typed with a row highlighted set the completion
+    // and an effect immediately cleared it, so the tail flickered off for a whole debounce
+    // and the accept keys did nothing in that window.
+    val ghostCompletion =
+        urlCompletion?.takeIf { urlField.selection.collapsed && selectedSuggestionIndex < 0 }
+    // Read once and passed as a key: `CoreTextField` memoises on the VisualTransformation
+    // instance, so a new one per recomposition re-runs the filter and re-lays out the text
+    // on every hover and every arrow key.
+    val ghostColor = BossTheme.colors.textSecondary
+    // Where a commit goes. ONE derived value read by Enter, by the confirm button and by
+    // the dialog's Done action, in the order the user's own signals rank:
+    //  1. a row they arrowed onto - the most explicit choice on screen.
+    //  2. the ghost completion, guarded exactly as it is drawn, so the address the field
+    //     shows and the address that opens cannot come apart.
+    //  3. what they typed.
+    // Written once because it was previously written twice, and only one of the two
+    // honoured the highlighted row - so Enter and the confirm button disagreed.
+    val urlToOpen =
+        urlSuggestions.getOrNull(selectedSuggestionIndex)?.url
+            ?: urlCompletionTarget(ghostCompletion, urlField.text)?.target
+            ?: inputText
+
     // File picker for browsing files
     val filePicker =
         rememberFilePicker(
@@ -331,14 +390,34 @@ fun NewTabDialog(
     // Update suggestions when URL text changes
     LaunchedEffect(urlText, selectedType) {
         if (selectedType == TabType.URL && urlText.isNotEmpty()) {
-            delay(100) // Small debounce
-            urlSuggestions = UrlHistoryProvider.getSuggestions(urlText)
+            delay(URL_SUGGESTION_DEBOUNCE_MS)
+            // Off the composition thread: the lookup canonicalises and word-scans every
+            // stored entry, which is milliseconds at the 1000-entry cap but is still work
+            // that has no business between a keystroke and its frame.
+            urlSuggestions = withContext(Dispatchers.Default) { UrlHistoryProvider.getSuggestions(urlText) }
             showUrlDropdown = urlSuggestions.isNotEmpty()
             selectedSuggestionIndex = -1
         } else {
             urlSuggestions = emptyList()
             showUrlDropdown = false
+            // Or a stale index keeps gating the completion off after the field is cleared.
+            selectedSuggestionIndex = -1
         }
+    }
+
+    // Re-offer the completion when a NEW suggestion list lands.
+    //
+    // The keystroke path in `onValueChange` is the primary writer - it has to be, or the
+    // ghost trails the debounce - and this only catches up the case where the list arrived
+    // after the character that asked for it. Keyed on the list alone: adding the other
+    // pieces of state made this a second, differently-gated writer racing the first.
+    LaunchedEffect(urlSuggestions, selectedType) {
+        urlCompletion =
+            if (selectedType == TabType.URL && completionAllowed) {
+                inlineUrlCompletion(urlField.text, urlSuggestions)
+            } else {
+                null
+            }
     }
 
     // Auto-scroll to selected suggestion when using arrow keys
@@ -1124,10 +1203,35 @@ fun NewTabDialog(
                         } else {
                             // URL input
                             OutlinedTextField(
-                                value = inputText,
+                                value = urlField,
                                 onValueChange = { newValue ->
-                                    inputText = newValue
-                                    urlText = newValue
+                                    // Compose fires this for SELECTION-only changes too - a
+                                    // click, a drag, an arrow key, even Cmd+C collapsing a
+                                    // selection. Treating those as edits disarmed the
+                                    // completion on a bare cursor move, which killed the
+                                    // accept gesture the ghost had just invited.
+                                    val textChanged = newValue.text != urlField.text
+                                    // Only an edit that ADDS characters may complete.
+                                    if (textChanged) {
+                                        completionAllowed = newValue.text.length > urlField.text.length
+                                    }
+                                    urlField = newValue
+                                    if (!textChanged) return@OutlinedTextField
+                                    inputText = newValue.text
+                                    urlText = newValue.text
+                                    // Recomputed HERE, against the suggestions already in
+                                    // hand, rather than left to the effect below. The
+                                    // lookup is debounced, so waiting for it made the ghost
+                                    // trail the keystroke by 100ms and blink out whenever a
+                                    // character diverged from the candidate - and left a
+                                    // window where a commit took a completion the field was
+                                    // no longer showing.
+                                    urlCompletion =
+                                        if (completionAllowed) {
+                                            inlineUrlCompletion(newValue.text, urlSuggestions)
+                                        } else {
+                                            null
+                                        }
                                 },
                                 label = {
                                     Text(
@@ -1165,15 +1269,69 @@ fun NewTabDialog(
                                                         true
                                                     }
 
+                                                    // Tab, and Right at the very end of the
+                                                    // input, accept the ghost text - the same two
+                                                    // gestures the browser's address bar accepts
+                                                    // it with. Anywhere else Right is an ordinary
+                                                    // cursor move and must stay one.
+                                                    Key.Tab, Key.DirectionRight -> {
+                                                        val completion =
+                                                            urlCompletionTarget(
+                                                                ghostCompletion,
+                                                                urlField.text,
+                                                            )
+                                                        val atEnd =
+                                                            urlField.selection.collapsed &&
+                                                                urlField.selection.start == urlField.text.length
+                                                        // A modified key is a different
+                                                        // gesture: Shift+Right extends a
+                                                        // selection, Shift+Tab moves focus
+                                                        // backwards, Cmd/Alt+Right jumps a
+                                                        // word. None of them mean "accept".
+                                                        val plain = !event.hasModifiers()
+                                                        val acceptGesture = event.key == Key.Tab || atEnd
+                                                        if (plain && completion != null && acceptGesture) {
+                                                            urlField =
+                                                                TextFieldValue(
+                                                                    completion.display,
+                                                                    TextRange(completion.display.length),
+                                                                )
+                                                            inputText = completion.target
+                                                            urlText = completion.display
+                                                            urlCompletion = null
+                                                            // An accepted completion is where the
+                                                            // user stopped, so nothing may extend
+                                                            // it until they type again. Without
+                                                            // this, accepting "github.com" ghosts
+                                                            // the most-visited page under it and
+                                                            // Enter goes somewhere else entirely.
+                                                            completionAllowed = false
+                                                            // Accepting moves past the list, so it
+                                                            // closes with the proposal - the same
+                                                            // as the address bar's Right path.
+                                                            showUrlDropdown = false
+                                                            true
+                                                        } else {
+                                                            // Nothing to accept: Tab has to keep
+                                                            // moving focus, or the dialog's own
+                                                            // buttons become unreachable from the
+                                                            // keyboard. The address bar returns
+                                                            // false here for the same reason.
+                                                            false
+                                                        }
+                                                    }
+
                                                     Key.Enter -> {
                                                         if (selectedSuggestionIndex >= 0 &&
                                                             selectedSuggestionIndex < urlSuggestions.size
                                                         ) {
-                                                            val suggestion = urlSuggestions[selectedSuggestionIndex]
-                                                            inputText = suggestion.url
-                                                            urlText = suggestion.url
                                                             showUrlDropdown = false
-                                                            handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                                            handleCreateTab(
+                                                                selectedType,
+                                                                urlToOpen,
+                                                                onCreateTab,
+                                                                onDismiss,
+                                                            )
                                                             true
                                                         } else {
                                                             false
@@ -1181,8 +1339,15 @@ fun NewTabDialog(
                                                     }
 
                                                     Key.Escape -> {
-                                                        if (showUrlDropdown) {
+                                                        if (showUrlDropdown || urlCompletion != null) {
                                                             showUrlDropdown = false
+                                                            // The ghost is a proposal, so the key
+                                                            // that rejects the list rejects it
+                                                            // too. Leaving it behind meant Escape
+                                                            // then Enter opened the completion the
+                                                            // user had just dismissed.
+                                                            urlCompletion = null
+                                                            completionAllowed = false
                                                             true
                                                         } else {
                                                             false
@@ -1197,6 +1362,10 @@ fun NewTabDialog(
                                                 false
                                             }
                                         },
+                                visualTransformation =
+                                    remember(ghostCompletion, ghostColor) {
+                                        ghostTextTransformation(ghostCompletion, ghostColor)
+                                    },
                                 colors =
                                     TextFieldDefaults.outlinedTextFieldColors(
                                         textColor = BossTheme.colors.textPrimary,
@@ -1209,14 +1378,7 @@ fun NewTabDialog(
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                 keyboardActions =
                                     KeyboardActions(
-                                        onDone = {
-                                            if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < urlSuggestions.size) {
-                                                val suggestion = urlSuggestions[selectedSuggestionIndex]
-                                                handleCreateTab(selectedType, suggestion.url, onCreateTab, onDismiss)
-                                            } else {
-                                                handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
-                                            }
-                                        },
+                                        onDone = { handleCreateTab(selectedType, urlToOpen, onCreateTab, onDismiss) },
                                     ),
                             )
 
@@ -1249,8 +1411,9 @@ fun NewTabDialog(
                                                                 Color.Transparent
                                                             },
                                                         ).clickable {
-                                                            inputText = suggestion.url
-                                                            urlText = suggestion.url
+                                                            // A click names its own row, so this
+                                                            // is the one commit path that does
+                                                            // not read `urlToOpen`.
                                                             showUrlDropdown = false
                                                             handleCreateTab(TabType.URL, suggestion.url, onCreateTab, onDismiss)
                                                         }.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1348,7 +1511,14 @@ fun NewTabDialog(
                             if (selectedPluginTypeInfo != null) {
                                 confirmPluginTab()
                             } else {
-                                val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
+                                // Same rule as Enter: a ghost completion on screen is what the
+                                // field reads as, so confirming takes it.
+                                val input =
+                                    when (selectedType) {
+                                        TabType.TERMINAL -> terminalCommand
+                                        TabType.URL -> urlToOpen
+                                        else -> inputText
+                                    }
                                 handleCreateTab(selectedType, input, onCreateTab, onDismiss)
                             }
                         },

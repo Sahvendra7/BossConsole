@@ -18,13 +18,21 @@ actual object UrlHistoryProvider {
                     )
                 }
 
-        // Add a Google search suggestion if the query doesn't look like a URL
+        // Offer a web search when the query doesn't look like an address.
+        //
+        // APPENDED, not inserted at the top. History is ranked and the best match is the row
+        // the user is most likely to want - putting the search row above it made every
+        // suggestion list open with the one row that is not a suggestion, and pushed the
+        // match that inline completion has already filled into the field down to second
+        // place. Chrome keeps its search row under the history it found, for the same reason.
         val suggestions = historySuggestions.toMutableList()
         if (!query.contains(".") && !query.startsWith("http")) {
             suggestions.add(
-                0,
                 UrlSuggestion(
-                    url = "https://www.google.com/search?q=${query.replace(" ", "+")}",
+                    // The same encoder `processUrlInput` uses, so this row and Enter on the
+                    // same text search for the same thing. A bare space-to-plus replace let
+                    // `&`, `#` and `%` through verbatim.
+                    url = "https://www.google.com/search?q=${encodeUrlParameter(query)}",
                     title = "Search Google for \"$query\"",
                     isSearchSuggestion = true,
                 ),

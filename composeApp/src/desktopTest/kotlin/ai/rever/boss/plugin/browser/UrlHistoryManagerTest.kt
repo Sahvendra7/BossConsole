@@ -178,4 +178,24 @@ class UrlHistoryManagerTest {
         assertEquals("Persisted", reloaded.title)
         assertNull(UrlHistoryManager.getSuggestions("nothing-here").firstOrNull())
     }
+
+    @Test
+    fun `a stored title is capped`() {
+        // A page controls its own `document.title`, and every stored title is word-scanned
+        // on every keystroke of every URL field.
+        UrlHistoryManager.addUrl("https://example.com/", "t".repeat(5_000))
+
+        val stored = UrlHistoryManager.getSuggestions("example.com").single()
+        assertEquals(256, stored.title.length)
+    }
+
+    @Test
+    fun `the in-memory store is capped, not just the file`() {
+        // The 1000 cap used to apply only on the way to disk, so the map grew for the whole
+        // life of the process - and the per-keystroke match cost grows with it.
+        repeat(1_400) { UrlHistoryManager.addUrl("https://site$it.example/", "Site $it") }
+
+        val held = UrlHistoryManager.getSuggestions("example", limit = 10_000)
+        assertTrue(held.size <= 1_200, "expected the store to be pruned, held ${held.size}")
+    }
 }
