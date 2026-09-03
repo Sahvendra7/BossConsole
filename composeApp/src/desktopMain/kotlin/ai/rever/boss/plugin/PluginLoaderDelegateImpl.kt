@@ -757,7 +757,12 @@ class PluginLoaderDelegateImpl(
         runOnEdtAndWait {
             tabs.forEach { (component, tabId) ->
                 try {
-                    component.removeTabById(tabId)
+                    // NOT recorded for reopen: the classloader is about to close, so no factory
+                    // is left to rebuild these. Recording them would bury the user's own closures
+                    // (the stack holds 25, and a plugin can easily own that many tabs), and an
+                    // update - uninstall then reinstall - would register the factory again in
+                    // time for Cmd+Shift+T to resurrect tabs nobody closed.
+                    component.removeTabById(tabId, recordForReopen = false)
                 } catch (e: Throwable) {
                     logger.warn(
                         LogCategory.SYSTEM,

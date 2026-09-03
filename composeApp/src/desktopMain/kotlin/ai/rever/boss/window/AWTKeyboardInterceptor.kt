@@ -223,10 +223,17 @@ object AWTKeyboardInterceptor {
                     // Dispatch the action through MenuActionsHandler
                     val handled = dispatchAction(binding.actionId, windowId)
                     if (!handled) {
-                        // A host binding matched but has no dispatch case here, because the chord
-                        // is served further down: the editor plugin, for one, opens Go To Line
-                        // from its own onPreviewKeyEvent, and EDITOR_GO_TO_LINE exists in the
-                        // keymap only so the chord is listed and rebindable.
+                        // A host binding matched but has no dispatch case here, because the
+                        // chord is served further down or by nothing at all. QUICK_SWITCHER_OPEN
+                        // (Ctrl+Space) and TEST_EXTERNAL_LINK (Cmd+Shift+G) are the two that
+                        // reach this today, and every EDITOR_* binding would join them if
+                        // updateWindowContext were ever wired up.
+                        //
+                        // NOT the EDITOR bindings today: detectCurrentContext can only answer
+                        // BROWSER, TERMINAL or GLOBAL, so isContextEligible drops an
+                        // EDITOR-context binding in findMatchingBinding and it never gets here.
+                        // EDITOR_GO_TO_LINE (Cmd+L) is therefore kept safe from a plugin GLOBAL
+                        // default by the fluck browser not registering one, not by this branch.
                         //
                         // Return rather than fall through to the plugin-default pass below. That
                         // pass is documented as running only when NO host binding matched, and
@@ -724,6 +731,9 @@ object AWTKeyboardInterceptor {
                 dispatchIfCanStepTabs(windowId) { MenuActionsHandler.triggerPreviousTabPositional(it) }
             }
 
+            // Index 0, not 8: Cmd+9 means "the last tab", so any non-empty panel serves it. In a
+            // one-tab panel it is claimed and reselects the already-active tab, which is what
+            // browsers do; only an empty panel lets the chord through.
             KeymapActions.TAB_SELECT_LAST -> {
                 dispatchIfTabExistsAt(windowId, 0) { MenuActionsHandler.triggerSelectLastTab(it) }
             }

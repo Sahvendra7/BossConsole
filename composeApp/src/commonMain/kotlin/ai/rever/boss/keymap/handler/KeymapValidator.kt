@@ -91,6 +91,11 @@ object KeymapValidator {
             .map { (signature, bindings) ->
                 KeymapConflict(signature, bindings)
             }
+            // One entry per colliding SET of actions. Now that alternates are grouped too, two
+            // bindings that share both a primary and an alternate would otherwise be reported
+            // twice, and conflictCount is what the settings badge shows the user - it is one
+            // thing to fix, not two.
+            .distinctBy { conflict -> conflict.bindings.map { it.actionId }.toSet() }
     }
 
     /**

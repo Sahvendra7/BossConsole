@@ -898,9 +898,12 @@ object KeymapPresets {
         )
 
         // Cmd+1..Cmd+8, positionally. Cmd+9 is the LAST tab, not the ninth - browser convention.
+        // zip rather than indexing NUMBER_KEY_NAMES: a ninth entry in TAB_SELECT_BY_INDEX would
+        // otherwise throw at object initialisation, which is a far worse failure than one action
+        // silently missing its chord until the size assertion in the preset test catches it.
         val numbered =
-            KeymapActions.TAB_SELECT_BY_INDEX.mapIndexed { index, actionId ->
-                tabBinding(actionId, NUMBER_KEY_NAMES[index], listOf("Cmd"))
+            KeymapActions.TAB_SELECT_BY_INDEX.zip(NUMBER_KEY_NAMES) { actionId, keyName ->
+                tabBinding(actionId, keyName, listOf("Cmd"))
             }
 
         return numbered +
@@ -977,14 +980,7 @@ object KeymapPresets {
      * the preset already binds is likewise left alone.
      */
     internal fun withStandardBrowserBindings(preset: List<KeyBinding>): List<KeyBinding> {
-        val withZoomAlternate =
-            preset.map { binding ->
-                if (binding.actionId == KeymapActions.BROWSER_ZOOM_IN && !binding.hasAlternates) {
-                    binding.withAlternateKeystroke(KeyStroke(binding.key, binding.modifiers + "Shift"))
-                } else {
-                    binding
-                }
-            }
+        val withZoomAlternate = preset.map { binding -> binding.withZoomInShiftAlternate(preset) }
 
         val boundActions = withZoomAlternate.map { it.actionId }.toHashSet()
 
@@ -994,6 +990,28 @@ object KeymapPresets {
                 .mapNotNull { candidate -> candidate.withoutChordsTakenBy(withZoomAlternate) }
 
         return withZoomAlternate + additions
+    }
+
+    /**
+     * Zoom in, plus the Shift variant of its own chord: Cmd+Shift+Equals is what a US keyboard
+     * reports for "Cmd+Plus". Every other binding is returned untouched.
+     *
+     * Chord-checked against [preset] like every other addition in [withStandardBrowserBindings],
+     * rather than applied blind. Nothing claims Cmd+Shift+Equals in any preset today, so this
+     * changes no shipped keymap - but it is the same asymmetry that would otherwise let a future
+     * preset ship a conflict past the merge that exists to prevent exactly that. Skipped when the
+     * chord already carries Shift, which would produce ["Cmd","Shift","Shift"].
+     */
+    private fun KeyBinding.withZoomInShiftAlternate(preset: List<KeyBinding>): KeyBinding {
+        val eligible =
+            actionId == KeymapActions.BROWSER_ZOOM_IN &&
+                !hasAlternates &&
+                modifiers.none { it.equals("Shift", ignoreCase = true) }
+        if (!eligible) return this
+
+        val shiftVariant = KeyStroke(key, modifiers + "Shift")
+        val taken = preset.any { it.actionId != actionId && it.claimsChord(shiftVariant, context) }
+        return if (taken) this else withAlternateKeystroke(shiftVariant)
     }
 
     /**

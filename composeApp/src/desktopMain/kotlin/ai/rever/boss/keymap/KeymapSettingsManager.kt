@@ -6,6 +6,7 @@ import ai.rever.boss.keymap.presets.KeymapPresets
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.window.AWTKeyboardInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -273,14 +274,20 @@ actual object KeymapSettingsManager {
 }
 
 /**
- * Same key and same set of modifiers, whatever order they are written in.
+ * Same key and same set of modifiers, whatever order or spelling they are written in.
  *
  * KeyStroke.modifiers is a List, and the keymap file is documented as hand-editable, so
  * ["Shift","Cmd"] would otherwise read as a rebind and silently miss the alternate top-up.
+ *
+ * Key names go through [AWTKeyboardInterceptor.keyNameMatches] rather than a bare
+ * case-insensitive compare, so this and the interceptor agree on aliases. "Left" and
+ * "DirectionLeft" are the same key to the matcher, and a keymap written by an older build or
+ * imported from another machine can hold either; without the fold such a file reads as rebound
+ * and misses the top-up.
  *
  * Top-level rather than a member of the object: it is a property of two KeyStrokes, and the
  * object is at its TooManyFunctions threshold.
  */
 private fun KeyStroke.sameChordAs(other: KeyStroke): Boolean =
-    key.equals(other.key, ignoreCase = true) &&
+    AWTKeyboardInterceptor.keyNameMatches(key, other.key) &&
         modifiers.map { it.lowercase() }.toSet() == other.modifiers.map { it.lowercase() }.toSet()

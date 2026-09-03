@@ -440,7 +440,10 @@ class KeymapMatcher(
                         "Equals"
                     }
 
-                    "openbracket", "closebracket", "slash", "backslash" -> {
+                    // No openbracket/closebracket here: the "left bracket"/"right bracket"
+                    // branch above already answers for both spellings, and repeating them made
+                    // this one look like it did something.
+                    "slash", "backslash" -> {
                         keyName.replaceFirstChar { it.uppercase() }
                     }
 

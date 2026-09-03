@@ -538,6 +538,59 @@ class KeymapValidatorTest {
     }
 
     @Test
+    fun `two bindings colliding on two chords are one conflict, not two`() {
+        // Grouping by every signature means a pair that shares both a primary and an alternate
+        // lands in two buckets. It is one thing for the user to fix, and conflictCount is what
+        // the settings badge shows, so reporting it twice would double-count.
+        val first =
+            KeyBinding(
+                actionId = "action.one",
+                key = "K",
+                modifiers = listOf("Cmd"),
+                alternateKeystrokes = listOf(KeyStroke("J", listOf("Cmd"))),
+                context = ShortcutContext.GLOBAL,
+                description = "First",
+            )
+        val second =
+            KeyBinding(
+                actionId = "action.two",
+                key = "K",
+                modifiers = listOf("Cmd"),
+                alternateKeystrokes = listOf(KeyStroke("J", listOf("Cmd"))),
+                context = ShortcutContext.GLOBAL,
+                description = "Second",
+            )
+
+        val settings = KeymapSettings.fromBindings(listOf(first, second))
+
+        assertEquals(1, KeymapValidator.validate(settings).size, "Cmd+K and Cmd+J are one pair")
+        assertEquals(1, KeymapValidator.conflictCount(settings))
+        assertEquals(
+            setOf("action.one", "action.two"),
+            KeymapValidator
+                .validate(settings)
+                .single()
+                .bindings
+                .map { it.actionId }
+                .toSet(),
+        )
+    }
+
+    @Test
+    fun `distinct colliding pairs are still reported separately`() {
+        // Guard against the dedupe collapsing unrelated conflicts: different action sets stay
+        // different entries.
+        val a = KeyBinding("a", "K", listOf("Cmd"), context = ShortcutContext.GLOBAL, description = "A")
+        val b = KeyBinding("b", "K", listOf("Cmd"), context = ShortcutContext.GLOBAL, description = "B")
+        val c = KeyBinding("c", "J", listOf("Cmd"), context = ShortcutContext.GLOBAL, description = "C")
+        val d = KeyBinding("d", "J", listOf("Cmd"), context = ShortcutContext.GLOBAL, description = "D")
+
+        val conflicts = KeymapValidator.validate(KeymapSettings.fromBindings(listOf(a, b, c, d)))
+
+        assertEquals(2, conflicts.size)
+    }
+
+    @Test
     fun `checkBinding sees a collision against an existing binding's alternate`() {
         val existing =
             KeyBinding(
