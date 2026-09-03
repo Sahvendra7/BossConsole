@@ -60,6 +60,22 @@ internal class SettingsWindowState {
     var highlight by mutableStateOf<SettingsHighlight?>(null)
         private set
 
+    /**
+     * Bumped once per request that could change [highlight], including one that clears it.
+     *
+     * The window cannot key an effect on the highlight's own nonce, because "point at nothing" is
+     * expressed as null and null carries no nonce. That left `null -> null` indistinguishable from
+     * "nothing happened": pick a row in the window's OWN search box, then reveal a
+     * `highlightable = false` row in another section from the global search - `sectionLevel` and
+     * `delegated` entries are exactly that shape - and the holder correctly went to null while the
+     * window's local highlight stayed armed on the page it had left.
+     *
+     * Bumped in [open], which every reveal goes through, so it also covers a plain open from the
+     * menu - the case [sectionRequest] would miss, since that only moves when a section is named.
+     */
+    var highlightRequest by mutableStateOf(0)
+        private set
+
     private var highlightNonce = 0
 
     /**
@@ -109,6 +125,7 @@ internal class SettingsWindowState {
      */
     fun open(section: String? = null) {
         highlight = null
+        highlightRequest++
         if (section != null) {
             this.section = section
             sectionRequest++

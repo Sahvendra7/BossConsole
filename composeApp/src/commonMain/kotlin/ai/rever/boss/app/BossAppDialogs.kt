@@ -723,6 +723,7 @@ internal fun BossAppDialogs(state: BossAppState) {
             focusRequest = state.settingsWindow.focusRequest,
             sectionRequest = state.settingsWindow.sectionRequest,
             requestedHighlight = state.settingsWindow.highlight,
+            highlightRequest = state.settingsWindow.highlightRequest,
         )
     }
 

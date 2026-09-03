@@ -148,7 +148,7 @@ object GlobalSearchService {
      */
     suspend fun search(
         query: String,
-        windowId: String? = null,
+        windowId: String?,
     ): List<SearchResult> {
         if (query.isBlank()) {
             _searchResults.value = emptyList()
@@ -158,6 +158,14 @@ object GlobalSearchService {
         _isSearching.value = true
 
         try {
+            // Read ONCE, and shared by the two sources that need it. Both used to call
+            // SearchSources.tools(windowId) from their own async, which did the slot flatten twice
+            // per keystroke and, worse, let them see different snapshots: a plugin registering
+            // between the two reads yields a Tool row whose signpost was filtered out, or the
+            // reverse. searchSettings' KDoc promises the two agree, so they have to read the same
+            // list rather than two lists that usually match.
+            val windowTools = SearchSources.tools(windowId)
+
             val results =
                 withContext(Dispatchers.Default) {
                     // Run all searches in parallel for better performance
@@ -170,8 +178,8 @@ object GlobalSearchService {
                                 async { isolated("plugins") { searchPluginProviders(query) } },
                                 async { isolated("runConfigs") { searchRunConfigs(query) } },
                                 async { isolated("commands") { searchCommands(query) } },
-                                async { isolated("tools") { searchTools(query, windowId) } },
-                                async { isolated("settings") { searchSettings(query, windowId) } },
+                                async { isolated("tools") { searchTools(query, windowTools) } },
+                                async { isolated("settings") { searchSettings(query, windowTools) } },
                                 async { isolated("mcp") { searchMcpTools(query) } },
                                 async { isolated("pages") { searchRecentPages(query) } },
                             ).awaitAll().flatten()
@@ -571,12 +579,11 @@ object GlobalSearchService {
      */
     private fun searchTools(
         query: String,
-        windowId: String?,
+        windowTools: List<ToolSearchRecord>,
     ): List<SearchResult.ToolResult> {
         val queryLower = query.lowercase()
 
-        return SearchSources
-            .tools(windowId)
+        return windowTools
             .mapNotNull { tool ->
                 val labelMatch = FuzzyMatcher.match(queryLower, tool.label, tool.label.lowercase())
                 val idMatch = FuzzyMatcher.match(queryLower, tool.panelId, tool.panelId.lowercase())
@@ -613,9 +620,9 @@ object GlobalSearchService {
      */
     private fun searchSettings(
         query: String,
-        windowId: String?,
+        windowTools: List<ToolSearchRecord>,
     ): List<SearchResult.SettingResult> {
-        val reachablePanels = SearchSources.tools(windowId).mapTo(mutableSetOf()) { it.panelId }
+        val reachablePanels = windowTools.mapTo(mutableSetOf()) { it.panelId }
 
         return SearchSources
             .settings(query)
@@ -682,6 +689,14 @@ object GlobalSearchService {
      * "github" should reach a page whose title never mentions it. The URL goes through [proseScore]
      * for the reason [searchMcpTools] gives: a URL is long enough that a fuzzy subsequence matches
      * it by accident, so it has to actually contain what was typed.
+     *
+     * **The title deliberately stays fuzzy**, on the same side of the line as an MCP tool's name
+     * rather than its description. A title is what someone is trying to recall - half-remembered
+     * and half-typed, "pullreq" for "Pull requests" - and holding it to a substring would lose
+     * exactly the queries the fuzzy matcher is for. It is a weaker version of the argument than
+     * the one for names, since a title is longer than a tool name and a short query can therefore
+     * still match one by accident; the section that results is at least made of rows that open
+     * something, which is what made the MCP case worth guarding and this one not.
      *
      * Read through [SearchSources] so a unit test can supply pages without the manager, and
      * without the disk read that reaching it entails.

@@ -70,6 +70,7 @@ actual fun SettingsWindow(
     focusRequest: Int,
     sectionRequest: Int,
     requestedHighlight: SettingsHighlight?,
+    highlightRequest: Int,
 ) {
     // No local `isOpen` flag. Composition is already gated by `SettingsWindowState.visible`, and a
     // second source of truth for "is this window up" is the bug this whole change fixes, waiting to
@@ -133,6 +134,7 @@ actual fun SettingsWindow(
                     initialSection = initialSection,
                     sectionRequest = sectionRequest,
                     requestedHighlight = requestedHighlight,
+                    highlightRequest = highlightRequest,
                     searchState = searchState,
                 )
             }
@@ -145,6 +147,7 @@ private fun SettingsContent(
     initialSection: String? = null,
     sectionRequest: Int = 0,
     requestedHighlight: SettingsHighlight? = null,
+    highlightRequest: Int = 0,
     searchState: SettingsSearchState = remember { SettingsSearchState() },
 ) {
     var selectedSection by remember { mutableStateOf(initialSectionFor(initialSection, visiblePageIds())) }
@@ -269,10 +272,14 @@ private fun SettingsContent(
 
     // A highlight asked for from OUTSIDE the window - the global search finding a row by name.
     //
-    // Keyed on the request's own nonce, not on its value: picking the same row twice leaves group
-    // and label unchanged, and a value key would light it the first time and do nothing the
-    // second. Runs after the navigation effect above, which is what puts the row on screen.
-    LaunchedEffect(requestedHighlight?.nonce) {
+    // Keyed on the holder's request COUNTER, not on the value and not on the nonce. A value key
+    // would light the same row once and then do nothing, which is what the nonce exists to fix -
+    // but a nonce key has its own blind spot, because "point at nothing" is null and null carries
+    // no nonce, so `null -> null` looked like nothing happening while a local highlight stayed
+    // armed on a page the window had navigated away from. The counter moves on every request,
+    // including one that clears. Runs after the navigation effect above, which puts the row on
+    // screen.
+    LaunchedEffect(highlightRequest) {
         // Re-stamped with THIS window's counter rather than adopted as-is. The requester has a
         // counter of its own, and both start at zero: reveal row A from the global search
         // (external nonce 1), then pick the same row A in this window's search box (local nonce 1),

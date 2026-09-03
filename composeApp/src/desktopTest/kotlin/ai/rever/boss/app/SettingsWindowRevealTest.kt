@@ -94,6 +94,38 @@ class SettingsWindowRevealTest {
     }
 
     @Test
+    fun `every request bumps the counter, including one that points at nothing`() {
+        // The window keys its adopt-the-highlight effect on this, because null carries no nonce:
+        // without a counter, reveal-to-null after a local pick was `null -> null` and looked like
+        // nothing happening, leaving the window's own highlight armed on a page it had left.
+        val state = SettingsWindowState()
+        val start = state.highlightRequest
+
+        state.reveal(section = "THEME", group = null, label = "Accent", highlightable = true)
+        val afterHighlightable = state.highlightRequest
+        state.reveal(section = "KEYMAP", group = null, label = "Catch All", highlightable = false)
+        val afterNotHighlightable = state.highlightRequest
+
+        assertTrue(afterHighlightable > start, "a reveal that arms a highlight is a request")
+        assertTrue(afterNotHighlightable > afterHighlightable, "a reveal that clears one is too")
+        assertNull(state.highlight)
+    }
+
+    @Test
+    fun `a plain open is a request as well, so the window can drop a consumed highlight`() {
+        // sectionRequest would miss this: it only moves when a section is named, and the top-bar
+        // Settings button names none.
+        val state = SettingsWindowState()
+        state.reveal(section = "THEME", group = null, label = "Accent", highlightable = true)
+        val armed = state.highlightRequest
+
+        state.open()
+
+        assertTrue(state.highlightRequest > armed)
+        assertNull(state.highlight)
+    }
+
+    @Test
     fun `a plain open leaves an unrelated section alone and only raises the window`() {
         // The bug the whole holder exists for: assigning `true` to an already-true flag changed
         // nothing, and Settings read as a dead button. open() with no section must bump the
