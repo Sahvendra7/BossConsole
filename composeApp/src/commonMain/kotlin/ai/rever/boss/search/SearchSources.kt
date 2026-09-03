@@ -26,8 +26,10 @@ internal data class ToolSearchRecord(
  * other sources produce. That costs nothing: `getFilteredResults` orders by category first, so
  * scores are only ever compared within one source.
  *
- * Exactly one of [section], [pluginPageId] and [panelId] is set - the index's own `init` requires
- * it. [panelId] is the entry that navigates *out* of the Settings window; see `panelSignpost`.
+ * Exactly one of [section], [pluginPageId] and [panelId] is set, and `SettingsSearchEntry`'s own
+ * `init` requires exactly that - it used to require only "at least one", which left every
+ * consumer's three-way routing resting on an invariant nothing enforced. [panelId] is the entry
+ * that navigates *out* of the Settings window; see `panelSignpost`.
  */
 internal data class SettingSearchRecord(
     val label: String,

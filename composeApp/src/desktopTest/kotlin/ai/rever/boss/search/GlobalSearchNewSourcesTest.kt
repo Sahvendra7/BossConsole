@@ -362,6 +362,39 @@ class GlobalSearchNewSourcesTest {
         assertTrue(resultsOf<SearchResult.PageResult>("github").isEmpty())
     }
 
+    // --- one source failing must not take the search down --------------------------------------
+
+    @Test
+    fun `a throwing source fails alone`() {
+        // SearchSources promises "a missing source returns no results rather than failing the whole
+        // search", and awaitAll rethrows the first failure while cancelling its siblings - so
+        // without per-source isolation one bad supplier took all nine down and the exception
+        // escaped into the dialog's LaunchedEffect.
+        registerTools(tool("bookmarks", "Bookmarks"))
+        registerSettings(entry(label = "Bookmarks Bar"))
+        SearchSources.registerMcpTools { error("this source is broken") }
+
+        val results = searchFor("bookmark")
+
+        assertTrue(results.filterIsInstance<SearchResult.ToolResult>().isNotEmpty(), "tools survive")
+        assertTrue(results.filterIsInstance<SearchResult.SettingResult>().isNotEmpty(), "settings survive")
+        assertTrue(results.filterIsInstance<SearchResult.McpToolResult>().isEmpty(), "the broken one yields nothing")
+    }
+
+    @Test
+    fun `a source throwing an unloaded-class Error also fails alone`() {
+        // The case the guard exists for and the one it originally missed: a plugin's classloader
+        // going while its objects are still referenced throws NoClassDefFoundError, an Error and
+        // not an Exception, so catching Exception alone left this propagating.
+        registerTools(tool("bookmarks", "Bookmarks"))
+        SearchSources.registerRecentPages { throw NoClassDefFoundError("ai/rever/boss/plugin/Gone") }
+
+        val results = searchFor("bookmark")
+
+        assertTrue(results.filterIsInstance<SearchResult.ToolResult>().isNotEmpty(), "tools survive")
+        assertTrue(results.filterIsInstance<SearchResult.PageResult>().isEmpty())
+    }
+
     // --- shape ---------------------------------------------------------------------------------
 
     @Test

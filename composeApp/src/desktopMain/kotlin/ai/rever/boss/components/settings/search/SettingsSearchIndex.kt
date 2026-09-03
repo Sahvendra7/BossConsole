@@ -47,8 +47,13 @@ data class SettingsSearchEntry(
     val context: String? = null,
 ) {
     init {
-        require(section != null || pluginPageId != null || panel != null) {
-            "a search entry must name a built-in section, a plugin page or a panel: $label"
+        // EXACTLY one, not at least one. Every consumer routes on a three-way branch - the global
+        // search's `onSettingSelect` checks panelId first, the window's `applyHit` checks panel
+        // first - so an entry naming two targets would be silently routed by whichever branch came
+        // first, and the two surfaces would only agree by coincidence. Requiring one makes the
+        // record's documented invariant true rather than merely observed.
+        require(listOfNotNull(section, pluginPageId, panel).size == 1) {
+            "a search entry must name exactly one of a built-in section, a plugin page or a panel: $label"
         }
     }
 

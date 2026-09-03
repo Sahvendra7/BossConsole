@@ -93,9 +93,13 @@ object GlobalSearchService {
         queryLower: String,
         field: String,
     ): Int? {
+        // Trimmed, because `contains` is exact where the name match is fuzzy: a trailing space off
+        // a paste turned a description hit into a miss while the name hit survived, and nothing on
+        // the row would explain the asymmetry.
+        val needle = queryLower.trim()
         val fieldLower = field.lowercase()
-        if (!fieldLower.contains(queryLower)) return null
-        return FuzzyMatcher.match(queryLower, field, fieldLower)?.score?.takeIf { it >= MIN_SCORE }
+        if (needle.isEmpty() || !fieldLower.contains(needle)) return null
+        return FuzzyMatcher.match(needle, field, fieldLower)?.score?.takeIf { it >= MIN_SCORE }
     }
 
     /**
@@ -201,6 +205,12 @@ object GlobalSearchService {
      * provider-contributed MCP records - which is exactly the kind of thing that throws while a
      * plugin is unloading.
      *
+     * [LinkageError] is caught as well as [Exception], and that is the whole point rather than
+     * belt-and-braces: an unloaded plugin class throws `NoClassDefFoundError`, which is an `Error`,
+     * so a version of this that caught only `Exception` would have missed precisely the case the
+     * paragraph above describes. Broader than `Throwable` is deliberately not caught - an
+     * `OutOfMemoryError` is not something a search source should absorb.
+     *
      * `CancellationException` is deliberately not caught: a cancelled search is the debounce doing
      * its job, and swallowing it here would break the coroutine contract.
      */
@@ -212,6 +222,18 @@ object GlobalSearchService {
             body()
         } catch (e: CancellationException) {
             throw e
+        } catch (e: LinkageError) {
+            // The characteristic throw when a plugin's classloader has gone while its objects are
+            // still referenced - AGENTS.md names `NoClassDefFoundError from code that is still
+            // running` for exactly this. It is an Error, not an Exception, so catching Exception
+            // alone left the one case this guard was written for propagating out of awaitAll.
+            logger.warn(
+                LogCategory.UI,
+                "Search source hit an unloaded class; skipping it",
+                mapOf("source" to source),
+                error = e,
+            )
+            emptyList()
         } catch (e: Exception) {
             logger.warn(LogCategory.UI, "Search source failed; skipping it", mapOf("source" to source), error = e)
             emptyList()

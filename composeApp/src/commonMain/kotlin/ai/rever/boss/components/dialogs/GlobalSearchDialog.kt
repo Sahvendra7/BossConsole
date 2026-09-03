@@ -1328,8 +1328,9 @@ internal fun SearchResult.simpleRow(): SimpleRow? =
             // A page with no title falls back to its URL for the title - and then the subtitle was
             // the same URL again, so the row printed it twice. Blank in that case: the icon and
             // the accent already say which category it is.
-            val shown = title.ifBlank { url }
-            SimpleRow(category.chipIcon(), category.accent(), shown, if (shown == url) "" else url)
+            // displayName already applies the blank-title rule; computing it again here made two
+            // copies of one decision.
+            SimpleRow(category.chipIcon(), category.accent(), displayName, if (displayName == url) "" else url)
         }
 
         // Named one by one rather than left to an `else`, which is the whole point: this `when` is
@@ -1780,7 +1781,7 @@ private fun highlightMatches(
  * `indexOf(activeCategory)` at -1 in the Tab handler, which did not crash but cycled from an
  * arbitrary place. A chip that is filtering is always visible now, so neither can happen.
  */
-private fun visibleCategories(
+internal fun visibleCategories(
     resultCounts: Map<SearchCategory, Int>,
     active: SearchCategory,
 ): List<SearchCategory> =
