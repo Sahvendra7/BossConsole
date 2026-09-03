@@ -39,8 +39,20 @@ internal data class UrlCompletion(
 /** The scheme of a stored URL, or null when it has no `scheme://` prefix. */
 private fun schemeOf(url: String): String? = url.substringBefore("://", "").takeIf { it.isNotEmpty() }
 
-/** The authority of a stored URL exactly as recorded, `www.` and port included. */
-private fun storedAuthority(url: String): String = url.substringAfter("://").substringBefore('/').substringBefore('?')
+/**
+ * The authority of a stored URL exactly as recorded, `www.` and port included.
+ *
+ * Cut at the fragment as well as the path and the query. A stored `https://example.com#x`
+ * has no path to cut at, so a HOST completion displaying `example.com` would have targeted
+ * `https://example.com#x` - a fourth way for display and target to differ, and the one the
+ * [UrlCompletion] KDoc does not account for.
+ */
+private fun storedAuthority(url: String): String =
+    url
+        .substringAfter("://")
+        .substringBefore('/')
+        .substringBefore('?')
+        .substringBefore('#')
 
 /**
  * Text that must never reach the field through a completion, and that suppresses one when
@@ -146,6 +158,12 @@ internal fun extendsTyped(
  *    canonical spelling. Without it a typed `https://git` carried a `:`, which read as a
  *    host already named and left the ghost blank on the one input where the dropdown and
  *    the field are easiest to compare side by side.
+ *  - what the ghost DRAWS is always the typed text plus a tail, and the tail is found by
+ *    locating the canonical part inside the typed text rather than by assuming the
+ *    normalization only stripped a prefix. It does not: [canonicalUrlKey] also trims a
+ *    trailing slash and strips a fragment, so subtracting the canonical LENGTH put a second
+ *    slash into a pasted `https://github.com/` - and Tab then wrote that address into the
+ *    field.
  *
  * Candidate order follows the suggestion list, which is already ranked.
  *
@@ -160,11 +178,17 @@ internal fun inlineUrlCompletion(
     // does not have to appear in every stored address for the ghost to appear. The typed
     // text itself is still what the ghost is drawn after, so the scheme stays on screen.
     val matchable = if (typed.contains("://")) canonicalUrlKey(typed) else typed
+    // Where the canonical part begins in the typed text, so a scheme and any `www.` in front
+    // of it survive into the ghost verbatim. LOCATED, not assumed: `matchable` is `typed`
+    // with a prefix removed only when normalization trimmed nothing off the end of it. It
+    // can also be absent entirely - `file://www.a/b` normalizes to `file://a/b`, which is
+    // nowhere in the typed text - and then there is nothing to draw a ghost after.
+    val canonicalAt = typed.indexOf(matchable, ignoreCase = true)
     // Whitespace is part of `hasInvisibleCharacters`, so text with a space in it is a search
     // and completing it would eat what is still being typed. A blank field needs no clause of
     // its own either: an empty one carries no `://`, so it arrives here as an empty
     // `matchable`, and an all-whitespace one is caught by the first clause.
-    if (typed.hasInvisibleCharacters() || matchable.isEmpty()) return null
+    if (typed.hasInvisibleCharacters() || matchable.isEmpty() || canonicalAt < 0) return null
 
     val entries =
         suggestions
@@ -178,6 +202,12 @@ internal fun inlineUrlCompletion(
                     Triple(canonical, suggestion.url, scheme)
                 }
             }
+
+    // The part of the typed text a candidate has to extend. This is `matchable` plus
+    // whatever normalization dropped from the END: the trailing slash of a pasted
+    // `https://github.com/`, which a candidate genuinely has, or a `#fragment`, which no
+    // canonical address has and which therefore correctly matches nothing.
+    val typedTail = typed.substring(canonicalAt)
 
     val typedHost = canonicalAuthority(matchable)
     // No dot and no colon means no host has been named yet, so the host is still the thing
@@ -202,10 +232,10 @@ internal fun inlineUrlCompletion(
         }
 
     return candidates
-        .firstOrNull { extendsTyped(it.display, matchable) }
+        .firstOrNull { extendsTyped(it.display, typedTail) }
         // The user's own casing survives in the host, which is case-insensitive anyway; the
         // path comes through verbatim because `extendsTyped` matched it exactly.
-        ?.let { it.copy(display = typed + it.display.substring(matchable.length)) }
+        ?.let { it.copy(display = typed + it.display.substring(typedTail.length)) }
 }
 
 /**

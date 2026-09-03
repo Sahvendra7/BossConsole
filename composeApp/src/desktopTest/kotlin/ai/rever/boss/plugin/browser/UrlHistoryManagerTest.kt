@@ -207,6 +207,20 @@ class UrlHistoryManagerTest {
     }
 
     @Test
+    fun `matching still finds an entry after the store has pruned past the slack`() {
+        // The prune and the matcher are tested apart; this is the interaction that makes the
+        // cap load-bearing. It also drives the memoized fact table past its own bound, which
+        // now retains what the store holds rather than emptying itself.
+        UrlHistoryManager.addUrl("https://needle.example/page", "Needle")
+        repeat(1_400) { UrlHistoryManager.addUrl("https://filler$it.example/", "Filler $it") }
+        // Kept fresh so frecency does not evict the entry the assertion depends on.
+        UrlHistoryManager.addUrl("https://needle.example/page", "Needle")
+
+        val found = UrlHistoryManager.getSuggestions("needle.example")
+        assertEquals("https://needle.example/page", found.firstOrNull()?.url)
+    }
+
+    @Test
     fun `a negative limit returns nothing instead of throwing`() {
         // `rankMatches` ends in `take`, which rejects a negative count, and this function is
         // what `DesktopUrlHistoryProvider` calls - so the limit arrives from plugin code

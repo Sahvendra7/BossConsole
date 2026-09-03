@@ -166,6 +166,30 @@ class HistoryMatchingTest {
     }
 
     @Test
+    fun `a term may match the title alone while another matches the address alone`() {
+        // The second clause of `wordStart` - per-term fallback to the title - is otherwise
+        // only reached in cases where the whole query already matched the address, so an
+        // implementation that ignored it entirely would still pass.
+        val page = entry("https://github.com/risa-labs-inc/BossConsole", title = "Pull requests")
+
+        assertEquals(listOf(page.url), rank("boss requests", page))
+        // And a term matching NEITHER field still rejects the entry.
+        assertEquals(emptyList(), rank("boss requests milestones", page))
+    }
+
+    @Test
+    fun `a term past the scanned address cap is not answered`() {
+        // The address is capped for the scan the same way the title is: a stored URL is at
+        // least as attacker-influenceable, and an OAuth URL runs to thousands of characters
+        // that `startsWord` walked per term per keystroke.
+        val padded = entry("https://example.com/" + "a/".repeat(300) + "needle", title = "")
+
+        assertEquals(emptyList(), rank("needle", padded))
+        // The entry still matches on the part that is scanned.
+        assertEquals(listOf(padded.url), rank("example.com", padded))
+    }
+
+    @Test
     fun `a userinfo URL is not suggested, the same way it is not completed`() {
         // `java.net.URL` reads the host as what follows the `@` while `canonicalUrlKey` keeps
         // the userinfo, so this passed the suggestable-host gate AND matched "git" at index

@@ -162,15 +162,21 @@ private fun isWordStart(
 internal fun startsWord(
     haystack: String,
     term: String,
-): Boolean =
-    if (term.isEmpty() || term.length > haystack.length) {
-        false
-    } else {
-        // `any` short-circuits, so a match near the front costs no more than the old loop did.
-        (0..haystack.length - term.length).any { i ->
-            isWordStart(haystack, i) && haystack.startsWith(term, i, ignoreCase = true)
-        }
+): Boolean {
+    if (term.isEmpty() || term.length > haystack.length) return false
+    // An index loop rather than `(0..n).any { }`. `Iterable.any` is inline, so the lambda
+    // costs nothing, but inside it the receiver's static type is `Iterable<Int>` and the
+    // iterator hands back boxed `Integer`s - and past the 127 the box cache covers, that is
+    // an allocation per index, in the innermost loop of the per-keystroke scan.
+    var i = 0
+    var found = false
+    val last = haystack.length - term.length
+    while (!found && i <= last) {
+        found = isWordStart(haystack, i) && haystack.startsWith(term, i, ignoreCase = true)
+        i++
     }
+    return found
+}
 
 /**
  * What matching needs to know about one stored URL, derived from the URL string alone.
@@ -195,7 +201,6 @@ private val urlFacts = ConcurrentHashMap<String, UrlFacts>()
 
 private fun factsFor(url: String): UrlFacts {
     urlFacts[url]?.let { return it }
-    if (urlFacts.size > MAX_ENTRIES + PRUNE_SLACK) urlFacts.clear()
     return urlFacts.getOrPut(url) {
         val address = canonicalUrlKey(url)
         // [hasUserinfo] rather than the same expression spelled out here: the URL field's
@@ -270,6 +275,16 @@ internal fun rankMatches(
     // rejects a negative count, and one of the callers is `DesktopUrlHistoryProvider` -
     // `PluginContext.urlHistoryProvider` - so this limit arrives from plugin code.
     val wanted = limit.coerceAtLeast(0)
+
+    // The memo table is bounded here rather than inside `factsFor`, and by RETAINING what
+    // the store still holds rather than emptying it. Clearing put a cliff on the typing
+    // path: a working set hovering near the cap paid a full rebuild - a thousand
+    // `java.net.URL` constructions, `MalformedURLException` unwinds included - on the
+    // keystroke after one new page was visited. This walks the entries once, and only when
+    // the table has actually drifted past them.
+    if (urlFacts.size > MAX_ENTRIES + PRUNE_SLACK) {
+        urlFacts.keys.retainAll(entries.mapTo(HashSet()) { it.url })
+    }
     val typed = normalized.lowercase()
 
     return entries
@@ -281,7 +296,13 @@ internal fun rankMatches(
             // history file. A `javascript:` or `file://` row in a legacy or tampered file is
             // not something to offer as a completion the field fills in and Enter opens.
             if (!facts.suggestable) return@mapNotNull null
-            val address = facts.address
+            // Capped for the same reason the title is, and the reason is stronger here: a
+            // stored URL is at least as attacker-influenceable as a page's own title, and
+            // the `isUnofferableAddress` KDoc puts a stored OAuth URL at 500-2000
+            // characters - every one of which `startsWord` walked, per term, per keystroke.
+            // What is lost past the cap is a match buried deeper in a URL than anyone types,
+            // which is the noise this matcher exists to stop answering.
+            val address = facts.address.take(MAX_ADDRESS_LENGTH)
             // Capped HERE as well as in `addUrl`, because a file written by an older build
             // can hold a title of any length, and this is the loop the cap exists to bound.
             // Capping in `loadHistory` instead would be destructive: that map is what
@@ -388,6 +409,15 @@ private const val PRUNE_SLACK = 200
  * writes back and would rewrite the user's own file.
  */
 private const val MAX_TITLE_LENGTH = 256
+
+/**
+ * Longest stored address a match will scan.
+ *
+ * Larger than [MAX_TITLE_LENGTH] because a path carries meaning a title does not, and a
+ * legitimate deep link runs longer than a headline. Bounds the same scan for the same
+ * reason, and like the title cap it applies to what is READ, never to what is stored.
+ */
+private const val MAX_ADDRESS_LENGTH = 512
 
 object UrlHistoryManager {
     private val logger = BossLogger.forComponent("UrlHistoryManager")

@@ -1,12 +1,12 @@
 package ai.rever.boss.plugin.browser
 
-/**
- * Reading the authority back out of a [canonicalUrlKey], and the one rule that depends on it.
+/*
+ * Reading the authority back out of a canonicalUrlKey, and the one rule that depends on it.
  *
- * [canonicalUrlKey] normalizes a URL into a key; these split that key the way it was built,
- * so a caller never has to guess where the authority ends. Shared across source sets because
- * the URL field's inline completion (commonMain) and the suggestion matcher (desktopMain)
- * have to agree - a host the ghost refuses and the list beside it offers is half a fix.
+ * canonicalUrlKey normalizes a URL into a key; these split that key the way it was built, so
+ * a caller never has to guess where the authority ends. Shared across source sets because the
+ * URL field's inline completion (commonMain) and the suggestion matcher (desktopMain) have to
+ * agree - a host the ghost refuses and the list beside it offers is half a fix.
  */
 
 /**

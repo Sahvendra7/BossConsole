@@ -249,6 +249,51 @@ class InlineUrlCompletionTest {
     }
 
     @Test
+    fun `a typed scheme with a trailing slash does not double the slash`() {
+        // `canonicalUrlKey` trims a trailing slash as well as stripping the scheme, so
+        // subtracting the canonical LENGTH from the typed text spliced the candidate in one
+        // character early: `https://github.com/` completed to `https://github.com//risa-...`.
+        // Cosmetic in the ghost, permanent once Tab wrote it into the field.
+        //
+        // Every earlier typed-scheme case ended without a slash and every trailing-slash case
+        // had no scheme - which is exactly the pair where the canonical form IS the typed
+        // text with a prefix removed, so nothing caught it.
+        val deep = history("https://github.com/risa-labs-inc/BossConsole/pulls")
+
+        assertEquals("https://github.com/risa-labs-inc/BossConsole/pulls", display("https://github.com/", deep))
+        assertEquals(
+            "https://www.github.com/risa-labs-inc/BossConsole/pulls",
+            display("https://www.github.com/", deep),
+        )
+        assertEquals(
+            "https://github.com/risa-labs-inc/BossConsole/pulls",
+            display("https://github.com/risa-labs-inc/", deep),
+        )
+    }
+
+    @Test
+    fun `a typed fragment completes nothing rather than splicing past it`() {
+        // A canonical address never carries a fragment, so there is nothing under `#y` to
+        // extend. Subtracting the canonical length spliced the candidate's tail in AFTER the
+        // fragment, producing an address that exists nowhere.
+        val deep = history("https://github.com/x/y")
+
+        assertNull(display("https://github.com/x#y", deep))
+    }
+
+    @Test
+    fun `a host completion drops a stored fragment from its target`() {
+        // `storedAuthority` cut at the path and the query but not the fragment, and an entry
+        // with no path has nothing else to cut at - so a completion DISPLAYING `example.com`
+        // targeted `https://example.com#x`.
+        val fragmentOnly = history("https://example.com#x")
+        val completion = inlineUrlCompletion("exa", fragmentOnly)
+
+        assertEquals("example.com", completion?.display)
+        assertEquals("https://example.com", completion?.target)
+    }
+
+    @Test
     fun `a fragment stays on the target and off the display`() {
         // `canonicalUrlKey` strips the fragment, so the ghost draws the address without it
         // while the target keeps the spelling history recorded. Dropping it from the target

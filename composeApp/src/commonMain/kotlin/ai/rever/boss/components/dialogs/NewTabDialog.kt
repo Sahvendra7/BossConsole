@@ -386,8 +386,14 @@ fun NewTabDialog(
     // in `onValueChange`: every keystroke typed with a row highlighted set the completion
     // and an effect immediately cleared it, so the tail flickered off for a whole debounce
     // and the accept keys did nothing in that window.
-    val ghostCompletion =
-        urlCompletion?.takeIf { urlField.selection.collapsed && selectedSuggestionIndex < 0 }
+    // `derivedStateOf`, not a plain `val`: the key handler and the Done action are lambdas
+    // that outlive the composition that built them, and they read `selectedSuggestionIndex`
+    // and `urlSuggestions` LIVE through their delegates. A captured value would disagree
+    // with those live guards inside a single frame - Down then Enter before a recomposition
+    // passed the `index >= 0` guard while committing a target computed before the Down.
+    val ghostCompletion by remember {
+        derivedStateOf { urlCompletion?.takeIf { urlField.selection.collapsed && selectedSuggestionIndex < 0 } }
+    }
     // Read once and passed as a key: `CoreTextField` memoises on the VisualTransformation
     // instance, so a new one per recomposition re-runs the filter and re-lays out the text
     // on every hover and every arrow key.
@@ -400,10 +406,13 @@ fun NewTabDialog(
     //  3. what they typed.
     // One value rather than one per commit path, so Enter and the confirm button cannot
     // disagree about which of the three signals wins.
-    val urlToOpen =
-        urlSuggestions.getOrNull(selectedSuggestionIndex)?.url
-            ?: urlCompletionTarget(ghostCompletion, urlField.text)?.target
-            ?: inputText
+    val urlToOpen by remember {
+        derivedStateOf {
+            urlSuggestions.getOrNull(selectedSuggestionIndex)?.url
+                ?: urlCompletionTarget(ghostCompletion, urlField.text)?.target
+                ?: inputText
+        }
+    }
 
     // File picker for browsing files
     val filePicker =

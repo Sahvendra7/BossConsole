@@ -7,12 +7,16 @@ actual object UrlHistoryProvider {
         query: String,
         limit: Int,
     ): List<UrlSuggestion> {
+        // Decided before the lookup, because it decides how many rows history may fill. Asking
+        // for `limit - 1` unconditionally cost a row on exactly the URL-shaped queries this
+        // matching change is for: no search row is appended for them, so the dropdown showed
+        // nine rows where ten were asked for.
+        val offersSearch = !query.contains(".") && !query.startsWith("http")
         val historySuggestions =
             UrlHistoryManager
-                // One short, to leave room for the search row appended below. A negative
-                // count is floored inside `rankMatches`, which is the function `take` would
-                // have thrown from.
-                .getSuggestions(query, limit - 1)
+                // A negative count is floored inside `rankMatches`, which is the function
+                // `take` would have thrown from.
+                .getSuggestions(query, if (offersSearch) limit - 1 else limit)
                 .map { entry ->
                     UrlSuggestion(
                         url = entry.url,
@@ -29,7 +33,7 @@ actual object UrlHistoryProvider {
         // match that inline completion has already filled into the field down to second
         // place. Chrome keeps its search row under the history it found, for the same reason.
         val suggestions = historySuggestions.toMutableList()
-        if (!query.contains(".") && !query.startsWith("http")) {
+        if (offersSearch) {
             suggestions.add(
                 UrlSuggestion(
                     // The same encoder `processUrlInput` uses, so this row and Enter on the
