@@ -14,20 +14,35 @@ class SandboxedPluginContextTest {
 
     private class FakeSandbox : PluginSandbox {
         override val pluginId: String = "test.plugin"
-        override var state: SandboxState = SandboxState.STARTING
+        
         
         var currentScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         
         override val sandboxScope: CoroutineScope
             get() = currentScope
 
-        override suspend fun start() {}
-        override suspend fun stop() {}
-        override suspend fun restart() {
+        override val healthMetrics: kotlinx.coroutines.flow.StateFlow<ai.rever.boss.plugin.sandbox.health.PluginHealthMetrics>
+            get() = error("Not needed")
+
+        override val state: kotlinx.coroutines.flow.StateFlow<SandboxState>
+            get() = kotlinx.coroutines.flow.MutableStateFlow(SandboxState.RUNNING)
+
+        override suspend fun start(): Result<Unit> = Result.success(Unit)
+        override suspend fun stop(): Result<Unit> = Result.success(Unit)
+        override suspend fun restart(): Result<Unit> {
             currentScope.cancel()
             currentScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            return Result.success(Unit)
         }
-        override fun getHealthSummary(): PluginHealthSummary = error("Not needed")
+
+        override fun markUnhealthy() {}
+        override fun resetHealth() {}
+        override fun resetRestartAttempts() {}
+        override fun recordHeartbeat() {}
+        override fun recordSuccess() {}
+        override fun recordError(error: Throwable) {}
+
+
     }
 
     private class FakePluginContext : PluginContext {
@@ -96,9 +111,7 @@ class SandboxedPluginContextTest {
         override fun getAllPanels(): List<PanelInfo> = emptyList()
     }
     
-    private class FakeTabRegistry : TabRegistry() {
-        override fun getAllTabs(): List<TabType> = emptyList()
-    }
+    private class FakeTabRegistry : TabRegistry()
 
     @Test
     fun `pluginScope facade resolves new scope after sandbox restart`() = runBlocking {
