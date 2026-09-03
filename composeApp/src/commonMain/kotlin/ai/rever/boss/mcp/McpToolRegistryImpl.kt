@@ -364,6 +364,11 @@ internal class McpToolRegistryCore(
      * not drive. Without it the staleness would fail OPEN - a search dispatched right after
      * sign-out filtered against the previous session's permissions - which is the wrong direction
      * for the field deciding whether admin-only tool names are enumerable.
+     *
+     * The two are volatile individually and NOT read as a pair: [updateAccess] writes [isAdmin]
+     * then [permissions] outside any lock a reader takes, so a reader can see the new flag with
+     * the old set. The window is one dispatch and only matters for permission-gated (not
+     * admin-gated) tools during a sign-out, which is why it is documented rather than locked.
      */
     @Volatile
     private var isAdmin = false

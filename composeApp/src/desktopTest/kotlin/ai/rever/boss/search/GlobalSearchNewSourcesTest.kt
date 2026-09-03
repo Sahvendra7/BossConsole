@@ -323,7 +323,12 @@ class GlobalSearchNewSourcesTest {
     }
 
     @Test
-    fun `no MCP source contributes nothing`() {
+    fun `an explicitly empty MCP source contributes nothing`() {
+        // What clearForTests installs. Phrased as "empty" and not "unregistered" on purpose:
+        // unregistered means "use the production default", and a test asserting that absence is
+        // empty would pin the very bug that shipped once - see SearchSourceRegistrarTest.
+        SearchSources.registerMcpTools { emptyList() }
+
         assertTrue(resultsOf<SearchResult.McpToolResult>("git").isEmpty())
     }
 
@@ -351,7 +356,9 @@ class GlobalSearchNewSourcesTest {
     }
 
     @Test
-    fun `no recent-pages source contributes nothing`() {
+    fun `an explicitly empty recent-pages source contributes nothing`() {
+        SearchSources.registerRecentPages { emptyList() }
+
         assertTrue(resultsOf<SearchResult.PageResult>("github").isEmpty())
     }
 

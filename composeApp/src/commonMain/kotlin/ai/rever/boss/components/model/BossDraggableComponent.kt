@@ -669,6 +669,10 @@ class BossDraggableComponent(
      * A plugin-supplied [SidebarItem.onClick] still wins, as it does from the icon: a plugin that
      * takes over its own click owns what clicking means, including whether it toggles. Only the
      * DEFAULT path is a reveal here.
+     *
+     * That first branch duplicates [handleSidebarItemClick]'s rather than calling it, because only
+     * the default half may differ - delegating would bring the toggle back. If the custom-click
+     * rule ever changes, both need it; see [handleSidebarItemClick] for the canonical statement.
      */
     fun revealPlugin(panelId: String) {
         val item = allSidebarTools().find { it.pluginContentId.panelId == panelId }

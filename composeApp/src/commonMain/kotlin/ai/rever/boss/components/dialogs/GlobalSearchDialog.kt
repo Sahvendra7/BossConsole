@@ -101,8 +101,13 @@ private const val EMPTY_STATE_TILES_PER_ROW = 5
  */
 private val EmptyStateTileWidth = 76.dp
 
-/** Ceiling for a result row's trailing chip, so a long plugin id cannot squeeze the title. */
-private val TRAILING_CHIP_MAX_WIDTH = 140.dp
+/**
+ * Ceiling for a result row's trailing chip, so a long plugin id cannot squeeze the title.
+ *
+ * PascalCase like every other `Dp` val in this file, not SCREAMING_SNAKE_CASE - `.editorconfig`
+ * disables ktlint's property-naming rule, so nothing enforces it.
+ */
+private val TrailingChipMaxWidth = 140.dp
 
 /**
  * Global search dialog for BOSS Spotlight - quickly find files, tabs, bookmarks, and run configs.
@@ -1244,7 +1249,7 @@ private fun SimpleResultItem(
             Box(
                 modifier =
                     Modifier
-                        .widthIn(max = TRAILING_CHIP_MAX_WIDTH)
+                        .widthIn(max = TrailingChipMaxWidth)
                         .clip(RoundedCornerShape(4.dp))
                         .background(row.accent.copy(alpha = 0.15f))
                         .padding(horizontal = 6.dp, vertical = 3.dp),
@@ -1307,6 +1312,10 @@ internal fun SearchResult.simpleRow(): SimpleRow? =
                 icon = category.chipIcon(),
                 accent = category.accent(),
                 // The name clients call it by, so what is on screen is what gets typed.
+                //
+                // Safe to read from a composable only because it is `const`: the compiler inlines
+                // it, so no McpToolRegistryImpl clinit runs here. Demoting it to a plain `val`
+                // would quietly pull that object's disabled-tools file read into composition.
                 title = "${McpToolRegistryImpl.CLIENT_TOOL_PREFIX}$name",
                 subtitle = description,
                 // This row does nothing when selected, so its state has to be legible here: a

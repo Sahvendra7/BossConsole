@@ -674,6 +674,15 @@ internal fun BossAppDialogs(state: BossAppState) {
                 if (panelId != null) {
                     // Same verb as onToolSelect, for the same reasons - a signpost is a request to
                     // be taken somewhere, not a switch.
+                    //
+                    // Note this is NOT the path the Settings window's own search box takes for the
+                    // same row: that one goes through `revealPanel`, which resolves the id against
+                    // a PanelRegistry and then raises a main window over PanelEventBus. It has to,
+                    // because it is reaching out of the Settings window into another one. Here the
+                    // dialog is already inside the window that owns the sidebar, so the component
+                    // is right there and the resolve-then-raise dance has nothing to do - and
+                    // `activatePlugin`'s own matching is what `searchSettings` filters signposts
+                    // on, so the row is offered exactly when this path can serve it.
                     state.draggablePanelComponent.revealPlugin(panelId)
                     // The same pair onToolSelect does, because this branch does the same work.
                     // The reveal branch below deliberately does not: it is handing focus to the

@@ -1,6 +1,12 @@
 package ai.rever.boss.search
 
 import ai.rever.boss.components.settings.search.SettingsSearchIndex
+import ai.rever.boss.dashboard.RecentBrowserPagesManager
+import ai.rever.boss.mcp.McpToolRegistryImpl
+import ai.rever.boss.plugin.api.McpToolDefinition
+import ai.rever.boss.plugin.api.McpToolHandler
+import ai.rever.boss.plugin.api.McpToolProvider
+import ai.rever.boss.plugin.api.McpToolResult
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -25,6 +31,9 @@ import kotlin.test.assertTrue
 class SearchSourceRegistrarTest {
     @BeforeTest
     fun setUp() {
+        // Empty suppliers for MCP and pages, which is right for the tests that want a source
+        // absent and wrong for the three below, which exist to exercise the production default.
+        // Those re-clear with useProductionDefaults for themselves.
         SearchSources.clearForTests()
         GlobalSearchService.clearResults()
         GlobalSearchService.clearIndex()
@@ -86,6 +95,91 @@ class SearchSourceRegistrarTest {
                 .map { it.label }
 
         assertTrue("Platform Authenticator" in labels)
+    }
+
+    // --- the two sources that default to a singleton -------------------------------------------
+    //
+    // These drive the PRODUCTION path with nothing registered, which is the gap that let a real
+    // regression ship: every other MCP and pages test installs its own fake, so when the
+    // fall-back to `defaultMcpTools`/`defaultRecentPages` was lost in a bad edit, both sources
+    // returned nothing in the shipped app and the whole suite stayed green. A test that registers
+    // no override is the only one that can see that.
+
+    @Test
+    fun `with no override registered, MCP tools come from the real registry`() {
+        val provider =
+            object : McpToolProvider {
+                override val providerId = "registrar-test"
+
+                override fun tools() =
+                    listOf(
+                        McpToolDefinition(
+                            name = "registrar_probe",
+                            description = "a tool the default supplier must surface",
+                            handler = McpToolHandler { McpToolResult("ok") },
+                        ),
+                    )
+            }
+        SearchSources.clearForTests(useProductionDefaults = true)
+        McpToolRegistryImpl.registerProvider(provider)
+        try {
+            // Deliberately NO registerMcpTools call. Absent an override, the accessor has to reach
+            // the registry - if it falls back to empty instead, this is the only failing test.
+            val names = SearchSources.mcpTools().map { it.name }
+
+            assertTrue("registrar_probe" in names, "the default supplier must read the real registry")
+        } finally {
+            McpToolRegistryImpl.unregisterProvider("registrar-test")
+        }
+    }
+
+    @Test
+    fun `with no override registered, an MCP tool is searchable end to end`() {
+        val provider =
+            object : McpToolProvider {
+                override val providerId = "registrar-test"
+
+                override fun tools() =
+                    listOf(
+                        McpToolDefinition(
+                            name = "registrar_probe",
+                            description = "a tool the default supplier must surface",
+                            handler = McpToolHandler { McpToolResult("ok") },
+                        ),
+                    )
+            }
+        SearchSources.clearForTests(useProductionDefaults = true)
+        McpToolRegistryImpl.registerProvider(provider)
+        try {
+            val hits =
+                runBlocking { GlobalSearchService.search("registrar_probe", windowId = null) }
+                    .filterIsInstance<SearchResult.McpToolResult>()
+
+            assertEquals(listOf("registrar_probe"), hits.map { it.name })
+        } finally {
+            McpToolRegistryImpl.unregisterProvider("registrar-test")
+        }
+    }
+
+    @Test
+    fun `with no override registered, recent pages come from the real manager`() {
+        SearchSources.clearForTests(useProductionDefaults = true)
+        RecentBrowserPagesManager.recordPageVisit(
+            url = "https://registrar-probe.example.com/page",
+            title = "Registrar Probe Page",
+        )
+        try {
+            val hits =
+                runBlocking { GlobalSearchService.search("registrar probe", windowId = null) }
+                    .filterIsInstance<SearchResult.PageResult>()
+
+            assertTrue(
+                hits.any { it.url == "https://registrar-probe.example.com/page" },
+                "the default supplier must read the real recent-pages manager",
+            )
+        } finally {
+            RecentBrowserPagesManager.removePage("https://registrar-probe.example.com/page")
+        }
     }
 
     @Test

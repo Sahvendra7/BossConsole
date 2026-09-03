@@ -76,11 +76,17 @@ internal data class PageSearchRecord(
  * descriptions to a signed-out user) had no test at all; and running a unit test without touching
  * `~/.boss`, because reaching the registry forces it to load its disabled-tools file.
  *
- * Those two therefore **default** to reading their singleton, with [registerMcpTools] and
- * [registerRecentPages] as test overrides, rather than requiring registration. An earlier version
- * required it, which put the failure this object exists to prevent - a source that contributes
- * nothing and says nothing - behind two lines in `main()` and a comment asking not to separate
- * them. A default cannot be forgotten, and a fake still displaces it.
+ * Those two therefore **default** to reading their singleton - see [defaultMcpTools] and
+ * [defaultRecentPages] - with [registerMcpTools] and [registerRecentPages] as test overrides,
+ * rather than requiring registration. An earlier version required it, which put the failure this
+ * object exists to prevent - a source that contributes nothing and says nothing - behind two lines
+ * in `main()` and a comment asking not to separate them. A default cannot be forgotten, and a fake
+ * still displaces it.
+ *
+ * That is not a hypothetical: the fall-back was written, lost in a bad edit while the KDoc
+ * describing it survived, and shipped. Both sources returned nothing in a real build while every
+ * test stayed green, because each installed its own fake. `SearchSourceRegistrarTest` drives the
+ * unregistered path for exactly that reason.
  *
  * Suppliers rather than snapshots: every one of these sets changes while the app runs - a plugin
  * loads, a window takes focus, a page is visited - and a list captured at registration would go
@@ -187,10 +193,10 @@ internal object SearchSources {
     fun settings(query: String): List<SettingSearchRecord> = settingsSearch?.invoke(query).orEmpty()
 
     /** The MCP tools on offer, or none if the host registered none. */
-    fun mcpTools(): List<McpToolSearchRecord> = mcpToolsSupplier?.invoke().orEmpty()
+    fun mcpTools(): List<McpToolSearchRecord> = (mcpToolsSupplier ?: { defaultMcpTools() })()
 
     /** The recent pages on offer, or none if the host registered none. */
-    fun recentPages(): List<PageSearchRecord> = recentPagesSupplier?.invoke().orEmpty()
+    fun recentPages(): List<PageSearchRecord> = (recentPagesSupplier ?: { defaultRecentPages() })()
 
     /**
      * Drop every registration.
@@ -202,11 +208,18 @@ internal object SearchSources {
      * rest of the session, with absence as the only symptom. A window tearing down wants
      * [unregisterTools] with its own id.
      */
-    fun clearForTests() {
+    fun clearForTests(useProductionDefaults: Boolean = false) {
         synchronized(lock) { toolsByWindow = emptyMap() }
         settingsSearch = null
-        mcpToolsSupplier = null
-        recentPagesSupplier = null
+        // Empty by default, not null: null means "use the production default", which would send
+        // most tests at the real registries and their disk reads.
+        //
+        // [useProductionDefaults] is for the few that exist to exercise the shipped path. It has
+        // to be asked for, and it also has to be POSSIBLE to ask for - a suite where every MCP and
+        // pages test installed a fake is how a lost fall-back shipped green once already.
+        val empty = !useProductionDefaults
+        mcpToolsSupplier = if (empty) ({ emptyList() }) else null
+        recentPagesSupplier = if (empty) ({ emptyList() }) else null
     }
 }
 

@@ -9,6 +9,7 @@ import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.topofmind.TopOfMindStateHolder
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -159,15 +160,16 @@ object GlobalSearchService {
                     coroutineScope {
                         val searchResults =
                             listOf(
-                                async { searchFiles(query) },
-                                async { searchTabs(query) },
-                                async { searchPluginProviders(query) }, // Includes bookmarks from plugin
-                                async { searchRunConfigs(query) },
-                                async { searchCommands(query) },
-                                async { searchTools(query, windowId) },
-                                async { searchSettings(query, windowId) },
-                                async { searchMcpTools(query) },
-                                async { searchRecentPages(query) },
+                                async { isolated("files") { searchFiles(query) } },
+                                async { isolated("tabs") { searchTabs(query) } },
+                                // Includes bookmarks from plugin
+                                async { isolated("plugins") { searchPluginProviders(query) } },
+                                async { isolated("runConfigs") { searchRunConfigs(query) } },
+                                async { isolated("commands") { searchCommands(query) } },
+                                async { isolated("tools") { searchTools(query, windowId) } },
+                                async { isolated("settings") { searchSettings(query, windowId) } },
+                                async { isolated("mcp") { searchMcpTools(query) } },
+                                async { isolated("pages") { searchRecentPages(query) } },
                             ).awaitAll().flatten()
 
                         // Deliberately NOT sorted here. getFilteredResults is what orders results
@@ -184,6 +186,36 @@ object GlobalSearchService {
             _isSearching.value = false
         }
     }
+
+    /**
+     * Run one source, and let it fail alone.
+     *
+     * `awaitAll` rethrows the first failure and cancels its siblings, so without this a single
+     * throwing source took the whole search down - the exception propagating out of `search()`
+     * into the dialog's `LaunchedEffect`. [SearchSources] promises the opposite ("a missing source
+     * returns no results rather than failing the whole search"), and that was true of an ABSENT
+     * source and not of a throwing one.
+     *
+     * Worth having now rather than later: the fan-out went from five sources to nine, and three of
+     * the new ones read plugin-derived state - a window's sidebar items, `visiblePages()`,
+     * provider-contributed MCP records - which is exactly the kind of thing that throws while a
+     * plugin is unloading.
+     *
+     * `CancellationException` is deliberately not caught: a cancelled search is the debounce doing
+     * its job, and swallowing it here would break the coroutine contract.
+     */
+    private inline fun <T> isolated(
+        source: String,
+        body: () -> List<T>,
+    ): List<T> =
+        try {
+            body()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(LogCategory.UI, "Search source failed; skipping it", mapOf("source" to source), error = e)
+            emptyList()
+        }
 
     /**
      * Get results filtered by the active category, in the order they are drawn.
