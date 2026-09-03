@@ -98,7 +98,7 @@ actual object KeymapSettingsManager {
      * @param loaded The loaded user settings
      * @return Migrated settings with any missing actions added from the preset
      */
-    private fun migrateSettings(loaded: KeymapSettings): KeymapSettings {
+    internal fun migrateSettings(loaded: KeymapSettings): KeymapSettings {
         // Get the preset that matches user's presetName
         val presetShortcuts =
             when (loaded.presetName) {
@@ -114,7 +114,29 @@ actual object KeymapSettingsManager {
                 !loaded.shortcuts.containsKey(actionId)
             }
 
-        if (missingActions.isEmpty()) {
+        // Adding missing ACTIONS is not enough on its own: a preset can also gain a new
+        // alternate chord for an action every existing keymap file already contains, and such a
+        // change would never reach anyone who has launched BOSS before. Zoom in picking up
+        // Cmd+Shift+Equals (what a US keyboard reports for "Cmd+Plus") is exactly that shape.
+        //
+        // Only where the user has not touched the binding: same primary keystroke as the preset
+        // means they kept the default, so the preset still speaks for it. A rebound chord is the
+        // user's, and silently bolting alternates onto it would resurrect a chord they moved
+        // away from.
+        val alternateTopUps =
+            loaded.shortcuts
+                .mapNotNull { (actionId, stored) ->
+                    val preset = presetShortcuts[actionId] ?: return@mapNotNull null
+                    val untouched = stored.primaryKeystroke == preset.primaryKeystroke
+                    val gained = preset.alternateKeystrokes.filter { it !in stored.alternateKeystrokes }
+                    if (untouched && gained.isNotEmpty()) {
+                        actionId to stored.copy(alternateKeystrokes = stored.alternateKeystrokes + gained)
+                    } else {
+                        null
+                    }
+                }.toMap()
+
+        if (missingActions.isEmpty() && alternateTopUps.isEmpty()) {
             return loaded // No migration needed
         }
 
@@ -124,11 +146,13 @@ actual object KeymapSettingsManager {
             mapOf(
                 "newActions" to missingActions.size,
                 "actionIds" to missingActions.keys.joinToString(),
+                "alternateTopUps" to alternateTopUps.size,
+                "alternateActionIds" to alternateTopUps.keys.joinToString(),
             ),
         )
 
-        // Merge: user settings + missing actions from preset
-        val mergedShortcuts = loaded.shortcuts + missingActions
+        // Merge: user settings, alternates topped up on untouched bindings, then missing actions
+        val mergedShortcuts = loaded.shortcuts + alternateTopUps + missingActions
 
         return loaded.copy(shortcuts = mergedShortcuts)
     }

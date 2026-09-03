@@ -15,6 +15,7 @@ import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.menu.MenuShortcutBridge
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.plugin.api.PanelRegistry
+import ai.rever.boss.plugin.browser.ActiveBrowserRegistry
 import ai.rever.boss.plugin.browser.FluckEngine
 import ai.rever.boss.plugin.browser.LocalAwtWindow
 import ai.rever.boss.plugin.browser.ScreenCaptureNotifier
@@ -347,6 +348,13 @@ fun ApplicationScope.BossWindow(
         // Whether Cmd+Shift+T has anything to reopen in this window.
         val closedTabDepths by ClosedTabHistory.depths.collectAsState()
         val hasClosedTabs = (closedTabDepths[windowState.id] ?: 0) > 0
+
+        // Whether this window has a browser for the browser menu items to act on. A MenuBar
+        // accelerator fires from anywhere in the window whatever the binding's ShortcutContext,
+        // so leaving these enabled would swallow Cmd+[ / Cmd+] in an editor (outdent/indent)
+        // for an item that then does nothing.
+        val browserWindows by ActiveBrowserRegistry.windowsWithBrowser.collectAsState()
+        val hasBrowser = windowState.id in browserWindows
 
         // Get panel count state (for enabling/disabling panel navigation)
         val panelCountMap by MenuActionsHandler.panelCountState.collectAsState()
@@ -746,6 +754,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerBrowserBack(windowState.id)
                     },
+                    enabled = hasBrowser,
                 )
                 Item(
                     "Forward",
@@ -753,6 +762,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerBrowserForward(windowState.id)
                     },
+                    enabled = hasBrowser,
                 )
                 Item(
                     "Developer Tools",
@@ -760,6 +770,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerBrowserDevTools(windowState.id)
                     },
+                    enabled = hasBrowser,
                 )
 
                 Separator()

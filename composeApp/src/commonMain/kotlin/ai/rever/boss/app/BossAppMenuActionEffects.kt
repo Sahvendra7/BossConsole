@@ -448,7 +448,11 @@ internal fun BossAppMenuActionEffects(
         MenuActionsHandler.browserBackEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    ActiveBrowserRegistry.activeIn(windowId)?.takeIf { it.canGoBack() }?.goBack()
+                    // No canGoBack() gate: goBack() already returns early when it cannot, and
+                    // canGoBack() is an untimed syncCall into the browser process. This collector
+                    // runs on the EDT, so the gate only doubled the blocking cross-process calls
+                    // per keypress.
+                    ActiveBrowserRegistry.activeIn(windowId)?.goBack()
                 }
             }.launchIn(this)
     }
@@ -457,7 +461,7 @@ internal fun BossAppMenuActionEffects(
         MenuActionsHandler.browserForwardEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    ActiveBrowserRegistry.activeIn(windowId)?.takeIf { it.canGoForward() }?.goForward()
+                    ActiveBrowserRegistry.activeIn(windowId)?.goForward()
                 }
             }.launchIn(this)
     }

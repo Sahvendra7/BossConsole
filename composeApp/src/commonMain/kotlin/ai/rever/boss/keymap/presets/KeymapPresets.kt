@@ -949,29 +949,47 @@ object KeymapPresets {
         val boundActions = withZoomAlternate.map { it.actionId }.toHashSet()
 
         val additions =
-            standardBrowserBindings().filter { candidate ->
-                candidate.actionId !in boundActions && withZoomAlternate.none { it.collidesWith(candidate) }
-            }
+            standardBrowserBindings()
+                .filter { it.actionId !in boundActions }
+                .mapNotNull { candidate -> candidate.withoutChordsTakenBy(withZoomAlternate) }
 
         return withZoomAlternate + additions
     }
 
     /**
-     * Do these two bindings answer to the same chord in a context where both are live?
+     * [this] with every chord [preset] already claims removed, or null if that leaves nothing.
      *
-     * Mirrors KeymapValidator's rule - a GLOBAL binding conflicts with everything, otherwise
-     * only same-context bindings conflict - but compares EVERY keystroke on both sides, so an
-     * alternate colliding with another action's primary still counts.
+     * Per-KEYSTROKE rather than per-binding, because these bindings carry alternates that a
+     * preset's claim on the primary says nothing about: VS Code and IntelliJ both put panel
+     * navigation on Cmd+Alt+Arrow, which is the primary of positional tab stepping — dropping
+     * the whole binding there would take Cmd+Shift+[ and Cmd+Shift+] with it and leave those
+     * presets with no way to step tabs at all. The first surviving keystroke becomes the
+     * primary, since [KeyBinding.key] is what the menu bar reads for its accelerator.
      */
-    private fun KeyBinding.collidesWith(other: KeyBinding): Boolean {
+    private fun KeyBinding.withoutChordsTakenBy(preset: List<KeyBinding>): KeyBinding? {
+        val survivors =
+            allKeystrokes.filter { keystroke ->
+                preset.none { existing -> existing.claimsChord(keystroke, context) }
+            }
+        val primary = survivors.firstOrNull() ?: return null
+        return copy(
+            key = primary.key,
+            modifiers = primary.modifiers,
+            alternateKeystrokes = survivors.drop(1),
+        )
+    }
+
+    /** Does [this] answer to [keystroke] in a context where it and [candidateContext] overlap? */
+    private fun KeyBinding.claimsChord(
+        keystroke: KeyStroke,
+        candidateContext: ShortcutContext,
+    ): Boolean {
         val contextsOverlap =
             context == ShortcutContext.GLOBAL ||
-                other.context == ShortcutContext.GLOBAL ||
-                context == other.context
+                candidateContext == ShortcutContext.GLOBAL ||
+                context == candidateContext
         if (!contextsOverlap) return false
-
-        val chords = allKeystrokes.map { it.signature() }.toHashSet()
-        return other.allKeystrokes.any { it.signature() in chords }
+        return allKeystrokes.any { it.signature() == keystroke.signature() }
     }
 
     /**

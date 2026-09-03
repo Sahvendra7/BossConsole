@@ -1,5 +1,8 @@
 package ai.rever.boss.plugin.browser
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -42,6 +45,23 @@ object ActiveBrowserRegistry {
     private val handles = ConcurrentHashMap<String, BrowserHandle>()
     private val sequencer = AtomicLong(0)
 
+    private val _windowsWithBrowser = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * Windows that currently have a composed browser surface.
+     *
+     * The browser menu items (Back, Forward, Developer Tools) must grey out where there is no
+     * browser, and not merely no-op: a Compose MenuBar accelerator fires from anywhere in the
+     * window regardless of the binding's ShortcutContext, so an always-enabled item silently
+     * swallows its chord for every other tab type. Cmd+[ and Cmd+] are outdent/indent in an
+     * editor, which is precisely what that would break.
+     */
+    val windowsWithBrowser: StateFlow<Set<String>> = _windowsWithBrowser.asStateFlow()
+
+    private fun publishWindows() {
+        _windowsWithBrowser.value = entries.values.map { it.windowId }.toSet()
+    }
+
     /**
      * Record that [handle]'s surface is composed in [windowId].
      *
@@ -68,6 +88,7 @@ object ActiveBrowserRegistry {
             )
         handles[handle.id] = handle
         entries[handle.id] = entry
+        publishWindows()
         return entry
     }
 
@@ -86,6 +107,7 @@ object ActiveBrowserRegistry {
     ) {
         if (token is Entry && entries.remove(handleId, token)) {
             handles.remove(handleId)
+            publishWindows()
         }
     }
 
@@ -93,6 +115,7 @@ object ActiveBrowserRegistry {
     fun unregister(handleId: String) {
         entries.remove(handleId)
         handles.remove(handleId)
+        publishWindows()
     }
 
     /** The browser a window-scoped action should act on in [windowId], or null if there is none. */

@@ -115,6 +115,37 @@ class StandardBrowserBindingsTest {
     }
 
     @Test
+    fun `a preset claiming the primary keeps the surviving alternate`() {
+        // VS Code and IntelliJ both put panel navigation on Cmd+Alt+Arrow — the primary of
+        // positional tab stepping. Dropping the whole binding there would take Cmd+Shift+[ and
+        // Cmd+Shift+] with it and leave those presets unable to step tabs at all.
+        listOf("VS Code" to KeymapPresets.getVSCodePreset(), "IntelliJ IDEA" to KeymapPresets.getIntelliJPreset())
+            .forEach { (name, settings) ->
+                val navLeft = assertNotNull(settings.getBinding(KeymapActions.PANEL_NAVIGATE_LEFT), name)
+                assertEquals(listOf("Cmd", "Alt"), navLeft.modifiers, "$name should keep its own Cmd+Alt+Arrow")
+
+                val next =
+                    assertNotNull(settings.getBinding(KeymapActions.TAB_NEXT_POSITIONAL), "$name lost tab stepping")
+                assertEquals("CloseBracket", next.key, "$name should fall back to Cmd+Shift+]")
+                assertEquals(listOf("Cmd", "Shift"), next.modifiers)
+                assertTrue(next.alternateKeystrokes.isEmpty(), "the colliding Cmd+Alt+Arrow should be gone")
+
+                val previous = assertNotNull(settings.getBinding(KeymapActions.TAB_PREVIOUS_POSITIONAL), name)
+                assertEquals("OpenBracket", previous.key)
+            }
+    }
+
+    @Test
+    fun `BOSS Default keeps Cmd+Opt+Arrow as the primary`() {
+        // The counterpart: where nothing collides, the intended primary survives and the bracket
+        // chord stays an alternate, so the View menu shows Cmd+Opt+Arrow on Next/Previous Tab.
+        val next = assertNotNull(KeymapPresets.getBOSSDefault().getBinding(KeymapActions.TAB_NEXT_POSITIONAL))
+        assertEquals("DirectionRight", next.key)
+        assertEquals(listOf("Cmd", "Alt"), next.modifiers)
+        assertEquals(1, next.alternateKeystrokes.size)
+    }
+
+    @Test
     fun `no preset ships a conflict`() {
         val presets =
             mapOf(

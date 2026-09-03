@@ -58,7 +58,10 @@ object ClosedTabHistory {
         windowId: String,
         tab: TabInfo,
     ) {
-        val stack = byWindow.getOrPut(windowId) { ArrayDeque() }
+        // computeIfAbsent, not getOrPut: the latter is a get-then-put extension on MutableMap
+        // and two first-closures racing for one window would each build a deque, one silently
+        // discarded along with its entry.
+        val stack = byWindow.computeIfAbsent(windowId) { ArrayDeque() }
         val depth =
             synchronized(stack) {
                 // Re-closing a reopened tab should move it to the top, not add a second copy.

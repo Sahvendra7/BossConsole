@@ -2062,10 +2062,13 @@ class BossTabsComponent(
 
     // Remove a tab by ID - safer than index-based removal when state may have changed.
     // Returns true if a tab with that id existed and was removed.
-    fun removeTabById(tabId: String): Boolean {
+    fun removeTabById(
+        tabId: String,
+        recordForReopen: Boolean = true,
+    ): Boolean {
         val index = tabsState.value.tabs.indexOfFirst { it.id == tabId }
         if (index >= 0) {
-            removeTab(index)
+            removeTab(index, recordForReopen)
             return true
         }
         return false
@@ -2123,7 +2126,10 @@ class BossTabsComponent(
         // existing entry would orphan its component without destroy — the leak shape this
         // change exists to eliminate. Close the stale holder first.
         if (tabComponents.containsKey(detached.config.id)) {
-            removeTabById(detached.config.id)
+            // Part of a move, not a close: this stale holder is being replaced by the incoming
+            // live component, and recording it would leave Cmd+Shift+T pointing at a tab that
+            // is now open in this very panel.
+            removeTabById(detached.config.id, recordForReopen = false)
         }
         tabComponents[detached.config.id] = detached.component
         detached.lifecycle?.let { tabLifecycles[detached.config.id] = it }
@@ -2216,22 +2222,38 @@ class BossTabsComponent(
      * it on the stack would wedge the shortcut on a permanently dead entry.
      */
     fun reopenLastClosedTab(isTabIdLive: (String) -> Boolean = ::isTabIdInThisPanel): Boolean {
-        val closed = ClosedTabHistory.pop(windowId) ?: return false
-
-        // Tab ids are unique across a window, and [addTab] does not guard the way [adoptTab]
+        // Tab ids are unique across a WINDOW, and [addTab] does not guard the way [adoptTab]
         // does: rebuilding a live id would overwrite its entry in tabComponents and orphan the
         // running component with no path to destroy it. Reachable when a workspace restore
-        // re-creates a saved layout containing an id the user had closed. Focus the live tab
-        // instead, which is what the user wanted anyway.
-        val index =
-            if (isTabIdLive(closed.id)) {
-                tabsState.value.tabs.indexOfFirst { it.id == closed.id }
-            } else {
-                addTab(closed)
-            }
+        // re-creates a saved layout containing an id the user had closed.
+        //
+        // Such an entry is stale, so it is discarded and the next one tried rather than
+        // consumed for nothing — [isTabIdLive] sees the whole window while this component sees
+        // one panel, so "live" often means "live somewhere I cannot focus", and stopping there
+        // would spend the user's keypress doing nothing. Focusing it is still preferred when it
+        // is in THIS panel.
+        var reopened = false
+        while (!reopened) {
+            val closed = ClosedTabHistory.pop(windowId) ?: break
 
-        if (index >= 0) selectTab(index)
-        return index >= 0
+            val index =
+                if (isTabIdLive(closed.id)) {
+                    // Already open somewhere in the window. Focus it if it is in THIS panel;
+                    // otherwise the entry is simply stale and the loop tries the next one.
+                    tabsState.value.tabs.indexOfFirst { it.id == closed.id }
+                } else {
+                    // -1 when no factory is registered for its type, i.e. the owning plugin was
+                    // unloaded since the close. Consumed either way: it will not rebuild on the
+                    // next press either, and keeping it would wedge the shortcut on a dead entry.
+                    addTab(closed)
+                }
+
+            if (index >= 0) {
+                selectTab(index)
+                reopened = true
+            }
+        }
+        return reopened
     }
 
     private fun stepMruCycle(forward: Boolean) {
@@ -2406,7 +2428,10 @@ class BossTabsComponent(
         if (tabs.isNotEmpty()) {
             val lastIndex = tabs.size - 1
             bossMainWindowPanelLogger.debug(LogCategory.UI, "Closing most recent tab", mapOf("index" to lastIndex))
-            removeTab(lastIndex)
+            // Not reopenable: the only caller is the download-redirect cleanup
+            // (setupDownloadTabCloseCallback), the same automatic closure as closeTabByUrl.
+            // The user did not close it, and reopening would re-run the download.
+            removeTab(lastIndex, recordForReopen = false)
         } else {
             bossMainWindowPanelLogger.debug(LogCategory.UI, "No tabs to close")
         }
