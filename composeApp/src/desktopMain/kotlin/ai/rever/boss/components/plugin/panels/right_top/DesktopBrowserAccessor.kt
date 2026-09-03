@@ -61,6 +61,25 @@ class DesktopBrowserIntegration(
     internal val browser: LockedBrowser,
 ) : BrowserIntegration {
     /**
+     * One per integration, not one per process.
+     *
+     * Sharing a single instance across every tab was the wrong trade: the motivating case is a
+     * renderer parked on a modal `window.prompt`, which never returns, so the shared thread stays
+     * held for as long as that dialog is open and *every* plugin call in the process then costs a
+     * full deadline and answers null - on tabs that are perfectly healthy, for a dialog nobody knows
+     * is open. Per-integration puts the blast radius back to the one tab that stopped answering,
+     * which is what the per-handle instance in BrowserHandleImpl already achieves.
+     *
+     * Affordable because [BoundedBrowserCall]'s thread is created on first call and retires when
+     * idle: these accessors are rebuilt on every tab switch and nothing disposes them, so an
+     * instance that is churned through without making a call costs nothing at all. Explicitly
+     * shutting the previous one down where the cache is replaced was the other option and was
+     * rejected - a plugin can still be holding that integration, and its calls would start
+     * answering null underneath it.
+     */
+    private val accessorCall = BoundedBrowserCall("boss-plugin-browser-call-${System.identityHashCode(browser)}")
+
+    /**
      * Evaluate [script] in the tab this accessor is pointed at, or null if the renderer did not
      * answer in time.
      *
@@ -72,7 +91,7 @@ class DesktopBrowserIntegration(
      */
     override suspend fun executeJavaScript(script: String): Any? =
         accessorCall.call(
-            JS_CALL_TIMEOUT_MS,
+            BoundedBrowserCall.DEFAULT_TIMEOUT_MS,
             onError = { e ->
                 browserAccessorLogger.debug(
                     LogCategory.BROWSER,
@@ -94,21 +113,6 @@ class DesktopBrowserIntegration(
                 browserAccessorLogger.warn(LogCategory.BROWSER, "navigate failed", mapOf("error" to (e.message ?: "unknown")))
             }
         }
-    }
-
-    private companion object {
-        /**
-         * One per process rather than one per integration.
-         *
-         * These accessors are built and replaced on every tab switch and nothing disposes them, so
-         * a per-instance thread would leak one each time. The cost of sharing is that a wedged tab
-         * makes plugin JS on *other* tabs wait out the deadline too - bounded, and far cheaper than
-         * the thread leak or the frozen app.
-         */
-        private val accessorCall = BoundedBrowserCall("boss-plugin-browser-call")
-
-        /** Matches BrowserHandleImpl's bound on the same class of call. */
-        private const val JS_CALL_TIMEOUT_MS = 10_000L
     }
 
     override fun isBrowserAvailable(): Boolean =

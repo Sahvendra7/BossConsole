@@ -1,5 +1,7 @@
 package ai.rever.boss.plugin.browser
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +13,10 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -41,21 +46,41 @@ import kotlin.coroutines.coroutineContext
  * lost it silently, and nothing in the signature said so. The deadline is a property of this class
  * or it is not a property at all.
  *
- * One residual constraint cannot be fixed here, so it is stated instead: a caller running **on
- * [dispatcher] itself** can still have its *resumption* blocked, because resuming needs that one
- * thread back and the call it gave up on is holding it. The timeout fires and the value is ready;
- * delivering it is what waits. So do not `await` a [call] from a coroutine confined to [dispatcher]
- * — the scopes built on it launch fire-and-forget work, they do not await. The EDT is safe either
- * way, which is the property that matters.
+ * **Scope of a wedge.** One instance is one blast radius, so give one to each thing that can wedge
+ * independently — a tab, a peer, an integration — rather than sharing one process-wide. A shared
+ * instance turns "this tab stopped answering" into "every call in the process costs a full deadline
+ * and answers null", for as long as a dialog nobody knows about stays open. The thread costs nothing
+ * until the first call and retires itself after [IDLE_THREAD_TTL_SECONDS] idle, so per-instance is
+ * cheap even where instances are churned through without ever making a call.
+ *
+ * One residual constraint cannot be fixed here, so it is warned about at runtime instead: a caller
+ * running **on [dispatcher] itself** can still have its *resumption* blocked, because resuming needs
+ * that one thread back and the call it gave up on is holding it. The timeout fires and the value is
+ * ready; delivering it is what waits. So do not `await` a [call] from a coroutine confined to
+ * [dispatcher] — the scopes built on it launch fire-and-forget work, they do not await. The EDT is
+ * safe either way, which is the property that matters.
  */
 internal class BoundedBrowserCall(
-    threadName: String,
+    private val threadName: String,
     private val waitDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
+    private val logger = BossLogger.forComponent("BoundedBrowserCall")
+
+    /**
+     * Core thread that retires when idle, rather than [java.util.concurrent.Executors]'s permanent
+     * one. That is what makes an instance cheap enough to hand out per tab: an instance that never
+     * makes a call never creates a thread, and one that goes quiet gives its thread back.
+     */
     private val executor =
-        Executors.newSingleThreadExecutor { runnable ->
+        ThreadPoolExecutor(
+            1,
+            1,
+            IDLE_THREAD_TTL_SECONDS,
+            TimeUnit.SECONDS,
+            LinkedBlockingQueue(),
+        ) { runnable ->
             Thread(runnable, threadName).apply { isDaemon = true }
-        }
+        }.apply { allowCoreThreadTimeOut(true) }
 
     /**
      * The one thread every blocking round trip runs on.
@@ -82,24 +107,28 @@ internal class BoundedBrowserCall(
      *
      * A timed-out call is not abandoned cheaply: it keeps [dispatcher]'s thread until the renderer
      * answers, and later calls queue behind it. That is the trade — a tab that stops answering
-     * degrades to null instead of freezing the application.
+     * degrades to null instead of freezing the application — and it is why the timeout is always
+     * logged. Silently answering null forever is a worse thing to debug than a freeze, because
+     * nothing points at the page that caused it; the WARN names the thread, which carries the id of
+     * whatever owns this instance.
      */
     // The CancellationException below is swallowed on purpose and cannot carry information worth
     // keeping: it is either the caller's, in which case ensureActive rethrows it untouched, or it is
     // the executor rejecting a dispatch after shutdown, which is this class's own bookkeeping.
     @Suppress("SwallowedException")
     suspend fun <T> call(
-        timeoutMs: Long,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
         onError: (Throwable) -> Unit = {},
+        onTimeout: () -> Unit = {},
         block: () -> T?,
     ): T? {
+        warnIfCallerIsConfinedToOurThread()
         val job = scope.async { runCatching { block() } }
         return try {
-            withContext(waitDispatcher) { withTimeoutOrNull(timeoutMs) { job.await() } }
-                ?.getOrElse { error ->
-                    onError(error)
-                    null
-                }
+            val outcome = withContext(waitDispatcher) { withTimeoutOrNull(timeoutMs) { job.await() } }
+            // Not `?.getOrElse`: on timeout `withTimeoutOrNull` answers null, which would short
+            // circuit straight past every report and leave the wedge completely silent.
+            if (outcome == null) reportTimeout(timeoutMs, onTimeout) else outcome.getOrElse { reportError(it, onError) }
         } catch (e: CancellationException) {
             // Distinguishes "the caller gave up" from "this browser went away underneath us".
             // ensureActive rethrows only the former; a rejected dispatch after shutdown lands here
@@ -108,6 +137,47 @@ internal class BoundedBrowserCall(
             null
         } finally {
             if (!job.isCompleted) job.cancel()
+        }
+    }
+
+    private fun <T> reportTimeout(
+        timeoutMs: Long,
+        onTimeout: () -> Unit,
+    ): T? {
+        logger.warn(
+            LogCategory.BROWSER,
+            "Browser round trip timed out - the renderer did not answer",
+            mapOf("thread" to threadName, "timeoutMs" to timeoutMs.toString()),
+        )
+        onTimeout()
+        return null
+    }
+
+    private fun <T> reportError(
+        error: Throwable,
+        onError: (Throwable) -> Unit,
+    ): T? {
+        onError(error)
+        return null
+    }
+
+    /**
+     * The deadlock [call]'s KDoc describes, named at the moment it happens.
+     *
+     * On the happy path awaiting from [dispatcher] works — the block finishes, the thread frees, the
+     * hop back succeeds — so it passes every test and every manual run, and hangs forever only once
+     * a renderer wedges. That is the exact freeze this class exists to prevent, so it must not be
+     * discoverable only by reproducing it. A warning rather than a throw: this sits on a plugin-facing
+     * path, and turning a latent hang into a thrown exception in someone else's coroutine is its own
+     * kind of surprise.
+     */
+    private suspend fun warnIfCallerIsConfinedToOurThread() {
+        if (coroutineContext[ContinuationInterceptor] === dispatcher) {
+            logger.warn(
+                LogCategory.BROWSER,
+                "Browser round trip awaited from its own dispatcher - this will hang if the renderer wedges",
+                mapOf("thread" to threadName),
+            )
         }
     }
 
@@ -120,5 +190,23 @@ internal class BoundedBrowserCall(
      */
     fun shutdown() {
         executor.shutdown()
+    }
+
+    companion object {
+        /**
+         * How long a renderer round trip waits before giving up and answering null.
+         *
+         * Generous rather than tight: it bounds a call someone asked for and that may legitimately
+         * be slow, and its only job is to make the wait finite. A page that never answers — one
+         * parked on a modal `window.prompt` — used to hold its thread forever, and that thread used
+         * to be the EDT.
+         *
+         * Named here rather than duplicated per call site: two copies with a comment claiming they
+         * match is exactly the pair this repo pins in a test elsewhere.
+         */
+        const val DEFAULT_TIMEOUT_MS = 10_000L
+
+        /** Long enough to serve a burst of calls on one thread, short enough not to hold one idle. */
+        private const val IDLE_THREAD_TTL_SECONDS = 30L
     }
 }

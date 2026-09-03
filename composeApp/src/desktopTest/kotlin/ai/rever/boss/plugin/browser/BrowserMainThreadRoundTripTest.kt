@@ -44,9 +44,12 @@ class BrowserMainThreadRoundTripTest {
      * Without that distinction this guard flagged `DefaultPlugin`'s adapter, which only delegates to
      * the wrapper and is exactly what a caller is *supposed* to do.
      *
-     * Known gap: a JxBrowser call whose type argument was inferred from an expected type would read
-     * as the wrapper and be missed. There are none today, and writing one is not the natural style
-     * here - but it is the way this check goes blind, so it belongs in writing.
+     * Known gaps, both of which are how this check goes blind, so both belong in writing:
+     *  - a JxBrowser call whose type argument was inferred from an expected type reads as the
+     *    wrapper and is missed. There are none today, and it is not the natural style here.
+     *  - indirection more than **one** call deep. A Main block calling a local helper that blocks is
+     *    caught (see [roundTripFunctions]) - that is the exact shape of the bug this change fixes -
+     *    but a helper calling a second helper is not.
      */
     private val rendererRoundTrips = listOf(".executeJavaScript<", ".putProperty(")
 
@@ -58,7 +61,7 @@ class BrowserMainThreadRoundTripTest {
      * `Dispatchers.Main.immediate`, `SwingUtilities.invokeLater`, and this package's own `onEdt`
      * helper are all the same hazard wearing different syntax.
      */
-    private val mainThreadMarkers = listOf("Dispatchers.Main", "invokeLater", "onEdt")
+    private val mainThreadMarkers = listOf("Dispatchers.Main", "Dispatchers.Swing", "invokeLater", "onEdt")
 
     /**
      * Scope constructions that put every launch into them on the EDT, allowed only where reviewed.
@@ -77,6 +80,9 @@ class BrowserMainThreadRoundTripTest {
     /** How far a `{` may sit from its marker before it plainly belongs to something else. */
     private val markerToBrace = 60
 
+    /** How long a function header may run before its `{` stops plausibly being its body. */
+    private val funHeaderLimit = 400
+
     private fun repoRoot(): File? =
         generateSequence(File("").absoluteFile) { it.parentFile }
             .firstOrNull { File(it, "composeApp/build.gradle.kts").isFile }
@@ -87,9 +93,16 @@ class BrowserMainThreadRoundTripTest {
             .filter { it.isDirectory }
             .flatMap { it.walkTopDown() }
             .filter { it.isFile && it.extension == "kt" }
+            .map { it.path.replace(File.separatorChar, '/') to it }
             // Build output holds generated copies of the same sources; scanning them doubles the
             // walk and reports names that are not source files anyone can fix.
-            .filterNot { it.path.replace(File.separatorChar, '/').contains("/build/") }
+            .filterNot { (path, _) -> path.contains("/build/") }
+            // Test sources are excluded on purpose. This guards the product, and a test that
+            // deliberately drives JxBrowser from the EDT to prove something about it should fail on
+            // its own merits, not here - BrowserClipboardCommandsTest already calls
+            // `.executeJavaScript<` in code position.
+            .filterNot { (path, _) -> path.contains("Test/kotlin/") || path.contains("/test/") }
+            .map { (_, file) -> file }
             .toList()
 
     // ---- lexing -------------------------------------------------------------------------------
@@ -185,6 +198,24 @@ class BrowserMainThreadRoundTripTest {
 
     // ---- block finding ------------------------------------------------------------------------
 
+    /**
+     * Names of functions declared in this file whose own body makes a renderer round trip.
+     *
+     * This is the one hop that matters. Guard 1 used to match round-trip *literals* inside the
+     * dispatched block only, so `withContext(Dispatchers.Main) { injectPageEventScript(frame) }`
+     * read as clean - and that is precisely the shape of the freeze this change fixes, one frame
+     * down. Collecting the local blockers and treating a call to one as a round trip closes it for
+     * every site in the diff.
+     */
+    private fun roundTripFunctions(code: String): Set<String> =
+        Regex("""fun ([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
+            .findAll(code)
+            .mapNotNull { match ->
+                val open = code.indexOf('{', match.range.last)
+                val body = if (open < 0 || open - match.range.last > funHeaderLimit) null else blockAt(code, open)
+                match.groupValues[1].takeIf { body != null && rendererRoundTrips.any { body.contains(it) } }
+            }.toSet()
+
     /** The source of every lambda dispatched onto the EDT, braces balanced. */
     private fun mainThreadBlocks(code: String): List<String> =
         mainThreadMarkers
@@ -250,9 +281,13 @@ class BrowserMainThreadRoundTripTest {
 
         val offenders =
             scanned.flatMap { file ->
-                mainThreadBlocks(codeOf(file))
-                    .filter { block -> rendererRoundTrips.any { block.contains(it) } }
-                    .map { block -> "${file.name}: ${block.take(160)}" }
+                val code = codeOf(file)
+                val blockers = roundTripFunctions(code)
+                mainThreadBlocks(code)
+                    .filter { block ->
+                        rendererRoundTrips.any { block.contains(it) } ||
+                            blockers.any { block.contains("$it(") }
+                    }.map { block -> "${file.name}: ${block.take(160)}" }
             }
 
         assertTrue(

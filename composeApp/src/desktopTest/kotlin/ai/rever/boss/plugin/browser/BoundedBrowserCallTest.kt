@@ -64,6 +64,37 @@ class BoundedBrowserCallTest {
     }
 
     /**
+     * A wedge has to be *reportable*, not just survivable.
+     *
+     * The first version answered null on timeout and told nobody: `onError` was reachable only
+     * through the success path's `getOrElse`, and `withTimeoutOrNull` returning null short-circuited
+     * straight past it. That turns "the app froze" into "plugin JS silently returns null forever",
+     * which is better to live with and much worse to diagnose.
+     */
+    @Test
+    fun `a timeout is reported, and is not reported as an error`() {
+        val call = BoundedBrowserCall("test-bounded-report")
+        val release = CountDownLatch(1)
+        var timedOut = 0
+        val errors = mutableListOf<Throwable>()
+        try {
+            runBlocking {
+                assertNull(
+                    call.call(timeout, onError = { errors += it }, onTimeout = { timedOut++ }) {
+                        release.await()
+                        "never"
+                    },
+                )
+            }
+            assertEquals(1, timedOut, "the timeout produced no report at all")
+            assertTrue(errors.isEmpty(), "a timeout was reported as a thrown error: $errors")
+        } finally {
+            release.countDown()
+            call.shutdown()
+        }
+    }
+
+    /**
      * The trade the KDoc describes: the wedged call keeps the thread, so later calls do NOT get
      * through - they queue behind it and answer null on time. Degradation, not a freeze.
      */

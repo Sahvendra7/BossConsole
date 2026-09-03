@@ -2343,7 +2343,7 @@ internal class BrowserHandleImpl(
         // CancellationException is a java.util.concurrent one, which extends IllegalStateException,
         // so a `catch (e: Exception)` around the await would swallow a caller's cancellation and
         // answer "err" to it - reporting a co-browse failure for what was an orderly teardown.
-        return handleCall.call(JS_CALL_TIMEOUT_MS) {
+        return handleCall.call(BoundedBrowserCall.DEFAULT_TIMEOUT_MS) {
             try {
                 val status =
                     browser
@@ -2360,7 +2360,13 @@ internal class BrowserHandleImpl(
                     logger.warn(
                         LogCategory.BROWSER,
                         "Co-browse control not applied",
-                        mapOf("handleId" to id, "status" to (status ?: "null"), "kind" to coBrowseEventKind(eventJson)),
+                        mapOf(
+                            "handleId" to id,
+                            // Truncated because an "err:…" status is built from a page-side exception
+                            // message, so its length and content are the page's to choose.
+                            "status" to (status?.take(STATUS_LOG_LIMIT) ?: "null"),
+                            "kind" to coBrowseEventKind(eventJson),
+                        ),
                     )
                 }
                 status
@@ -2517,7 +2523,7 @@ internal class BrowserHandleImpl(
     override suspend fun executeJavaScript(script: String): Any? {
         if (!isValid) return null
         return handleCall.call(
-            JS_CALL_TIMEOUT_MS,
+            BoundedBrowserCall.DEFAULT_TIMEOUT_MS,
             onError = { e ->
                 logger.warn(
                     LogCategory.BROWSER,
@@ -4216,8 +4222,16 @@ internal class BrowserHandleImpl(
         pageInjectJob.getAndSet(null)?.cancel()
         pageInjectScope.cancel()
         pageInjectExecutor.shutdown()
-        // Last of the four, and after the two scopes above that post onto its thread, so their
-        // queued teardown still runs. See [BoundedBrowserCall.shutdown] for why not shutdownNow().
+        // Last of the four. Note what this ordering does NOT buy: coBrowseScope and pageEventScope
+        // were cancelled above, and cancelling a scope also cancels children that were dispatched but
+        // have not started - startCoroutineCancellable means DispatchedTask.run sees an inactive job
+        // and resumes with the cancellation instead of running the body. So the teardown queued by
+        // stopCoBrowseCapture (recordStop, setControlGuard(false)) does not run here, and did not
+        // before this change either, when both scopes were cancelled the same way on Main.
+        //
+        // Left alone rather than re-posted outside the cancelled scope: the browser is closing a few
+        // lines below, so stopping a recorder in a page that is about to go away buys nothing.
+        // See [BoundedBrowserCall.shutdown] for why not shutdownNow().
         handleCall.shutdown()
         // Drop this browser's injectors, WITHOUT unclaiming the shared callback slot - that slot
         // belongs to BrowserInjectDispatcher on behalf of every registered injector, and removing
@@ -4270,6 +4284,9 @@ internal class BrowserHandleImpl(
     companion object {
         /** Cause-chain depth [isTransportFailure] inspects before giving up. */
         private const val MAX_CAUSE_DEPTH = 16
+
+        /** How much of a page-authored co-browse status string reaches the log. */
+        private const val STATUS_LOG_LIMIT = 80
 
         /**
          * Popup browsers we are currently waiting to capture an upload body for.
@@ -4383,15 +4400,6 @@ internal class BrowserHandleImpl(
          * before opening without it. Bounds a blocking JS round-trip against a busy page.
          */
         private const val FORM_FIELD_LOOKUP_TIMEOUT_MS = 500L
-
-        /**
-         * How long a plugin's script evaluation waits for the renderer before giving up and
-         * answering null. Generous rather than tight: this bounds a call a plugin asked for and
-         * may legitimately be slow, and its only job is to make the wait finite. A page that
-         * never answers - one parked on a modal `window.prompt` - used to hold this thread
-         * forever, and that thread used to be the EDT.
-         */
-        private const val JS_CALL_TIMEOUT_MS = 10_000L
 
         /**
          * How far back a failure retracts visits recorded by a callback that raced ahead

@@ -14,12 +14,10 @@ import com.teamdev.jxbrowser.js.JsObject
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import java.net.InetSocketAddress
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -57,19 +55,16 @@ internal class CoBrowseRtcPeerImpl(
 ) : CoBrowseRtcPeer {
     private val logger = CoBrowseRtcProviderImpl.logger
 
-    // Off-thread executor for this peer's blocking JxBrowser round trips, for the reason
-    // BrowserHandleImpl.handleCallExecutor spells out at length: executeJavaScript and putProperty
-    // block until the renderer answers, nothing can interrupt that wait, and made from
-    // Dispatchers.Main a peer page that stops answering takes the EDT - and with the AppKit main
-    // thread parked behind it, the whole application and the macOS menu bar.
+    // Every blocking JxBrowser round trip this peer makes, off the EDT and on a deadline - see
+    // [BoundedBrowserCall]. One instance per peer, so a share whose page stops answering costs its
+    // own thread and nobody else's.
     //
-    // One thread, and daemon, so a wedged peer page costs one parked thread and the ops that queue
-    // behind it are this peer's own - which is the right blast radius for a share that has failed.
-    private val callExecutor =
-        Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "boss-rtc-peer-call").apply { isDaemon = true }
-        }
-    private val scope = CoroutineScope(SupervisorJob() + callExecutor.asCoroutineDispatcher())
+    // This moves `Engine.newBrowser()` and `browser.close()` off the EDT too, which is safe for the
+    // reason that is easy to lose: JxBrowser's `Browser` API is thread-safe, and this peer is
+    // HEADLESS - no `BrowserView`, no AWT anywhere in the class. A peer that ever acquires a view
+    // has to put the view's lifecycle back on the EDT; the rest can stay here.
+    private val browserCall = BoundedBrowserCall("boss-rtc-peer-call")
+    private val scope = CoroutineScope(SupervisorJob() + browserCall.dispatcher)
     private val bridge =
         CoBrowseRtcBridge(onAnswer, onIce, onInput, onState).also {
             it.onVideoError = { msg -> logger.warn(LogCategory.BROWSER, "WebRTC video capture error: $msg") }
@@ -81,10 +76,17 @@ internal class CoBrowseRtcPeerImpl(
     // Two flags, not one, now that injection is posted off the callback thread.
     //
     // [injected] is the DONE state and is only ever set on success. [injectQueued] keeps a second
-    // LoadFinished from queueing a duplicate while one is in flight, and is released in a finally.
-    // Collapsing them into a single claim-before-launch was wrong in the other direction: a failed
-    // attempt released the claim only after the events that would have retried it had already been
-    // dropped, and a page that loads once never fires a third.
+    // LoadFinished from queueing a duplicate while one is in flight. Collapsing them into a single
+    // claim-before-launch was wrong in the other direction: a failed attempt released the claim only
+    // after the events that would have retried it had already been dropped, and a page that loads
+    // once never fires a third.
+    //
+    // Two things the pair does NOT promise. [injectQueued]'s finally does not run if the dispatch
+    // itself is rejected - after close() shuts the executor down, kotlinx cancels the child before
+    // its body starts - so the flag can stay latched; harmless only because `closed` short-circuits
+    // every path that would look at it again. And [injected] is never reset, so a *reload* of the
+    // peer page leaves the new document without the bridge. Both were true before this change; they
+    // are written down here because this comment is where the next reader will look.
     private val injected = AtomicBoolean(false)
     private val injectQueued = AtomicBoolean(false)
 
@@ -243,15 +245,14 @@ internal class CoBrowseRtcPeerImpl(
             }
             browser = null
         }
-        // shutdown(), not shutdownNow(), and deliberately no scope.cancel(): the browser close above
-        // is already queued on this executor and cancelling would drop it. A call parked inside
-        // JxBrowser cannot be interrupted anyway.
+        // Deliberately no scope.cancel(): the browser close above is already queued on this thread
+        // and cancelling would drop it before it starts.
         //
         // Known cost: if a wedged JS call is holding the thread, that queued close never runs and
         // this peer's hidden browser leaks until process exit. One browser per failed share, against
         // a frozen application - the trade this whole change is making, and bounded because the
         // thread is daemon.
-        callExecutor.shutdown()
+        browserCall.shutdown()
     }
 
     private companion object {
