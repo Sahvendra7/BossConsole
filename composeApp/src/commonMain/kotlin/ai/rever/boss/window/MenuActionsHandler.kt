@@ -30,15 +30,14 @@ object MenuActionsHandler {
     private val _closeTabEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val closeTabEvents: SharedFlow<String> = _closeTabEvents.asSharedFlow()
 
+    /** [triggerSelectTabByIndex] sentinel meaning "whatever the last tab is". */
+    const val LAST_TAB_INDEX = -1
+
     /**
      * Tab-cycling actions. These are intentionally carried on a SINGLE flow (below) rather
      * than one flow per action: a "next/previous" step and the "commit" that follows it must
      * be observed in emission order, which is only guaranteed within one ordered stream.
      */
-
-    /** [triggerSelectTabByIndex] sentinel meaning "whatever the last tab is". */
-    const val LAST_TAB_INDEX = -1
-
     enum class TabSwitchAction {
         NEXT,
         PREVIOUS,
@@ -209,6 +208,24 @@ object MenuActionsHandler {
      */
     fun isSplitEnabled(windowId: String): Boolean = _splitEnabledState.value[windowId] ?: false
 
+    /** Publish the active panel's tab count for [activePanelTabCountState]. */
+    fun updateActivePanelTabCount(
+        windowId: String,
+        count: Int,
+    ) {
+        _activePanelTabCountState.update { it + (windowId to count) }
+    }
+
+    /**
+     * How many tabs the active panel of [windowId] holds, 0 before the first panel composes.
+     *
+     * Drives the interceptor's Cmd+1..Cmd+9 gate as well as [canStepTabs].
+     */
+    fun activePanelTabCount(windowId: String): Int = _activePanelTabCountState.value[windowId] ?: 0
+
+    /** Whether tab stepping can do anything in [windowId] right now. */
+    fun canStepTabs(windowId: String): Boolean = activePanelTabCount(windowId) > 1
+
     /**
      * Update the panel count for a window.
      * Panel navigation should be enabled when there are multiple panels.
@@ -216,18 +233,6 @@ object MenuActionsHandler {
      * @param windowId The window ID
      * @param count The number of panels in the window
      */
-
-    /** Publish the active panel's tab count for [activePanelTabCountState]. */
-    fun updateActivePanelTabCount(
-        windowId: String,
-        count: Int,
-    ) {
-        _activePanelTabCountState.value = _activePanelTabCountState.value + (windowId to count)
-    }
-
-    /** Whether tab stepping can do anything in [windowId] right now. */
-    fun canStepTabs(windowId: String): Boolean = (_activePanelTabCountState.value[windowId] ?: 0) > 1
-
     fun updatePanelCount(
         windowId: String,
         count: Int,

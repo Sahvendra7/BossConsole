@@ -129,7 +129,14 @@ actual object KeymapSettingsManager {
                 .mapNotNull { (actionId, stored) ->
                     val preset = presetShortcuts[actionId] ?: return@mapNotNull null
                     val untouched = stored.primaryKeystroke.sameChordAs(preset.primaryKeystroke)
-                    val gained = preset.alternateKeystrokes.filter { it !in stored.alternateKeystrokes }
+                    // sameChordAs on this half too, not data-class equality: KeyStroke.modifiers
+                    // is a List, so a hand-edited ["Shift","Cmd"] alternate would read as absent
+                    // and get the preset's ["Cmd","Shift"] appended next to it - a duplicate
+                    // chord in the file and in allSignatures(), which the conflict badge reads.
+                    val gained =
+                        preset.alternateKeystrokes.filter { candidate ->
+                            stored.alternateKeystrokes.none { it.sameChordAs(candidate) }
+                        }
                     if (untouched && gained.isNotEmpty()) {
                         actionId to stored.copy(alternateKeystrokes = stored.alternateKeystrokes + gained)
                     } else {

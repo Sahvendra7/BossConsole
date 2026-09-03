@@ -102,4 +102,24 @@ class ClosedTabHistoryTest {
         assertNull(ClosedTabHistory.pop(windowA))
         assertNull(ClosedTabHistory.depths.value[windowA])
     }
+
+    @Test
+    fun `clear leaves depth and hasEntries agreeing, and a later close starts over`() {
+        // The two are read by different things - depths drives File > Reopen Closed Tab, while
+        // pop and hasEntries answer the chord - so a window close that dropped one and not the
+        // other would leave the item enabled for the life of the process with nothing behind it.
+        // A tab closing as its window closes is exactly the interleaving that produces.
+        repeat(3) { i -> ClosedTabHistory.record(windowA, FakeTab("tab-$i")) }
+
+        ClosedTabHistory.clear(windowA)
+
+        assertFalse(ClosedTabHistory.hasEntries(windowA))
+        assertNull(ClosedTabHistory.depths.value[windowA])
+
+        // A window id can come back (the same id is never reused today, but the state must not
+        // remember anything either way).
+        ClosedTabHistory.record(windowA, FakeTab("after"))
+        assertEquals(1, ClosedTabHistory.depths.value[windowA])
+        assertEquals("after", ClosedTabHistory.pop(windowA)?.id)
+    }
 }

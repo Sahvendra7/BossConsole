@@ -63,6 +63,14 @@ object ClosedTabHistory {
         // discarded along with its entry.
         val stack = byWindow.computeIfAbsent(windowId) { ArrayDeque() }
         synchronized(stack) {
+            // The window can close between the line above and this one - a tab closing as its
+            // window closes is exactly the interleaving [clear] produces - and this deque is
+            // then no longer the map's. Publishing a depth for it would leave File > Reopen
+            // Closed Tab enabled for the life of the process while [pop] and [hasEntries] both
+            // answer empty. [clear] takes this same lock, so the two orderings are: it wins and
+            // the check below fails, or this wins and its depth is removed straight after.
+            if (byWindow[windowId] !== stack) return
+
             // Re-closing a reopened tab should move it to the top, not add a second copy.
             stack.removeAll { it.id == tab.id }
             stack.addFirst(tab)
@@ -89,7 +97,9 @@ object ClosedTabHistory {
 
     /** Drop a closed window's history. */
     fun clear(windowId: String) {
-        byWindow.remove(windowId)
+        byWindow.remove(windowId)?.let { stack -> synchronized(stack) { stack.clear() } }
+        // After the lock, so a [record] that was mid-flight when the window closed has already
+        // published whatever it was going to and this removal is the last word.
         _depths.update { it - windowId }
     }
 

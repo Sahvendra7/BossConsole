@@ -118,6 +118,37 @@ class KeymapMatcherAlternatesTest {
     }
 
     @Test
+    fun `a dedicated plus key reaches zoom in`() {
+        // Compose reports such a key as Key.Plus, which normalized to "Plus" and matched nothing:
+        // every preset spells zoom in "Equals". The AWT path folds VK_PLUS onto Equals, so
+        // without the same fold here the Shortcuts tester reported "no match" for a chord that
+        // really fires - the bracket divergence one key over.
+        val matcher = KeymapMatcher.from(KeymapPresets.getBOSSDefault())
+
+        assertEquals(
+            KeymapActions.BROWSER_ZOOM_IN,
+            matcher.match(event(Key.Plus, meta = true), ShortcutContext.BROWSER)?.actionId,
+        )
+        assertEquals(
+            KeymapActions.BROWSER_ZOOM_IN,
+            matcher.match(event(Key.Plus, meta = true, shift = true), ShortcutContext.BROWSER)?.actionId,
+        )
+    }
+
+    @Test
+    fun `folding plus onto equals does not swallow the neighbouring keys`() {
+        // Guard against the fold over-reaching: Cmd+Minus is still zoom OUT, and a bare Plus is
+        // still nobody's chord.
+        val matcher = KeymapMatcher.from(KeymapPresets.getBOSSDefault())
+
+        assertEquals(
+            KeymapActions.BROWSER_ZOOM_OUT,
+            matcher.match(event(Key.Minus, meta = true), ShortcutContext.BROWSER)?.actionId,
+        )
+        assertNull(matcher.match(event(Key.Plus), ShortcutContext.BROWSER))
+    }
+
+    @Test
     fun `the shipped BOSS Default reaches positional tab stepping through its bracket alternate`() {
         val matcher = KeymapMatcher.from(KeymapPresets.getBOSSDefault())
 

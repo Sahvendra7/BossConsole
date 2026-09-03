@@ -309,8 +309,12 @@ class KeymapMatcher(
                 "Equals"
             }
 
+            // A layout with a dedicated + key folds onto Equals, matching
+            // AWTKeyboardInterceptor.canonicalKeyName: the presets spell zoom in "Equals" and
+            // carry Cmd+Shift+Equals as its alternate, so a distinct "Plus" would make this
+            // matcher report no match for a chord that really fires through the AWT path.
             "+" -> {
-                "Plus"
+                "Equals"
             }
 
             "[" -> {
@@ -423,8 +427,17 @@ class KeymapMatcher(
                         }
                     }
 
-                    "minus", "equals", "plus" -> {
+                    "minus", "equals" -> {
                         keyName.replaceFirstChar { it.uppercase() }
+                    }
+
+                    // Compose reports a dedicated + key as Key.Plus, i.e. "Plus". Folded onto
+                    // Equals for the reason the "+" branch above gives: zoom in is stored as
+                    // Equals with a Cmd+Shift+Equals alternate, and AWTKeyboardInterceptor
+                    // already folds VK_PLUS the same way. Leaving the two matchers disagreeing
+                    // is what made the bracket names report "no match" for a firing chord.
+                    "plus" -> {
+                        "Equals"
                     }
 
                     "openbracket", "closebracket", "slash", "backslash" -> {

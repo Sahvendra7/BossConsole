@@ -2217,43 +2217,74 @@ class BossTabsComponent(
      *
      * Returns false when there was nothing to reopen, or when the tab could not be rebuilt —
      * [addTab] returns -1 when no factory is registered for the type, which happens if the
-     * owning plugin was unloaded since the tab was closed. The entry is consumed either way:
-     * a tab that cannot be rebuilt now will not rebuild on the next press either, and leaving
-     * it on the stack would wedge the shortcut on a permanently dead entry.
+     * owning plugin was unloaded since the tab was closed. That entry is consumed (it will not
+     * rebuild on the next press either, and leaving it on the stack would wedge the shortcut on
+     * a permanently dead entry) but ONE press consumes at most one such entry: unloading a
+     * plugin with a dozen closed tabs behind it must not empty the stack on a single keypress.
+     *
+     * The tab lands at the END of the tab bar and unpinned, whatever it was before: [addTab]
+     * appends, and pinning here is a leading-prefix count rather than a per-tab flag, so
+     * restoring either would mean inserting at a position and re-deriving `_pinnedCount`.
+     * Chrome restores both; "type-agnostic by construction" is about the tab's TYPE and its
+     * navigation state, not its place in the bar.
      */
     fun reopenLastClosedTab(isTabIdLive: (String) -> Boolean = ::isTabIdInThisPanel): Boolean {
-        // Tab ids are unique across a WINDOW, and [addTab] does not guard the way [adoptTab]
-        // does: rebuilding a live id would overwrite its entry in tabComponents and orphan the
-        // running component with no path to destroy it. Reachable when a workspace restore
-        // re-creates a saved layout containing an id the user had closed.
-        //
-        // Such an entry is stale, so it is discarded and the next one tried rather than
-        // consumed for nothing — [isTabIdLive] sees the whole window while this component sees
-        // one panel, so "live" often means "live somewhere I cannot focus", and stopping there
-        // would spend the user's keypress doing nothing. Focusing it is still preferred when it
-        // is in THIS panel.
-        var reopened = false
-        while (!reopened) {
-            val closed = ClosedTabHistory.pop(windowId) ?: break
-
-            val index =
-                if (isTabIdLive(closed.id)) {
-                    // Already open somewhere in the window. Focus it if it is in THIS panel;
-                    // otherwise the entry is simply stale and the loop tries the next one.
-                    tabsState.value.tabs.indexOfFirst { it.id == closed.id }
-                } else {
-                    // -1 when no factory is registered for its type, i.e. the owning plugin was
-                    // unloaded since the close. Consumed either way: it will not rebuild on the
-                    // next press either, and keeping it would wedge the shortcut on a dead entry.
-                    addTab(closed)
+        // A null answer means "that entry told us nothing, try the one underneath"; the loop
+        // ends on the first definite answer. A nullable sentinel rather than break/continue
+        // because either of those needs two jumps here, one more than detekt allows.
+        var result: Boolean? = null
+        while (result == null) {
+            val closed = ClosedTabHistory.pop(windowId)
+            result =
+                when {
+                    closed == null -> false
+                    isTabIdLive(closed.id) -> focusIfInThisPanel(closed.id)
+                    else -> rebuildClosedTab(closed)
                 }
-
-            if (index >= 0) {
-                selectTab(index)
-                reopened = true
-            }
         }
-        return reopened
+        return result
+    }
+
+    /**
+     * An entry whose id is already live somewhere in the WINDOW: focus it when it is in THIS
+     * panel, and otherwise answer null so [reopenLastClosedTab] moves on to the entry underneath.
+     *
+     * Rebuilding a live id is not an option: ids are unique across a window and [addTab] does
+     * not guard the way [adoptTab] does, so it would overwrite the id's `tabComponents` entry
+     * and orphan the running component with no path to destroy it. Reachable when a workspace
+     * restore re-creates a saved layout holding an id the user had closed.
+     *
+     * Answering null rather than false is what keeps that case from spending the keypress AND
+     * the entry for nothing: the liveness predicate the real caller passes sees every panel
+     * while this component sees one, so "live" often means "live somewhere I cannot focus".
+     */
+    private fun focusIfInThisPanel(tabId: String): Boolean? {
+        val index = tabsState.value.tabs.indexOfFirst { it.id == tabId }
+        if (index < 0) return null
+        selectTab(index)
+        return true
+    }
+
+    /**
+     * Rebuild a closed tab, or answer false when its type has no factory left.
+     *
+     * [addTab] answers -1 when the owning plugin was unloaded since the close. The entry is
+     * discarded (it will not rebuild on a later press either) but the answer is FALSE, not null:
+     * carrying on would let one Cmd+Shift+T drain every entry that plugin owned, silently and
+     * with nothing on screen to explain where they went.
+     */
+    private fun rebuildClosedTab(closed: TabInfo): Boolean {
+        val index = addTab(closed)
+        if (index < 0) {
+            bossMainWindowPanelLogger.debug(
+                LogCategory.UI,
+                "Discarded a closed-tab entry whose tab type is no longer registered",
+                mapOf("tabId" to closed.id, "typeId" to closed.typeId.typeId),
+            )
+            return false
+        }
+        selectTab(index)
+        return true
     }
 
     private fun stepMruCycle(forward: Boolean) {
@@ -2360,7 +2391,10 @@ class BossTabsComponent(
         val tabs = tabsState.value.tabs
         if (keepIndex < 0 || keepIndex >= tabs.size) return
 
-        // Remove tabs in reverse order to avoid index issues
+        // Remove tabs in reverse order to avoid index issues. That also leaves the LEFTMOST
+        // closure on top of ClosedTabHistory, which is what you want here: reopening appends,
+        // so repeated Cmd+Shift+T rebuilds the original left-to-right order rather than
+        // reversing it.
         for (i in tabs.size - 1 downTo 0) {
             if (i != keepIndex) {
                 removeTab(i)

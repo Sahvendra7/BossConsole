@@ -88,6 +88,15 @@ object AWTKeyboardInterceptor {
      * Update the active shortcut context for a window.
      * Called from the Compose layer when the active tab type changes.
      *
+     * NOT CALLED TODAY - no production caller sets a window context, so [windowContextMap] is
+     * always empty and [detectCurrentContext] answers purely from the AWT focus walk. That walk
+     * can only see a heavyweight component, i.e. JxBrowser's page surface, so BROWSER-context
+     * bindings resolve while the PAGE has focus and not while focus is in a browser's Compose
+     * chrome (address bar, tab strip, find bar). Wiring this up would fix that class, but it is
+     * window-scoped: with a browser in the main panel and focus in a SIDEBAR editor it would
+     * report BROWSER and hand Cmd+F and Cmd+R to the browser, which is why it stays unwired
+     * here. See the Cmd+L note in `KeymapPresets.standardBrowserBindings`.
+     *
      * @param windowId The BOSS window ID
      * @param context The shortcut context of the currently active component
      */
@@ -610,13 +619,6 @@ object AWTKeyboardInterceptor {
         }
 
     /**
-     * Run [trigger] and claim the event, but only while [windowId] has more than one panel.
-     *
-     * Returning false leaves the chord to the focused component. See the panel-navigation
-     * branches in [dispatchAction] for why that matters.
-     */
-
-    /**
      * Run [trigger] and claim the event, but only while [windowId]'s active panel has more than
      * one tab. Returning false leaves the chord to the focused component.
      */
@@ -629,6 +631,32 @@ object AWTKeyboardInterceptor {
         return true
     }
 
+    /**
+     * Run [trigger] and claim the event, but only while [windowId]'s active panel actually has a
+     * tab at position [index].
+     *
+     * `selectTabByPosition` ignores an out-of-range position, so without this a two-tab window
+     * would swallow Cmd+3 through Cmd+8 from a terminal or an editor and do nothing with them -
+     * the same "claiming a chord that cannot act" this file gates panel navigation and tab
+     * stepping against. Browsers do consume the whole Cmd+1..9 block unconditionally; BOSS does
+     * not, because those chords reach surfaces a browser has no equivalent of.
+     */
+    internal fun dispatchIfTabExistsAt(
+        windowId: String,
+        index: Int,
+        trigger: (String) -> Unit,
+    ): Boolean {
+        if (MenuActionsHandler.activePanelTabCount(windowId) <= index) return false
+        trigger(windowId)
+        return true
+    }
+
+    /**
+     * Run [trigger] and claim the event, but only while [windowId] has more than one panel.
+     *
+     * Returning false leaves the chord to the focused component. See the panel-navigation
+     * branches in [dispatchAction] for why that matters.
+     */
     internal fun dispatchIfMultiPanel(
         windowId: String,
         trigger: (String) -> Unit,
@@ -673,9 +701,16 @@ object AWTKeyboardInterceptor {
                 true
             }
 
+            // Gated on the same state as the File menu item's enabled flag: with an empty
+            // stack the chord would be consumed for nothing, and Cmd+Shift+T is a plain
+            // Cmd+Shift+letter that another surface may well want.
             KeymapActions.TAB_REOPEN_CLOSED -> {
-                MenuActionsHandler.triggerReopenClosedTab(windowId)
-                true
+                if (!ClosedTabHistory.hasEntries(windowId)) {
+                    false
+                } else {
+                    MenuActionsHandler.triggerReopenClosedTab(windowId)
+                    true
+                }
             }
 
             // Gated for the same reason as panel navigation below: with one tab there is
@@ -690,8 +725,7 @@ object AWTKeyboardInterceptor {
             }
 
             KeymapActions.TAB_SELECT_LAST -> {
-                MenuActionsHandler.triggerSelectLastTab(windowId)
-                true
+                dispatchIfTabExistsAt(windowId, 0) { MenuActionsHandler.triggerSelectLastTab(it) }
             }
 
             // Window Management
@@ -825,8 +859,9 @@ object AWTKeyboardInterceptor {
                 val tabIndex = KeymapActions.TAB_SELECT_BY_INDEX.indexOf(actionId)
                 when {
                     tabIndex >= 0 -> {
-                        MenuActionsHandler.triggerSelectTabByIndex(windowId, tabIndex)
-                        true
+                        dispatchIfTabExistsAt(windowId, tabIndex) {
+                            MenuActionsHandler.triggerSelectTabByIndex(it, tabIndex)
+                        }
                     }
 
                     // Plugin-contributed actions ("plugin.<pluginId>.<name>") —

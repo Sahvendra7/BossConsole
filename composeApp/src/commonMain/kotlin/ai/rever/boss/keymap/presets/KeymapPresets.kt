@@ -932,6 +932,17 @@ object KeymapPresets {
                 // Harmless when the plugin is absent or disabled: PluginShortcutRegistry.dispatch
                 // returns false for an unowned action id, the interceptor reports the chord
                 // unhandled, and it propagates as before.
+                //
+                // Reaches only as far as the BROWSER context does, which today means "the page
+                // has focus": AWTKeyboardInterceptor.updateWindowContext has no callers, so the
+                // context comes from walking the AWT focus owner for JxBrowser (see the note
+                // there for why wiring it up is not a free win). Back / Forward / DevTools do
+                // not notice because they also have menu items, which fire window-wide; Cmd+L
+                // deliberately gets no menu item, since a window-wide accelerator for it would
+                // swallow Go To Line in the editor - the exact collision this binding exists to
+                // avoid. The remaining gap is Cmd+L pressed while focus is in the browser's own
+                // Compose chrome, and it closes in the PLUGIN, by handling the chord from its
+                // onPreviewKeyEvent the way the editor plugin already handles Go To Line.
                 KeyBinding(
                     actionId = FLUCK_FOCUS_ADDRESS_BAR_ACTION,
                     key = "L",

@@ -38,8 +38,8 @@ class HostBindingPrecedenceTest {
         // The counterpart: a real host action must keep returning true, or the same change would
         // stop the interceptor consuming chords it genuinely serves.
         assertTrue(AWTKeyboardInterceptor.dispatchAction(KeymapActions.TAB_NEW, "window-1"))
-        assertTrue(AWTKeyboardInterceptor.dispatchAction(KeymapActions.TAB_REOPEN_CLOSED, "window-1"))
         assertTrue(AWTKeyboardInterceptor.dispatchAction(KeymapActions.BROWSER_DEVTOOLS, "window-1"))
+        assertTrue(AWTKeyboardInterceptor.dispatchAction(KeymapActions.TAB_CLOSE, "window-1"))
     }
 
     @Test

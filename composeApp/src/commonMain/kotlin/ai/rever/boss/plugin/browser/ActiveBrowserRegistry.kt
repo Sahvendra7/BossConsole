@@ -59,9 +59,20 @@ object ActiveBrowserRegistry {
      * "Has a browser anywhere" is the wrong test for that, and was the first version of this:
      * entries arrive from every composed surface, including a sidebar slot and the other half of
      * a split, so a browser on the left of a split left the items enabled while the user typed in
-     * an editor on the right. [isActiveSurface] is the same pair of flags [selectActiveHandleId]
-     * ranks on, and liveness is the same `isValid` check [activeIn] applies, so the menu cannot
-     * offer an action that then finds nothing to act on.
+     * an editor on the right. [activeBrowserWindows] filters on the same pair of flags
+     * [selectActiveHandleId] ranks on, and liveness is the same `isValid` check [activeIn]
+     * applies, so the menu cannot offer an action that then finds nothing to act on.
+     *
+     * Still WINDOW-scoped, so it answers "the main panel's visible surface is a browser", not
+     * "the keyboard focus is in a browser" - with a browser as the active main-panel tab and
+     * focus in a sidebar editor, Cmd+[ / Cmd+] are still taken by the accelerator. Narrowing
+     * further needs a focus signal the menu layer does not have; see the dead
+     * `AWTKeyboardInterceptor.updateWindowContext` for why the keyboard path cannot supply one
+     * either.
+     *
+     * Recomputed only on register/unregister, while [isLive] reads `handle.isValid`, which can
+     * flip on its own. That is safe only because `BrowserHandleImpl` unregisters on disposal;
+     * a handle that invalidated without unregistering would leave a stale window in this set.
      */
     val windowsWithActiveBrowser: StateFlow<Set<String>> = _windowsWithActiveBrowser.asStateFlow()
 

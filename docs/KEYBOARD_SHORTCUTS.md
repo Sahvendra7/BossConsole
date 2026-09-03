@@ -192,7 +192,17 @@ Cmd+1 tab select.
 
 Existing installs pick these up through `KeymapSettingsManager.migrateSettings`, which adds
 actions missing from a stored keymap and tops up new alternates on bindings whose primary still
-matches the preset. A rebound chord is left alone.
+matches the preset. A rebound chord is left alone. Chords are compared order- and
+case-insensitively on both halves, so a hand-edited `["Shift","Cmd"]` reads the same as
+`["Cmd","Shift"]`.
+
+A chord that cannot act is not claimed. Cmd+1..Cmd+8 with fewer tabs than that, Cmd+9 with no
+tabs, Cmd+Shift+T with an empty history, tab stepping in a single-tab panel and panel navigation
+in a single-panel window all propagate to whatever has focus instead of being swallowed. This
+matters because a native menu accelerator fires window-wide whatever the binding's context, so an
+always-enabled item would take Cmd+[ from an editor, where it is outdent. Browsers do consume
+Cmd+1..9 unconditionally; BOSS does not, because those chords reach surfaces a browser has no
+equivalent of.
 
 ### VS Code Preset
 

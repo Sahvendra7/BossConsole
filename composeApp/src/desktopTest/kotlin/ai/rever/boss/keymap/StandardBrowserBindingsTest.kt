@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  * [KeymapPresets.withStandardBrowserBindings].
  *
  * The merge exists so the conventions live in one place instead of four hand-written preset
- * lists; these tests pin the two things that makes easy to get wrong — that the chords actually
+ * lists; these tests pin the two things that merge makes easy to get wrong — that the chords actually
  * land in each preset, and that landing them never introduces a conflict with a preset's own
  * opinion about a key.
  */
