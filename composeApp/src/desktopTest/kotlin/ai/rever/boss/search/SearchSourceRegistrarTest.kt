@@ -33,6 +33,13 @@ import kotlin.test.assertTrue
  * substitute the thing it is testing. The recent-pages half would also WRITE, which is why
  * `settingsFile` is redirected in `setUp`.
  *
+ * **Order- and fork-sensitive by construction.** It mutates process-global state - `settingsFile`,
+ * a real MCP provider, the real settings supplier - and restores it in `finally`/`tearDown`, which
+ * is correct in one JVM running tests in sequence. Raising `maxParallelForks`, or running these
+ * concurrently with anything else that reads those singletons, would make it flaky. That is the
+ * cost of covering a production path built out of singletons, and it is worth paying here rather
+ * than in a postmortem.
+ *
  * Asserts against a real built-in row rather than a fixture, so a rename in
  * `SettingsSearchEntries.kt` that this file does not follow shows up here. `SettingsSearchIndexDriftTest`
  * already guarantees the label exists; this guarantees it survives the trip into the global search.

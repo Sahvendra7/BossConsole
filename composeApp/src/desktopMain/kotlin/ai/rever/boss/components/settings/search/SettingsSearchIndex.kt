@@ -132,6 +132,16 @@ object SettingsSearchIndex {
      * `GlobalSearchService.searchSettings`.
      */
     fun registerWithGlobalSearch() {
+        // Force the lazy index HERE, at startup, rather than leaving it to the first query.
+        //
+        // `builtInEntries` is `by lazy` and `SettingsSearchEntry.init` now requires exactly one
+        // target, so a malformed entry throws. Reached first from inside `isolated("settings")`,
+        // that throw would be caught, logged at WARN, and cost the whole Settings category - and
+        // `by lazy` does not cache a failed initialiser, so it would re-throw and re-warn on every
+        // keystroke instead of failing once. Startup is where a bad constant should stop the app,
+        // and silence per keystroke is exactly the failure mode `SearchSources` argues against.
+        require(builtIn.isNotEmpty()) { "the settings index is empty; nothing would be searchable" }
+
         SearchSources.registerSettingsSearch { query ->
             val pages =
                 SettingsPageRegistryImpl.visiblePages().map {

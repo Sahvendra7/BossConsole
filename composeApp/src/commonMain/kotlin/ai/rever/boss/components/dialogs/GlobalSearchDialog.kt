@@ -89,7 +89,13 @@ private val CardShape = RoundedCornerShape(12.dp)
 private val SmallCardShape = RoundedCornerShape(8.dp)
 private val SectionTitleColor get() = BossThemeController.current.colors.textMuted
 
-/** Tiles per row in the empty state. Five gives rows of 5 and 4 for the nine categories but ALL. */
+/**
+ * Tiles per row in the empty state.
+ *
+ * A count, deliberately not a statement about how many rows that makes: the tiles are derived from
+ * [SearchCategory] precisely so adding a category needs no edit here, and a comment naming today's
+ * total would be the one thing that still went stale.
+ */
 private const val EMPTY_STATE_TILES_PER_ROW = 5
 
 /**

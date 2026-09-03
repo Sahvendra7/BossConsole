@@ -78,7 +78,6 @@ import java.io.IOException
  * permission-revoked tool exposed. First registration of a given tool name
  * wins; later duplicates are logged and skipped.
  */
-
 object McpToolRegistryImpl : McpToolRegistry {
     /**
      * What a client prepends to a registered tool name: `git_status` is typed as
@@ -367,8 +366,14 @@ internal class McpToolRegistryCore(
      *
      * The two are volatile individually and NOT read as a pair: [updateAccess] writes [isAdmin]
      * then [permissions] outside any lock a reader takes, so a reader can see the new flag with
-     * the old set. The window is one dispatch and only matters for permission-gated (not
-     * admin-gated) tools during a sign-out, which is why it is documented rather than locked.
+     * the old set. The window is one dispatch wide and only matters for permission-gated (not
+     * admin-gated) tools, which is why it is documented rather than locked.
+     *
+     * **It fails OPEN**, and that is the part to carry forward if this reasoning is ever copied
+     * somewhere else: the exposed set during that window is the outgoing session's, so a tool the
+     * new state would deny can still be listed for one dispatch after a sign-out. Tolerable here
+     * because the registry backs a loopback-only server for the local machine's own agents; not
+     * tolerable in a context where the reader is a remote caller.
      */
     @Volatile
     private var isAdmin = false
