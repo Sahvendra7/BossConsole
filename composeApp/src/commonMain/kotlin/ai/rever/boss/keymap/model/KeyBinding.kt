@@ -2,6 +2,7 @@ package ai.rever.boss.keymap.model
 
 import androidx.compose.ui.input.key.Key
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * The modifier set a chord really requires, with the aliases every matcher already accepts
@@ -149,14 +150,19 @@ data class KeyBinding(
      *
      * Computed once rather than per access: both matchers now walk [allKeystrokes] for every
      * binding on every modified keypress, and as getters these allocated a KeyStroke and a list
-     * per binding per event. Body properties, so serialization and data-class equality are
-     * unaffected.
+     * per binding per event.
+     *
+     * `@Transient` is load-bearing, not decoration. kotlinx.serialization takes any property
+     * with a backing field, body properties included, so without it the descriptor would grow
+     * two elements and `keymap-settings.json` - documented here as hand-editable - could carry
+     * an `allKeystrokes` that both matchers then consult in place of an edited `key`. A rebind
+     * that appears to do nothing, with no conflict badge to explain it.
      */
+    @Transient
     val primaryKeystroke: KeyStroke = KeyStroke(key, modifiers)
 
-    /**
-     * Returns all keystrokes (primary + alternates) for this binding.
-     */
+    /** Returns all keystrokes (primary + alternates) for this binding. See [primaryKeystroke]. */
+    @Transient
     val allKeystrokes: List<KeyStroke> = listOf(primaryKeystroke) + alternateKeystrokes
 
     /**

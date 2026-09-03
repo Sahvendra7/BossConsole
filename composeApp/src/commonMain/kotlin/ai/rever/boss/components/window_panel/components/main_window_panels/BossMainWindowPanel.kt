@@ -2235,20 +2235,12 @@ class BossTabsComponent(
      * navigation state, not its place in the bar.
      */
     fun reopenLastClosedTab(isTabIdLive: (String) -> Boolean = ::isTabIdInThisPanel): Boolean {
-        // A null answer means "that entry told us nothing, try the one underneath"; the loop
-        // ends on the first definite answer. A nullable sentinel rather than break/continue
-        // because either of those needs two jumps here, one more than detekt allows.
-        var result: Boolean? = null
-        while (result == null) {
-            val closed = ClosedTabHistory.pop(windowId)
-            result =
-                when {
-                    closed == null -> false
-                    isTabIdLive(closed.id) -> focusIfInThisPanel(closed.id)
-                    else -> rebuildClosedTab(closed)
-                }
-        }
-        return result
+        // A null answer means "that entry told us nothing, take the one underneath"; the walk
+        // stops at the first definite answer, and at the bottom of the stack there is none.
+        return generateSequence { ClosedTabHistory.pop(windowId) }
+            .firstNotNullOfOrNull { closed ->
+                if (isTabIdLive(closed.id)) focusIfInThisPanel(closed.id) else rebuildClosedTab(closed)
+            } ?: false
     }
 
     /**

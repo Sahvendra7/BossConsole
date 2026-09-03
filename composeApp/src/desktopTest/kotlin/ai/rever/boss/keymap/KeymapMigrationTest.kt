@@ -94,6 +94,26 @@ class KeymapMigrationTest {
     }
 
     @Test
+    fun `a disabled binding does not reserve its chord`() {
+        // The validator only counts enabled bindings as conflicting, so migration has to agree:
+        // otherwise switching a shortcut off in the Shortcuts screen blocks the new action that
+        // wants its chord, with nothing but a log line to say why.
+        val legacy = legacySettings()
+        val switchedOff =
+            assertNotNull(legacy.getBinding(KeymapActions.PANEL_NAVIGATE_RIGHT))
+                .copy(key = "Three", modifiers = listOf("Cmd"), enabled = false)
+        val customised =
+            legacy.copy(shortcuts = legacy.shortcuts + (KeymapActions.PANEL_NAVIGATE_RIGHT to switchedOff))
+
+        val migrated = KeymapSettingsManager.migrateSettings(customised)
+
+        assertNotNull(
+            migrated.getBinding(KeymapActions.TAB_SELECT_BY_INDEX[2]),
+            "a disabled binding is not holding Cmd+3",
+        )
+    }
+
+    @Test
     fun `a modifier alias does not read as a rebind`() {
         // The file is documented as hand-editable, and both matchers treat Meta as Cmd. Without
         // the fold this reads as rebound and silently misses the alternate top-up.

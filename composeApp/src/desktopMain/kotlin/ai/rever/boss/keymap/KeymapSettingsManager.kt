@@ -1,5 +1,6 @@
 package ai.rever.boss.keymap
 
+import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.canonicalModifiers
@@ -142,7 +143,7 @@ actual object KeymapSettingsManager {
                             stored.alternateKeystrokes.none { it.sameChordAs(candidate) } &&
                                 // And not a chord this keymap already gives to something else,
                                 // for the same reason the additions below are filtered.
-                                loaded.shortcuts.values.none {
+                                chordHolders(loaded).none {
                                     it.actionId != actionId && it.claimsChord(candidate, stored.context)
                                 }
                         }
@@ -164,7 +165,7 @@ actual object KeymapSettingsManager {
         val toppedUp = loaded.shortcuts + alternateTopUps
         val newActions =
             missingActions.values
-                .mapNotNull { it.withoutChordsTakenBy(toppedUp.values.toList()) }
+                .mapNotNull { it.withoutChordsTakenBy(chordHolders(loaded.copy(shortcuts = toppedUp))) }
                 .associateBy { it.actionId }
 
         val dropped = missingActions.keys - newActions.keys
@@ -305,6 +306,18 @@ actual object KeymapSettingsManager {
             }
         }
 }
+
+/**
+ * The bindings in [settings] that really hold a chord against a new action.
+ *
+ * Disabled bindings are excluded, so that switching a shortcut off in the Shortcuts screen frees
+ * its chord for a migration to fill - which is the same rule [ai.rever.boss.keymap.handler.KeymapValidator]
+ * applies when it decides what conflicts, and the two answering differently is how a user ends
+ * up with a chord that neither works nor shows a badge. The cost is that re-enabling the old
+ * binding then produces a real conflict, visible in the badge, which is the honest outcome of
+ * asking for both.
+ */
+private fun chordHolders(settings: KeymapSettings): List<KeyBinding> = settings.shortcuts.values.filter { it.enabled }
 
 /**
  * Same key and same set of modifiers, whatever order or spelling either is written in.

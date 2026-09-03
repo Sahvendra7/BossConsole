@@ -16,6 +16,12 @@ import kotlinx.coroutines.flow.update
  * necessarily the one the tab was closed from; that is the same compromise Chrome makes when the
  * originating window is gone.
  *
+ * Holds up to [MAX_ENTRIES] TabInfos per window until that window closes, which for browser
+ * tabs means the URL and title of CLOSED tabs living in memory for the window's lifetime.
+ * Nothing is persisted and there is no private-browsing mode today; if one arrives, or a "clear
+ * history" action, this stack has to be part of it and such tabs should skip [record] the way
+ * runner terminals do.
+ *
  * What is recorded is the panel's CURRENT [TabInfo] — the live navigation state, so reopening a
  * browser tab returns to the page it was showing, not the URL it was opened with. The tab's
  * component is NOT retained: `removeTab` destroys it (and with it any Chromium process) before
@@ -77,8 +83,14 @@ object ClosedTabHistory {
             stack.removeFirstOrNull()?.also { publishDepth(windowId, stack.size) }
         }
 
-    /** Whether [windowId] has anything to reopen (drives the menu item's enabled state). */
-    fun hasEntries(windowId: String): Boolean = synchronized(byWindow) { byWindow[windowId]?.isNotEmpty() == true }
+    /**
+     * Whether [windowId] has anything to reopen.
+     *
+     * Read off [depths] rather than the deque, so the interceptor's Cmd+Shift+T gate and the
+     * File menu item's enabled flag are the same answer from the same surface instead of two
+     * readings of one piece of state.
+     */
+    fun hasEntries(windowId: String): Boolean = (_depths.value[windowId] ?: 0) > 0
 
     /**
      * Drop a closed window's history.

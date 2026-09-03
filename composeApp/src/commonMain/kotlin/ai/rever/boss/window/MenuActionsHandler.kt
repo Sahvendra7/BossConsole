@@ -254,7 +254,7 @@ object MenuActionsHandler {
     fun cleanupWindow(windowId: String) {
         _splitEnabledState.value = _splitEnabledState.value - windowId
         _panelCountState.value = _panelCountState.value - windowId
-        _activePanelTabCountState.value = _activePanelTabCountState.value - windowId
+        _activePanelTabCountState.update { it - windowId }
         // Co-located with the other per-window state rather than left to the window-close path
         // alone: this one holds up to 25 TabInfos per window, so a future close path that
         // forgot it would strand them for the life of the process.

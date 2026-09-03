@@ -207,6 +207,23 @@ plugin pass. That is the documented rule working as intended, but Cmd+1..9 are p
 chords, and this is the change that closes them. A plugin wanting one has to be rebound by the
 user, which puts it in the keymap where it wins the earlier pass.
 
+### What these chords take from other surfaces
+
+One rule, applied everywhere: a chord is claimed when the action can act, and left alone when it
+cannot. It is NOT gated on focus, because the mechanism that fires these window-wide is a native
+menu accelerator, and a Compose `MenuBar` accelerator ignores the binding's `ShortcutContext`.
+Two consequences worth knowing before filing a bug:
+
+- **Cmd+[ and Cmd+]** become browser history whenever a browser is the visible surface of the
+  active main panel. With a browser there and focus in a sidebar editor, they navigate history
+  rather than outdent and indent. Narrowing further needs a focus signal the menu layer does not
+  have.
+- **Cmd+Opt+Left/Right** (and the Cmd+Shift+Bracket alternates) step tabs whenever the active
+  panel has two or more, whatever surface has focus - so a terminal or editor does not see them
+  in a multi-tab panel. This is the same rule as above, not a different one: the action can act,
+  so the chord is claimed. Cmd+1..Cmd+8 in a two-tab panel is the mirror image - the action
+  cannot act, so the chord goes through.
+
 A chord that cannot act is not claimed. Cmd+1..Cmd+8 with fewer tabs than that, Cmd+9 with no
 tabs, Cmd+Shift+T with an empty history, tab stepping in a single-tab panel and panel navigation
 in a single-panel window all propagate to whatever has focus instead of being swallowed. This

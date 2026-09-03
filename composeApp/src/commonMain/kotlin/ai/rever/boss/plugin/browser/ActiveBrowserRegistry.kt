@@ -76,9 +76,20 @@ object ActiveBrowserRegistry {
      */
     val windowsWithActiveBrowser: StateFlow<Set<String>> = _windowsWithActiveBrowser.asStateFlow()
 
-    private fun publishWindows() {
-        _windowsWithActiveBrowser.value = activeBrowserWindows(entries.values, ::isLive)
-    }
+    /**
+     * Recompute [windowsWithActiveBrowser] from [entries].
+     *
+     * Snapshot and assignment go under one lock, shared with every mutator. Without it two
+     * interleaving registrations can have the later assignment carry the earlier snapshot, and
+     * nothing recomputes until the NEXT register or unregister - so the failure sticks: the
+     * browser menu items stay enabled for a window with no browser and swallow Cmd+[ from an
+     * editor, which is the whole thing this flow exists to prevent. [activeIn] does not have
+     * the problem because it recomputes per call.
+     */
+    private fun publishWindows() =
+        synchronized(entries) {
+            _windowsWithActiveBrowser.value = activeBrowserWindows(entries.values.toList(), ::isLive)
+        }
 
     /**
      * The one definition of "this registration still has a browser behind it", so the menu's
@@ -112,8 +123,10 @@ object ActiveBrowserRegistry {
                 panelActive = panelActive,
                 sequence = sequencer.incrementAndGet(),
             )
-        handles[handle.id] = handle
-        entries[handle.id] = entry
+        synchronized(entries) {
+            handles[handle.id] = handle
+            entries[handle.id] = entry
+        }
         publishWindows()
         return entry
     }
@@ -131,16 +144,20 @@ object ActiveBrowserRegistry {
         handleId: String,
         token: Any?,
     ) {
-        if (token is Entry && entries.remove(handleId, token)) {
-            handles.remove(handleId)
-            publishWindows()
-        }
+        if (token !is Entry) return
+        val removed =
+            synchronized(entries) {
+                entries.remove(handleId, token).also { if (it) handles.remove(handleId) }
+            }
+        if (removed) publishWindows()
     }
 
     /** Unconditional removal, for handle disposal - the handle is gone, so no successor exists. */
     fun unregister(handleId: String) {
-        entries.remove(handleId)
-        handles.remove(handleId)
+        synchronized(entries) {
+            entries.remove(handleId)
+            handles.remove(handleId)
+        }
         publishWindows()
     }
 
