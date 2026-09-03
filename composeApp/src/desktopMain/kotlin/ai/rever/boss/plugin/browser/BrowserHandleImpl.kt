@@ -2077,8 +2077,15 @@ internal class BrowserHandleImpl(
     /**
      * Inject the rrweb recorder + page→host bridge into [frame] (main frame only).
      * rrweb captures same-origin iframes natively, so we never start a second
-     * recorder in subframes. Runs on [handleCall]'s thread, never Main: it blocks
-     * on the renderer, and on Main a page that stopped answering froze the app.
+     * recorder in subframes.
+     *
+     * Two callers, two threads, and never Main on either - the same pair
+     * [injectPageEventScript] has: [handleCall]'s thread when [startCoBrowseCapture]
+     * injects into the already-loaded document, and JxBrowser's own inject-callback
+     * thread from [ensureCoBrowseInjectCallback]'s document-start injector, which has
+     * to block there before calling proceed(). What matters is that neither is the
+     * EDT, because this blocks on the renderer four times over, and on Main a page
+     * that stopped answering froze the app.
      */
     private fun injectCoBrowseRecorder(frame: Frame) {
         try {
@@ -2354,6 +2361,14 @@ internal class BrowserHandleImpl(
         // Bounded on [handleCall] for the reason [executeJavaScript] gives: a viewer actuating a tab
         // whose page has stopped answering must not freeze the host.
         //
+        // No backlog guard here, unlike CoBrowseRtcPeerImpl.sendDom, and the difference is that this
+        // one is AWAITED. The viewer gets one status per event and cannot outrun its own round trips,
+        // so the queue depth is bounded by the number of viewers rather than by a frame rate - and
+        // `call`'s finally cancels whatever it gave up on, so a stale event resumes with cancellation
+        // instead of being actuated late into a page that recovered. What is left is retention: the
+        // task and its eventJson sit on the queue while the renderer is wedged. sendDom has neither
+        // property, which is why it drops instead.
+        //
         // The catch stays INSIDE the block rather than wrapping the call. Kotlin's
         // CancellationException is a java.util.concurrent one, which extends IllegalStateException,
         // so a `catch (e: Exception)` around the await would swallow a caller's cancellation and
@@ -2534,6 +2549,13 @@ internal class BrowserHandleImpl(
      *
      * Every part of that bound lives in [BoundedBrowserCall], including which thread the wait runs
      * on - see its KDoc for why leaving that to the caller silently lost the deadline.
+     *
+     * **The behaviour change a plugin can see.** This used to wait forever (and take the app with
+     * it); it now answers null after [BoundedBrowserCall.DEFAULT_TIMEOUT_MS]. That null is
+     * indistinguishable from a script that legitimately evaluated to null, so a plugin reading it as
+     * "no such element" will occasionally see that on a page slow enough to miss the deadline. The
+     * timeout is always logged with the tab's thread name, which is the only way to tell the two
+     * apart from outside.
      */
     override suspend fun executeJavaScript(script: String): Any? {
         if (!isValid) return null
@@ -3494,14 +3516,30 @@ internal class BrowserHandleImpl(
         SwingUtilities.invokeLater { closeSurfacePopOut() }
     }
 
+    /**
+     * The one round trip on this handle whose thread the *caller* used to pick.
+     *
+     * A non-suspend override on the public [BrowserHandle] interface that blocked on the renderer
+     * inline, so a plugin calling it from a `Dispatchers.Main` coroutine or a Compose click handler
+     * made the freeze this class was otherwise fixed for - and `BrowserMainThreadRoundTripTest`
+     * cannot see it, because there is no Main marker at the call site: the EDT-ness came from a
+     * caller a module away.
+     *
+     * [BoundedBrowserCall.post] rather than [BoundedBrowserCall.call] because there is nothing to
+     * await - this returns Unit, and a non-suspend caller has no context to suspend in anyway. The
+     * cost is that a caller now learns nothing about failure beyond the log, which it did not learn
+     * before either.
+     */
     override fun requestPictureInPicture() {
         if (!isValid) return
-        browser.mainFrame().ifPresent { frame ->
-            try {
-                frame.executeJavaScript<Unit>(BrowserJavaScripts.enablePictureInPicture)
-                logger.debug(LogCategory.BROWSER, "Requested Picture-in-Picture mode")
-            } catch (e: Exception) {
-                logger.warn(LogCategory.BROWSER, "Failed to request Picture-in-Picture", error = e)
+        handleCall.post {
+            browser.mainFrame().ifPresent { frame ->
+                try {
+                    frame.executeJavaScript<Unit>(BrowserJavaScripts.enablePictureInPicture)
+                    logger.debug(LogCategory.BROWSER, "Requested Picture-in-Picture mode")
+                } catch (e: Exception) {
+                    logger.warn(LogCategory.BROWSER, "Failed to request Picture-in-Picture", error = e)
+                }
             }
         }
     }

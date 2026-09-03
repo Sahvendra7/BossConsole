@@ -1,5 +1,10 @@
 package ai.rever.boss.plugin.browser
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogEntry
+import ai.rever.boss.utils.logging.LogLevel
+import ai.rever.boss.utils.logging.LogListener
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -206,6 +211,73 @@ class BoundedBrowserCallTest {
             }
             assertEquals(1, seen.size, "expected exactly one reported failure, got $seen")
         } finally {
+            call.shutdown()
+        }
+    }
+
+    /**
+     * [BoundedBrowserCall.backlog] is load-bearing, not diagnostic: `CoBrowseRtcPeerImpl.sendDom`
+     * decides whether to drop a DOM frame by reading it. Nothing pinned it, so a refactor that had
+     * it answer 0 - the queue swapped, the count taken after the poll - would silently turn the drop
+     * policy back into the unbounded growth it replaced, with every other test still green.
+     */
+    @Test
+    fun `backlog counts the work queued behind a wedged call`() {
+        val call = BoundedBrowserCall("test-bounded-backlog")
+        val release = CountDownLatch(1)
+        val entered = CountDownLatch(1)
+        try {
+            assertEquals(0, call.backlog, "an idle instance reported queued work")
+            call.post {
+                entered.countDown()
+                release.await()
+            }
+            entered.await()
+            // Queued, not started: the one thread is inside the post above.
+            call.post { }
+            call.post { }
+            assertEquals(2, call.backlog, "backlog did not count the work waiting behind the wedge")
+        } finally {
+            release.countDown()
+            call.shutdown()
+        }
+    }
+
+    /**
+     * The one documented way to reintroduce a permanent hang, pinned at the moment it is written
+     * rather than at the moment a renderer wedges.
+     *
+     * `coBrowseScope`, `pageEventScope` and `call` all share one dispatcher, so an edit that awaits
+     * a call from inside one of those scopes hangs forever - and only once a page stops answering,
+     * which is why the warning is eager and why it needs to stay that way.
+     */
+    @Test
+    fun `awaiting a call from its own dispatcher is warned about`() {
+        val call = BoundedBrowserCall("test-bounded-confinement-warning")
+        val seen = mutableListOf<LogEntry>()
+        val listener = LogListener { entry -> synchronized(seen) { seen += entry } }
+        val previousLevel = BossLogger.globalLevel
+        BossLogger.setGlobalLevel(LogLevel.WARN)
+        BossLogger.setCategoryLevel(LogCategory.BROWSER, LogLevel.WARN)
+        BossLogger.addListener(listener)
+        try {
+            // A block that completes, so the call itself succeeds. The warning is about the shape,
+            // not the outcome: on the happy path awaiting from this dispatcher works, which is
+            // exactly why nothing but an eager warning would ever surface it.
+            runBlocking {
+                withContext(call.dispatcher) { assertEquals("fine", call.call(generous) { "fine" }) }
+            }
+            val warnings = synchronized(seen) { seen.filter { it.message.contains("awaited from its own dispatcher") } }
+            assertEquals(1, warnings.size, "no warning for a call awaited from its own dispatcher: $seen")
+            assertEquals(
+                "test-bounded-confinement-warning",
+                warnings.single().data?.get("thread"),
+                "the warning did not name the instance whose dispatcher was awaited from",
+            )
+        } finally {
+            BossLogger.removeListener(listener)
+            BossLogger.clearCategoryLevel(LogCategory.BROWSER)
+            BossLogger.setGlobalLevel(previousLevel)
             call.shutdown()
         }
     }

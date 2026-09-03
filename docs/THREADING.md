@@ -517,8 +517,14 @@ Notes:
   dispatcher.** It works until a renderer wedges and then hangs forever, because
   resuming needs the thread the call is holding. `BoundedBrowserCall` warns at
   runtime when it sees this.
+- **A non-suspend caller uses `post`, not an inline call.** A `fun` that returns
+  Unit and blocks on the renderer inline runs on whatever thread its caller is on,
+  and for a plugin-facing API that can be the EDT one module away - which no source
+  guard can see. `post` puts it on the instance's thread and returns immediately.
 - **Fire-and-forget streams must drop, not enqueue.** The queue is unbounded, and
-  nothing cancels work that is never awaited. Check `backlog` first.
+  nothing cancels work that is never awaited. Check `backlog` first - and if the
+  caller holds a queue of its own upstream (ops buffered until a page is ready),
+  cap that too, or the check reads zero in exactly the state it was written for.
 - Browser-*process* calls (`loadUrl`, `browser.url()`, `browser.dispatch`) are not
   this hazard - they are answered by a process page JS cannot block.
 

@@ -2,6 +2,7 @@ package ai.rever.boss.plugin.browser
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -44,12 +45,19 @@ class BrowserMainThreadRoundTripTest {
      * Without that distinction this guard flagged `DefaultPlugin`'s adapter, which only delegates to
      * the wrapper and is exactly what a caller is *supposed* to do.
      *
-     * Known gaps, both of which are how this check goes blind, so both belong in writing:
+     * Known gaps, every one of which is how this check goes blind, so every one belongs in writing:
      *  - a JxBrowser call whose type argument was inferred from an expected type reads as the
      *    wrapper and is missed. There are none today, and it is not the natural style here.
      *  - indirection more than **one** call deep. A Main block calling a local helper that blocks is
      *    caught (see [roundTripFunctions]) - that is the exact shape of the bug this change fixes -
      *    but a helper calling a second helper is not.
+     *  - a round trip written *inside* a `${…}` string template. [endOfString] discards an
+     *    interpolation with the literal that holds it, so a call in there is not seen at all. The
+     *    alternative - lexing template expressions back into the code stream - buys a shape nothing
+     *    in this repo writes, at the cost of the recursion being load-bearing rather than defensive.
+     *  - a round trip reached only from a **non-suspend** function whose caller supplies the EDT.
+     *    There is no Main marker at such a call site, so nothing here can see it; that is how
+     *    `requestPictureInPicture` survived this guard, and why it is posted rather than inline.
      */
     private val rendererRoundTrips = listOf(".executeJavaScript<", ".putProperty(")
 
@@ -173,8 +181,70 @@ class BrowserMainThreadRoundTripTest {
         out: StringBuilder,
     ): Int {
         out.append("\"\"")
+        return endOfString(src, start)
+    }
+
+    /**
+     * Just past the closing quote of the string literal at [start], or its line end.
+     *
+     * Interpolations are skipped as a unit, which is the whole point: stopping at the first `"` it
+     * met made a template like `"…${f("x")}…"` re-pair every quote for the rest of that physical
+     * line, so what is code read as string and vice versa. Newline-bounded, so it could not switch
+     * the file off - but it could swallow the tail of a line, and if that tail carried an unmatched
+     * brace then [blockAt]'s depth count is wrong and a block either truncates (a missed detection)
+     * or runs to EOF (a false positive). Not hypothetical: `"Co-browse control ${if (granted)
+     * "granted" else "revoked"}"` is in one of the files this guard is pointed at.
+     */
+    private fun endOfString(
+        src: String,
+        start: Int,
+    ): Int {
         var i = start + 1
-        while (i < src.length && src[i] != '"' && src[i] != '\n') i += if (src[i] == '\\') 2 else 1
+        while (i < src.length && src[i] != '\n') {
+            i =
+                when {
+                    src[i] == '\\' -> i + 2
+                    src.startsWith("\${", i) -> endOfTemplateExpression(src, i)
+                    src[i] == '"' -> return i + 1
+                    else -> i + 1
+                }
+        }
+        return minOf(i, src.length)
+    }
+
+    /**
+     * Just past the `}` that closes the `${…}` at [start].
+     *
+     * Brace-counted, with nested string and char literals skipped whole - either can hold a brace of
+     * its own (`wrap("}")`), and counting one of those would desync the caller's depth just as
+     * surely as mis-pairing a quote.
+     */
+    private fun endOfTemplateExpression(
+        src: String,
+        start: Int,
+    ): Int {
+        var i = start + 2
+        var depth = 1
+        while (i < src.length && depth > 0 && src[i] != '\n') {
+            if (src[i] == '{') depth++
+            if (src[i] == '}') depth--
+            i =
+                when (src[i]) {
+                    '\\' -> i + 2
+                    '"' -> endOfString(src, i)
+                    '\'' -> endOfCharLiteral(src, i)
+                    else -> i + 1
+                }
+        }
+        return minOf(i, src.length)
+    }
+
+    private fun endOfCharLiteral(
+        src: String,
+        start: Int,
+    ): Int {
+        var i = start + 1
+        while (i < src.length && src[i] != '\'' && src[i] != '\n') i += if (src[i] == '\\') 2 else 1
         return if (i >= src.length) src.length else i + 1
     }
 
@@ -184,9 +254,7 @@ class BrowserMainThreadRoundTripTest {
         out: StringBuilder,
     ): Int {
         out.append("''")
-        var i = start + 1
-        while (i < src.length && src[i] != '\'' && src[i] != '\n') i += if (src[i] == '\\') 2 else 1
-        return if (i >= src.length) src.length else i + 1
+        return endOfCharLiteral(src, start)
     }
 
     private fun copyChar(
@@ -301,6 +369,40 @@ class BrowserMainThreadRoundTripTest {
                 "not answer parks the EDT forever and the AppKit main thread parks behind it - the " +
                 "whole app and the macOS menu bar freeze. Route it through BoundedBrowserCall.",
         )
+    }
+
+    /**
+     * The lexer itself, because a guard that reads its input wrong is worse than no guard.
+     *
+     * The fixture is the minimal shape that used to hide an offender rather than merely report a
+     * confusing one: a nested-quote template holding a `}`. Under the old single-pass `skipString`
+     * the quotes re-paired, that `}` was read as *code*, and it closed the dispatched block one
+     * statement early - so the round trip below it fell outside the block and the file reported
+     * clean. Verified red against the previous lexer before this was added.
+     */
+    @Test
+    fun `the lexer does not desync on a nested-quote string template`() {
+        val fixture = File.createTempFile("round-trip-lexer", ".kt")
+        try {
+            fixture.writeText(
+                """
+                fun b(frame: Frame) {
+                    withContext(Dispatchers.Main) {
+                        logger.warn("closing: ${'$'}{wrap("}")}")
+                        frame.executeJavaScript<Any?>("x")
+                    }
+                }
+                """.trimIndent(),
+            )
+            val blocks = mainThreadBlocks(codeOf(fixture))
+            assertEquals(1, blocks.size, "the dispatched block was not found at all: $blocks")
+            assertTrue(
+                rendererRoundTrips.any { blocks.single().contains(it) },
+                "the template truncated the dispatched block and hid the round trip in it: ${blocks.single()}",
+            )
+        } finally {
+            fixture.delete()
+        }
     }
 
     @Test

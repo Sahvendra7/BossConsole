@@ -98,7 +98,7 @@ internal class CoBrowseRtcPeerImpl(
     private val injected = AtomicBoolean(false)
     private val injectQueued = AtomicBoolean(false)
 
-    /** One warning per stall, not one per dropped frame. */
+    /** One warning per stall, not one per dropped frame. Cleared only on a drained queue. */
     private val domDropWarned = AtomicBoolean(false)
 
     @Volatile private var ready = false
@@ -109,6 +109,17 @@ internal class CoBrowseRtcPeerImpl(
     // loaded + initialized are queued here and flushed on init — the viewer can
     // send its offer faster than the localhost page loads.
     private val pending = ArrayList<String>()
+
+    /**
+     * How many of [pending] are DOM frames. Guarded by `pending`'s own monitor.
+     *
+     * Counted separately rather than gating on `pending.size`, because [pending] also holds the
+     * offer and every ICE candidate, and a peer that is slow to come up can easily produce more of
+     * those than [MAX_DOM_BACKLOG] - which would then drop the whole DOM stream for a reason that
+     * has nothing to do with the stream. Read outside the lock only for the warning watermark, where
+     * a stale count costs at most one extra WARN.
+     */
+    @Volatile private var pendingDomFrames = 0
 
     /** Page title of the tab to capture; read when the peer page calls getDisplayMedia. */
     @Volatile private var targetTitle: String? = null
@@ -193,20 +204,43 @@ internal class CoBrowseRtcPeerImpl(
             ready = true
             queued = ArrayList(pending)
             pending.clear()
+            pendingDomFrames = 0
         }
+        // This loop is the burst [sendDom]'s KDoc says it is avoiding, so the DOM frames in here are
+        // capped on the queueing side - see [runJs]'s domFrame. The signalling ops (offer, ICE) are
+        // not capped and do not need to be: they are one-per-negotiation, not a stream.
         queued.forEach { runCatching { frame.executeJavaScript<Any?>(it) } }
     }
 
     private fun mainFrame(): Frame? = browser?.takeIf { !it.isClosed }?.mainFrame()?.orElse(null)
 
-    private fun runJs(script: String) {
-        if (closed) return
+    /**
+     * Queue [script] for the peer page, or dispatch it now if the page is already up.
+     *
+     * @param domFrame marks the rrweb stream, the one caller that drops rather than enqueues. The cap
+     *   is applied to whichever queue the script would land on, because the two are alternatives and
+     *   not stages: until the page answers, nothing here reaches the executor at all, so a cap read
+     *   off [BoundedBrowserCall.backlog] alone is bypassed in exactly the state it was written for.
+     * @return false when the frame was dropped, so the caller can warn once per stall.
+     */
+    // Five returns rather than two: they are the three outcomes (closed, dropped, accepted) across
+    // the two queues, and collapsing them means carrying the decision out of the synchronized block
+    // that has to make it - where `ready` can already have flipped.
+    @Suppress("ReturnCount")
+    private fun runJs(
+        script: String,
+        domFrame: Boolean = false,
+    ): Boolean {
+        if (closed) return false
         synchronized(pending) {
             if (!ready) {
+                if (domFrame && pendingDomFrames >= MAX_DOM_BACKLOG) return false
                 pending.add(script)
-                return
+                if (domFrame) pendingDomFrames++
+                return true
             } // apply once initialized
         }
+        if (domFrame && browserCall.backlog >= MAX_DOM_BACKLOG) return false
         scope.launch {
             try {
                 mainFrame()?.executeJavaScript<Any?>(script)
@@ -216,6 +250,7 @@ internal class CoBrowseRtcPeerImpl(
                 logger.warn(LogCategory.BROWSER, "WebRTC peer JS call failed", error = e)
             }
         }
+        return true
     }
 
     override fun acceptOffer(sdp: String) {
@@ -231,10 +266,17 @@ internal class CoBrowseRtcPeerImpl(
      * The one caller that drops rather than enqueues.
      *
      * rrweb emits continuously and each payload is a DOM mutation batch, so against a peer page that
-     * has stopped answering this would grow [BoundedBrowserCall.backlog] without limit, holding every
-     * frame's JSON - and then run them all in a burst if the page ever recovered. That is exactly the
-     * hazard cited for leaving `dispatchCoBrowseInput` on Main in BrowserHandleImpl, and the argument
-     * has to point the same way here: same shape, bigger payloads.
+     * has stopped answering this would grow without limit, holding every frame's JSON - and then run
+     * them all in a burst if the page ever recovered. That is exactly the hazard cited for leaving
+     * `dispatchCoBrowseInput` on Main in BrowserHandleImpl, and the argument has to point the same
+     * way here: same shape, bigger payloads.
+     *
+     * **Both queues, not just the executor's.** The first version gated on
+     * [BoundedBrowserCall.backlog] alone, which a peer page that has not answered never reaches:
+     * [runJs] appends to [pending] and returns while `ready` is false, so the guard was bypassed in
+     * precisely the state it describes - an unreachable `RtcHostServer` or a load that never
+     * finishes grew [pending] for the whole life of the share, silently. The cap now lives in [runJs]
+     * and applies to whichever queue the frame would land on.
      *
      * Dropping is safe in the way that matters. A peer page that is not answering is not mirroring
      * anything to a viewer either, so these frames have nowhere to be displayed; the share is already
@@ -243,18 +285,22 @@ internal class CoBrowseRtcPeerImpl(
      * viewer's mirror needs first.
      */
     override fun sendDom(json: String) {
-        if (browserCall.backlog >= MAX_DOM_BACKLOG) {
+        if (closed) return
+        val accepted = runJs("window.__bossRtcSendDom && window.__bossRtcSendDom(${jsStr(json)});", domFrame = true)
+        if (!accepted) {
             if (domDropWarned.compareAndSet(false, true)) {
                 logger.warn(
                     LogCategory.BROWSER,
                     "WebRTC peer is not draining DOM frames - dropping until it catches up",
-                    mapOf("backlog" to browserCall.backlog.toString()),
+                    mapOf("backlog" to browserCall.backlog.toString(), "pending" to pendingDomFrames.toString()),
                 )
             }
             return
         }
-        domDropWarned.set(false)
-        runJs("window.__bossRtcSendDom && window.__bossRtcSendDom(${jsStr(json)});")
+        // A drained queue, not merely an accepted frame. [MAX_DOM_BACKLOG] is small, so a peer
+        // draining just fast enough to sit at the cap crosses it constantly, and clearing on every
+        // accept turns "one warning per stall" into one per crossing.
+        if (browserCall.backlog == 0 && pendingDomFrames == 0) domDropWarned.set(false)
     }
 
     override fun startVideo(targetTitle: String) {
@@ -276,6 +322,13 @@ internal class CoBrowseRtcPeerImpl(
         bridge.onState = null
         bridge.onVideoError = null
         bridge.onVideoState = null
+        // A peer that closed before its page ever answered still holds every op that raced ahead of
+        // it, DOM payloads included, until the object itself is collected. `closed` already stops
+        // anything from being flushed, so these are dead weight.
+        synchronized(pending) {
+            pending.clear()
+            pendingDomFrames = 0
+        }
         scope.launch {
             try {
                 browser?.takeIf { !it.isClosed }?.close()
@@ -295,7 +348,8 @@ internal class CoBrowseRtcPeerImpl(
 
     private companion object {
         /**
-         * How many un-started DOM frames may sit on the peer's thread before new ones are dropped.
+         * How many un-started DOM frames may be waiting - on the peer's thread, or in [pending]
+         * before the page has answered - before new ones are dropped.
          *
          * Small on purpose: anything past a handful means the peer page is not draining, and the
          * frames behind it are already too stale to be worth the memory.
