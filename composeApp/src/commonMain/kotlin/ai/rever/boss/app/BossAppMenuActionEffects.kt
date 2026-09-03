@@ -185,6 +185,16 @@ internal fun BossAppMenuActionEffects(
                         comp?.commitTabCycle()
                         state.tabCycleOverlay = null
                     }
+
+                    // Discrete chords (Cmd+Opt+Arrow, Cmd+Shift+Bracket): step in tab-bar order
+                    // and leave the overlay alone — there is no cycle for it to describe.
+                    MenuActionsHandler.TabSwitchAction.NEXT_POSITIONAL -> {
+                        comp?.switchToNextTabPositional()
+                    }
+
+                    MenuActionsHandler.TabSwitchAction.PREVIOUS_POSITIONAL -> {
+                        comp?.switchToPreviousTabPositional()
+                    }
                 }
             }.launchIn(this)
     }
@@ -395,6 +405,68 @@ internal fun BossAppMenuActionEffects(
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     ActiveBrowserRegistry.activeIn(windowId)?.reload()
+                }
+            }.launchIn(this)
+    }
+
+    // Cmd+1..Cmd+9. The active panel owns the positions, the same way tab switching does.
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.selectTabIndexEvents
+            .onEach { (eventWindowId, index) ->
+                if (eventWindowId != windowId) return@onEach
+                splitViewState
+                    .getPanelTabsComponent(splitViewState.activePanelId)
+                    ?.selectTabByPosition(index)
+            }.launchIn(this)
+    }
+
+    // Cmd+Shift+T. The history is window-scoped (see ClosedTabHistory) but the tab has to land
+    // in a panel, so it reopens into the active one. Works for every tab type — the entry is a
+    // TabInfo, rebuilt through its own tab-type factory.
+    //
+    // The liveness check is passed in because tab ids are unique across the WINDOW while a
+    // tabs component only knows its own panel: without the wider view, reopening an id that a
+    // sibling panel already holds would put the same id in two panels.
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.reopenClosedTabEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId != windowId) return@onEach
+                splitViewState
+                    .getPanelTabsComponent(splitViewState.activePanelId)
+                    ?.reopenLastClosedTab { tabId ->
+                        splitViewState.getAllPanels().any { panel ->
+                            panel.tabsComponent.tabsState.value.tabs
+                                .any { it.id == tabId }
+                        }
+                    }
+            }.launchIn(this)
+    }
+
+    // Browser history and DevTools. Same ActiveBrowserRegistry lookup, and for the same reason,
+    // as the zoom and reload handlers above.
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.browserBackEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    ActiveBrowserRegistry.activeIn(windowId)?.takeIf { it.canGoBack() }?.goBack()
+                }
+            }.launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.browserForwardEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    ActiveBrowserRegistry.activeIn(windowId)?.takeIf { it.canGoForward() }?.goForward()
+                }
+            }.launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.browserDevToolsEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    ActiveBrowserRegistry.activeIn(windowId)?.showDevTools()
                 }
             }.launchIn(this)
     }

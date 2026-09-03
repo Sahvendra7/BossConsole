@@ -35,11 +35,46 @@ object MenuActionsHandler {
      * than one flow per action: a "next/previous" step and the "commit" that follows it must
      * be observed in emission order, which is only guaranteed within one ordered stream.
      */
-    enum class TabSwitchAction { NEXT, PREVIOUS, COMMIT }
+
+    /** [triggerSelectTabByIndex] sentinel meaning "whatever the last tab is". */
+    const val LAST_TAB_INDEX = -1
+
+    enum class TabSwitchAction {
+        NEXT,
+        PREVIOUS,
+        COMMIT,
+
+        /**
+         * Step in tab-bar order regardless of the configured TabSwitchMode, and start no MRU
+         * cycle. Cmd+Opt+Arrow / Cmd+Shift+Bracket are browser chords with no modifier-release
+         * gesture to commit on, so an MRU cycle armed by them would never be committed.
+         */
+        NEXT_POSITIONAL,
+        PREVIOUS_POSITIONAL,
+    }
 
     // Single ordered stream for Ctrl+Tab so a step is always delivered before its commit.
     private val _tabSwitchEvents = MutableSharedFlow<Pair<String, TabSwitchAction>>(extraBufferCapacity = 10)
     val tabSwitchEvents: SharedFlow<Pair<String, TabSwitchAction>> = _tabSwitchEvents.asSharedFlow()
+
+    /**
+     * Select a tab by position: (windowId, index), where index -1 means "the last tab"
+     * (Cmd+9's browser meaning). Out-of-range positions are ignored by the collector.
+     */
+    private val _selectTabIndexEvents = MutableSharedFlow<Pair<String, Int>>(extraBufferCapacity = 10)
+    val selectTabIndexEvents: SharedFlow<Pair<String, Int>> = _selectTabIndexEvents.asSharedFlow()
+
+    private val _reopenClosedTabEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val reopenClosedTabEvents: SharedFlow<String> = _reopenClosedTabEvents.asSharedFlow()
+
+    private val _browserBackEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val browserBackEvents: SharedFlow<String> = _browserBackEvents.asSharedFlow()
+
+    private val _browserForwardEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val browserForwardEvents: SharedFlow<String> = _browserForwardEvents.asSharedFlow()
+
+    private val _browserDevToolsEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val browserDevToolsEvents: SharedFlow<String> = _browserDevToolsEvents.asSharedFlow()
 
     private val _zoomInEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val zoomInEvents: SharedFlow<String> = _zoomInEvents.asSharedFlow()
@@ -229,6 +264,59 @@ object MenuActionsHandler {
      */
     fun triggerPreviousTab(windowId: String) {
         _tabSwitchEvents.tryEmit(windowId to TabSwitchAction.PREVIOUS)
+    }
+
+    /**
+     * Trigger a "Next Tab" in tab-bar order (Cmd+Opt+Right), ignoring the MRU setting.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerNextTabPositional(windowId: String) {
+        _tabSwitchEvents.tryEmit(windowId to TabSwitchAction.NEXT_POSITIONAL)
+    }
+
+    /**
+     * Trigger a "Previous Tab" in tab-bar order (Cmd+Opt+Left), ignoring the MRU setting.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerPreviousTabPositional(windowId: String) {
+        _tabSwitchEvents.tryEmit(windowId to TabSwitchAction.PREVIOUS_POSITIONAL)
+    }
+
+    /**
+     * Select the tab at [index] in the active panel (Cmd+1..Cmd+8, zero-based).
+     */
+    fun triggerSelectTabByIndex(
+        windowId: String,
+        index: Int,
+    ) {
+        _selectTabIndexEvents.tryEmit(windowId to index)
+    }
+
+    /** Select the last tab in the active panel (Cmd+9). */
+    fun triggerSelectLastTab(windowId: String) {
+        _selectTabIndexEvents.tryEmit(windowId to LAST_TAB_INDEX)
+    }
+
+    /** Reopen the most recently closed tab in this window (Cmd+Shift+T). */
+    fun triggerReopenClosedTab(windowId: String) {
+        _reopenClosedTabEvents.tryEmit(windowId)
+    }
+
+    /** Browser history back for the window's active browser (Cmd+[). */
+    fun triggerBrowserBack(windowId: String) {
+        _browserBackEvents.tryEmit(windowId)
+    }
+
+    /** Browser history forward for the window's active browser (Cmd+]). */
+    fun triggerBrowserForward(windowId: String) {
+        _browserForwardEvents.tryEmit(windowId)
+    }
+
+    /** Open DevTools on the window's active browser (Cmd+Opt+I). */
+    fun triggerBrowserDevTools(windowId: String) {
+        _browserDevToolsEvents.tryEmit(windowId)
     }
 
     /**

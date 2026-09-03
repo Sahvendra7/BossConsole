@@ -1,6 +1,7 @@
 package ai.rever.boss.keymap.handler
 
 import ai.rever.boss.keymap.model.KeyBinding
+import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.utils.SystemUtils
@@ -137,6 +138,29 @@ class KeymapMatcher(
     }
 
     /**
+     * Which modifiers a keystroke's modifier-name list actually asks for.
+     *
+     * Extracted so the modifier vocabulary ("Cmd"/"Meta", "Alt"/"Option", ...) is described in
+     * one place rather than re-parsed inline at every comparison.
+     */
+    private data class RequiredModifiers(
+        val cmd: Boolean,
+        val ctrl: Boolean,
+        val shift: Boolean,
+        val alt: Boolean,
+    ) {
+        companion object {
+            fun of(modifiers: List<String>): RequiredModifiers =
+                RequiredModifiers(
+                    cmd = modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) },
+                    ctrl = modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) },
+                    shift = modifiers.any { it.equals("Shift", true) },
+                    alt = modifiers.any { it.equals("Alt", true) || it.equals("Option", true) },
+                )
+        }
+    }
+
+    /**
      * Check if a keyboard event matches a specific key binding.
      */
     private fun matchesBinding(
@@ -145,14 +169,27 @@ class KeymapMatcher(
     ): Boolean {
         if (!binding.enabled) return false
 
+        // Primary keystroke OR any alternate: a binding declaring alternateKeystrokes means
+        // "any of these fires this action" (Cmd+Plus alongside Cmd+Equals for zoom in).
+        return binding.allKeystrokes.any { matchesKeystroke(event, it) }
+    }
+
+    /**
+     * Check if a keyboard event matches one keystroke of a binding.
+     */
+    private fun matchesKeystroke(
+        event: KeyEvent,
+        keystroke: KeyStroke,
+    ): Boolean {
         // Check if key matches
-        if (!keyMatches(event.key, binding.key)) return false
+        if (!keyMatches(event.key, keystroke.key)) return false
 
         // Check modifiers
-        val hasCmd = binding.modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
-        val hasCtrl = binding.modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) }
-        val hasShift = binding.modifiers.any { it.equals("Shift", true) }
-        val hasAlt = binding.modifiers.any { it.equals("Alt", true) || it.equals("Option", true) }
+        val required = RequiredModifiers.of(keystroke.modifiers)
+        val hasCmd = required.cmd
+        val hasCtrl = required.ctrl
+        val hasShift = required.shift
+        val hasAlt = required.alt
 
         // Platform-aware modifier matching:
         // - macOS: Cmd key sets isMetaPressed, Ctrl key sets isCtrlPressed

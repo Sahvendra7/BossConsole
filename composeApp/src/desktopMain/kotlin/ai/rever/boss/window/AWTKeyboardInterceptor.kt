@@ -213,7 +213,23 @@ object AWTKeyboardInterceptor {
                 if (binding != null) {
                     // Dispatch the action through MenuActionsHandler
                     val handled = dispatchAction(binding.actionId, windowId)
-                    if (handled) {
+                    if (!handled) {
+                        // A host binding matched but has no dispatch case here, because the chord
+                        // is served further down: the editor plugin, for one, opens Go To Line
+                        // from its own onPreviewKeyEvent, and EDITOR_GO_TO_LINE exists in the
+                        // keymap only so the chord is listed and rebindable.
+                        //
+                        // Return rather than fall through to the plugin-default pass below. That
+                        // pass is documented as running only when NO host binding matched, and
+                        // letting an undispatched host binding fall into it inverts the rule:
+                        // whichever plugin registered the same chord as a GLOBAL default would
+                        // shadow the host binding AND consume the event (a plugin's onAction
+                        // returns Unit, so PluginShortcutRegistryImpl.dispatch reports success
+                        // for any registered action), leaving the real handler with nothing.
+                        return@KeyEventDispatcher false
+                    }
+
+                    run {
                         // Begin (or continue) an MRU tab cycle: remember which modifier is
                         // sustaining it so its release — and only its release — commits the cycle.
                         // This arms even when the focused panel has <=1 tab (the component-side
@@ -385,10 +401,15 @@ object AWTKeyboardInterceptor {
         for (binding in settings.shortcuts.values) {
             if (!binding.enabled) continue
 
-            // Check if key matches
-            if (!binding.key.equals(keyName, ignoreCase = true)) continue
+            // Primary keystroke OR any alternate — allKeystrokes is what makes Cmd+Plus reach
+            // zoom in alongside Cmd+Equals. Matching only `binding.key` silently ignored every
+            // alternateKeystrokes entry the model has always been able to express.
+            val keystrokeMatches =
+                binding.allKeystrokes.any { keystroke ->
+                    keyNameMatches(keystroke.key, keyName) && chordMatchesEvent(keystroke.modifiers, event)
+                }
 
-            if (chordMatchesEvent(binding.modifiers, event)) {
+            if (keystrokeMatches) {
                 // Skip bindings whose context doesn't match
                 if (!isContextEligible(binding.context, currentContext)) continue
 
@@ -429,7 +450,7 @@ object AWTKeyboardInterceptor {
             val spec = registered.spec
             val default = spec.defaultBinding ?: continue
             if (userShortcuts.containsKey(spec.actionId)) continue
-            if (!default.key.equals(keyName, ignoreCase = true)) continue
+            if (!keyNameMatches(default.key, keyName)) continue
             if (chordMatchesEvent(default.modifiers, event)) {
                 return spec.actionId
             }
@@ -466,7 +487,39 @@ object AWTKeyboardInterceptor {
     }
 
     /**
+     * Compare a binding's key name against [eventKeyName] from [getKeyName].
+     *
+     * Alias-tolerant so a keymap file written by an older build (or hand-edited, or imported
+     * from another machine) still matches: "Left" and "DirectionLeft" are the same key, as are
+     * "Space"/"Spacebar" and "Esc"/"Escape".
+     */
+    internal fun keyNameMatches(
+        bindingKey: String,
+        eventKeyName: String,
+    ): Boolean = canonicalKeyName(bindingKey) == canonicalKeyName(eventKeyName)
+
+    private fun canonicalKeyName(keyName: String): String =
+        when (keyName.lowercase()) {
+            "left", "arrowleft", "directionleft" -> "directionleft"
+            "right", "arrowright", "directionright" -> "directionright"
+            "up", "arrowup", "directionup" -> "directionup"
+            "down", "arrowdown", "directiondown" -> "directiondown"
+            "space", "spacebar" -> "space"
+            "esc", "escape" -> "escape"
+            "enter", "return" -> "enter"
+            "plus" -> "plus"
+            else -> keyName.lowercase()
+        }
+
+    /**
      * Convert AWT key code to key name string.
+     *
+     * The vocabulary here has to be the one the presets store, which is Compose's `Key` naming:
+     * the arrows are "DirectionLeft" and friends, NOT "Left". They used to be spelled "Left",
+     * which meant no arrow binding ever matched on this path — Cmd+Arrow panel navigation
+     * worked only because the native menu carries its own accelerator, and fell dead the moment
+     * a terminal or browser held focus. [keyNameMatches] accepts both spellings so an older or
+     * hand-edited keymap file still resolves.
      */
     private fun getKeyName(keyCode: Int): String =
         when (keyCode) {
@@ -512,10 +565,10 @@ object AWTKeyboardInterceptor {
             KeyEvent.VK_TAB -> "Tab"
             KeyEvent.VK_BACK_SPACE -> "Backspace"
             KeyEvent.VK_DELETE -> "Delete"
-            KeyEvent.VK_LEFT -> "Left"
-            KeyEvent.VK_RIGHT -> "Right"
-            KeyEvent.VK_UP -> "Up"
-            KeyEvent.VK_DOWN -> "Down"
+            KeyEvent.VK_LEFT -> "DirectionLeft"
+            KeyEvent.VK_RIGHT -> "DirectionRight"
+            KeyEvent.VK_UP -> "DirectionUp"
+            KeyEvent.VK_DOWN -> "DirectionDown"
             KeyEvent.VK_HOME -> "Home"
             KeyEvent.VK_END -> "End"
             KeyEvent.VK_PAGE_UP -> "PageUp"
@@ -548,6 +601,32 @@ object AWTKeyboardInterceptor {
         }
 
     /**
+     * Run [trigger] and claim the event, but only while [windowId] has more than one panel.
+     *
+     * Returning false leaves the chord to the focused component. See the panel-navigation
+     * branches in [dispatchAction] for why that matters.
+     */
+    internal fun dispatchIfMultiPanel(
+        windowId: String,
+        trigger: (String) -> Unit,
+    ): Boolean {
+        val panelCount = MenuActionsHandler.panelCountState.value[windowId] ?: 1
+        if (panelCount <= 1) return false
+        trigger(windowId)
+        return true
+    }
+
+    /**
+     * Test seam for [dispatchAction]: whether the interceptor claims [actionId] itself.
+     *
+     * False means the chord is left to propagate — see [HostBindingPrecedenceTest].
+     */
+    internal fun dispatchActionForTest(
+        actionId: String,
+        windowId: String,
+    ): Boolean = dispatchAction(actionId, windowId)
+
+    /**
      * Dispatch an action through MenuActionsHandler.
      * Returns true if the action was handled, false otherwise.
      */
@@ -574,6 +653,26 @@ object AWTKeyboardInterceptor {
 
             KeymapActions.TAB_PREVIOUS -> {
                 MenuActionsHandler.triggerPreviousTab(windowId)
+                true
+            }
+
+            KeymapActions.TAB_REOPEN_CLOSED -> {
+                MenuActionsHandler.triggerReopenClosedTab(windowId)
+                true
+            }
+
+            KeymapActions.TAB_NEXT_POSITIONAL -> {
+                MenuActionsHandler.triggerNextTabPositional(windowId)
+                true
+            }
+
+            KeymapActions.TAB_PREVIOUS_POSITIONAL -> {
+                MenuActionsHandler.triggerPreviousTabPositional(windowId)
+                true
+            }
+
+            KeymapActions.TAB_SELECT_LAST -> {
+                MenuActionsHandler.triggerSelectLastTab(windowId)
                 true
             }
 
@@ -610,25 +709,29 @@ object AWTKeyboardInterceptor {
                 true
             }
 
-            // Panel Navigation
+            // Panel Navigation.
+            //
+            // Gated on there being somewhere to navigate TO, mirroring the `enabled` flag on the
+            // matching View-menu items. The gate is what keeps Cmd+Left meaning "caret to line
+            // start" in a text field or a web page whenever the window has a single panel: the
+            // default bindings are bare Cmd+Arrow, which macOS also reserves for caret movement,
+            // so an unconditional `true` here would consume the chord and hand back nothing.
+            // (With a split open the chord is the user's panel navigation either way — that is
+            // already what the enabled menu accelerator does today.)
             KeymapActions.PANEL_NAVIGATE_LEFT -> {
-                MenuActionsHandler.triggerNavigatePanelLeft(windowId)
-                true
+                dispatchIfMultiPanel(windowId) { MenuActionsHandler.triggerNavigatePanelLeft(it) }
             }
 
             KeymapActions.PANEL_NAVIGATE_RIGHT -> {
-                MenuActionsHandler.triggerNavigatePanelRight(windowId)
-                true
+                dispatchIfMultiPanel(windowId) { MenuActionsHandler.triggerNavigatePanelRight(it) }
             }
 
             KeymapActions.PANEL_NAVIGATE_UP -> {
-                MenuActionsHandler.triggerNavigatePanelUp(windowId)
-                true
+                dispatchIfMultiPanel(windowId) { MenuActionsHandler.triggerNavigatePanelUp(it) }
             }
 
             KeymapActions.PANEL_NAVIGATE_DOWN -> {
-                MenuActionsHandler.triggerNavigatePanelDown(windowId)
-                true
+                dispatchIfMultiPanel(windowId) { MenuActionsHandler.triggerNavigatePanelDown(it) }
             }
 
             // Split Panel
@@ -650,6 +753,21 @@ object AWTKeyboardInterceptor {
 
             KeymapActions.BROWSER_FIND -> {
                 MenuActionsHandler.triggerBrowserFind(windowId)
+                true
+            }
+
+            KeymapActions.BROWSER_BACK -> {
+                MenuActionsHandler.triggerBrowserBack(windowId)
+                true
+            }
+
+            KeymapActions.BROWSER_FORWARD -> {
+                MenuActionsHandler.triggerBrowserForward(windowId)
+                true
+            }
+
+            KeymapActions.BROWSER_DEVTOOLS -> {
+                MenuActionsHandler.triggerBrowserDevTools(windowId)
                 true
             }
 
@@ -684,13 +802,25 @@ object AWTKeyboardInterceptor {
             }
 
             else -> {
-                // Plugin-contributed actions ("plugin.<pluginId>.<name>") —
-                // reached when the user rebound a plugin shortcut (the binding
-                // then lives in the keymap settings and matches the main pass).
-                if (actionId.startsWith(PluginShortcutRegistryImpl.ACTION_ID_PREFIX)) {
-                    PluginShortcutRegistryImpl.dispatch(actionId, windowId)
-                } else {
-                    false
+                // Cmd+1..Cmd+8 carry a position, so they resolve by lookup rather than as
+                // eight near-identical branches.
+                val tabIndex = KeymapActions.TAB_SELECT_BY_INDEX.indexOf(actionId)
+                when {
+                    tabIndex >= 0 -> {
+                        MenuActionsHandler.triggerSelectTabByIndex(windowId, tabIndex)
+                        true
+                    }
+
+                    // Plugin-contributed actions ("plugin.<pluginId>.<name>") —
+                    // reached when the user rebound a plugin shortcut (the binding
+                    // then lives in the keymap settings and matches the main pass).
+                    actionId.startsWith(PluginShortcutRegistryImpl.ACTION_ID_PREFIX) -> {
+                        PluginShortcutRegistryImpl.dispatch(actionId, windowId)
+                    }
+
+                    else -> {
+                        false
+                    }
                 }
             }
         }

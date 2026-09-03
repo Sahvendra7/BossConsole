@@ -72,6 +72,7 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.revealInFileManager
 import ai.rever.boss.utils.revealInFileManagerLabel
+import ai.rever.boss.window.ClosedTabHistory
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.MenuActionsHandler
@@ -1934,7 +1935,7 @@ class BossTabsComponent(
 
         // Remove tabs in reverse order to avoid index issues
         for (i in indicesToRemove.sortedDescending()) {
-            removeTab(i)
+            removeTab(i, recordForReopen = false)
         }
 
         if (indicesToRemove.isNotEmpty()) {
@@ -1994,10 +1995,34 @@ class BossTabsComponent(
         return -1 // Failed to create component
     }
 
-    // Remove a tab by index
-    fun removeTab(index: Int) {
+    /**
+     * Remove a tab by index.
+     *
+     * @param recordForReopen whether this closure should be reopenable with Cmd+Shift+T. False
+     *   for closures the user did not ask for and could not undo anyway — a tab dropped because
+     *   its plugin was disabled has no factory left to rebuild it, and a workspace swap's
+     *   teardown would otherwise bury the user's real closures under its own bookkeeping.
+     */
+    fun removeTab(
+        index: Int,
+        recordForReopen: Boolean = true,
+    ) {
         val config = tabsState.value.tabs.getOrNull(index)
         config?.let {
+            // Before the component is disposed, and while `it` is still the panel's live
+            // TabInfo — so a reopened browser tab returns to the page it was showing.
+            //
+            // Every tab TYPE is reopenable: the entry is a TabInfo and [addTab] rebuilds it
+            // through the same tab-type factory that opened it, so terminals, editors, Jupyter
+            // and plugin-registered types all come back without this code knowing about them.
+            // Runner terminals are the one exception, and not because of their type: their id
+            // is the handle RunnerTerminalService tracks, and the line below has just told the
+            // service to forget it. Rebuilding that id would produce a shell the service no
+            // longer associates with any run — a tab that looks like a runner terminal and is
+            // wired to nothing.
+            if (recordForReopen && !it.id.startsWith(RUNNER_TERMINAL_PREFIX)) {
+                ClosedTabHistory.record(windowId, it)
+            }
             // Unregister tab from TabUpdateRegistry (ownership-checked: a no-op if a move
             // already re-registered this tab id to its destination component)
             TabUpdateRegistry.unregisterTab(it.id, componentId)
@@ -2134,17 +2159,79 @@ class BossTabsComponent(
         val tabs = tabsState.value.tabs
         if (tabs.size <= 1) return
         when (KeymapSettingsManager.currentSettings.value.tabSwitchMode) {
-            TabSwitchMode.POSITIONAL -> {
-                val cur = tabsState.value.activeIndex.coerceAtLeast(0)
-                val step = if (forward) 1 else -1
-                val next = ((cur + step) % tabs.size + tabs.size) % tabs.size
-                selectTab(next)
+            TabSwitchMode.POSITIONAL -> stepPositional(forward)
+            TabSwitchMode.MRU -> stepMruCycle(forward)
+        }
+    }
+
+    /**
+     * Step one tab in tab-bar order regardless of [TabSwitchMode], for Cmd+Opt+Arrow and
+     * Cmd+Shift+Bracket.
+     *
+     * Separate from [switchToNextTab] because those chords have no "cycling modifier" whose
+     * release could commit an MRU cycle — Ctrl+Tab holds Ctrl down across several presses, but
+     * Cmd+Opt+Right is a discrete action. Routing them through the MRU path would start cycles
+     * that never commit, leaving the switcher overlay on screen and the MRU order unchanged.
+     */
+    fun switchToNextTabPositional() = stepPositional(forward = true)
+
+    /** Previous tab in tab-bar order. See [switchToNextTabPositional]. */
+    fun switchToPreviousTabPositional() = stepPositional(forward = false)
+
+    private fun stepPositional(forward: Boolean) {
+        val tabs = tabsState.value.tabs
+        if (tabs.size <= 1) return
+        val cur = tabsState.value.activeIndex.coerceAtLeast(0)
+        val step = if (forward) 1 else -1
+        selectTab(((cur + step) % tabs.size + tabs.size) % tabs.size)
+    }
+
+    /**
+     * Select the tab at [index] (Cmd+1..Cmd+8), or the last tab when [index] is
+     * [MenuActionsHandler.LAST_TAB_INDEX] (Cmd+9). Out-of-range positions are ignored, which is
+     * what browsers do: Cmd+5 in a three-tab window does nothing.
+     */
+    fun selectTabByPosition(index: Int) {
+        val tabs = tabsState.value.tabs
+        if (tabs.isEmpty()) return
+        val target = if (index == MenuActionsHandler.LAST_TAB_INDEX) tabs.size - 1 else index
+        if (target in tabs.indices) selectTab(target)
+    }
+
+    /**
+     * Default liveness check for [reopenLastClosedTab]: this panel only.
+     *
+     * Callers that can see the whole window should pass their own — ids are unique across the
+     * WINDOW, and a panel cannot see its siblings.
+     */
+    private fun isTabIdInThisPanel(tabId: String): Boolean = tabsState.value.tabs.any { it.id == tabId }
+
+    /**
+     * Reopen the most recently closed tab in this window (Cmd+Shift+T), into THIS panel.
+     *
+     * Returns false when there was nothing to reopen, or when the tab could not be rebuilt —
+     * [addTab] returns -1 when no factory is registered for the type, which happens if the
+     * owning plugin was unloaded since the tab was closed. The entry is consumed either way:
+     * a tab that cannot be rebuilt now will not rebuild on the next press either, and leaving
+     * it on the stack would wedge the shortcut on a permanently dead entry.
+     */
+    fun reopenLastClosedTab(isTabIdLive: (String) -> Boolean = ::isTabIdInThisPanel): Boolean {
+        val closed = ClosedTabHistory.pop(windowId) ?: return false
+
+        // Tab ids are unique across a window, and [addTab] does not guard the way [adoptTab]
+        // does: rebuilding a live id would overwrite its entry in tabComponents and orphan the
+        // running component with no path to destroy it. Reachable when a workspace restore
+        // re-creates a saved layout containing an id the user had closed. Focus the live tab
+        // instead, which is what the user wanted anyway.
+        val index =
+            if (isTabIdLive(closed.id)) {
+                tabsState.value.tabs.indexOfFirst { it.id == closed.id }
+            } else {
+                addTab(closed)
             }
 
-            TabSwitchMode.MRU -> {
-                stepMruCycle(forward)
-            }
-        }
+        if (index >= 0) selectTab(index)
+        return index >= 0
     }
 
     private fun stepMruCycle(forward: Boolean) {
@@ -2237,10 +2324,12 @@ class BossTabsComponent(
 
     // Clear all tabs safely
     fun clearAllTabs() {
-        // Remove tabs in reverse order to avoid index issues
+        // Remove tabs in reverse order to avoid index issues.
+        // Not reopenable: this is teardown (workspace swap, panel disposal), not a user closing
+        // tabs, and filling the reopen stack with it would bury what the user actually closed.
         val tabCount = tabsState.value.tabs.size
         for (i in tabCount - 1 downTo 0) {
-            removeTab(i)
+            removeTab(i, recordForReopen = false)
         }
     }
 
@@ -2298,9 +2387,12 @@ class BossTabsComponent(
             }
         }
 
-        // Remove tabs in reverse order to avoid index issues
+        // Remove tabs in reverse order to avoid index issues.
+        // Not reopenable: this fires when a tab's only job was to trigger a download and it is
+        // being cleaned up automatically. The user did not close it, and reopening would just
+        // re-run the download.
         for (i in indicesToRemove.sortedDescending()) {
-            removeTab(i)
+            removeTab(i, recordForReopen = false)
         }
 
         if (indicesToRemove.isNotEmpty()) {

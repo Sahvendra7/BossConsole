@@ -1,6 +1,7 @@
 package ai.rever.boss.keymap.presets
 
 import ai.rever.boss.keymap.model.KeyBinding
+import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
@@ -277,7 +278,11 @@ object KeymapPresets {
                 ),
             )
 
-        return KeymapSettings.fromBindings(bindings, presetName = "BOSS Default", customized = false)
+        return KeymapSettings.fromBindings(
+            withStandardBrowserBindings(bindings),
+            presetName = "BOSS Default",
+            customized = false,
+        )
     }
 
     /**
@@ -556,7 +561,11 @@ object KeymapPresets {
                 ),
             )
 
-        return KeymapSettings.fromBindings(bindings, presetName = "VS Code", customized = false)
+        return KeymapSettings.fromBindings(
+            withStandardBrowserBindings(bindings),
+            presetName = "VS Code",
+            customized = false,
+        )
     }
 
     /**
@@ -835,7 +844,11 @@ object KeymapPresets {
                 ),
             )
 
-        return KeymapSettings.fromBindings(bindings, presetName = "IntelliJ IDEA", customized = false)
+        return KeymapSettings.fromBindings(
+            withStandardBrowserBindings(bindings),
+            presetName = "IntelliJ IDEA",
+            customized = false,
+        )
     }
 
     /**
@@ -843,6 +856,123 @@ object KeymapPresets {
      * Uses Ctrl-based keyboard shortcuts inspired by Emacs.
      */
     fun getEmacsPreset(): KeymapSettings = EmacsPresetDefinition.create()
+
+    /**
+     * Chords every desktop browser ships with, in the vocabulary of the keymap model.
+     *
+     * These live outside the per-preset lists because they are OS/browser conventions rather
+     * than IDE taste: Cmd+Shift+T reopens a closed tab in Chrome, Safari, Firefox AND in the
+     * VS Code and IntelliJ keymaps, so duplicating them into four hand-written lists would be
+     * four places to forget one. [withStandardBrowserBindings] merges them in.
+     *
+     * Zoom in carries Cmd+Shift+Equals as an ALTERNATE because that is what a keyboard actually
+     * reports for "Cmd+Plus" on a US layout - the unshifted Equals binding never sees it.
+     */
+    internal fun standardBrowserBindings(): List<KeyBinding> {
+        fun tabBinding(
+            actionId: String,
+            key: String,
+            modifiers: List<String>,
+            alternates: List<KeyStroke> = emptyList(),
+        ) = KeyBinding(
+            actionId = actionId,
+            key = key,
+            modifiers = modifiers,
+            alternateKeystrokes = alternates,
+            context = ShortcutContext.GLOBAL,
+            category = KeymapActions.Categories.TAB_MANAGEMENT,
+            description = KeymapActions.getDescription(actionId),
+        )
+
+        fun browserBinding(
+            actionId: String,
+            key: String,
+            modifiers: List<String>,
+        ) = KeyBinding(
+            actionId = actionId,
+            key = key,
+            modifiers = modifiers,
+            context = ShortcutContext.BROWSER,
+            category = KeymapActions.Categories.BROWSER_CONTROLS,
+            description = KeymapActions.getDescription(actionId),
+        )
+
+        // Cmd+1..Cmd+8, positionally. Cmd+9 is the LAST tab, not the ninth - browser convention.
+        val numbered =
+            KeymapActions.TAB_SELECT_BY_INDEX.mapIndexed { index, actionId ->
+                tabBinding(actionId, NUMBER_KEY_NAMES[index], listOf("Cmd"))
+            }
+
+        return numbered +
+            listOf(
+                tabBinding(KeymapActions.TAB_REOPEN_CLOSED, "T", listOf("Cmd", "Shift")),
+                tabBinding(KeymapActions.TAB_SELECT_LAST, "Nine", listOf("Cmd")),
+                tabBinding(
+                    KeymapActions.TAB_NEXT_POSITIONAL,
+                    "DirectionRight",
+                    listOf("Cmd", "Alt"),
+                    alternates = listOf(KeyStroke("CloseBracket", listOf("Cmd", "Shift"))),
+                ),
+                tabBinding(
+                    KeymapActions.TAB_PREVIOUS_POSITIONAL,
+                    "DirectionLeft",
+                    listOf("Cmd", "Alt"),
+                    alternates = listOf(KeyStroke("OpenBracket", listOf("Cmd", "Shift"))),
+                ),
+                browserBinding(KeymapActions.BROWSER_BACK, "OpenBracket", listOf("Cmd")),
+                browserBinding(KeymapActions.BROWSER_FORWARD, "CloseBracket", listOf("Cmd")),
+                browserBinding(KeymapActions.BROWSER_DEVTOOLS, "I", listOf("Cmd", "Alt")),
+            )
+    }
+
+    private val NUMBER_KEY_NAMES = listOf("One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight")
+
+    /**
+     * [preset] plus [standardBrowserBindings], and the Cmd+Shift+Equals alternate on zoom in.
+     *
+     * A standard binding is DROPPED when the preset already binds that chord to something else
+     * (IntelliJ's Cmd+1 opens the Project tool window, so IntelliJ users keep that and simply
+     * get no Cmd+1 tab select) - a preset's own opinion outranks the convention, and silently
+     * shipping a real conflict would just move the problem into the conflict badge. An action
+     * the preset already binds is likewise left alone.
+     */
+    internal fun withStandardBrowserBindings(preset: List<KeyBinding>): List<KeyBinding> {
+        val withZoomAlternate =
+            preset.map { binding ->
+                if (binding.actionId == KeymapActions.BROWSER_ZOOM_IN && !binding.hasAlternates) {
+                    binding.withAlternateKeystroke(KeyStroke(binding.key, binding.modifiers + "Shift"))
+                } else {
+                    binding
+                }
+            }
+
+        val boundActions = withZoomAlternate.map { it.actionId }.toHashSet()
+
+        val additions =
+            standardBrowserBindings().filter { candidate ->
+                candidate.actionId !in boundActions && withZoomAlternate.none { it.collidesWith(candidate) }
+            }
+
+        return withZoomAlternate + additions
+    }
+
+    /**
+     * Do these two bindings answer to the same chord in a context where both are live?
+     *
+     * Mirrors KeymapValidator's rule - a GLOBAL binding conflicts with everything, otherwise
+     * only same-context bindings conflict - but compares EVERY keystroke on both sides, so an
+     * alternate colliding with another action's primary still counts.
+     */
+    private fun KeyBinding.collidesWith(other: KeyBinding): Boolean {
+        val contextsOverlap =
+            context == ShortcutContext.GLOBAL ||
+                other.context == ShortcutContext.GLOBAL ||
+                context == other.context
+        if (!contextsOverlap) return false
+
+        val chords = allKeystrokes.map { it.signature() }.toHashSet()
+        return other.allKeystrokes.any { it.signature() in chords }
+    }
 
     /**
      * Get all available preset names.
