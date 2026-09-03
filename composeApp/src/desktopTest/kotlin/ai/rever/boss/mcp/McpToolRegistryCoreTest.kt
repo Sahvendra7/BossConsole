@@ -630,5 +630,6 @@ class McpToolRegistryCoreTest {
         // still be present here.
         assertTrue(core.allTools.value.isEmpty(), "no provider should remain registered: ${core.allTools.value}")
         assertTrue(core.tools.value.isEmpty())
+        assertTrue(core.permittedTools().isEmpty(), "permittedTools reads the same snapshot")
     }
 }

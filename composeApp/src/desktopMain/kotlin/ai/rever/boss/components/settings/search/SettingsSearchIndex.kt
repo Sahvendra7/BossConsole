@@ -127,7 +127,7 @@ object SettingsSearchIndex {
      * `GlobalSearchService.searchSettings`.
      */
     fun registerWithGlobalSearch() {
-        SearchSources.settingsSearch = { query ->
+        SearchSources.registerSettingsSearch { query ->
             val pages =
                 SettingsPageRegistryImpl.visiblePages().map {
                     pluginPageEntry(it.pageId, it.displayName, it.description)

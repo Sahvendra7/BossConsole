@@ -50,7 +50,7 @@ class GlobalSearchOrderingTest {
 
     /** The settings source ranks its own rows now, so a fake hands back a fixed ranking. */
     private fun registerSettings(vararg labelsBestFirst: String) {
-        SearchSources.settingsSearch = { _ ->
+        SearchSources.registerSettingsSearch { _ ->
             labelsBestFirst.mapIndexed { i, label -> settingRecord(label, score = 100 - i) }
         }
     }

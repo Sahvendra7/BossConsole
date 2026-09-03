@@ -355,7 +355,16 @@ internal class McpToolRegistryCore(
     private val _disabled = MutableStateFlow(loadDisabled())
     val disabledToolNames: StateFlow<Set<String>> = _disabled.asStateFlow()
 
-    /** Current user's RBAC state, pushed by the host (see [updateAccess]); gates tool exposure. */
+    /**
+     * Current user's RBAC state, pushed by the host (see [updateAccess]); gates tool exposure.
+     *
+     * Already `@Volatile` before the global search existed, which is what makes the new reader
+     * safe: `permittedTools()` is now called from the search's supplier inside an `async` on
+     * `Dispatchers.Default`, so the write needs a happens-before edge to a thread the writer does
+     * not drive. Without it the staleness would fail OPEN - a search dispatched right after
+     * sign-out filtered against the previous session's permissions - which is the wrong direction
+     * for the field deciding whether admin-only tool names are enumerable.
+     */
     @Volatile
     private var isAdmin = false
 

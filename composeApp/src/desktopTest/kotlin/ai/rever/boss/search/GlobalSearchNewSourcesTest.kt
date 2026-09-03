@@ -84,7 +84,7 @@ class GlobalSearchNewSourcesTest {
      * pinning something the app does not do.
      */
     private fun registerSettings(vararg entries: SettingsSearchEntry) {
-        SearchSources.settingsSearch = { query ->
+        SearchSources.registerSettingsSearch { query ->
             SettingsSearchMatcher.search(query, entries.toList()).map { hit ->
                 SettingSearchRecord(
                     label = hit.entry.label,
@@ -276,7 +276,7 @@ class GlobalSearchNewSourcesTest {
 
     @Test
     fun `an MCP tool is found by name and reports whether it is switched off`() {
-        SearchSources.mcpToolsSupplier = {
+        SearchSources.registerMcpTools {
             listOf(
                 McpToolSearchRecord("git_status", "git", "Working tree status", enabled = true),
                 McpToolSearchRecord("git_diff", "git", "Show a diff", enabled = false),
@@ -293,7 +293,7 @@ class GlobalSearchNewSourcesTest {
         // The RBAC boundary, from this side. The host supplies only permitted tools - see
         // registerHostSearchSources - so a name and a full description that never arrive here
         // cannot be enumerated by typing. Withholding has to mean invisible, not merely unranked.
-        SearchSources.mcpToolsSupplier = {
+        SearchSources.registerMcpTools {
             listOf(McpToolSearchRecord("git_status", "git", "Working tree status", enabled = true))
         }
 
@@ -306,7 +306,7 @@ class GlobalSearchNewSourcesTest {
         // rows still drew an "MCP Tools" section header full of rows that cannot be activated. A
         // score floor could not fix it - word-boundary and start-of-string bonuses push scattered
         // initials on prose into the sixties - so a description hit has to CONTAIN what was typed.
-        SearchSources.mcpToolsSupplier = {
+        SearchSources.registerMcpTools {
             listOf(
                 McpToolSearchRecord(
                     name = "unrelated_tool",
@@ -331,7 +331,7 @@ class GlobalSearchNewSourcesTest {
 
     @Test
     fun `a recent page is found by its title`() {
-        SearchSources.recentPagesSupplier = {
+        SearchSources.registerRecentPages {
             listOf(PageSearchRecord(url = "https://example.com/docs", title = "Getting Started"))
         }
 
@@ -343,7 +343,7 @@ class GlobalSearchNewSourcesTest {
 
     @Test
     fun `a recent page is found by its domain, which its title may never mention`() {
-        SearchSources.recentPagesSupplier = {
+        SearchSources.registerRecentPages {
             listOf(PageSearchRecord(url = "https://github.com/risa-labs-inc/BossConsole", title = "Pull requests"))
         }
 

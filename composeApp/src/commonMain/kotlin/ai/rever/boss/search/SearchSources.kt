@@ -6,7 +6,7 @@ package ai.rever.boss.search
  * @property panelId What activates it. NOT the plugin id - `activatePlugin` matches on this.
  * @property label The tool's own name.
  */
-data class ToolSearchRecord(
+internal data class ToolSearchRecord(
     val panelId: String,
     val label: String,
 )
@@ -26,7 +26,7 @@ data class ToolSearchRecord(
  * Exactly one of [section], [pluginPageId] and [panelId] is set - the index's own `init` requires
  * it. [panelId] is the entry that navigates *out* of the Settings window; see `panelSignpost`.
  */
-data class SettingSearchRecord(
+internal data class SettingSearchRecord(
     val label: String,
     val breadcrumb: String,
     val section: String?,
@@ -44,7 +44,7 @@ data class SettingSearchRecord(
  *   where the registry is read rather than here, so the row cannot claim a tool is live when no
  *   client can see it.
  */
-data class McpToolSearchRecord(
+internal data class McpToolSearchRecord(
     val name: String,
     val providerId: String,
     val description: String,
@@ -52,7 +52,7 @@ data class McpToolSearchRecord(
 )
 
 /** A recently visited page the global search can offer. */
-data class PageSearchRecord(
+internal data class PageSearchRecord(
     val url: String,
     val title: String,
 )
@@ -79,8 +79,19 @@ data class PageSearchRecord(
  *
  * Absent means "contributes nothing", which is the correct answer during startup and in tests. A
  * missing source returns no results rather than failing the whole search.
+ *
+ * **`internal`, and registered rather than assigned**, so the rules the KDoc below argues for are
+ * structural instead of advisory - see [clearForTests] and [registerMcpTools] for the two that
+ * would otherwise be one careless call away.
+ *
+ * **This solves the supplier half of the two-window problem, not the results half.**
+ * [GlobalSearchService] keeps one global `_searchResults`, so with two dialogs open the second
+ * renders whatever the first last searched; picking a `ToolResult` there activates it against the
+ * second window's component, which logs "No sidebar panel to activate" and does nothing. That is
+ * pre-existing, and newly reachable now that a result carries a window-scoped panel id. Fixing it
+ * means scoping the result list per window, which is a bigger change than this seam.
  */
-object SearchSources {
+internal object SearchSources {
     private val lock = Any()
 
     /**
@@ -100,27 +111,47 @@ object SearchSources {
     @Volatile
     private var toolsByWindow: Map<String, () -> List<ToolSearchRecord>> = emptyMap()
 
+    @Volatile
+    private var settingsSearch: ((String) -> List<SettingSearchRecord>)? = null
+
+    @Volatile
+    private var mcpToolsSupplier: (() -> List<McpToolSearchRecord>)? = null
+
+    @Volatile
+    private var recentPagesSupplier: (() -> List<PageSearchRecord>)? = null
+
     /**
-     * Rank the Settings index against a query, best first.
+     * Register the ranker for the Settings index: rank against a query, best first.
      *
      * A search function and not a list of rows, so that "what a settings match is worth" has ONE
-     * definition. Registering rows meant ranking them here, against a second scorer with its own
-     * keyword penalty - and the two disagreed in a way that lost results rather than merely
-     * reordering them: `FuzzyMatcher` is a strict subsequence matcher over a single target, so the
-     * global search could not match "user agent" to "Browser Identity" while the Settings window,
-     * which tokenises the query, could. `SettingsSearchMatcher` exists for exactly that, and this
-     * is how the global search gets to use it.
+     * definition. Registering rows meant ranking them in [GlobalSearchService], against a second
+     * scorer with its own keyword penalty - and the two disagreed in a way that lost results rather
+     * than merely reordering them: `FuzzyMatcher` is a strict subsequence matcher over a single
+     * target, so the global search could not match "user agent" to "Browser Identity" while the
+     * Settings window, which tokenises the query, could. `SettingsSearchMatcher` exists for exactly
+     * that, and this is how the global search gets to use it.
      */
-    @Volatile
-    var settingsSearch: ((String) -> List<SettingSearchRecord>)? = null
+    fun registerSettingsSearch(search: (String) -> List<SettingSearchRecord>) {
+        settingsSearch = search
+    }
 
-    /** Every MCP tool this user may see, disabled ones included. See [McpToolSearchRecord]. */
-    @Volatile
-    var mcpToolsSupplier: (() -> List<McpToolSearchRecord>)? = null
+    /**
+     * Register the MCP tools on offer: every tool this user may see, disabled ones included.
+     *
+     * A function rather than an assignable property, because of what this particular supplier
+     * holds. It carries the `permittedTools()` filter - the one path where a regression leaks the
+     * names and full descriptions of admin-only tools to a signed-out user - and as a public `var`
+     * anything in the app could have swapped it for one over `allTools` and nothing would have
+     * looked wrong. See [McpToolSearchRecord.enabled].
+     */
+    fun registerMcpTools(supplier: () -> List<McpToolSearchRecord>) {
+        mcpToolsSupplier = supplier
+    }
 
-    /** The browser's recent pages. */
-    @Volatile
-    var recentPagesSupplier: (() -> List<PageSearchRecord>)? = null
+    /** Register the browser's recent pages. */
+    fun registerRecentPages(supplier: () -> List<PageSearchRecord>) {
+        recentPagesSupplier = supplier
+    }
 
     /** Register [windowId]'s sidebar tools. Paired with [unregisterTools] on the same id. */
     fun registerTools(

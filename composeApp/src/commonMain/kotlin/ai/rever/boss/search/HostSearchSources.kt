@@ -17,9 +17,17 @@ import ai.rever.boss.mcp.McpToolRegistryImpl
  * where a regression leaks admin-only tool names and descriptions to a signed-out user - and a
  * `search()` call that touches no disk, since reaching the registry forces it to load its
  * disabled-tools file from `~/.boss`.
+ *
+ * **Recent pages carry no permission gate, and MCP tools do.** Not an oversight: an MCP tool's name
+ * and description describe a capability of the *install*, so on a shared or signed-out machine they
+ * enumerate what the operator can be made to run, which is why `permittedTools()` filters them.
+ * Recent pages are the browsing history of whoever is sitting at the machine, shown to that same
+ * person on the surface they just browsed with - the dashboard already lists them unfiltered, and
+ * gating them here without gating there would look like a bug rather than a boundary. Worth
+ * revisiting together if BOSS ever gets real multi-user profiles on one install.
  */
-fun registerHostSearchSources() {
-    SearchSources.mcpToolsSupplier = {
+internal fun registerHostSearchSources() {
+    SearchSources.registerMcpTools {
         // permittedTools, not allTools. allTools is deliberately unfiltered for the management UI,
         // which shows every tool with its state; this is the everyday launcher, open to every user
         // and to nobody signed in yet, where a name and a full description of an admin-only tool
@@ -44,7 +52,7 @@ fun registerHostSearchSources() {
         }
     }
 
-    SearchSources.recentPagesSupplier = {
+    SearchSources.registerRecentPages {
         RecentBrowserPagesManager.recentPages.value.map { PageSearchRecord(url = it.url, title = it.title) }
     }
 }

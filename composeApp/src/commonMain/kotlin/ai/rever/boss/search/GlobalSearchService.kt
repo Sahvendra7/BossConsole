@@ -1,10 +1,8 @@
 package ai.rever.boss.search
 
-import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.formatShortcutLabel
-import ai.rever.boss.mcp.McpToolRegistryImpl
 import ai.rever.boss.plugin.api.PluginSearchResult
 import ai.rever.boss.plugin.api.SearchResultAction
 import ai.rever.boss.run.RunConfigurationManager
@@ -580,7 +578,7 @@ object GlobalSearchService {
     /**
      * Search the MCP tools plugins have contributed.
      *
-     * Read through [SearchSources] rather than off `McpToolRegistryImpl`, so the RBAC filter that
+     * Read through [SearchSources] rather than off the MCP registry directly, so the RBAC filter that
      * decides what appears here is injectable and therefore testable - see
      * [McpToolSearchRecord.enabled] for what the host is required to have already applied.
      *

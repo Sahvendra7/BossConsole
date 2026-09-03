@@ -73,7 +73,11 @@ private val BookmarksAccent get() = BossThemeController.current.colors.warn // w
 private val RunConfigAccent = Color(0xFF9C27B0)
 private val CommandsAccent get() = BossThemeController.current.colors.data // data — commands
 private val ToolsAccent get() = BossThemeController.current.colors.signal // signal — tools
-private val SettingsAccent get() = BossThemeController.current.colors.textMuted // quiet — settings
+
+// Deliberately the quiet one - a settings row is a destination, not a signal - but textSecondary
+// rather than textMuted, which is exactly SimpleResultItem's subtitle tone and made the icon read
+// as a disabled row beside eight saturated accents.
+private val SettingsAccent get() = BossThemeController.current.colors.textSecondary
 private val McpAccent get() = BossThemeController.current.colors.data // data — MCP tools, with commands
 private val PagesAccent get() = BossThemeController.current.colors.ok // ok — recent pages, with tabs
 
@@ -361,7 +365,7 @@ fun GlobalSearchDialog(
                                     // "No Tools Found" with nothing on the chip row to say where
                                     // the user was. Four more categories made that four times
                                     // likelier, so it stopped being survivable.
-                                    val categories = visibleCategories(resultCounts)
+                                    val categories = visibleCategories(resultCounts, activeCategory)
                                     val currentIndex = categories.indexOf(activeCategory)
                                     val nextIndex =
                                         if (event.isShiftPressed) {
@@ -598,7 +602,7 @@ private fun CategoryTabs(
                 .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        for (category in visibleCategories(resultCounts)) {
+        for (category in visibleCategories(resultCounts, activeCategory)) {
             val count = resultCounts[category] ?: 0
             val isActive = category == activeCategory
 
@@ -946,8 +950,12 @@ private fun NoResultsState(
  *
  * Derived from the same walk `SearchResultsList` performs rather than a count of distinct
  * categories, so the two cannot disagree about where a section begins.
+ *
+ * Correct only because `getFilteredResults` groups by category ordinal - `distinctBy` counts a
+ * category once, which is true of a grouped list and false of an interleaved one. Two coupled
+ * invariants in two files, either changeable alone, which is why both have tests.
  */
-private fun listItemIndexFor(
+internal fun listItemIndexFor(
     resultIndex: Int,
     results: List<SearchResult>,
     showSections: Boolean,
@@ -1295,7 +1303,11 @@ internal fun SearchResult.simpleRow(): SimpleRow? =
         }
 
         is SearchResult.PageResult -> {
-            SimpleRow(category.chipIcon(), category.accent(), title.ifBlank { url }, url)
+            // A page with no title falls back to its URL for the title - and then the subtitle was
+            // the same URL again, so the row printed it twice. Blank in that case: the icon and
+            // the accent already say which category it is.
+            val shown = title.ifBlank { url }
+            SimpleRow(category.chipIcon(), category.accent(), shown, if (shown == url) "" else url)
         }
 
         // Named one by one rather than left to an `else`, which is the whole point: this `when` is
@@ -1734,21 +1746,32 @@ private fun highlightMatches(
 }
 
 /**
+ * The categories with a chip: [SearchCategory.ALL], the active one, plus any that matched something.
+ *
+ * Shared with the Tab handler, which is the point - it cycled the whole enum while this list is
+ * what the user can see, so Tab could select a category that had no chip and no results.
+ *
+ * **[active] is kept even at zero results**, which is the other half of the same bug. Filtering on
+ * count alone let the selected chip disappear as the query narrowed: Tab to Tools, keep typing
+ * until no tool matches, and the row drew only "All" - unhighlighted - over a pane reading "No
+ * Tools Found", with nothing on screen saying a filter was on. It also left
+ * `indexOf(activeCategory)` at -1 in the Tab handler, which did not crash but cycled from an
+ * arbitrary place. A chip that is filtering is always visible now, so neither can happen.
+ */
+private fun visibleCategories(
+    resultCounts: Map<SearchCategory, Int>,
+    active: SearchCategory,
+): List<SearchCategory> =
+    SearchCategory.entries.filter {
+        it == SearchCategory.ALL || it == active || (resultCounts[it] ?: 0) > 0
+    }
+
+/**
  * The chip's icon for a category.
  *
  * A table, out here rather than inside `CategoryTab`: it is one branch per category and nothing
  * else in that composable is, so leaving it inline made a layout function read as a lookup.
  */
-
-/**
- * The categories with a chip: [SearchCategory.ALL], plus any that actually matched something.
- *
- * Shared with the Tab handler, which is the point - it cycled the whole enum while this list is
- * what the user can see, so Tab could select a category that had no chip and no results.
- */
-private fun visibleCategories(resultCounts: Map<SearchCategory, Int>): List<SearchCategory> =
-    SearchCategory.entries.filter { it == SearchCategory.ALL || (resultCounts[it] ?: 0) > 0 }
-
 private fun SearchCategory.chipIcon(): ImageVector =
     when (this) {
         SearchCategory.ALL -> Icons.Outlined.Apps
@@ -1778,7 +1801,10 @@ private fun SearchCategory.chipIcon(): ImageVector =
  * The category's accent colour.
  *
  * Beside [chipIcon] and for the same reason: one definition per category, so a result row and the
- * empty-state tile for the same category cannot drift apart. Section headers deliberately do not
+ * empty-state tile for the same category cannot drift apart - for the four families that share
+ * [SimpleRow]. `FILES` is the exception and stays one: a file row is tinted by `FileIcons` per
+ * filetype, which is more useful than a category colour, so [FilesAccent] reaches only the chip
+ * and the tile. Section headers deliberately do not
  * use it - they tint everything with [SectionTitleColor], which is what keeps them quiet.
  *
  * **Not nine distinct colours, and not trying to be.** The design system carries seven semantic
