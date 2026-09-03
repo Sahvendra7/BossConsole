@@ -95,6 +95,12 @@ object KeymapValidator {
             // bindings that share both a primary and an alternate would otherwise be reported
             // twice, and conflictCount is what the settings badge shows the user - it is one
             // thing to fix, not two.
+            //
+            // Deliberately lossy in one direction: if the same pair collides on two UNRELATED
+            // chords, only one is listed, and which signature survives follows shortcuts.values
+            // iteration order. Under-counting is the safer end of that trade (a badge that says
+            // 1 for one visible problem beats 2 for one), and reporting per chord is the only
+            // alternative while KeymapConflict carries a single signature.
             .distinctBy { conflict -> conflict.bindings.map { it.actionId }.toSet() }
     }
 

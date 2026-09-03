@@ -120,39 +120,7 @@ actual object KeymapSettingsManager {
                 !loaded.shortcuts.containsKey(actionId)
             }
 
-        // Adding missing ACTIONS is not enough on its own: a preset can also gain a new
-        // alternate chord for an action every existing keymap file already contains, and such a
-        // change would never reach anyone who has launched BOSS before. Zoom in picking up
-        // Cmd+Shift+Equals (what a US keyboard reports for "Cmd+Plus") is exactly that shape.
-        //
-        // Only where the user has not touched the binding: same primary keystroke as the preset
-        // means they kept the default, so the preset still speaks for it. A rebound chord is the
-        // user's, and silently bolting alternates onto it would resurrect a chord they moved
-        // away from.
-        val alternateTopUps =
-            loaded.shortcuts
-                .mapNotNull { (actionId, stored) ->
-                    val preset = presetShortcuts[actionId] ?: return@mapNotNull null
-                    val untouched = stored.primaryKeystroke.sameChordAs(preset.primaryKeystroke)
-                    // sameChordAs on this half too, not data-class equality: KeyStroke.modifiers
-                    // is a List, so a hand-edited ["Shift","Cmd"] alternate would read as absent
-                    // and get the preset's ["Cmd","Shift"] appended next to it - a duplicate
-                    // chord in the file and in allSignatures(), which the conflict badge reads.
-                    val gained =
-                        preset.alternateKeystrokes.filter { candidate ->
-                            stored.alternateKeystrokes.none { it.sameChordAs(candidate) } &&
-                                // And not a chord this keymap already gives to something else,
-                                // for the same reason the additions below are filtered.
-                                chordHolders(loaded).none {
-                                    it.actionId != actionId && it.claimsChord(candidate, stored.context)
-                                }
-                        }
-                    if (untouched && gained.isNotEmpty()) {
-                        actionId to stored.copy(alternateKeystrokes = stored.alternateKeystrokes + gained)
-                    } else {
-                        null
-                    }
-                }.toMap()
+        val alternateTopUps = alternateTopUps(loaded, presetShortcuts)
 
         // Chord-checked against the keymap as it will stand, exactly as withStandardBrowserBindings
         // checks additions against the preset. Adding a preset's new actions verbatim would ship
@@ -163,9 +131,10 @@ actual object KeymapSettingsManager {
         // do nothing while the conflict badge lit up - and this PR lands twenty chords in one
         // migration, not one. An action whose every chord is taken is dropped, as in the merge.
         val toppedUp = loaded.shortcuts + alternateTopUps
+        val holders = chordHolders(loaded.copy(shortcuts = toppedUp))
         val newActions =
             missingActions.values
-                .mapNotNull { it.withoutChordsTakenBy(chordHolders(loaded.copy(shortcuts = toppedUp))) }
+                .mapNotNull { it.withoutChordsTakenBy(holders) }
                 .associateBy { it.actionId }
 
         val dropped = missingActions.keys - newActions.keys
@@ -305,6 +274,54 @@ actual object KeymapSettingsManager {
                 logger.error(LogCategory.SYSTEM, "Failed to export keymap to file", error = e)
             }
         }
+}
+
+/**
+ * The bindings in [loaded] that should gain an alternate chord from [presetShortcuts].
+ *
+ * Adding missing ACTIONS is not enough on its own: a preset can also gain a new alternate
+ * chord for an action every existing keymap file already contains, and such a change would
+ * never reach anyone who has launched BOSS before. Zoom in picking up Cmd+Shift+Equals (what
+ * a US keyboard reports for "Cmd+Plus") is exactly that shape.
+ *
+ * Only where the user has not touched the binding: same primary keystroke as the preset
+ * means they kept the default, so the preset still speaks for it. A rebound chord is the
+ * user's, and silently bolting alternates onto it would resurrect a chord they moved away
+ * from.
+ *
+ * Top-level for the same reason as [chordHolders] and [sameChordAs]: the object sits on its
+ * TooManyFunctions threshold, and this is a property of a keymap and a preset, not of the manager.
+ */
+private fun alternateTopUps(
+    loaded: KeymapSettings,
+    presetShortcuts: Map<String, KeyBinding>,
+): Map<String, KeyBinding> {
+    // Hoisted out of the predicate below, which would otherwise re-filter the whole
+    // shortcut map once per candidate alternate.
+    val holders = chordHolders(loaded)
+    return loaded.shortcuts
+        .mapNotNull { (actionId, stored) ->
+            val preset = presetShortcuts[actionId] ?: return@mapNotNull null
+            val untouched = stored.primaryKeystroke.sameChordAs(preset.primaryKeystroke)
+            // sameChordAs on this half too, not data-class equality: KeyStroke.modifiers is
+            // a List, so a hand-edited ["Shift","Cmd"] alternate would read as absent and
+            // get the preset's ["Cmd","Shift"] appended next to it - a duplicate chord in
+            // the file and in allSignatures(), which the conflict badge reads.
+            val gained =
+                preset.alternateKeystrokes.filter { candidate ->
+                    stored.alternateKeystrokes.none { it.sameChordAs(candidate) } &&
+                        // And not a chord this keymap already gives to something else, for
+                        // the same reason migrateSettings filters its additions.
+                        holders.none {
+                            it.actionId != actionId && it.claimsChord(candidate, stored.context)
+                        }
+                }
+            if (untouched && gained.isNotEmpty()) {
+                actionId to stored.copy(alternateKeystrokes = stored.alternateKeystrokes + gained)
+            } else {
+                null
+            }
+        }.toMap()
 }
 
 /**

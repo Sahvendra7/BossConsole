@@ -3,6 +3,7 @@ package ai.rever.boss.window
 import ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.model.KeyBinding
+import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.keymap.model.TabSwitchMode
@@ -213,7 +214,8 @@ object AWTKeyboardInterceptor {
                 val windowId = findWindowId(focusedWindow) ?: return@KeyEventDispatcher false
 
                 // Try to match the key event against shortcuts
-                val binding = findMatchingBinding(event)
+                val match = findMatchingBinding(event)
+                val binding = match?.binding
 
                 if (binding != null) {
                     // Dispatch the action through MenuActionsHandler
@@ -250,7 +252,12 @@ object AWTKeyboardInterceptor {
                         KeymapSettingsManager.currentSettings.value.tabSwitchMode == TabSwitchMode.MRU
                     ) {
                         tabCycleActive = true
-                        tabCycleModifierKeyCode = cyclingModifierKeyCode(binding)
+                        // From the keystroke that MATCHED, not the binding's primary: an
+                        // alternate can carry the other primary modifier, and arming on Meta
+                        // while the user holds Control means the release never commits. The
+                        // switcher overlay then stays on screen with Tab swallowed until some
+                        // unrelated modifier release happens to match.
+                        tabCycleModifierKeyCode = cyclingModifierKeyCode(match.keystroke)
                     }
                     // Consume the event to prevent it from reaching BossTerm
                     event.consume()
@@ -307,12 +314,16 @@ object AWTKeyboardInterceptor {
     }
 
     /**
-     * The physical modifier keycode that sustains an MRU tab cycle for [binding], mirroring
-     * the platform-aware mapping in findMatchingBinding: a "Ctrl" binding is the Control key
-     * on macOS but the Meta key on Windows/Linux (and vice-versa for a "Cmd" binding).
+     * The physical modifier keycode that sustains an MRU tab cycle for [keystroke], mirroring
+     * the platform-aware mapping in findMatchingBinding: a "Ctrl" chord is the Control key
+     * on macOS but the Meta key on Windows/Linux (and vice-versa for a "Cmd" chord).
+     *
+     * Takes the keystroke the event MATCHED rather than the binding, so an alternate spelled
+     * with the other primary modifier arms the modifier the user is actually holding. Arming
+     * the wrong one wedges the switcher overlay open rather than merely losing a chord.
      */
-    private fun cyclingModifierKeyCode(binding: KeyBinding): Int {
-        val hasCmd = binding.modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
+    internal fun cyclingModifierKeyCode(keystroke: KeyStroke): Int {
+        val hasCmd = "cmd" in canonicalModifiers(keystroke.modifiers)
         return if (SystemUtils.isMacOS) {
             if (hasCmd) KeyEvent.VK_META else KeyEvent.VK_CONTROL
         } else {
@@ -396,8 +407,17 @@ object AWTKeyboardInterceptor {
      * consult it, so the caller built a matcher per keypress for nothing. The Compose-side
      * matcher is a different path (the Shortcuts tester and getMatchingBindings read it).
      */
-    private fun findMatchingBinding(event: KeyEvent): KeyBinding? {
-        val keyName = getKeyName(event.keyCode)
+
+    /** A binding, and WHICH of its keystrokes the event matched. See [cyclingModifierKeyCode]. */
+    internal data class BindingMatch(
+        val binding: KeyBinding,
+        val keystroke: KeyStroke,
+    )
+
+    private fun findMatchingBinding(event: KeyEvent): BindingMatch? {
+        // Canonicalised once: keyNameMatches folds both sides, so doing it per keystroke per
+        // binding meant two lowercase() allocations for each of ~47 bindings per keypress.
+        val eventKey = canonicalKeyName(getKeyName(event.keyCode))
         val settings = KeymapSettingsManager.currentSettings.value
 
         // Detect current context for filtering
@@ -406,7 +426,7 @@ object AWTKeyboardInterceptor {
         val currentContext = detectCurrentContext(windowId)
 
         // Collect all matching bindings with their context priority
-        var bestMatch: KeyBinding? = null
+        var bestMatch: BindingMatch? = null
         var bestPriority = -1
 
         for (binding in settings.shortcuts.values) {
@@ -414,13 +434,15 @@ object AWTKeyboardInterceptor {
 
             // Primary keystroke OR any alternate — allKeystrokes is what makes Cmd+Plus reach
             // zoom in alongside Cmd+Equals. Matching only `binding.key` silently ignored every
-            // alternateKeystrokes entry the model has always been able to express.
-            val keystrokeMatches =
-                binding.allKeystrokes.any { keystroke ->
-                    keyNameMatches(keystroke.key, keyName) && chordMatchesEvent(keystroke.modifiers, event)
+            // alternateKeystrokes entry the model has always been able to express. WHICH
+            // keystroke matched is kept, not just that one did: the MRU cycle arms on its
+            // modifier, and for an alternate the binding's primary is the wrong answer.
+            val matched =
+                binding.allKeystrokes.firstOrNull { keystroke ->
+                    canonicalKeyName(keystroke.key) == eventKey && chordMatchesEvent(keystroke.modifiers, event)
                 }
 
-            if (keystrokeMatches) {
+            if (matched != null) {
                 // Skip bindings whose context doesn't match
                 if (!isContextEligible(binding.context, currentContext)) continue
 
@@ -434,7 +456,7 @@ object AWTKeyboardInterceptor {
                     }
 
                 if (priority > bestPriority) {
-                    bestMatch = binding
+                    bestMatch = BindingMatch(binding, matched)
                     bestPriority = priority
                 }
             }
@@ -454,14 +476,14 @@ object AWTKeyboardInterceptor {
         val pluginShortcuts = PluginShortcutRegistryImpl.shortcuts.value
         if (pluginShortcuts.isEmpty()) return null
 
-        val keyName = getKeyName(event.keyCode)
+        val eventKey = canonicalKeyName(getKeyName(event.keyCode))
         val userShortcuts = KeymapSettingsManager.currentSettings.value.shortcuts
 
         for (registered in pluginShortcuts) {
             val spec = registered.spec
             val default = spec.defaultBinding ?: continue
             if (userShortcuts.containsKey(spec.actionId)) continue
-            if (!keyNameMatches(default.key, keyName)) continue
+            if (canonicalKeyName(default.key) != eventKey) continue
             if (chordMatchesEvent(default.modifiers, event)) {
                 return spec.actionId
             }

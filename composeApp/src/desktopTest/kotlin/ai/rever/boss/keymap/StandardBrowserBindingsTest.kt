@@ -2,6 +2,7 @@ package ai.rever.boss.keymap
 
 import ai.rever.boss.keymap.handler.KeymapValidator
 import ai.rever.boss.keymap.model.KeymapActions
+import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.keymap.presets.KeymapPresets
 import kotlin.test.Test
@@ -20,6 +21,20 @@ import kotlin.test.assertTrue
  * opinion about a key.
  */
 class StandardBrowserBindingsTest {
+    @Test
+    fun `the standard bindings are internally conflict-free`() {
+        // withoutChordsTakenBy checks each addition against the PRESET, not against additions
+        // already accepted, so two standard bindings colliding with each other would both land.
+        // `no preset ships a conflict` catches that today through validate() over the merged
+        // result; this says it directly, at the source.
+        val standalone = KeymapSettings.fromBindings(KeymapPresets.standardBrowserBindings())
+
+        assertTrue(
+            KeymapValidator.validate(standalone).isEmpty(),
+            KeymapValidator.validate(standalone).joinToString { it.description() },
+        )
+    }
+
     @Test
     fun `BOSS default binds the standard browser chords`() {
         val settings = KeymapPresets.getBOSSDefault()

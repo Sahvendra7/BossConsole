@@ -70,9 +70,11 @@ object ActiveBrowserRegistry {
      * `AWTKeyboardInterceptor.updateWindowContext` for why the keyboard path cannot supply one
      * either.
      *
-     * Recomputed only on register/unregister, while [isLive] reads `handle.isValid`, which can
-     * flip on its own. That is safe only because `BrowserHandleImpl` unregisters on disposal;
-     * a handle that invalidated without unregistering would leave a stale window in this set.
+     * Recomputed on register and unregister, and via [republish] wherever `handle.isValid` can
+     * flip without either - `BrowserHandleImpl` latching `connectionDead` on a transport failure
+     * is the one such path, and it is the dangerous direction: a stale entry keeps the menu
+     * items ENABLED for a window whose browser is gone, so they swallow Cmd+[ from an editor
+     * and then find nothing to act on.
      */
     val windowsWithActiveBrowser: StateFlow<Set<String>> = _windowsWithActiveBrowser.asStateFlow()
 
@@ -160,6 +162,16 @@ object ActiveBrowserRegistry {
         }
         publishWindows()
     }
+
+    /**
+     * Recompute [windowsWithActiveBrowser] without a registration change.
+     *
+     * [publishWindows] runs on register and unregister, which is enough only while `isValid`
+     * cannot flip on its own. It can: `BrowserHandleImpl` latches `connectionDead` on a
+     * transport failure and nothing unregisters at that point, so the window would keep its
+     * browser menu items enabled with nothing behind them. That call site invokes this.
+     */
+    fun republish() = publishWindows()
 
     /** The browser a window-scoped action should act on in [windowId], or null if there is none. */
     fun activeIn(windowId: String): BrowserHandle? {
