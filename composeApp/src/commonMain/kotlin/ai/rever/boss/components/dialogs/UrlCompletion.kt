@@ -35,15 +35,33 @@ private fun storedAuthority(url: String): String = url.substringAfter("://").sub
 private fun hostOf(canonical: String): String = canonical.substringBefore('/').substringBefore('?')
 
 /**
- * Text that must never reach the field through a completion.
+ * Text that must never reach the field through a completion, and that suppresses one when
+ * the user types it.
  *
  * A visited page controls its own URL, so a stored path or query can carry a bidirectional
- * override or a zero-width character. Splicing one into the field would let the address the
- * user READS differ from the address Enter opens, which is the one thing inline completion
- * has to be trusted not to do. This does NOT cover script homoglyphs (a Cyrillic `а` in a
- * lookalike domain); that needs a punycode/confusables policy, not a character class.
+ * override, a zero-width joiner, or a non-breaking space. Splicing one into the field would
+ * let the address the user READS differ from the address Enter opens, which is the one thing
+ * inline completion has to be trusted not to do.
+ *
+ * Whitespace is in here rather than in a clause of its own, and it earns both roles: typed,
+ * it means the field holds a search rather than an address; stored, a U+00A0 in a path is as
+ * invisible as a zero-width joiner. Splitting the two apart is what let them disagree - the
+ * typed side used `Char.isWhitespace`, which counts U+00A0, while the candidate side checked
+ * only controls and `FORMAT`, so the very character that suppressed a completion when typed
+ * could be spliced in from a stored path.
+ *
+ * This does NOT cover script homoglyphs (a Cyrillic `а` in a lookalike domain); that needs a
+ * punycode/confusables policy, not a character class.
  */
-private fun String.hasInvisibleCharacters(): Boolean = any { it.isISOControl() || it.category == CharCategory.FORMAT }
+private fun String.hasInvisibleCharacters(): Boolean = any { it.isWhitespace() || it.category in HIDDEN }
+
+/**
+ * The Unicode categories a completion must never splice, as categories rather than as
+ * `isISOControl()` so the whole test fits one readable line: `CONTROL` is exactly the C0 and
+ * C1 range that call covered, and `FORMAT` is where the bidi overrides and zero-width joiners
+ * live.
+ */
+private val HIDDEN = setOf(CharCategory.CONTROL, CharCategory.FORMAT)
 
 /**
  * Whether this stored address is unfit to be offered as a completion at all, host included.
@@ -138,11 +156,11 @@ internal fun inlineUrlCompletion(
     // does not have to appear in every stored address for the ghost to appear. The typed
     // text itself is still what the ghost is drawn after, so the scheme stays on screen.
     val matchable = if (typed.contains("://")) canonicalUrlKey(typed) else typed
-    // Whitespace means this is a search, not an address, and completing it would eat what is
-    // still being typed. A blank field needs no clause of its own: an empty one carries no
-    // `://`, so it reaches here as an empty [matchable], and an all-whitespace one is caught
-    // by the first clause.
-    if (typed.any { it.isWhitespace() } || typed.hasInvisibleCharacters() || matchable.isEmpty()) return null
+    // Whitespace is part of `hasInvisibleCharacters`, so text with a space in it is a search
+    // and completing it would eat what is still being typed. A blank field needs no clause of
+    // its own either: an empty one carries no `://`, so it arrives here as an empty
+    // `matchable`, and an all-whitespace one is caught by the first clause.
+    if (typed.hasInvisibleCharacters() || matchable.isEmpty()) return null
 
     val entries =
         suggestions
@@ -199,6 +217,12 @@ internal fun inlineUrlCompletion(
  * the value, so Backspace deletes a character the user typed instead of first having to
  * clear a completion they never asked to be there, and every existing reader of the field's
  * text still sees exactly what was typed.
+ *
+ * Its cost, and the address bar pays the same one: Compose reports the TRANSFORMED text as
+ * the node's editable text, so a screen reader announces the ghost as though the field
+ * contained it. That is also why the tests assert on the URL that OPENS rather than on the
+ * field's rendered text - the semantics value cannot tell a ghost apart from an accepted
+ * completion.
  *
  * The prefix guard here is the same one [urlCompletionTarget] applies before navigating, so
  * what is drawn and where Enter goes cannot come apart.

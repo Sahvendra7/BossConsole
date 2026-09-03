@@ -218,9 +218,19 @@ class UrlHistoryManagerTest {
 
         // "needle" starts at index 301, past the 256-character cap, so it is not scanned.
         assertEquals(emptyList(), UrlHistoryManager.getSuggestions("needle"))
-        // And the entry itself is untouched: the cap bounds the scan, it does not rewrite
-        // the user's history.
-        assertEquals(title, UrlHistoryManager.getSuggestions("example.com").single().title)
+        // The suggestion is capped too, not just the scan: `maxLines = 1` truncates what a
+        // dropdown row draws, never what Compose measures.
+        assertEquals(
+            256,
+            UrlHistoryManager
+                .getSuggestions("example.com")
+                .single()
+                .title.length,
+        )
+        // And the store itself is untouched, which is why the cap is not applied on load:
+        // a save writes back what a load read.
+        runBlocking { UrlHistoryManager.saveHistory() }
+        assertTrue(tempFile.readText().contains(title), "a save must not rewrite the stored title")
     }
 
     @Test

@@ -166,6 +166,18 @@ class HistoryMatchingTest {
     }
 
     @Test
+    fun `a userinfo URL is not suggested, the same way it is not completed`() {
+        // `java.net.URL` reads the host as what follows the `@` while `canonicalUrlKey` keeps
+        // the userinfo, so this passed the suggestable-host gate AND matched "git" at index
+        // 0. The field's ghost text already refused it; the list beside it did not, and its
+        // rows are clickable - so half the surface was hardened and half was not.
+        val spoof = entry("https://github.com@evil.example/", title = "GitHub", visits = 99)
+
+        assertEquals(emptyList(), rank("git", spoof))
+        assertEquals(emptyList(), rank("github", spoof))
+    }
+
+    @Test
     fun `the mid-word fallback does not resurrect query-string noise above a real hit`() {
         val real = entry("https://localhost:3000/", title = "Dev")
         val oauth =

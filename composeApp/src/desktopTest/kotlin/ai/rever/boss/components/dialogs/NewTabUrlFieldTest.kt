@@ -13,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
@@ -69,7 +70,11 @@ class NewTabUrlFieldTest {
               {"url":"https://github.com/","title":"GitHub","domain":"github.com",
                "visitCount":13,"lastVisited":${System.currentTimeMillis()}},
               {"url":"https://github.com/risa-labs-inc/BossConsole/pulls","title":"Pull requests",
-               "domain":"github.com","visitCount":37,"lastVisited":${System.currentTimeMillis()}}
+               "domain":"github.com","visitCount":37,"lastVisited":${System.currentTimeMillis()}},
+              {"url":"https://news.example.com/first","title":"First","domain":"news.example.com",
+               "visitCount":9,"lastVisited":${System.currentTimeMillis()}},
+              {"url":"https://news.example.com/second","title":"Second","domain":"news.example.com",
+               "visitCount":2,"lastVisited":${System.currentTimeMillis()}}
             ]
             """.trimIndent(),
         )
@@ -280,6 +285,52 @@ class NewTabUrlFieldTest {
         // Arrowing into the list makes the highlighted row the proposal; the confirm button
         // relies on the completion having been cleared for that to hold.
         assertEquals(listOf("https://github.com/"), opened)
+    }
+
+    @Test
+    fun `Escape drops the highlighted row, not just the list and the ghost`() {
+        openDialog()
+
+        rule.onNode(hasSetTextAction()).performTextInput("git")
+        settle()
+        rule.onNode(hasSetTextAction()).performKeyInput { pressKey(Key.DirectionDown) }
+        settle()
+        rule.onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
+        settle()
+        confirm()
+
+        // The highlighted row outranks the ghost in `urlToOpen`, and Escape used to leave it
+        // behind: nothing suggestion-shaped was on screen any more, and the confirm button
+        // still opened a row the user could no longer see.
+        assertEquals(listOf("https://www.google.com/search?q=git"), opened)
+    }
+
+    @Test
+    fun `deleting a row drops the highlight it was addressed by`() {
+        openDialog()
+
+        // Two pages on one host, so the list still has a row under the deleted one. "git"
+        // cannot show this: its remaining row is on the same host as the ghost, so the two
+        // commit targets agree by accident.
+        rule.onNode(hasSetTextAction()).performTextInput("news")
+        settle()
+        rule.onNode(hasSetTextAction()).performKeyInput { pressKey(Key.DirectionDown) }
+        settle()
+        rule.onAllNodesWithContentDescription("Delete")[0].performClick()
+        settle()
+        confirm()
+
+        // The list is filtered in place, so the row under the deleted one moves up into the
+        // index - and the highlight, which outranks the ghost, then names a page the user
+        // never pointed at. With the index dropped, the ghost's host is what commits.
+        assertEquals(listOf("https://news.example.com"), opened)
+    }
+
+    @Test
+    fun `a limit of zero returns nothing instead of throwing`() {
+        // The provider asks history for `limit - 1`, and `rankMatches` ends in `take`, which
+        // throws on a negative count.
+        assertEquals(emptyList(), UrlHistoryProvider.getSuggestions("git", limit = 0))
     }
 
     @Test

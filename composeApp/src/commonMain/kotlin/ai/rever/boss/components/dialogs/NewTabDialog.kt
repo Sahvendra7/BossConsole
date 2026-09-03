@@ -1239,6 +1239,12 @@ fun NewTabDialog(
                                     // about the text it was made against, and this is no
                                     // longer that text.
                                     suggestionsDismissedFor = null
+                                    // And it drops the highlighted row, which belongs to a
+                                    // list built for text that no longer exists. The effect
+                                    // below resets this too, but only after the debounce,
+                                    // and `urlToOpen` reads the row FIRST - so Enter inside
+                                    // that window committed a row from the previous list.
+                                    selectedSuggestionIndex = -1
                                     inputText = newValue.text
                                     urlText = newValue.text
                                     // Recomputed HERE, against the suggestions already in
@@ -1373,6 +1379,12 @@ fun NewTabDialog(
                                                             // would otherwise land and re-open
                                                             // the list Escape just closed.
                                                             suggestionsDismissedFor = urlField.text
+                                                            // The highlighted row goes with the
+                                                            // list. It outranks the ghost in
+                                                            // `urlToOpen`, so leaving it behind
+                                                            // meant Escape then Enter opened a
+                                                            // row that was no longer on screen.
+                                                            selectedSuggestionIndex = -1
                                                             // The ghost is a proposal, so the key
                                                             // that rejects the list rejects it
                                                             // too. Leaving it behind meant Escape
@@ -1484,6 +1496,10 @@ fun NewTabDialog(
                                                         UrlHistoryProvider.deleteUrl(suggestion.url)
                                                         // Update suggestions
                                                         urlSuggestions = urlSuggestions.filterNot { it.url == suggestion.url }
+                                                        // The index addressed a row in the OLD
+                                                        // list; every row after the deleted one
+                                                        // has shifted under it.
+                                                        selectedSuggestionIndex = -1
                                                         if (urlSuggestions.isEmpty()) {
                                                             showUrlDropdown = false
                                                         }

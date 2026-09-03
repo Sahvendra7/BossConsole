@@ -196,7 +196,17 @@ private val urlFacts = ConcurrentHashMap<String, UrlFacts>()
 private fun factsFor(url: String): UrlFacts {
     urlFacts[url]?.let { return it }
     if (urlFacts.size > MAX_ENTRIES + PRUNE_SLACK) urlFacts.clear()
-    return urlFacts.getOrPut(url) { UrlFacts(canonicalUrlKey(url), suggestableHost(url) != null) }
+    return urlFacts.getOrPut(url) {
+        val address = canonicalUrlKey(url)
+        // Userinfo, inline because it is one clause: `java.net.URL` reads the host of
+        // `https://github.com@evil.example/` as `evil.example` while `canonicalUrlKey` keeps
+        // the `github.com@`, so the entry passed the host gate AND matched a typed "git" at
+        // index 0 - a clickable row whose address line reads `github.com@evil.example`. The
+        // field's inline completion refuses these; the list beside it has to refuse them too,
+        // or only half the surface is hardened. Chrome strips userinfo from the omnibox.
+        val userinfo = address.substringBefore('/').substringBefore('?').contains('@')
+        UrlFacts(address = address, suggestable = suggestableHost(url) != null && !userinfo)
+    }
 }
 
 /**
@@ -319,7 +329,12 @@ internal fun rankMatches(
                 { -rankOf(it.entry, now) },
             ),
         ).take(limit)
-        .map { it.entry }
+        // Capped on the way OUT as well as on the way in. `maxLines = 1` truncates what a
+        // dropdown row DRAWS, not what Compose measures, so an uncapped title from an older
+        // file still laid out in full on every keystroke - which is the cost the cap exists
+        // to remove. This copy is the matcher's own return value and never reaches the map
+        // `saveHistory` writes back, so the user's file keeps the title it had.
+        .map { it.entry.copy(title = it.entry.title.take(MAX_TITLE_LENGTH)) }
 }
 
 /**
@@ -366,9 +381,11 @@ private const val PRUNE_SLACK = 200
  * Longest page title a match will scan. Attacker-controlled - a page sets its own
  * `document.title` - and word-scanned on every keystroke of every URL field.
  *
- * Enforced in two places on purpose: `addUrl` caps what is STORED, and [rankMatches] caps
- * what is READ, because a history file written before the cap existed still holds whatever
- * the page put there.
+ * Enforced in three places on purpose, because a history file written before the cap existed
+ * still holds whatever the page put there: `addUrl` caps what is STORED, [rankMatches] caps
+ * what it SCANS, and it caps what it RETURNS so the dropdown does not lay out a paragraph
+ * per row per keystroke. Not capped in `loadHistory`, which feeds the map `saveHistory`
+ * writes back and would rewrite the user's own file.
  */
 private const val MAX_TITLE_LENGTH = 256
 

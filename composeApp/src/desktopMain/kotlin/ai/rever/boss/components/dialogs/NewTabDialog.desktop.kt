@@ -9,7 +9,10 @@ actual object UrlHistoryProvider {
     ): List<UrlSuggestion> {
         val historySuggestions =
             UrlHistoryManager
-                .getSuggestions(query, limit - 1)
+                // Floored: `rankMatches` ends in `take`, which throws on a negative count.
+                // No caller passes 0 today, but this is an `expect` declaration with a
+                // defaulted limit, so the next one should get an empty list, not a crash.
+                .getSuggestions(query, (limit - 1).coerceAtLeast(0))
                 .map { entry ->
                     UrlSuggestion(
                         url = entry.url,
