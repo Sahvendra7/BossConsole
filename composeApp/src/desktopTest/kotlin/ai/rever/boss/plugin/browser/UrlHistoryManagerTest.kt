@@ -198,7 +198,25 @@ class UrlHistoryManagerTest {
         repeat(1_400) { UrlHistoryManager.addUrl("https://site$it.example/", "Site $it") }
 
         val held = UrlHistoryManager.getSuggestions("example", limit = 10_000)
+        // Both bounds matter. `<= 1_200` alone passes if a prune only ever trims to the
+        // slack; `< 1_400` alone passes if it trims by a single entry. Together they say
+        // something actually cut back past the cap. `the prune waits for the slack` below
+        // pins the exact shape.
         assertTrue(held.size <= 1_200, "expected the store to be pruned, held ${held.size}")
+        assertTrue(held.size < 1_400, "expected a prune to have happened at all, held ${held.size}")
+    }
+
+    @Test
+    fun `a negative limit returns nothing instead of throwing`() {
+        // `rankMatches` ends in `take`, which rejects a negative count, and this function is
+        // what `DesktopUrlHistoryProvider` calls - so the limit arrives from plugin code
+        // through `PluginContext.urlHistoryProvider`. Floored at the function that throws
+        // rather than at any one call site.
+        UrlHistoryManager.addUrl("https://example.com/", "Example")
+
+        assertEquals(emptyList(), UrlHistoryManager.getSuggestions("example", limit = -1))
+        assertEquals(emptyList(), UrlHistoryManager.getSuggestions("example", limit = 0))
+        assertEquals(1, UrlHistoryManager.getSuggestions("example", limit = 1).size)
     }
 
     @Test

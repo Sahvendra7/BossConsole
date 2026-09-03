@@ -9,10 +9,10 @@ actual object UrlHistoryProvider {
     ): List<UrlSuggestion> {
         val historySuggestions =
             UrlHistoryManager
-                // Floored: `rankMatches` ends in `take`, which throws on a negative count.
-                // No caller passes 0 today, but this is an `expect` declaration with a
-                // defaulted limit, so the next one should get an empty list, not a crash.
-                .getSuggestions(query, (limit - 1).coerceAtLeast(0))
+                // One short, to leave room for the search row appended below. A negative
+                // count is floored inside `rankMatches`, which is the function `take` would
+                // have thrown from.
+                .getSuggestions(query, limit - 1)
                 .map { entry ->
                     UrlSuggestion(
                         url = entry.url,
@@ -42,7 +42,10 @@ actual object UrlHistoryProvider {
             )
         }
 
-        return suggestions.take(limit)
+        // Floored for the same reason: this `take` is the second one a negative limit
+        // reaches, and `getSuggestions` is an `expect` declaration with a defaulted limit,
+        // so a caller that computes one should get an empty list rather than a crash.
+        return suggestions.take(limit.coerceAtLeast(0))
     }
 
     actual fun deleteUrl(url: String) {

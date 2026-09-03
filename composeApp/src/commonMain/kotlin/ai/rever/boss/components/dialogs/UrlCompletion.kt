@@ -1,6 +1,8 @@
 package ai.rever.boss.components.dialogs
 
+import ai.rever.boss.plugin.browser.canonicalAuthority
 import ai.rever.boss.plugin.browser.canonicalUrlKey
+import ai.rever.boss.plugin.browser.hasUserinfo
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -19,6 +21,15 @@ import androidx.compose.ui.text.withStyle
  * re-derived as `https://…` by `processUrlInput`, which fails the handshake; a stored
  * `https://www.example.com/x` became `example.com/x` and opened a host the certificate does
  * not cover.
+ *
+ * A FRAGMENT is the third way they differ, and the one that is easy to miss: [canonicalUrlKey]
+ * strips it, so a stored `https://app.example.com/x#/settings` displays as
+ * `app.example.com/x` and opens with the `#/settings` still on it. That is deliberate - a
+ * hash-routed app serves a real page from that fragment, so dropping it from the target would
+ * open the wrong view - but it does mean the drawn text is a prefix of where Enter goes rather
+ * than a spelling of it. `ghostTextTransformation`'s "cannot come apart" is about the two not
+ * drifting to different PAGES, which the guard enforces; it was never about them being the
+ * same string.
  */
 internal data class UrlCompletion(
     val display: String,
@@ -30,9 +41,6 @@ private fun schemeOf(url: String): String? = url.substringBefore("://", "").take
 
 /** The authority of a stored URL exactly as recorded, `www.` and port included. */
 private fun storedAuthority(url: String): String = url.substringAfter("://").substringBefore('/').substringBefore('?')
-
-/** The authority of a [canonicalUrlKey]-shaped address: everything before the path or query. */
-private fun hostOf(canonical: String): String = canonical.substringBefore('/').substringBefore('?')
 
 /**
  * Text that must never reach the field through a completion, and that suppresses one when
@@ -66,15 +74,11 @@ private val HIDDEN = setOf(CharCategory.CONTROL, CharCategory.FORMAT)
 /**
  * Whether this stored address is unfit to be offered as a completion at all, host included.
  *
- * Empty: nothing to key on. Invisible characters: see [hasInvisibleCharacters]. Userinfo -
- * a `user@` before the authority ends - because [canonicalUrlKey] keeps it while
- * `java.net.URL` reads the host as whatever follows the `@`. A stored
- * `https://github.com@evil.example/` canonicalises to `github.com@evil.example`, which
- * extends a typed `git` while the host is still open, so one Tab would hand the field a
- * host the user never named and Enter would open `evil.example`. Chrome strips userinfo
- * out of the omnibox for the same reason.
+ * Empty: nothing to key on. Invisible characters: see [hasInvisibleCharacters]. Userinfo:
+ * see [hasUserinfo], which is shared with the suggestion matcher because a rule the ghost
+ * refuses and the list beside it accepts only hardens half a surface.
  */
-private fun String.isUnofferable(): Boolean = isEmpty() || hasInvisibleCharacters() || hostOf(this).contains('@')
+private fun String.isUnofferable(): Boolean = isEmpty() || hasInvisibleCharacters() || hasUserinfo(this)
 
 /**
  * Whether the full stored ADDRESS is unfit to be offered even though its host is fine.
@@ -175,7 +179,7 @@ internal fun inlineUrlCompletion(
                 }
             }
 
-    val typedHost = hostOf(matchable)
+    val typedHost = canonicalAuthority(matchable)
     // No dot and no colon means no host has been named yet, so the host is still the thing
     // being completed. Anything else and the user has committed to a host.
     val hostStillOpen = matchable.none { it == '.' || it == ':' }
@@ -191,10 +195,10 @@ internal fun inlineUrlCompletion(
             // Hosts first, then the full addresses, as a Sequence so a hit on the first host
             // does not pay for the rest.
             entries.asSequence().map { (canonical, url, scheme) ->
-                UrlCompletion(display = hostOf(canonical), target = "$scheme://${storedAuthority(url)}")
+                UrlCompletion(display = canonicalAuthority(canonical), target = "$scheme://${storedAuthority(url)}")
             } + addresses
         } else {
-            addresses.filter { hostOf(it.display).equals(typedHost, ignoreCase = true) }
+            addresses.filter { canonicalAuthority(it.display).equals(typedHost, ignoreCase = true) }
         }
 
     return candidates

@@ -198,14 +198,10 @@ private fun factsFor(url: String): UrlFacts {
     if (urlFacts.size > MAX_ENTRIES + PRUNE_SLACK) urlFacts.clear()
     return urlFacts.getOrPut(url) {
         val address = canonicalUrlKey(url)
-        // Userinfo, inline because it is one clause: `java.net.URL` reads the host of
-        // `https://github.com@evil.example/` as `evil.example` while `canonicalUrlKey` keeps
-        // the `github.com@`, so the entry passed the host gate AND matched a typed "git" at
-        // index 0 - a clickable row whose address line reads `github.com@evil.example`. The
-        // field's inline completion refuses these; the list beside it has to refuse them too,
-        // or only half the surface is hardened. Chrome strips userinfo from the omnibox.
-        val userinfo = address.substringBefore('/').substringBefore('?').contains('@')
-        UrlFacts(address = address, suggestable = suggestableHost(url) != null && !userinfo)
+        // [hasUserinfo] rather than the same expression spelled out here: the URL field's
+        // completion refuses these by that rule, and a list beside it that accepted them
+        // would harden half a surface.
+        UrlFacts(address = address, suggestable = suggestableHost(url) != null && !hasUserinfo(address))
     }
 }
 
@@ -270,6 +266,10 @@ internal fun rankMatches(
     val normalized = if (query.contains("://")) canonicalUrlKey(query) else query.trim()
     val terms = queryTerms(normalized)
     if (terms.isEmpty()) return emptyList()
+    // Floored HERE, at the function that would throw, rather than at a call site. `take`
+    // rejects a negative count, and one of the callers is `DesktopUrlHistoryProvider` -
+    // `PluginContext.urlHistoryProvider` - so this limit arrives from plugin code.
+    val wanted = limit.coerceAtLeast(0)
     val typed = normalized.lowercase()
 
     return entries
@@ -328,7 +328,7 @@ internal fun rankMatches(
                 { !it.addressMatch },
                 { -rankOf(it.entry, now) },
             ),
-        ).take(limit)
+        ).take(wanted)
         // Capped on the way OUT as well as on the way in. `maxLines = 1` truncates what a
         // dropdown row DRAWS, not what Compose measures, so an uncapped title from an older
         // file still laid out in full on every keystroke - which is the cost the cap exists

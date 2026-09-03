@@ -327,10 +327,36 @@ class NewTabUrlFieldTest {
     }
 
     @Test
-    fun `a limit of zero returns nothing instead of throwing`() {
-        // The provider asks history for `limit - 1`, and `rankMatches` ends in `take`, which
-        // throws on a negative count.
+    fun `a limit of zero or less returns nothing instead of throwing`() {
+        // `take` rejects a negative count, and there are TWO of them on this path: the one
+        // inside `rankMatches`, which the provider used to reach by passing `limit - 1`, and
+        // the provider's own after it appends the search row. Zero only exercises the first,
+        // which is why it passed while the second was still unguarded.
         assertEquals(emptyList(), UrlHistoryProvider.getSuggestions("git", limit = 0))
+        assertEquals(emptyList(), UrlHistoryProvider.getSuggestions("git", limit = -1))
+        assertEquals(emptyList(), UrlHistoryProvider.getSuggestions("git", limit = Int.MIN_VALUE))
+    }
+
+    @Test
+    fun `the encoder names what is safe rather than what is not`() {
+        // Asserted on the encoder rather than through a search row, because the row is only
+        // offered for text with no dot in it - which would have left the unreserved case
+        // below untestable, and it is the one that says the output stays readable.
+        //
+        // This was a chain of `replace` calls and every review round found another character
+        // missing from it. An allowlist ends that: RFC 3986 unreserved characters survive, a
+        // space is the `?q=` convention's `+`, everything else leaves as its UTF-8 bytes.
+        assertEquals("a-b_c.d~e", encodeUrlParameter("a-b_c.d~e"))
+        assertEquals("caf%C3%A9+r%C3%B6sti", encodeUrlParameter("café rösti"))
+        assertEquals("%E6%97%A5%E6%9C%AC", encodeUrlParameter("日本"))
+        assertEquals("%22exact+phrase%22", encodeUrlParameter("\"exact phrase\""))
+        assertEquals("a%3Cb%3Ec%7Cd%5Ce", encodeUrlParameter("a<b>c|d\\e"))
+        // The characters the denylist did cover still go out the same way, so the search row
+        // and the confirm path did not change what they search for.
+        assertEquals("foo+%26+bar", encodeUrlParameter("foo & bar"))
+        assertEquals("100%25+cotton", encodeUrlParameter("100% cotton"))
+        assertEquals("a+%2B+b", encodeUrlParameter("a + b"))
+        assertEquals("a%2Fb%3Fc%23d%3De", encodeUrlParameter("a/b?c#d=e"))
     }
 
     @Test

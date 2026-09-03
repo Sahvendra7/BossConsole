@@ -153,24 +153,41 @@ enum class TabType(
  * confirm path uses - they produced different URLs for the same text, so clicking the row
  * and pressing Enter searched for different things.
  *
- * Order is load-bearing, and both leading replacements are there because of a character
- * this used to pass through:
- *  - `%` goes FIRST, or the escapes the later replacements introduce get re-escaped. Left
- *    out entirely, searching for `100%` sent Google a truncated escape and `a%26b` reached
- *    it as `a&b` - the user's literal text read back as a separator.
- *  - `+` goes before the space, or the `+` this line writes for a space is turned back into
- *    a literal plus. Left out, `a + b` became `a+++b`, which Google reads as `a   b`.
+ * An ALLOWLIST, deliberately. This was a chain of `replace` calls, and each review round
+ * found another character missing from it: `&` and `#` in one, then `%` and `+` in the next
+ * (`100%` went out as a truncated escape, `a%26b` reached Google as `a&b`, `a + b` as
+ * `a+++b`), with quotes, angle brackets, braces, backslash and every non-ASCII character
+ * still passing through raw. Naming what is SAFE ends that sequence: RFC 3986 unreserved
+ * characters survive, a space becomes `+` because that is the `?q=` convention, and
+ * everything else goes out as the percent-encoded UTF-8 bytes it is made of - which is also
+ * what makes a CJK or emoji query correct rather than merely tolerated.
  */
 internal fun encodeUrlParameter(input: String): String =
-    input
-        .replace("%", "%25")
-        .replace("+", "%2B")
-        .replace(" ", "+")
-        .replace("&", "%26")
-        .replace("#", "%23")
-        .replace("?", "%3F")
-        .replace("=", "%3D")
-        .replace("/", "%2F")
+    buildString {
+        for (byte in input.encodeToByteArray()) {
+            val char = byte.toInt().toChar()
+            when {
+                char in UNRESERVED -> append(char)
+
+                char == ' ' -> append('+')
+
+                // `and 0xFF` because a Byte is signed and every byte above 0x7F - which is
+                // every byte of a multi-byte UTF-8 sequence - would otherwise format as a
+                // negative number.
+                else -> append('%').append(HEX[(byte.toInt() shr 4) and 0x0F]).append(HEX[byte.toInt() and 0x0F])
+            }
+        }
+    }
+
+/**
+ * RFC 3986's unreserved set: the characters a `?q=` parameter carries verbatim.
+ *
+ * A Set rather than the concatenated ranges it is built from, because `in` on a List is a
+ * linear scan and this is consulted once per byte of the query.
+ */
+private val UNRESERVED = (('a'..'z') + ('A'..'Z') + ('0'..'9') + listOf('-', '.', '_', '~')).toSet()
+
+private const val HEX = "0123456789ABCDEF"
 
 /**
  * A spec that declares no input at all (blank label and placeholder, input
@@ -381,8 +398,8 @@ fun NewTabDialog(
     //  2. the ghost completion, guarded exactly as it is drawn, so the address the field
     //     shows and the address that opens cannot come apart.
     //  3. what they typed.
-    // Written once because it was previously written twice, and only one of the two
-    // honoured the highlighted row - so Enter and the confirm button disagreed.
+    // One value rather than one per commit path, so Enter and the confirm button cannot
+    // disagree about which of the three signals wins.
     val urlToOpen =
         urlSuggestions.getOrNull(selectedSuggestionIndex)?.url
             ?: urlCompletionTarget(ghostCompletion, urlField.text)?.target
@@ -407,13 +424,18 @@ fun NewTabDialog(
     // Update suggestions when URL text changes
     LaunchedEffect(urlText, selectedType) {
         if (selectedType == TabType.URL && urlText.isNotEmpty()) {
+            // Captured before the delay. Read inside `withContext` it would resolve against
+            // the worker thread's snapshot rather than the value that keyed this effect;
+            // cancellation makes that benign today, and capturing makes the dismissal check
+            // below provably about the string the lookup actually ran for.
+            val query = urlText
             delay(URL_SUGGESTION_DEBOUNCE_MS)
             // Off the composition thread: the lookup canonicalises and word-scans every
             // stored entry, which is milliseconds at the 1000-entry cap but is still work
             // that has no business between a keystroke and its frame.
-            urlSuggestions = withContext(Dispatchers.Default) { UrlHistoryProvider.getSuggestions(urlText) }
+            urlSuggestions = withContext(Dispatchers.Default) { UrlHistoryProvider.getSuggestions(query) }
             // Read after the delay, so a dismissal made DURING the debounce is honoured.
-            showUrlDropdown = urlSuggestions.isNotEmpty() && urlText != suggestionsDismissedFor
+            showUrlDropdown = urlSuggestions.isNotEmpty() && query != suggestionsDismissedFor
             selectedSuggestionIndex = -1
         } else {
             urlSuggestions = emptyList()
@@ -528,6 +550,13 @@ fun NewTabDialog(
                                     selectedPluginType = null
                                     selectedType = TabType.URL
                                     inputText = urlText
+                                    // The field itself, not just the two mirrors of it.
+                                    // An accepted completion deliberately splits them -
+                                    // `urlText` holds the display, `inputText` the target -
+                                    // so without this, accepting "git" to "github.com",
+                                    // switching to File and switching back rendered the
+                                    // field's own stale value.
+                                    urlField = TextFieldValue(urlText, TextRange(urlText.length))
                                 },
                                 modifier = Modifier.weight(1f),
                             )
@@ -1373,7 +1402,16 @@ fun NewTabDialog(
                                                     }
 
                                                     Key.Escape -> {
-                                                        if (showUrlDropdown || urlCompletion != null) {
+                                                        // `ghostCompletion`, not `urlCompletion`:
+                                                        // a completion suppressed by a selection
+                                                        // or a highlighted row is not on screen,
+                                                        // and Escape consuming the key with
+                                                        // nothing visibly changing is how a key
+                                                        // that should have closed the dialog did
+                                                        // nothing at all. Every other read of the
+                                                        // completion already goes through this
+                                                        // one; this was the last that did not.
+                                                        if (showUrlDropdown || ghostCompletion != null) {
                                                             showUrlDropdown = false
                                                             // A lookup still inside the debounce
                                                             // would otherwise land and re-open

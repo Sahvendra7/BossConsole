@@ -249,6 +249,19 @@ class InlineUrlCompletionTest {
     }
 
     @Test
+    fun `a fragment stays on the target and off the display`() {
+        // `canonicalUrlKey` strips the fragment, so the ghost draws the address without it
+        // while the target keeps the spelling history recorded. Dropping it from the target
+        // instead would open the wrong view of a hash-routed app - this is the third way
+        // display and target differ, after the scheme and `www.`.
+        val hashRouted = history("https://app.example.com/x#/settings")
+        val completion = inlineUrlCompletion("app.example.com/", hashRouted)
+
+        assertEquals("app.example.com/x", completion?.display)
+        assertEquals("https://app.example.com/x#/settings", completion?.target)
+    }
+
+    @Test
     fun `candidates carrying invisible characters are refused`() {
         // A bidi override in a stored path can reorder the whole rendered line, so the
         // address the user reads is not the address Enter opens.
