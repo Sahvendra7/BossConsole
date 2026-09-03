@@ -298,16 +298,6 @@ class BossDraggableComponent(
     fun getItemsForSlotUnfiltered(slot: Panel): List<SidebarItem> = itemsBySlot[slot].orEmpty()
 
     /**
-     * The Toolbox's own sidebar item, or null if the plugin is not registered.
-     *
-     * Unfiltered, on purpose: a user who hid the Toolbox from their sidebar has not asked to lose
-     * the way to reinstall or re-enable a plugin, which is the one thing only the Toolbox does.
-     *
-     * Matched on [PanelId.panelId] rather than on the plugin id - the plugin kept the id
-     * `plugin-manager` when it was renamed to Toolbox, so the two differ for exactly this one.
-     */
-
-    /**
      * Every tool registered in this window's sidebar, hidden ones included.
      *
      * Unfiltered on purpose, and shared by the two surfaces that exist to reach a tool without its
@@ -323,6 +313,15 @@ class BossDraggableComponent(
             .flatMap(::getItemsForSlotUnfiltered)
             .distinctBy { it.id }
 
+    /**
+     * The Toolbox's own sidebar item, or null if the plugin is not registered.
+     *
+     * Unfiltered, on purpose: a user who hid the Toolbox from their sidebar has not asked to lose
+     * the way to reinstall or re-enable a plugin, which is the one thing only the Toolbox does.
+     *
+     * Matched on [PanelId.panelId] rather than on the plugin id - the plugin kept the id
+     * `plugin-manager` when it was renamed to Toolbox, so the two differ for exactly this one.
+     */
     fun toolboxSidebarItem(): SidebarItem? =
         SidebarVisibilitySettings.ALL_SLOT_IDS
             .map(SidebarVisibilitySettings::panelFor)

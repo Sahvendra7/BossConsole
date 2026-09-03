@@ -79,6 +79,17 @@ import java.io.IOException
  * wins; later duplicates are logged and skipped.
  */
 object McpToolRegistryImpl : McpToolRegistry {
+    /**
+     * What a client prepends to a registered tool name: `git_status` is typed as
+     * `mcp__boss__git_status`.
+     *
+     * Assigned by the client's own config - the name it files this server under - not by anything
+     * here, which is exactly why it belongs beside the registry rather than in whichever surface
+     * happens to display it. Any surface that shows a tool the way a client types it should use
+     * this, so all of them move together if that name ever does.
+     */
+    const val CLIENT_TOOL_PREFIX = "mcp__boss__"
+
     /** How long a kill-switch fault sits in the bottom bar — longer than a routine status message. */
     private const val FAULT_MESSAGE_MS = 10_000L
 

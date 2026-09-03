@@ -163,13 +163,34 @@ class GlobalSearchNewSourcesTest {
         SearchSources.toolsSupplier = { listOf(ToolSearchRecord(panelId = "bookmarks", label = "Bookmarks")) }
         searchFor("bookmark")
 
-        GlobalSearchService.setActiveCategory(SearchCategory.TOOLS)
-        val filtered = GlobalSearchService.getFilteredResults()
+        // The category is global state on a singleton, so the restore goes in a finally: an
+        // assertion failing here would otherwise leave a filter set for whatever runs next in
+        // this JVM, and the failure would be reported against that test instead of this one.
+        try {
+            GlobalSearchService.setActiveCategory(SearchCategory.TOOLS)
+            val filtered = GlobalSearchService.getFilteredResults()
 
-        assertTrue(filtered.isNotEmpty(), "the TOOLS chip must show tools")
-        assertTrue(filtered.all { it.category == SearchCategory.TOOLS })
+            assertTrue(filtered.isNotEmpty(), "the TOOLS chip must show tools")
+            assertTrue(filtered.all { it.category == SearchCategory.TOOLS })
+        } finally {
+            GlobalSearchService.setActiveCategory(SearchCategory.ALL)
+        }
+    }
 
-        GlobalSearchService.setActiveCategory(SearchCategory.ALL)
+    @Test
+    fun `the keyword penalty ranks a keyword hit, it does not filter one out`() {
+        // KEYWORD_PENALTY is subtracted before the MIN_SCORE floor, so on paper it could drop a row
+        // rather than merely rank it low. In practice it cannot: FuzzyMatcher pays a short-target
+        // bonus of `50 - length`, so matching a keyword at all scores in the tens while the floor
+        // is 1. Worth pinning because the failure mode is invisible - raise the floor or the
+        // penalty and keyword rows stop appearing, with nothing to say they ever did. "pk" against
+        // "passkey" is the loosest useful shape: two characters, non-adjacent.
+        SearchSources.settingsSupplier = {
+            listOf(entry(label = "Platform Authenticator", breadcrumb = "Security", keywords = listOf("passkey")))
+        }
+
+        assertTrue(resultsOf<SearchResult.SettingResult>("pk").isNotEmpty(), "a loose keyword hit still survives")
+        assertTrue(resultsOf<SearchResult.SettingResult>("passkey").isNotEmpty())
     }
 
     @Test

@@ -50,14 +50,6 @@ internal class SettingsWindowState {
         private set
 
     /**
-     * Show the settings window, or ask the one already open to raise itself and, when [section] is
-     * named, to navigate there.
-     *
-     * [section] is applied only when given. Passing null means "just show settings" and must not
-     * clear a section another caller navigated to, which a plain assignment would.
-     */
-
-    /**
      * The row to point at once the window has navigated, or null to point at nothing.
      *
      * Separate from [section] for the same reason [sectionRequest] is separate from
@@ -96,6 +88,13 @@ internal class SettingsWindowState {
         open(section)
     }
 
+    /**
+     * Show the settings window, or ask the one already open to raise itself and, when [section] is
+     * named, to navigate there.
+     *
+     * [section] is applied only when given. Passing null means "just show settings" and must not
+     * clear a section another caller navigated to, which a plain assignment would.
+     */
     fun open(section: String? = null) {
         if (section != null) {
             this.section = section

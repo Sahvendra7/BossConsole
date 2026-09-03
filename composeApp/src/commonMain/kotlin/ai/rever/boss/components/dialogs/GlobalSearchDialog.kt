@@ -2,6 +2,7 @@ package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.icons.FileIcons
+import ai.rever.boss.mcp.McpToolRegistryImpl
 import ai.rever.boss.plugin.ui.BossDialog
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.plugin.ui.BossThemeController
@@ -12,6 +13,7 @@ import ai.rever.boss.search.SearchResult
 import ai.rever.boss.utils.extractParentName
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -258,7 +260,11 @@ fun GlobalSearchDialog(
             }
 
             is SearchResult.PageResult -> {
-                dispatch("url", result.url, result.url, onPageSelect)
+                // The only detail value that is a URL, and a recent page carries its query string.
+                // The handler still gets the real one - only the log line is masked, which is what
+                // AGENTS.md names LogSanitizer for and what RecentBrowserPagesManager already does
+                // to the same data on the way in.
+                dispatch("url", LogSanitizer.maskUriParams(result.url), result.url, onPageSelect)
             }
 
             // No handler, by design: an MCP tool takes arguments a search row cannot collect, so
@@ -1163,7 +1169,7 @@ private fun SimpleResultItem(
 }
 
 /** What one of the four simple rows shows. */
-private data class SimpleRow(
+internal data class SimpleRow(
     val icon: ImageVector,
     val accent: Color,
     val title: String,
@@ -1176,9 +1182,13 @@ private data class SimpleRow(
  *
  * The differences between them are data - an icon, an accent, which field is the subtitle - so
  * they live here as a table rather than as four call sites whose padding and icon sizes drift.
+ *
+ * Null for the five types that draw themselves; [SearchResultItem] branches on that to pick the
+ * family. Not `@Composable`, and `internal` rather than private, because it is a pure mapping over
+ * the sealed class and the one thing worth testing about it - that the two families between them
+ * name every result type, exactly once - is not reachable from inside a composable.
  */
-@Composable
-private fun SearchResult.simpleRow(): SimpleRow =
+internal fun SearchResult.simpleRow(): SimpleRow? =
     when (this) {
         is SearchResult.ToolResult -> {
             SimpleRow(Icons.Outlined.Apps, ToolsAccent, label, panelId)
@@ -1194,7 +1204,7 @@ private fun SearchResult.simpleRow(): SimpleRow =
                 icon = Icons.Outlined.Build,
                 accent = McpAccent,
                 // The name clients call it by, so what is on screen is what gets typed.
-                title = "mcp__boss__$name",
+                title = "${McpToolRegistryImpl.CLIENT_TOOL_PREFIX}$name",
                 subtitle = description,
                 // This row does nothing when selected, so its state has to be legible here: a
                 // disabled tool is exactly the one someone searched for, and it says so.
@@ -1206,8 +1216,17 @@ private fun SearchResult.simpleRow(): SimpleRow =
             SimpleRow(Icons.Outlined.History, PagesAccent, title.ifBlank { url }, url)
         }
 
-        else -> {
-            error("simpleRow is only for the four simple result types, not ${this::class.simpleName}")
+        // Named one by one rather than left to an `else`, which is the whole point: this `when` is
+        // an exhaustive expression over the sealed class, so a new result type fails the build here
+        // and its author has to say which family it belongs to. An `else` would take the decision
+        // silently and hand the row a runtime error instead.
+        is SearchResult.FileResult,
+        is SearchResult.TabResult,
+        is SearchResult.BookmarkResult,
+        is SearchResult.RunConfigResult,
+        is SearchResult.CommandResult,
+        -> {
+            null
         }
     }
 
