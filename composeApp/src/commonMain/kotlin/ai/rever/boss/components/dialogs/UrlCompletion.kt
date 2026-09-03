@@ -3,6 +3,7 @@ package ai.rever.boss.components.dialogs
 import ai.rever.boss.plugin.browser.canonicalAuthority
 import ai.rever.boss.plugin.browser.canonicalUrlKey
 import ai.rever.boss.plugin.browser.hasUserinfo
+import ai.rever.boss.plugin.browser.suggestableHost
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -148,6 +149,19 @@ internal fun extendsTyped(
  *    that "looks finished" left every prefix on the way to it open, and left `192.168.4`
  *    free to complete to `192.168.4.20:8123`, a different machine. The cost is no ghost
  *    while a dotted host is half-typed; the dropdown still lists the match.
+ *
+ *    **What this does NOT do**, and the KDoc used to imply it did: it does not stop a
+ *    typed prefix with no dot in it from reaching an unfamiliar host. Typing `paypal`
+ *    against that same stored lookalike completes to `paypal.com-login.evil.example`,
+ *    because at that point the user has named no host for the rule to protect. The guard
+ *    protects a host the user has COMMITTED to from being swapped; it does not vouch for a
+ *    host they have not begun to spell. Chrome has the same exposure and gates it on
+ *    `typed_count` - whether the user has ever typed that URL themselves. There is no
+ *    equivalent here to gate on: `visitCount` counts calls to `UrlHistoryManager.addUrl`,
+ *    whose only caller is the browser plugin's TITLE listener, so a page that assigns
+ *    `document.title` twice raises its own count. Closing this properly needs a typed-count
+ *    recorded at the commit sites, which is a schema change and its own piece of work.
+ *    `a bare prefix can still reach an unfamiliar host` pins the boundary meanwhile.
  *  - a candidate ADDRESS carrying a query string is not offered: a stored OAuth URL is
  *    500-2000 characters of dead `state=` parameters, and it makes the ghost longer than
  *    the field. Its host is still offered - see [isUnofferableAddress].
@@ -196,7 +210,13 @@ internal fun inlineUrlCompletion(
             .mapNotNull { suggestion ->
                 val canonical = canonicalUrlKey(suggestion.url)
                 val scheme = schemeOf(suggestion.url)
-                if (scheme == null || canonical.isUnofferable()) {
+                // The same gate `rankMatches` applies, pointing the same way. It gated on a
+                // scheme being PRESENT rather than on it being one we navigate to, so a
+                // `file:///Users/me/notes.html` row - which the list already refuses - had
+                // `canonicalAuthority` read `file:` off it, and typing "fil" ghosted `file:`
+                // targeting `file://`. Unreachable while `UrlHistoryProvider` is the only
+                // producer; not graceful if that stops being true.
+                if (scheme == null || suggestableHost(suggestion.url) == null || canonical.isUnofferable()) {
                     null
                 } else {
                     Triple(canonical, suggestion.url, scheme)

@@ -165,16 +165,15 @@ enum class TabType(
 internal fun encodeUrlParameter(input: String): String =
     buildString {
         for (byte in input.encodeToByteArray()) {
-            val char = byte.toInt().toChar()
+            // Masked once, up front. A Byte is signed, so every byte of a multi-byte UTF-8
+            // sequence is negative; relying on the sign bit landing outside [UNRESERVED]
+            // happens to work and says nothing about why.
+            val code = byte.toInt() and 0xFF
+            val char = Char(code)
             when {
                 char in UNRESERVED -> append(char)
-
                 char == ' ' -> append('+')
-
-                // `and 0xFF` because a Byte is signed and every byte above 0x7F - which is
-                // every byte of a multi-byte UTF-8 sequence - would otherwise format as a
-                // negative number.
-                else -> append('%').append(HEX[(byte.toInt() shr 4) and 0x0F]).append(HEX[byte.toInt() and 0x0F])
+                else -> append('%').append(HEX[code shr 4]).append(HEX[code and 0x0F])
             }
         }
     }
@@ -392,7 +391,18 @@ fun NewTabDialog(
     // with those live guards inside a single frame - Down then Enter before a recomposition
     // passed the `index >= 0` guard while committing a target computed before the Down.
     val ghostCompletion by remember {
-        derivedStateOf { urlCompletion?.takeIf { urlField.selection.collapsed && selectedSuggestionIndex < 0 } }
+        derivedStateOf {
+            urlCompletion?.takeIf {
+                // At the END of the input, not merely collapsed. The ghost is drawn after
+                // the text, so with the caret anywhere else it describes an insertion point
+                // it does not belong to - and Tab accepted it there while Right, which
+                // computed its own `atEnd`, correctly did not. One rule now, so the two
+                // gestures agree and the ghost goes away on a caret move, as Chrome's does.
+                urlField.selection.collapsed &&
+                    urlField.selection.start == urlField.text.length &&
+                    selectedSuggestionIndex < 0
+            }
+        }
     }
     // Read once and passed as a key: `CoreTextField` memoises on the VisualTransformation
     // instance, so a new one per recomposition re-runs the filter and re-lays out the text
@@ -1346,17 +1356,17 @@ fun NewTabDialog(
                                                                 ghostCompletion,
                                                                 urlField.text,
                                                             )
-                                                        val atEnd =
-                                                            urlField.selection.collapsed &&
-                                                                urlField.selection.start == urlField.text.length
                                                         // A modified key is a different
                                                         // gesture: Shift+Right extends a
                                                         // selection, Shift+Tab moves focus
                                                         // backwards, Cmd/Alt+Right jumps a
                                                         // word. None of them mean "accept".
                                                         val plain = !event.hasModifiers()
-                                                        val acceptGesture = event.key == Key.Tab || atEnd
-                                                        if (plain && completion != null && acceptGesture) {
+                                                        // No separate `atEnd`: `ghostCompletion`
+                                                        // is null unless the caret is at the end,
+                                                        // so a non-null completion already means
+                                                        // Right is where it may accept.
+                                                        if (plain && completion != null) {
                                                             urlField =
                                                                 TextFieldValue(
                                                                     completion.display,

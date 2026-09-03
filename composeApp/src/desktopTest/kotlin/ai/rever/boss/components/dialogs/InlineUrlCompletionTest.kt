@@ -155,6 +155,35 @@ class InlineUrlCompletionTest {
     }
 
     @Test
+    fun `a bare prefix can still reach an unfamiliar host`() {
+        // The boundary of the host-swap rule, pinned so nobody reads the KDoc above it as a
+        // broader promise than it makes. Once the typed text names a host, that host cannot
+        // be swapped - the cases above. BEFORE it does, there is no host to protect, and a
+        // prefix with no dot in it completes to whatever history ranked first.
+        //
+        // Chrome gates this on `typed_count` - whether the user ever typed that URL. There is
+        // no equivalent to gate on here: `visitCount` counts `addUrl` calls, and the only
+        // caller is the browser plugin's TITLE listener, so a page that assigns
+        // `document.title` twice raises its own count. A gate on it would read like
+        // protection and provide none.
+        val lookalike = history("https://paypal.com-login.evil.example/signin")
+
+        assertEquals("paypal.com-login.evil.example", display("paypal", lookalike))
+        assertEquals("paypal.com-login.evil.example", display("pay", lookalike))
+        // And the moment a host IS named, the rule takes over.
+        assertNull(display("paypal.", lookalike))
+    }
+
+    @Test
+    fun `a scheme we would not navigate to is never completed`() {
+        // `rankMatches` keeps only entries with an http(s) host; this gated on a scheme being
+        // PRESENT instead. `canonicalUrlKey` keeps a `file:` scheme, so `canonicalAuthority`
+        // read `file:` off the entry and typing "fil" ghosted `file:` targeting `file://`.
+        assertNull(display("fil", history("file:///Users/me/notes.html")))
+        assertNull(display("jav", history("javascript:alert(1)")))
+    }
+
+    @Test
     fun `a typed host still completes its own paths`() {
         // The rule is about the HOST changing, not about refusing to help.
         val suggestions = history("https://github.com/risa-labs-inc/BossConsole/pulls")

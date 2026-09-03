@@ -14,6 +14,11 @@ import kotlin.test.assertTrue
  * recorded, how one page recorded under two spellings collapses, and the ordering the URL
  * bar actually sees.
  *
+ * The memoized URL fact table inside `UrlHistoryManager.kt` is process-global and is NOT
+ * reset between tests. That is safe because it is keyed by the URL string and derived from
+ * nothing else, so an entry left by another test can only be re-derived to the same value -
+ * do not read it as per-store state.
+ *
  * [UrlHistoryManager.historyFile] is pointed at a scratch file so no test here reads or
  * writes the developer's own history. The teardown does re-read it, deliberately:
  * [UrlHistoryManager] is a process-global store, and leaving it holding a deleted scratch

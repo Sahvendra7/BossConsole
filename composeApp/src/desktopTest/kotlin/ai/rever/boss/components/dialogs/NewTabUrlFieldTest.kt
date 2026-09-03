@@ -201,6 +201,25 @@ class NewTabUrlFieldTest {
     }
 
     @Test
+    fun `Tab in the middle of the input does not accept either`() {
+        openDialog()
+
+        rule.onNode(hasSetTextAction()).performTextInput("git")
+        settle()
+        rule.onNode(hasSetTextAction()).performKeyInput {
+            pressKey(Key.MoveHome)
+            pressKey(Key.Tab)
+        }
+        settle()
+        confirm()
+
+        // The ghost is drawn AFTER the text, so with the caret at the front it describes an
+        // insertion point it does not belong to. Right already refused to accept there;
+        // Tab did not, because it never consulted the caret at all.
+        assertEquals(listOf("https://www.google.com/search?q=git"), opened)
+    }
+
+    @Test
     fun `Right in the middle of the input stays a cursor move`() {
         openDialog()
 

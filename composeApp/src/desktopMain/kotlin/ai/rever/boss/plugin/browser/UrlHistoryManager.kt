@@ -199,16 +199,19 @@ private class UrlFacts(
 
 private val urlFacts = ConcurrentHashMap<String, UrlFacts>()
 
-private fun factsFor(url: String): UrlFacts {
-    urlFacts[url]?.let { return it }
-    return urlFacts.getOrPut(url) {
+private fun factsFor(url: String): UrlFacts =
+    // `computeIfAbsent`, not `getOrPut`. The latter is the plain Map extension - a get, then
+    // a put - so two threads racing the same URL both build a `java.net.URL` and both unwind
+    // a `MalformedURLException` for a malformed row. Not a correctness problem, since this is
+    // a pure function of the key, but paying that twice is the exact cost the table exists to
+    // avoid.
+    urlFacts.computeIfAbsent(url) {
         val address = canonicalUrlKey(url)
         // [hasUserinfo] rather than the same expression spelled out here: the URL field's
         // completion refuses these by that rule, and a list beside it that accepted them
         // would harden half a surface.
         UrlFacts(address = address, suggestable = suggestableHost(url) != null && !hasUserinfo(address))
     }
-}
 
 /**
  * One matched entry with the facts its ranking needs, computed once.
@@ -313,7 +316,7 @@ internal fun rankMatches(
             // Per-term address hits, computed ONCE. Falling through to the title used to
             // re-scan the address for every term, which is the common case (most entries
             // do not match) and measured about a third of the whole matching pass.
-            val addressHits = terms.map { startsWord(address, it) }
+            val addressHits = BooleanArray(terms.size) { startsWord(address, terms[it]) }
             val addressWordStart = addressHits.all { it }
             val wordStart =
                 addressWordStart || terms.indices.all { addressHits[it] || startsWord(title, terms[it]) }
