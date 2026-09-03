@@ -838,6 +838,13 @@ object AWTKeyboardInterceptor {
                 true
             }
 
+            // These three claim unconditionally while every neighbouring branch carries a gate,
+            // and that is deliberate: their bindings are ShortcutContext.BROWSER, so
+            // isContextEligible(BROWSER, GLOBAL) is false and findMatchingBinding only reaches
+            // here when the focus walk already reported BROWSER. The gate is upstream and
+            // stronger than a dispatch-time count, not missing. (The MENU items for the same
+            // actions do need `enabled`, because an accelerator fires window-wide whatever the
+            // context - see ActiveBrowserRegistry.windowsWithActiveBrowser.)
             KeymapActions.BROWSER_BACK -> {
                 MenuActionsHandler.triggerBrowserBack(windowId)
                 true
