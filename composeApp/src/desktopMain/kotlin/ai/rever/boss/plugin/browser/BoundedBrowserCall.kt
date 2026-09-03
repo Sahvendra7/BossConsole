@@ -182,6 +182,17 @@ internal class BoundedBrowserCall(
     }
 
     /**
+     * Work queued on [dispatcher] and not yet started.
+     *
+     * The queue is unbounded, which is fine for anything awaited - [call]'s `finally` cancels the job
+     * it gave up on, so a stale one resumes with cancellation instead of running when the renderer
+     * recovers. It is NOT fine for a fire-and-forget stream: nothing cancels those, so against a
+     * wedged renderer they pile up holding their payloads. A caller producing such a stream should
+     * read this and drop rather than enqueue.
+     */
+    val backlog: Int get() = executor.queue.size
+
+    /**
      * Stop accepting new calls.
      *
      * `shutdown()` and not `shutdownNow()`: a call already inside JxBrowser cannot be interrupted,

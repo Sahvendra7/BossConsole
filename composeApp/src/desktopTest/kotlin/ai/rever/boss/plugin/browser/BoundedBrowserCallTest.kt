@@ -40,6 +40,31 @@ class BoundedBrowserCallTest {
         }
     }
 
+    /**
+     * The property this class exists for, and the only one every other test here takes for granted.
+     *
+     * Everything else is about the *wait*. If a refactor ran `block()` inline in the caller's context
+     * the deadline tests would all still pass and the EDT would be back in the blocking call - which
+     * is the entire bug.
+     */
+    @Test
+    fun `the block runs on the dedicated thread, not the caller's`() {
+        val call = BoundedBrowserCall("test-bounded-thread")
+        try {
+            runBlocking {
+                // startsWith, not equals: with coroutine debug on, kotlinx appends "@coroutine#N" to
+                // the thread name. The prefix is the assertion - it says which thread ran the block.
+                val ranOn = call.call(generous) { Thread.currentThread().name }.orEmpty()
+                assertTrue(
+                    ranOn.startsWith("test-bounded-thread"),
+                    "block ran on \"$ranOn\" - it must run on the dedicated thread, not the caller's",
+                )
+            }
+        } finally {
+            call.shutdown()
+        }
+    }
+
     @Test
     fun `a call that never answers gives up on schedule`() {
         val call = BoundedBrowserCall("test-bounded-wedge")
@@ -56,7 +81,10 @@ class BoundedBrowserCallTest {
                         )
                     }
                 }
+            // Both sides: `< generous` proves the wait ended, `>= timeout` proves the DEADLINE is what
+            // ended it rather than the call quietly answering null for some unrelated reason.
             assertTrue(elapsed < generous, "waited ${elapsed}ms - the deadline did not bound the call")
+            assertTrue(elapsed >= timeout, "returned after ${elapsed}ms, before its own ${timeout}ms deadline")
         } finally {
             release.countDown()
             call.shutdown()
@@ -112,6 +140,7 @@ class BoundedBrowserCallTest {
                 )
                 val elapsed = measureTimeMillis { assertNull(call.call(timeout) { "queued behind it" }) }
                 assertTrue(elapsed < generous, "the second call waited ${elapsed}ms rather than its own deadline")
+                assertTrue(elapsed >= timeout, "the second call returned after ${elapsed}ms, before its deadline")
             }
         } finally {
             release.countDown()
@@ -146,6 +175,7 @@ class BoundedBrowserCallTest {
                     }
                 }
             assertTrue(elapsed < generous, "waited ${elapsed}ms - the caller's dispatcher still decides the bound")
+            assertTrue(elapsed >= timeout, "returned after ${elapsed}ms, before its own deadline")
         } finally {
             release.countDown()
             call.shutdown()

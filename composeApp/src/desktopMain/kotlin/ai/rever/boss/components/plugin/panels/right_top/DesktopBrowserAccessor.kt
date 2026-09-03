@@ -76,6 +76,10 @@ class DesktopBrowserIntegration(
      * shutting the previous one down where the cache is replaced was the other option and was
      * rejected - a plugin can still be holding that integration, and its calls would start
      * answering null underneath it.
+     *
+     * Never shut down, and that is not an admitted leak: with `allowCoreThreadTimeOut` the worker
+     * exits after its idle window and the executor becomes garbage along with the integration that
+     * held it. An instance that never made a call never started a thread in the first place.
      */
     private val accessorCall = BoundedBrowserCall("boss-plugin-browser-call-${System.identityHashCode(browser)}")
 
@@ -91,7 +95,6 @@ class DesktopBrowserIntegration(
      */
     override suspend fun executeJavaScript(script: String): Any? =
         accessorCall.call(
-            BoundedBrowserCall.DEFAULT_TIMEOUT_MS,
             onError = { e ->
                 browserAccessorLogger.debug(
                     LogCategory.BROWSER,

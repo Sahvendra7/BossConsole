@@ -512,6 +512,16 @@ internal class BrowserHandleImpl(
      * threads. Browser-process calls are deliberately NOT routed through here: `loadUrl`,
      * `browser.url()` and `dispatch` are answered by a process page JS cannot block, so they are not
      * this failure and gain nothing from queueing behind a wedged renderer.
+     *
+     * **Why [frameProbeExecutor], [contextMenuExecutor] and [pageInjectExecutor] are still separate.**
+     * This class is a strictly better version of all three - retiring thread, encapsulated deadline,
+     * one place the two-thread rule lives - and folding them in would leave one pattern instead of
+     * four. It is deliberately not done here, and the reason is not inertia: merging the queues merges
+     * the blast radii. Today a wedged page-helper injection still leaves the context menu answering
+     * and the stall probe reporting, because each waits on its own thread; behind one queue they
+     * would all time out together, and the frame-stall probe in particular exists to interrogate a
+     * page already suspected of misbehaving. Folding them in is a real option, but it is a decision
+     * about how much independence to trade for one pattern, and it belongs in its own change.
      */
     private val handleCall = BoundedBrowserCall("boss-browser-call-$id")
 
@@ -1999,9 +2009,14 @@ internal class BrowserHandleImpl(
         }
     }
 
-    // Runs on [handleCall]'s thread, never Main - it blocks on the renderer twice over (a
-    // `executeJavaScript` and a `putProperty`). Reads pageEventScript once into a local: it is
-    // @Volatile, and an uninstall racing this would otherwise hand over the bridge and evaluate null.
+    // Two callers, two threads, and never Main on either: [handleCall]'s thread when
+    // setPageEventScript injects into the already-loaded document, and JxBrowser's own inject-callback
+    // thread from the document-start injector, which has to block there before calling proceed().
+    // Both are correct; what matters is that neither is the EDT, because this blocks on the renderer
+    // twice over (an `executeJavaScript` and a `putProperty`).
+    //
+    // Reads pageEventScript once into a local: it is @Volatile, and an uninstall racing this would
+    // otherwise hand over the bridge and evaluate null.
     //
     // Two guards, each a distinct "nothing to do here": no script installed, and no window to hand
     // the bridge through. They log differently, so collapsing them would hide which one fired.
@@ -2343,7 +2358,7 @@ internal class BrowserHandleImpl(
         // CancellationException is a java.util.concurrent one, which extends IllegalStateException,
         // so a `catch (e: Exception)` around the await would swallow a caller's cancellation and
         // answer "err" to it - reporting a co-browse failure for what was an orderly teardown.
-        return handleCall.call(BoundedBrowserCall.DEFAULT_TIMEOUT_MS) {
+        return handleCall.call {
             try {
                 val status =
                     browser
@@ -2523,7 +2538,6 @@ internal class BrowserHandleImpl(
     override suspend fun executeJavaScript(script: String): Any? {
         if (!isValid) return null
         return handleCall.call(
-            BoundedBrowserCall.DEFAULT_TIMEOUT_MS,
             onError = { e ->
                 logger.warn(
                     LogCategory.BROWSER,

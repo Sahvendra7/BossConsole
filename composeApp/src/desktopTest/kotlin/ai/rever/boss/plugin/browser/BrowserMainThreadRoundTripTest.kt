@@ -59,9 +59,11 @@ class BrowserMainThreadRoundTripTest {
      * A token list rather than a list of opener forms, because the opener is the part that keeps
      * changing: `withContext(Dispatchers.Main)`, `launch(Dispatchers.Main)`, `async(...)`,
      * `Dispatchers.Main.immediate`, `SwingUtilities.invokeLater`, and this package's own `onEdt`
-     * helper are all the same hazard wearing different syntax.
+     * helper are all the same hazard wearing different syntax. `invokeAndWait` is the worst of them -
+     * it parks the caller *and* the EDT - so it is here even though nothing in the tree does it today.
      */
-    private val mainThreadMarkers = listOf("Dispatchers.Main", "Dispatchers.Swing", "invokeLater", "onEdt")
+    private val mainThreadMarkers =
+        listOf("Dispatchers.Main", "Dispatchers.Swing", "invokeLater", "invokeAndWait", "onEdt")
 
     /**
      * Scope constructions that put every launch into them on the EDT, allowed only where reviewed.
@@ -208,7 +210,10 @@ class BrowserMainThreadRoundTripTest {
      * every site in the diff.
      */
     private fun roundTripFunctions(code: String): Set<String> =
-        Regex("""fun ([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
+        // `(?:<[^>]*>\s*)?` is what lets a GENERIC helper be seen. Requiring the identifier straight
+        // after `fun ` meant `private fun <T> helper(` never matched, so a generic blocking helper was
+        // invisible to the one hop - and this very file declares `fun <T> syncCall(` and `fun <T> call(`.
+        Regex("""fun (?:<[^>]*>\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
             .findAll(code)
             .mapNotNull { match ->
                 val open = code.indexOf('{', match.range.last)

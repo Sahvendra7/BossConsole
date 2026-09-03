@@ -55,15 +55,23 @@ internal class CoBrowseRtcPeerImpl(
 ) : CoBrowseRtcPeer {
     private val logger = CoBrowseRtcProviderImpl.logger
 
-    // Every blocking JxBrowser round trip this peer makes, off the EDT and on a deadline - see
-    // [BoundedBrowserCall]. One instance per peer, so a share whose page stops answering costs its
-    // own thread and nobody else's.
+    // Every blocking JxBrowser round trip this peer makes, off the EDT. NOT on a deadline: this
+    // class takes only [BoundedBrowserCall.dispatcher] and calls `executeJavaScript` / `putProperty`
+    // directly, so DEFAULT_TIMEOUT_MS never applies here. That is deliberate - nothing awaits these
+    // calls, so there is no wait to bound, and a wedged peer page costs one parked daemon thread and
+    // nothing more. Routing them through `call()` would be worse, not better: this scope runs ON that
+    // dispatcher, and awaiting a call from its own dispatcher is the hang [BoundedBrowserCall] warns
+    // about.
+    //
+    // One instance per peer, so a share whose page stops answering costs its own thread and nobody
+    // else's - and the thread carries an id, because the WARN's thread name is the only thing that
+    // says WHICH share wedged when several are live.
     //
     // This moves `Engine.newBrowser()` and `browser.close()` off the EDT too, which is safe for the
     // reason that is easy to lose: JxBrowser's `Browser` API is thread-safe, and this peer is
     // HEADLESS - no `BrowserView`, no AWT anywhere in the class. A peer that ever acquires a view
     // has to put the view's lifecycle back on the EDT; the rest can stay here.
-    private val browserCall = BoundedBrowserCall("boss-rtc-peer-call")
+    private val browserCall = BoundedBrowserCall("boss-rtc-peer-call-${System.identityHashCode(this)}")
     private val scope = CoroutineScope(SupervisorJob() + browserCall.dispatcher)
     private val bridge =
         CoBrowseRtcBridge(onAnswer, onIce, onInput, onState).also {
@@ -89,6 +97,9 @@ internal class CoBrowseRtcPeerImpl(
     // are written down here because this comment is where the next reader will look.
     private val injected = AtomicBoolean(false)
     private val injectQueued = AtomicBoolean(false)
+
+    /** One warning per stall, not one per dropped frame. */
+    private val domDropWarned = AtomicBoolean(false)
 
     @Volatile private var ready = false
 
@@ -216,7 +227,33 @@ internal class CoBrowseRtcPeerImpl(
         runJs("window.__bossRtcAddIce && window.__bossRtcAddIce(${jsStr(candidate)});")
     }
 
+    /**
+     * The one caller that drops rather than enqueues.
+     *
+     * rrweb emits continuously and each payload is a DOM mutation batch, so against a peer page that
+     * has stopped answering this would grow [BoundedBrowserCall.backlog] without limit, holding every
+     * frame's JSON - and then run them all in a burst if the page ever recovered. That is exactly the
+     * hazard cited for leaving `dispatchCoBrowseInput` on Main in BrowserHandleImpl, and the argument
+     * has to point the same way here: same shape, bigger payloads.
+     *
+     * Dropping is safe in the way that matters. A peer page that is not answering is not mirroring
+     * anything to a viewer either, so these frames have nowhere to be displayed; the share is already
+     * dead and this only decides whether it also costs memory. Newest-dropped rather than
+     * oldest-dropped because rrweb is incremental - the frames already queued are the ones the
+     * viewer's mirror needs first.
+     */
     override fun sendDom(json: String) {
+        if (browserCall.backlog >= MAX_DOM_BACKLOG) {
+            if (domDropWarned.compareAndSet(false, true)) {
+                logger.warn(
+                    LogCategory.BROWSER,
+                    "WebRTC peer is not draining DOM frames - dropping until it catches up",
+                    mapOf("backlog" to browserCall.backlog.toString()),
+                )
+            }
+            return
+        }
+        domDropWarned.set(false)
         runJs("window.__bossRtcSendDom && window.__bossRtcSendDom(${jsStr(json)});")
     }
 
@@ -238,6 +275,7 @@ internal class CoBrowseRtcPeerImpl(
         bridge.onInput = null
         bridge.onState = null
         bridge.onVideoError = null
+        bridge.onVideoState = null
         scope.launch {
             try {
                 browser?.takeIf { !it.isClosed }?.close()
@@ -256,6 +294,14 @@ internal class CoBrowseRtcPeerImpl(
     }
 
     private companion object {
+        /**
+         * How many un-started DOM frames may sit on the peer's thread before new ones are dropped.
+         *
+         * Small on purpose: anything past a handful means the peer page is not draining, and the
+         * frames behind it are already too stale to be worth the memory.
+         */
+        const val MAX_DOM_BACKLOG = 8
+
         fun jsStr(s: String): String = Json.encodeToString(String.serializer(), s)
 
         // Must stay in lockstep with the plugin's BrowserShareManager.iceServers():
