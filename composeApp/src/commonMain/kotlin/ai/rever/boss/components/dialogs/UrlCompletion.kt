@@ -37,6 +37,9 @@ internal data class UrlCompletion(
     val target: String,
 )
 
+/** The subdomain canonicalisation drops, so the ghost can put it back in front of a match. */
+private const val WWW = "www."
+
 /** The scheme of a stored URL, or null when it has no `scheme://` prefix. */
 private fun schemeOf(url: String): String? = url.substringBefore("://", "").takeIf { it.isNotEmpty() }
 
@@ -103,7 +106,17 @@ private fun String.isUnofferable(): Boolean = isEmpty() || hasInvisibleCharacter
  * on, and if the one `accounts.google.com` visit is an OAuth URL then typing "acc" should
  * still complete to the host.
  */
-private fun String.isUnofferableAddress(): Boolean = contains('?')
+private fun String.isUnofferableAddress(): Boolean = contains('?') || length > MAX_OFFERABLE_ADDRESS
+
+/**
+ * Longest stored address that may be offered whole.
+ *
+ * The query-string rule above argues from length as much as from replaying a request, and a
+ * path-only URL reaches the same lengths without a `?` in it - a signed asset link or a deep
+ * document path runs for hundreds of characters. The ghost is drawn inside a single-line
+ * field, so past this it is not a proposal the user can read before pressing Tab.
+ */
+private const val MAX_OFFERABLE_ADDRESS = 160
 
 /**
  * Whether [candidate] is a completion of [typed] - a strict extension of it, with the host
@@ -193,16 +206,34 @@ internal fun inlineUrlCompletion(
     // text itself is still what the ghost is drawn after, so the scheme stays on screen.
     val matchable = if (typed.contains("://")) canonicalUrlKey(typed) else typed
     // Where the canonical part begins in the typed text, so a scheme and any `www.` in front
-    // of it survive into the ghost verbatim. LOCATED, not assumed: `matchable` is `typed`
-    // with a prefix removed only when normalization trimmed nothing off the end of it. It
-    // can also be absent entirely - `file://www.a/b` normalizes to `file://a/b`, which is
-    // nowhere in the typed text - and then there is nothing to draw a ghost after.
-    val canonicalAt = typed.indexOf(matchable, ignoreCase = true)
+    // of it survive into the ghost verbatim.
+    //
+    // COMPUTED from what canonicalisation strips, not searched for. `indexOf` finds the
+    // FIRST occurrence, and a one- or two-character `matchable` occurs inside the prefix
+    // itself: `https://s` located the `s` of `https`, made the tail `s://s`, and since no
+    // canonical address contains `://` the ghost went dark - on exactly the input the typed
+    // scheme rule was added for. `https://www.w` did the same on the `w` of `www.`.
+    val afterScheme = if (typed.contains("://")) typed.indexOf("://") + 3 else 0
+    val canonicalAt =
+        if (typed.startsWith("www.", afterScheme, ignoreCase = true) && !matchable.startsWith("www.", true)) {
+            afterScheme + WWW.length
+        } else {
+            afterScheme
+        }
     // Whitespace is part of `hasInvisibleCharacters`, so text with a space in it is a search
     // and completing it would eat what is still being typed. A blank field needs no clause of
     // its own either: an empty one carries no `://`, so it arrives here as an empty
     // `matchable`, and an all-whitespace one is caught by the first clause.
-    if (typed.hasInvisibleCharacters() || matchable.isEmpty() || canonicalAt < 0) return null
+    // The last clause validates the computation above rather than trusting it: a scheme
+    // canonicalisation does NOT strip (`file://www.a/b` normalizes to `file://a/b`) leaves
+    // the canonical part somewhere else entirely, and there is then nothing to draw a ghost
+    // after.
+    if (typed.hasInvisibleCharacters() ||
+        matchable.isEmpty() ||
+        !typed.startsWith(matchable, canonicalAt, ignoreCase = true)
+    ) {
+        return null
+    }
 
     val entries =
         suggestions

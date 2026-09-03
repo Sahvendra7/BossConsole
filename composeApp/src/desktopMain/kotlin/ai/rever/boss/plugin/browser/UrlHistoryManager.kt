@@ -288,7 +288,9 @@ internal fun rankMatches(
     if (urlFacts.size > MAX_ENTRIES + PRUNE_SLACK) {
         urlFacts.keys.retainAll(entries.mapTo(HashSet()) { it.url })
     }
-    val typed = normalized.lowercase()
+    // Not lowercased: both readers below pass `ignoreCase = true`, so a second lowercasing
+    // here only made it look as though one of the two were load-bearing.
+    val typed = normalized
 
     return entries
         .mapNotNull { entry ->
@@ -358,7 +360,16 @@ internal fun rankMatches(
         // file still laid out in full on every keystroke - which is the cost the cap exists
         // to remove. This copy is the matcher's own return value and never reaches the map
         // `saveHistory` writes back, so the user's file keeps the title it had.
-        .map { it.entry.copy(title = it.entry.title.take(MAX_TITLE_LENGTH)) }
+        // `copy` only where it changes something: an already-short title is the overwhelming
+        // case, and the surrounding code is careful about exactly this kind of allocation.
+        .map { match ->
+            val entry = match.entry
+            if (entry.title.length <= MAX_TITLE_LENGTH) {
+                entry
+            } else {
+                entry.copy(title = entry.title.take(MAX_TITLE_LENGTH))
+            }
+        }
 }
 
 /**
@@ -372,28 +383,43 @@ internal fun rankMatches(
  *
  * The slack is what keeps this amortised: pruning is a sort, so doing it on every visit past
  * the cap would pay O(n log n) per navigation.
+ *
+ * Keeps the map's OWN keys rather than re-deriving them with [distinctPageKey]. Re-deriving
+ * was correct only while every insertion path keyed by exactly that function - an invariant
+ * held by convention across three call sites, and one whose failure mode is `retainAll`
+ * emptying the store rather than anything visible.
+ *
+ * The read-then-retain is not atomic. An entry recorded by another thread between the sort
+ * and the retain is dropped, which costs one history row; `addUrl` is driven by the browser
+ * plugin's title listener, so that is reachable. Left as is rather than locked, because the
+ * alternative is holding a lock across a sort on the navigation path.
  */
 internal fun pruneIfOversized(
     history: MutableMap<String, UrlHistoryEntry>,
     now: Long = System.currentTimeMillis(),
 ) {
     if (history.size <= MAX_ENTRIES + PRUNE_SLACK) return
-    val keep = bestEntries(history.values, MAX_ENTRIES, now).map { distinctPageKey(it.url) }.toSet()
-    history.keys.retainAll(keep)
+    val survivors = bestEntries(history.entries, MAX_ENTRIES, now) { it.value }.mapTo(HashSet()) { it.key }
+    history.keys.retainAll(survivors)
 }
 
 /**
- * The [limit] best-ranked entries, best first.
+ * The [limit] best-ranked of whatever an entry can be read out of, best first.
  *
  * Top-level and pure so both callers - the file write and the in-memory prune - order the
  * store the same way, and so the ordering is testable without the object's `init` reading
  * the developer's real history file.
+ *
+ * [entryOf] exists so the prune can rank the map's ENTRIES and keep their own keys, rather
+ * than re-deriving a key from each surviving value and trusting that to match how it was
+ * stored.
  */
-internal fun bestEntries(
-    entries: Collection<UrlHistoryEntry>,
+internal fun <T> bestEntries(
+    items: Collection<T>,
     limit: Int,
     now: Long,
-): List<UrlHistoryEntry> = entries.sortedByDescending { rankOf(it, now) }.take(limit)
+    entryOf: (T) -> UrlHistoryEntry,
+): List<T> = items.sortedByDescending { rankOf(entryOf(it), now) }.take(limit)
 
 /** How many entries the store keeps, in memory and on disk. */
 private const val MAX_ENTRIES = 1000
@@ -494,7 +520,7 @@ object UrlHistoryManager {
      */
     private fun entriesToPersist(): List<UrlHistoryEntry> {
         val now = System.currentTimeMillis()
-        return bestEntries(history.values, MAX_ENTRIES, now)
+        return bestEntries(history.values, MAX_ENTRIES, now) { it }
     }
 
     /**

@@ -24,6 +24,8 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -59,6 +61,7 @@ class NewTabUrlFieldTest {
     private lateinit var temp: java.io.File
     private var originalFile: java.io.File? = null
     private val previousModal = OverlayConfig.heavyweightModal
+    private var previousSuggestionContext: CoroutineContext = EmptyCoroutineContext
     private val previousUseHeavyweight = OverlayConfig.useHeavyweightPopups
 
     @Before
@@ -87,10 +90,19 @@ class NewTabUrlFieldTest {
         // code with its own tests; what is under test here is the field inside it.
         OverlayConfig.useHeavyweightPopups = true
         OverlayConfig.heavyweightModal = { _, _, content -> content() }
+
+        // Run the suggestion lookup on the composition's own dispatcher. On
+        // `Dispatchers.Default` the work happens on a pool the test clock does not drive, so
+        // `advanceTimeBy` + `waitForIdle` proves the debounce elapsed but not that the result
+        // has landed - a race that a fast lookup wins almost every time, which is exactly the
+        // shape of a CI flake.
+        previousSuggestionContext = urlSuggestionContext
+        urlSuggestionContext = EmptyCoroutineContext
     }
 
     @After
     fun tearDown() {
+        urlSuggestionContext = previousSuggestionContext
         OverlayConfig.heavyweightModal = previousModal
         OverlayConfig.useHeavyweightPopups = previousUseHeavyweight
         // UrlHistoryManager is a process-global store; a scratch file left in it would leak

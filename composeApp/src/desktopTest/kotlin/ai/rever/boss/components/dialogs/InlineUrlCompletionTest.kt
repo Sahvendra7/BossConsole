@@ -301,6 +301,35 @@ class InlineUrlCompletionTest {
     }
 
     @Test
+    fun `a one-character host after a scheme still completes`() {
+        // The canonical part was LOCATED with `indexOf`, which finds the first occurrence -
+        // and a short canonical form occurs inside the prefix that was stripped to make it.
+        // `https://s` found the `s` of `https` at index 4, so the tail became `s://s`, and
+        // since no canonical address contains `://` the ghost went dark on exactly the input
+        // the typed-scheme rule exists for. Every earlier test used `https://git`, where the
+        // first occurrence happens to be the right one.
+        val sites = history("https://stackoverflow.com/", "https://www.wikipedia.org/")
+
+        assertEquals("https://stackoverflow.com", display("https://s", sites))
+        assertEquals("http://stackoverflow.com", display("http://s", sites))
+        // The same trap one level in: `w` occurs in the `www.` that canonicalisation strips.
+        assertEquals("https://www.wikipedia.org", display("https://www.w", sites))
+        assertEquals("https://www.wikipedia.org", display("https://www.wi", sites))
+    }
+
+    @Test
+    fun `an address too long to read is not offered`() {
+        // The query-string rule argues from length as much as from replaying a request, and a
+        // path-only URL reaches the same lengths without a `?` in it. A ghost longer than the
+        // single-line field it is drawn in is not a proposal anyone can check before Tab.
+        val long = history("https://example.com/" + "segment/".repeat(30))
+
+        assertNull(display("example.com/", long))
+        // A deep path that still fits is unaffected.
+        assertEquals("example.com/a/b/c", display("example.com/a", history("https://example.com/a/b/c")))
+    }
+
+    @Test
     fun `a typed fragment completes nothing rather than splicing past it`() {
         // A canonical address never carries a fragment, so there is nothing under `#y` to
         // extend. Subtracting the canonical length spliced the candidate's tail in AFTER the

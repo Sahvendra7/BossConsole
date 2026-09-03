@@ -80,6 +80,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.coroutines.CoroutineContext
 
 private val newTabDialogLogger = BossLogger.forComponent("NewTabDialog")
 
@@ -217,6 +218,20 @@ private fun KeyEvent.hasModifiers(): Boolean = isShiftPressed || isMetaPressed |
  * than by a literal that silently stops being enough.
  */
 internal const val URL_SUGGESTION_DEBOUNCE_MS = 100L
+
+/**
+ * Where the suggestion lookup runs.
+ *
+ * [Dispatchers.Default] in the app, because the lookup canonicalises and word-scans every
+ * stored entry and that has no business between a keystroke and its frame. Overridable
+ * because a real thread pool is not driven by the test clock: `advanceTimeBy` releases the
+ * debounce, but nothing then guarantees the pool has finished and posted its result back
+ * before the assertion runs. The lookup is sub-millisecond so it almost always wins, and
+ * "almost always", across two dozen tests on a contended CI runner, is how a flake is born.
+ * Tests set this to [EmptyCoroutineContext] so `withContext` stays on the composition's own
+ * dispatcher and the whole effect is deterministic under the test clock.
+ */
+internal var urlSuggestionContext: CoroutineContext = Dispatchers.Default
 
 // Platform-specific URL history provider
 expect object UrlHistoryProvider {
@@ -452,7 +467,7 @@ fun NewTabDialog(
             // Off the composition thread: the lookup canonicalises and word-scans every
             // stored entry, which is milliseconds at the 1000-entry cap but is still work
             // that has no business between a keystroke and its frame.
-            urlSuggestions = withContext(Dispatchers.Default) { UrlHistoryProvider.getSuggestions(query) }
+            urlSuggestions = withContext(urlSuggestionContext) { UrlHistoryProvider.getSuggestions(query) }
             // Read after the delay, so a dismissal made DURING the debounce is honoured.
             showUrlDropdown = urlSuggestions.isNotEmpty() && query != suggestionsDismissedFor
             selectedSuggestionIndex = -1
@@ -569,13 +584,21 @@ fun NewTabDialog(
                                     selectedPluginType = null
                                     selectedType = TabType.URL
                                     inputText = urlText
-                                    // The field itself, not just the two mirrors of it.
-                                    // An accepted completion deliberately splits them -
-                                    // `urlText` holds the display, `inputText` the target -
-                                    // so without this, accepting "git" to "github.com",
-                                    // switching to File and switching back rendered the
-                                    // field's own stale value.
-                                    urlField = TextFieldValue(urlText, TextRange(urlText.length))
+                                    // `urlField` is deliberately NOT rewritten from `urlText`
+                                    // here, and the reason is the display/target split rather
+                                    // than an oversight.
+                                    //
+                                    // After an accepted completion the field holds the DISPLAY
+                                    // (`192.168.4.20:8123`) while `urlText`/`inputText` hold
+                                    // the TARGET (`http://192.168.4.20:8123`) - two strings on
+                                    // purpose, because re-deriving the target from the display
+                                    // sends it through `processUrlInput` as `https://`. The
+                                    // field is remembered across a type switch, so leaving it
+                                    // alone is what keeps BOTH: the user sees what they
+                                    // accepted, and the commit still opens what history stored.
+                                    // Syncing it here rendered the target in the field, and
+                                    // syncing `urlText` from the field instead would lose the
+                                    // target on the way back.
                                 },
                                 modifier = Modifier.weight(1f),
                             )
