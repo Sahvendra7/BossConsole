@@ -18,38 +18,51 @@ import kotlin.test.assertTrue
 class GlobalSearchOrderingTest {
     @BeforeTest
     fun setUp() {
-        SearchSources.clear()
+        SearchSources.clearForTests()
         GlobalSearchService.clearResults()
         GlobalSearchService.setActiveCategory(SearchCategory.ALL)
     }
 
     @AfterTest
     fun tearDown() {
-        SearchSources.clear()
+        SearchSources.clearForTests()
         GlobalSearchService.clearResults()
         GlobalSearchService.setActiveCategory(SearchCategory.ALL)
     }
 
-    private fun settingRecord(label: String) =
-        SettingSearchRecord(
-            label = label,
-            breadcrumb = "Appearance",
-            section = "APPEARANCE",
-            pluginPageId = null,
-            panelId = null,
-            group = null,
-            keywords = emptyList(),
-            highlightable = true,
-        )
+    private companion object {
+        const val WINDOW = "window-under-test"
+    }
+
+    private fun settingRecord(
+        label: String,
+        score: Int,
+    ) = SettingSearchRecord(
+        label = label,
+        breadcrumb = "Appearance",
+        section = "THEME",
+        pluginPageId = null,
+        panelId = null,
+        group = null,
+        highlightable = true,
+        score = score,
+    )
+
+    /** The settings source ranks its own rows now, so a fake hands back a fixed ranking. */
+    private fun registerSettings(vararg labelsBestFirst: String) {
+        SearchSources.settingsSearch = { _ ->
+            labelsBestFirst.mapIndexed { i, label -> settingRecord(label, score = 100 - i) }
+        }
+    }
 
     @Test
     fun `a tool leads the All view even when another category scores higher`() {
         // The "atlas" case: one tool against a pile of same-word matches from other sources. A
         // tool is the most actionable row the search has, so it does not get buried by score.
-        SearchSources.toolsSupplier = { listOf(ToolSearchRecord(panelId = "atlas", label = "Atlas")) }
-        SearchSources.settingsSupplier = { listOf(settingRecord("Atlas")) }
+        SearchSources.registerTools(WINDOW) { listOf(ToolSearchRecord(panelId = "atlas", label = "Atlas")) }
+        registerSettings("Atlas")
 
-        runBlocking { GlobalSearchService.search("atlas") }
+        runBlocking { GlobalSearchService.search("atlas", WINDOW) }
         val ordered = GlobalSearchService.getFilteredResults()
 
         assertTrue(ordered.isNotEmpty())
@@ -60,15 +73,15 @@ class GlobalSearchOrderingTest {
     fun `the filtered order is grouped by category, never interleaved`() {
         // What makes the drawn order and the keyboard order the same list: every row of a category
         // is contiguous, in declaration order. Interleaving is what broke row numbering.
-        SearchSources.toolsSupplier = {
+        SearchSources.registerTools(WINDOW) {
             listOf(
                 ToolSearchRecord(panelId = "atlas", label = "Atlas"),
                 ToolSearchRecord(panelId = "atlas-two", label = "Atlas Two"),
             )
         }
-        SearchSources.settingsSupplier = { listOf(settingRecord("Atlas"), settingRecord("Atlas Bar")) }
+        registerSettings("Atlas", "Atlas Bar")
 
-        runBlocking { GlobalSearchService.search("atlas") }
+        runBlocking { GlobalSearchService.search("atlas", WINDOW) }
         val categories = GlobalSearchService.getFilteredResults().map { it.category }
 
         assertEquals(categories.distinct(), categories.distinct().sortedBy { it.ordinal }, "declaration order")
@@ -79,9 +92,9 @@ class GlobalSearchOrderingTest {
     fun `within one category the order is still by score`() {
         // Category order replaces score only BETWEEN categories. Inside one, the better match wins,
         // which is what the exact-label test in GlobalSearchNewSourcesTest depends on.
-        SearchSources.settingsSupplier = { listOf(settingRecord("Passkeys"), settingRecord("Passkeys Extra Long")) }
+        registerSettings("Passkeys", "Passkeys Extra Long")
 
-        runBlocking { GlobalSearchService.search("passkeys") }
+        runBlocking { GlobalSearchService.search("passkeys", WINDOW) }
         val scores = GlobalSearchService.getFilteredResults().map { it.score }
 
         assertEquals(scores.sortedDescending(), scores)
@@ -89,8 +102,8 @@ class GlobalSearchOrderingTest {
 
     @Test
     fun `filtering to one category keeps pure score order`() {
-        SearchSources.settingsSupplier = { listOf(settingRecord("Passkeys"), settingRecord("Passkeys Extra Long")) }
-        runBlocking { GlobalSearchService.search("passkeys") }
+        registerSettings("Passkeys", "Passkeys Extra Long")
+        runBlocking { GlobalSearchService.search("passkeys", WINDOW) }
 
         try {
             GlobalSearchService.setActiveCategory(SearchCategory.SETTINGS)

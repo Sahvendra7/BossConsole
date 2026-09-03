@@ -73,15 +73,19 @@ private val BookmarksAccent get() = BossThemeController.current.colors.warn // w
 private val RunConfigAccent = Color(0xFF9C27B0)
 private val CommandsAccent get() = BossThemeController.current.colors.data // data — commands
 private val ToolsAccent get() = BossThemeController.current.colors.signal // signal — tools
-private val SettingsAccent get() = BossThemeController.current.colors.textSecondary // quiet — settings
-private val McpAccent get() = BossThemeController.current.colors.data // data — MCP tools
-private val PagesAccent get() = BossThemeController.current.colors.ok // ok — recent pages
+private val SettingsAccent get() = BossThemeController.current.colors.textMuted // quiet — settings
+private val McpAccent get() = BossThemeController.current.colors.data // data — MCP tools, with commands
+private val PagesAccent get() = BossThemeController.current.colors.ok // ok — recent pages, with tabs
+
+// Files take the dimmer half of the signal pair so they do not read as Tools, which leads the
+// results and holds `signal` proper.
+private val FilesAccent get() = BossThemeController.current.colors.signalDim
 private val HoverBackground get() = BossThemeController.current.colors.raised
 private val CardShape = RoundedCornerShape(12.dp)
 private val SmallCardShape = RoundedCornerShape(8.dp)
 private val SectionTitleColor get() = BossThemeController.current.colors.textMuted
 
-/** Tiles per row in the empty state. Five keeps two rows at ten categories and fits a narrow window. */
+/** Tiles per row in the empty state. Five gives rows of 5 and 4 for the nine categories but ALL. */
 private const val EMPTY_STATE_TILES_PER_ROW = 5
 
 /**
@@ -111,6 +115,7 @@ private val EmptyStateTileWidth = 76.dp
 fun GlobalSearchDialog(
     projectPath: String,
     workspaceManager: WorkspaceManager,
+    windowId: String,
     onDismiss: () -> Unit,
     onFileSelect: (String) -> Unit,
     onTabSelect: ((windowId: String, panelId: String, tabId: String) -> Unit)? = null,
@@ -177,7 +182,9 @@ fun GlobalSearchDialog(
             return@LaunchedEffect
         }
         delay(50)
-        GlobalSearchService.search(searchQuery)
+        // This window, so the Tools rows come from the sidebar this dialog can actually open, and
+        // so a signpost is offered only when its panel is present here - see SearchSources.
+        GlobalSearchService.search(searchQuery, windowId)
     }
 
     // Auto-scroll to selected item (only when triggered by keyboard)
@@ -185,7 +192,12 @@ fun GlobalSearchDialog(
         if (scrollToSelected && filteredResults.isNotEmpty()) {
             val clampedIndex = selectedIndex.coerceIn(0, filteredResults.size - 1)
             coroutineScope.launch {
-                listState.animateScrollToItem(clampedIndex)
+                // A RESULT index is not a LazyColumn item index when sections are shown: each
+                // section contributes a header and a trailing spacer of its own, so the two drift
+                // by two per section above the selection. Arrowing into a late category used to
+                // scroll visibly short of the row it had selected.
+                val grouped = activeCategory == SearchCategory.ALL
+                listState.animateScrollToItem(listItemIndexFor(clampedIndex, filteredResults, showSections = grouped))
             }
             scrollToSelected = false
         }
@@ -280,10 +292,19 @@ fun GlobalSearchDialog(
             }
 
             // No handler, by design: an MCP tool takes arguments a search row cannot collect, so
-            // this answers "does a tool for this exist, and what is it called" and stops - which is
-            // what every branch above does when its handler is absent.
+            // this answers "does a tool for this exist, and what is it called" and stops.
+            //
+            // Logged here rather than through dispatchResult, which warns about a missing handler.
+            // That warning is worth having for a branch the host merely forgot to wire, and this
+            // branch is never going to have a handler - routing through it meant every MCP pick
+            // filed a warning, which is how a real integration gap stops being noticeable.
             is SearchResult.McpToolResult -> {
-                dispatch<Unit>("tool", result.name, Unit, null)
+                globalSearchLogger.debug(
+                    LogCategory.UI,
+                    "MCP tool selected; nothing to activate",
+                    mapOf("tool" to result.name),
+                )
+                onDismiss()
             }
         }
     }
@@ -334,8 +355,13 @@ fun GlobalSearchDialog(
                                 }
 
                                 Key.Tab -> {
-                                    // Cycle through categories
-                                    val categories = SearchCategory.entries
+                                    // The categories ON SCREEN, which is what CategoryTabs draws -
+                                    // not every entry in the enum. Cycling the enum walked through
+                                    // categories with no chip and no results, so Tab landed on
+                                    // "No Tools Found" with nothing on the chip row to say where
+                                    // the user was. Four more categories made that four times
+                                    // likelier, so it stopped being survivable.
+                                    val categories = visibleCategories(resultCounts)
                                     val currentIndex = categories.indexOf(activeCategory)
                                     val nextIndex =
                                         if (event.isShiftPressed) {
@@ -572,13 +598,7 @@ private fun CategoryTabs(
                 .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        // Only show categories that have results (or ALL)
-        val visibleCategories =
-            SearchCategory.entries.filter { category ->
-                category == SearchCategory.ALL || (resultCounts[category] ?: 0) > 0
-            }
-
-        for (category in visibleCategories) {
+        for (category in visibleCategories(resultCounts)) {
             val count = resultCounts[category] ?: 0
             val isActive = category == activeCategory
 
@@ -734,8 +754,10 @@ private fun EmptySearchState() {
         // on this screen said so. Derived, it cannot drift again - a new category appears here the
         // moment it exists, in the same order as the chips and the sections.
         //
-        // Chunked rather than one row: ten tiles do not fit a narrow window, and wrapping keeps
-        // them centred instead of clipping the last ones.
+        // Chunked rather than one row: nine tiles (every category but ALL) do not fit a narrow
+        // window, and wrapping keeps them centred instead of clipping the last ones. The spacer
+        // inside the loop fires after the last row too, which is deliberate - it plus the one
+        // below is the 24dp this panel had before.
         SearchCategory.entries
             .filter { it != SearchCategory.ALL }
             .chunked(EMPTY_STATE_TILES_PER_ROW)
@@ -913,6 +935,26 @@ private fun NoResultsState(
             )
         }
     }
+}
+
+/**
+ * Where the row for [resultIndex] actually sits in [SearchResultsList]'s `LazyColumn`.
+ *
+ * The list emits a header before each section and a spacer after it, so with sections on there are
+ * two extra items per section that starts at or before the selection. Scrolling wants the item
+ * index; selection is expressed as a result index; this converts one to the other.
+ *
+ * Derived from the same walk `SearchResultsList` performs rather than a count of distinct
+ * categories, so the two cannot disagree about where a section begins.
+ */
+private fun listItemIndexFor(
+    resultIndex: Int,
+    results: List<SearchResult>,
+    showSections: Boolean,
+): Int {
+    if (!showSections) return resultIndex
+    val sectionsBefore = results.take(resultIndex + 1).distinctBy { it.category }.size
+    return resultIndex + sectionsBefore * 2 - 1
 }
 
 /**
@@ -1108,7 +1150,19 @@ private fun DetailedResultItem(
             CommandResultItem(result, isSelected, isHovered, scale, backgroundColor, interactionSource, onClick)
         }
 
-        else -> {
+        // Named rather than left to an `else`, so this `when` is exhaustive too. With an `else`,
+        // the exhaustiveness argument for `simpleRow` only went one way: a new type failed the
+        // build there, and the cheapest way to satisfy that was to add it to the null-returning
+        // list - after which this function compiled unchanged and threw during composition, which
+        // in this app means the render-recovery path. Now both ends fail at compile time.
+        //
+        // Unreachable by construction: `SearchResultItem` only calls this when `simpleRow` was
+        // null, which is exactly the five types above.
+        is SearchResult.ToolResult,
+        is SearchResult.SettingResult,
+        is SearchResult.McpToolResult,
+        is SearchResult.PageResult,
+        -> {
             error("DetailedResultItem got a simple result type: ${result::class.simpleName}")
         }
     }
@@ -1205,6 +1259,11 @@ internal data class SimpleRow(
  * on the end - so they live here as a table rather than as four call sites whose padding and icon
  * sizes drift. Icon and accent are not among the differences: both come from [chipIcon] and
  * [accent], so a category looks the same on a result row, its chip and its empty-state tile.
+ *
+ * No match highlighting, unlike the five detailed rows, which render their `matchRanges`. These
+ * four sources carry none - the settings matcher returns ranges only for the label, and the rest
+ * never computed any - so the row shows plain text rather than a highlight that would be right on
+ * some rows and absent on others.
  *
  * Null for the five types that draw themselves; [SearchResultItem] branches on that to pick the
  * family. Not `@Composable`, and `internal` rather than private, because it is a pure mapping over
@@ -1680,17 +1739,38 @@ private fun highlightMatches(
  * A table, out here rather than inside `CategoryTab`: it is one branch per category and nothing
  * else in that composable is, so leaving it inline made a layout function read as a lookup.
  */
+
+/**
+ * The categories with a chip: [SearchCategory.ALL], plus any that actually matched something.
+ *
+ * Shared with the Tab handler, which is the point - it cycled the whole enum while this list is
+ * what the user can see, so Tab could select a category that had no chip and no results.
+ */
+private fun visibleCategories(resultCounts: Map<SearchCategory, Int>): List<SearchCategory> =
+    SearchCategory.entries.filter { it == SearchCategory.ALL || (resultCounts[it] ?: 0) > 0 }
+
 private fun SearchCategory.chipIcon(): ImageVector =
     when (this) {
         SearchCategory.ALL -> Icons.Outlined.Apps
+
         SearchCategory.FILES -> Icons.Outlined.Description
+
         SearchCategory.TABS -> Icons.Outlined.Tab
+
         SearchCategory.BOOKMARKS -> Icons.Outlined.Bookmark
+
         SearchCategory.RUN_CONFIGS -> Icons.Outlined.PlayArrow
+
         SearchCategory.COMMANDS -> Icons.Outlined.Terminal
-        SearchCategory.TOOLS -> Icons.Outlined.Apps
+
+        // Not Apps, which is ALL's icon: Tools now sits directly beside ALL on the chip row, and
+        // the two chips were the same glyph with different words under them.
+        SearchCategory.TOOLS -> Icons.Outlined.Extension
+
         SearchCategory.SETTINGS -> Icons.Outlined.Settings
+
         SearchCategory.MCP -> Icons.Outlined.Build
+
         SearchCategory.PAGES -> Icons.Outlined.History
     }
 
@@ -1700,11 +1780,19 @@ private fun SearchCategory.chipIcon(): ImageVector =
  * Beside [chipIcon] and for the same reason: one definition per category, so a result row and the
  * empty-state tile for the same category cannot drift apart. Section headers deliberately do not
  * use it - they tint everything with [SectionTitleColor], which is what keeps them quiet.
+ *
+ * **Not nine distinct colours, and not trying to be.** The design system carries seven semantic
+ * colour tokens and there are nine categories, so inventing more would mean inventing colours the
+ * theme does not define - which is worse than sharing, because it is the one thing that does not
+ * re-skin when the theme changes. Two pairs share on purpose, chosen so the pair means something:
+ * tabs and recent pages are both web pages, commands and MCP tools are both things a machine
+ * invokes. The icon and the section header carry the identity; the accent carries the family.
+ * `RUN_CONFIGS` remains the documented one-off, having no token at all.
  */
 private fun SearchCategory.accent(): Color =
     when (this) {
         SearchCategory.ALL -> SelectionAccent
-        SearchCategory.FILES -> SelectionAccent
+        SearchCategory.FILES -> FilesAccent
         SearchCategory.TABS -> TabsAccent
         SearchCategory.BOOKMARKS -> BookmarksAccent
         SearchCategory.RUN_CONFIGS -> RunConfigAccent

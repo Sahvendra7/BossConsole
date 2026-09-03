@@ -78,6 +78,33 @@ import java.io.IOException
  * permission-revoked tool exposed. First registration of a given tool name
  * wins; later duplicates are logged and skipped.
  */
+
+/**
+ * Whether [def] may be run by a user with [isAdmin] and [permissions]: admin bypasses;
+ * `requiresAdmin` gates to admins; otherwise every required permission must be held.
+ *
+ * A free function rather than a method, so the rule can be tested without the singleton - which
+ * cannot be constructed without reading its disabled-tools file from `~/.boss`. That matters more
+ * here than for most predicates: this is the gate that decides whether the names and full
+ * descriptions of admin-only tools are enumerable by anyone typing into the double-shift search,
+ * and while it lived inside the object it had no test at all.
+ *
+ * Note the default posture it implies: before anyone signs in, [isAdmin] is false and [permissions]
+ * is empty, so a tool with no `requiredPermissions` and `requiresAdmin = false` IS permitted. That
+ * is deliberate - see [McpToolRegistryImpl]'s "Security posture" - because this registry backs a
+ * loopback-only server for the local machine's own agents.
+ */
+internal fun mcpToolPermitted(
+    def: McpToolDefinition,
+    isAdmin: Boolean,
+    permissions: Set<String>,
+): Boolean =
+    when {
+        isAdmin -> true
+        def.requiresAdmin -> false
+        else -> permissions.containsAll(def.requiredPermissions)
+    }
+
 object McpToolRegistryImpl : McpToolRegistry {
     /**
      * What a client prepends to a registered tool name: `git_status` is typed as
@@ -567,8 +594,6 @@ internal class McpToolRegistryCore(
         _tools.value = _all.value.filter { it.definition.name !in disabled && permitted(it.definition) }
     }
 
-    /** Mirrors host RBAC: admin bypasses; requiresAdmin gates to admins; else must hold all perms. */
-
     /**
      * Every registered tool the CURRENT user may run, disabled ones included.
      *
@@ -580,11 +605,8 @@ internal class McpToolRegistryCore(
      */
     fun permittedTools(): List<RegisteredMcpTool> = _all.value.filter { permitted(it.definition) }
 
-    private fun permitted(def: McpToolDefinition): Boolean {
-        if (isAdmin) return true
-        if (def.requiresAdmin) return false
-        return permissions.containsAll(def.requiredPermissions)
-    }
+    /** Mirrors host RBAC. The rule itself is [mcpToolPermitted], which is where it is tested. */
+    private fun permitted(def: McpToolDefinition): Boolean = mcpToolPermitted(def, isAdmin, permissions)
 
     suspend fun invoke(
         toolName: String,

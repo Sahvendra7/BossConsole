@@ -74,13 +74,30 @@ object GlobalSearchService {
     private const val MIN_SCORE = 1
 
     /**
-     * How much a keyword hit gives up against a label hit, for settings.
+     * Score a match on a long, prose-y field - an MCP tool's description, a page's URL - or null
+     * if it should not count as a hit at all.
      *
-     * A keyword exists so that "passkey" reaches "Platform Authenticator". It is not a second name
-     * for the row, so a setting actually called what you typed has to win - the same ordering
-     * `SettingsSearchMatcher` applies inside the settings window.
+     * **A substring, not a subsequence.** [FuzzyMatcher] accepts any in-order subsequence, which is
+     * right for a name you are half-recalling and disastrous for a paragraph: "abc" matches almost
+     * any description ever written. A score floor does not fix it either - the scorer pays +10 per
+     * word-boundary character and +20 for starting at index 0, so scattered initials on prose
+     * score well into the sixties. Requiring the field to actually CONTAIN what was typed is the
+     * rule that holds, and it is the honest one: you get a description hit when you typed a phrase
+     * that is in the description.
+     *
+     * Ranking still comes from [FuzzyMatcher], so these sort among themselves as everything else
+     * does. Worth the strictness because any non-empty category draws a section header: without
+     * it, a two-character query sprouted a whole "MCP Tools" section of rows that cannot even be
+     * activated.
      */
-    private const val KEYWORD_PENALTY = 10
+    private fun proseScore(
+        queryLower: String,
+        field: String,
+    ): Int? {
+        val fieldLower = field.lowercase()
+        if (!fieldLower.contains(queryLower)) return null
+        return FuzzyMatcher.match(queryLower, field, fieldLower)?.score?.takeIf { it >= MIN_SCORE }
+    }
 
     /**
      * Index a project directory for file searching.
@@ -124,7 +141,10 @@ object GlobalSearchService {
      * @param query The search query
      * @return List of matching search results, sorted by relevance
      */
-    suspend fun search(query: String): List<SearchResult> {
+    suspend fun search(
+        query: String,
+        windowId: String? = null,
+    ): List<SearchResult> {
         if (query.isBlank()) {
             _searchResults.value = emptyList()
             return emptyList()
@@ -144,8 +164,8 @@ object GlobalSearchService {
                                 async { searchPluginProviders(query) }, // Includes bookmarks from plugin
                                 async { searchRunConfigs(query) },
                                 async { searchCommands(query) },
-                                async { searchTools(query) },
-                                async { searchSettings(query) },
+                                async { searchTools(query, windowId) },
+                                async { searchSettings(query, windowId) },
                                 async { searchMcpTools(query) },
                                 async { searchRecentPages(query) },
                             ).awaitAll().flatten()
@@ -492,11 +512,14 @@ object GlobalSearchService {
      * Matched on the panel id as well as the label, because the id is what a plugin's own
      * documentation and its MCP tools call it.
      */
-    private fun searchTools(query: String): List<SearchResult.ToolResult> {
+    private fun searchTools(
+        query: String,
+        windowId: String?,
+    ): List<SearchResult.ToolResult> {
         val queryLower = query.lowercase()
 
         return SearchSources
-            .tools()
+            .tools(windowId)
             .mapNotNull { tool ->
                 val labelMatch = FuzzyMatcher.match(queryLower, tool.label, tool.label.lowercase())
                 val idMatch = FuzzyMatcher.match(queryLower, tool.panelId, tool.panelId.lowercase())
@@ -512,83 +535,83 @@ object GlobalSearchService {
     /**
      * Search the rows of the Settings window.
      *
-     * Keywords are matched but scored BELOW a label hit, which is the rule `SettingsSearchMatcher`
-     * already applies inside the settings window: a keyword exists so that "passkey" finds
-     * "Platform Authenticator", not so that it outranks a setting actually called that.
+     * **Ranked by `SettingsSearchMatcher`, not here.** The desktop side registers a search function
+     * rather than a list of rows, so settings relevance has one definition shared with the Settings
+     * window's own search box. Scoring them here meant a second scorer, and the two did not merely
+     * order things differently - `FuzzyMatcher` is a strict subsequence matcher over one target, so
+     * "user agent" could not reach "Browser Identity" here while it did there. Whole settings were
+     * missing for exactly the multi-word queries the matcher's tokeniser was written for.
+     *
+     * **A signpost whose panel is absent is dropped.** A signpost points out of the Settings window
+     * at a sidebar panel, and `withoutUnreachableSignposts` states the intended behaviour plainly:
+     * someone who has never installed Secret Manager should find nothing for "anthropic", rather
+     * than a row that closes the dialog having done nothing. The Settings window applies that
+     * filter to its own box; this used not to, so the two surfaces disagreed about the one entry
+     * type that can be dead.
+     *
+     * The predicate is this window's registered tools, which is not merely *a* reachability test
+     * but the same one activation uses: `activatePlugin` matches `itemsBySlot` on `panelId`, and
+     * [SearchSources.tools] is that list flattened. So the row is offered exactly when picking it
+     * would work.
      */
-    private fun searchSettings(query: String): List<SearchResult.SettingResult> {
-        val queryLower = query.lowercase()
+    private fun searchSettings(
+        query: String,
+        windowId: String?,
+    ): List<SearchResult.SettingResult> {
+        val reachablePanels = SearchSources.tools(windowId).mapTo(mutableSetOf()) { it.panelId }
 
         return SearchSources
-            .settings()
-            .mapNotNull { entry ->
-                val labelScore = FuzzyMatcher.match(queryLower, entry.label, entry.label.lowercase())?.score
-                val crumbScore =
-                    FuzzyMatcher.match(queryLower, entry.breadcrumb, entry.breadcrumb.lowercase())?.score
-                val keywordScore =
-                    entry.keywords
-                        .mapNotNull { FuzzyMatcher.match(queryLower, it, it.lowercase())?.score }
-                        .maxOrNull()
-                        ?.minus(KEYWORD_PENALTY)
-
-                listOfNotNull(labelScore, crumbScore, keywordScore)
-                    .maxOrNull()
-                    ?.takeIf { it >= MIN_SCORE }
-                    ?.let { score ->
-                        SearchResult.SettingResult(
-                            section = entry.section,
-                            pluginPageId = entry.pluginPageId,
-                            panelId = entry.panelId,
-                            group = entry.group,
-                            label = entry.label,
-                            breadcrumb = entry.breadcrumb,
-                            highlightable = entry.highlightable,
-                            score = score,
-                        )
-                    }
-            }.sortedByDescending { it.score }
-            .take(MAX_RESULTS_PER_CATEGORY)
+            .settings(query)
+            .filter { it.panelId == null || it.panelId in reachablePanels }
+            .map { entry ->
+                SearchResult.SettingResult(
+                    section = entry.section,
+                    pluginPageId = entry.pluginPageId,
+                    panelId = entry.panelId,
+                    group = entry.group,
+                    label = entry.label,
+                    breadcrumb = entry.breadcrumb,
+                    highlightable = entry.highlightable,
+                    score = entry.score,
+                )
+            }.take(MAX_RESULTS_PER_CATEGORY)
     }
 
     /**
      * Search the MCP tools plugins have contributed.
      *
-     * **Permitted tools, disabled ones included.** Two filters, pulling opposite ways:
+     * Read through [SearchSources] rather than off `McpToolRegistryImpl`, so the RBAC filter that
+     * decides what appears here is injectable and therefore testable - see
+     * [McpToolSearchRecord.enabled] for what the host is required to have already applied.
      *
-     * - The DISABLED ones stay. A tool someone switched off is exactly what they will search for,
-     *   and the row says `off` rather than hiding it.
-     * - The ones this user has no permission for go. `allTools` deliberately keeps those for the
-     *   management UI, which shows every tool with its state - but this is the everyday launcher,
-     *   open to every user and to nobody signed in yet, where a name and a full description of an
-     *   admin-only tool would be enumerable by typing. The settings source added alongside this one
-     *   already filters by RBAC, and the two should not disagree about whether search respects it.
-     *
-     * `enabled` therefore means what the row claims: not switched off. Computing it from the
-     * disabled set alone, over unfiltered tools, showed a permission-denied tool as live when no
-     * client could see it - and answering "is this switched off" is the row's entire job.
+     * **Name first, description as a weak fallback.** [FuzzyMatcher] succeeds on any in-order
+     * subsequence, so a two- or three-character query matches almost any paragraph-length
+     * description. Those scored low and still produced a section header, so short queries grew an
+     * "MCP Tools" section of rows that cannot even be activated. A description-only hit now has to
+     * contain what was typed - see [proseScore] - while a name hit stays fuzzy, because the name is
+     * what someone is actually trying to recall.
      *
      * These results have no activation. See [SearchResult.McpToolResult].
      */
     private fun searchMcpTools(query: String): List<SearchResult.McpToolResult> {
         val queryLower = query.lowercase()
-        val disabled = McpToolRegistryImpl.disabledToolNames.value
 
-        return McpToolRegistryImpl
-            .permittedTools()
-            .mapNotNull { registered ->
-                val def = registered.definition
-                val nameMatch = FuzzyMatcher.match(queryLower, def.name, def.name.lowercase())
-                val descMatch =
-                    FuzzyMatcher.match(queryLower, def.description, def.description.lowercase())
-                val best = listOfNotNull(nameMatch, descMatch).maxByOrNull { it.score }
+        return SearchSources
+            .mcpTools()
+            .mapNotNull { tool ->
+                val nameScore =
+                    FuzzyMatcher.match(queryLower, tool.name, tool.name.lowercase())?.score?.takeIf {
+                        it >= MIN_SCORE
+                    }
+                val descScore = proseScore(queryLower, tool.description)
 
-                best?.takeIf { it.score >= MIN_SCORE }?.let {
+                listOfNotNull(nameScore, descScore).maxOrNull()?.let { score ->
                     SearchResult.McpToolResult(
-                        name = def.name,
-                        providerId = registered.providerId,
-                        description = def.description,
-                        enabled = def.name !in disabled,
-                        score = it.score,
+                        name = tool.name,
+                        providerId = tool.providerId,
+                        description = tool.description,
+                        enabled = tool.enabled,
+                        score = score,
                     )
                 }
             }.sortedByDescending { it.score }
@@ -599,19 +622,27 @@ object GlobalSearchService {
      * Search the browser's recent pages.
      *
      * Both the title and the URL, because half of what makes a page findable is its domain -
-     * "github" should reach a page whose title never mentions it.
+     * "github" should reach a page whose title never mentions it. The URL goes through [proseScore]
+     * for the reason [searchMcpTools] gives: a URL is long enough that a fuzzy subsequence matches
+     * it by accident, so it has to actually contain what was typed.
+     *
+     * Read through [SearchSources] so a unit test can supply pages without the manager, and
+     * without the disk read that reaching it entails.
      */
     private fun searchRecentPages(query: String): List<SearchResult.PageResult> {
         val queryLower = query.lowercase()
 
-        return RecentBrowserPagesManager.recentPages.value
+        return SearchSources
+            .recentPages()
             .mapNotNull { page ->
-                val titleMatch = FuzzyMatcher.match(queryLower, page.title, page.title.lowercase())
-                val urlMatch = FuzzyMatcher.match(queryLower, page.url, page.url.lowercase())
-                val best = listOfNotNull(titleMatch, urlMatch).maxByOrNull { it.score }
+                val titleScore =
+                    FuzzyMatcher.match(queryLower, page.title, page.title.lowercase())?.score?.takeIf {
+                        it >= MIN_SCORE
+                    }
+                val urlScore = proseScore(queryLower, page.url)
 
-                best?.takeIf { it.score >= MIN_SCORE }?.let {
-                    SearchResult.PageResult(url = page.url, title = page.title, score = it.score)
+                listOfNotNull(titleScore, urlScore).maxOrNull()?.let { score ->
+                    SearchResult.PageResult(url = page.url, title = page.title, score = score)
                 }
             }.sortedByDescending { it.score }
             .take(MAX_RESULTS_PER_CATEGORY)

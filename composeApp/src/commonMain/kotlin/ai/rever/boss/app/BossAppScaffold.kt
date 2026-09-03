@@ -56,8 +56,6 @@ import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.plugin.sandbox.notification.PluginToastHost
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.plugin.ui.BossTheme
-import ai.rever.boss.search.SearchSources
-import ai.rever.boss.search.ToolSearchRecord
 import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
 import ai.rever.boss.updater.UpdateAvailableDialog
 import ai.rever.boss.updater.UpdateBanner

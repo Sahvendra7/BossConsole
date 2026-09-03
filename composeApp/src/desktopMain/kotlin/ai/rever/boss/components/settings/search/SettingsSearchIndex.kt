@@ -105,31 +105,45 @@ object SettingsSearchIndex {
     /**
      * Hand this index to the global (double-shift) search.
      *
-     * Called once at desktop startup. The global search lives in commonMain and cannot see this
-     * type at all, so it takes plain records through [SearchSources] - a supplier rather than a
-     * snapshot, because plugin pages appear and disappear with their plugins and a list captured
-     * at startup would go stale into a search index, which is the one place staleness is invisible.
+     * Called once at desktop startup. The global search lives in commonMain and cannot see
+     * [SettingsSearchEntry] at all, so it gets plain records through [SearchSources].
+     *
+     * **A ranking function, not a list of rows.** Handing over rows meant the global search had to
+     * score them itself, with a second scorer that disagreed with this one: `FuzzyMatcher` matches
+     * a subsequence of a single target, so "user agent" reached "Browser Identity" in the Settings
+     * window and matched nothing in the global search. [SettingsSearchMatcher] is what fixes that,
+     * by tokenising the query, and this is how both surfaces come to share it - one definition of
+     * what a settings match is worth, and no second keyword penalty to keep in step.
+     *
+     * A function rather than a snapshot for the original reason too: plugin pages appear and
+     * disappear with their plugins, and a list captured at startup would go stale into a search
+     * index, which is the one place staleness is invisible.
      *
      * Built-in entries plus the plugin pages currently visible, which is the same union
-     * `SettingsWindow` feeds its own search box.
+     * `SettingsWindow` feeds its own search box - with one deliberate difference: signpost
+     * reachability is applied by the caller, not here. `withReachableSignposts` needs the panel
+     * registry and is `@Composable`; `GlobalSearchService` filters on the searching window's
+     * registered tools instead, which is the same predicate `activatePlugin` uses. See
+     * `GlobalSearchService.searchSettings`.
      */
     fun registerWithGlobalSearch() {
-        SearchSources.settingsSupplier = {
+        SearchSources.settingsSearch = { query ->
             val pages =
                 SettingsPageRegistryImpl.visiblePages().map {
                     pluginPageEntry(it.pageId, it.displayName, it.description)
                 }
-            (builtIn + pages)
-                .map { entry ->
+            SettingsSearchMatcher
+                .search(query, builtIn + pages)
+                .map { hit ->
                     SettingSearchRecord(
-                        label = entry.label,
-                        breadcrumb = entry.breadcrumb,
-                        section = entry.section?.name,
-                        pluginPageId = entry.pluginPageId,
-                        panelId = entry.panel?.panelId,
-                        group = entry.group,
-                        keywords = entry.keywords,
-                        highlightable = entry.highlightable,
+                        label = hit.entry.label,
+                        breadcrumb = hit.entry.breadcrumb,
+                        section = hit.entry.section?.name,
+                        pluginPageId = hit.entry.pluginPageId,
+                        panelId = hit.entry.panel?.panelId,
+                        group = hit.entry.group,
+                        highlightable = hit.entry.highlightable,
+                        score = hit.score,
                     )
                 }
         }

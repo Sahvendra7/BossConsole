@@ -279,10 +279,16 @@ private fun SettingsContent(
         // and the value equals what is already in `highlight` - no state change, the keyed effect
         // in searchTarget never re-runs, and the window visibly does nothing. Which is precisely
         // what the nonce exists to prevent.
-        requestedHighlight?.let {
-            highlightNonce += 1
-            highlight = it.copy(nonce = highlightNonce)
-        }
+        // Assigned unconditionally, null included. `reveal(highlightable = false)` nulls the
+        // holder's highlight on purpose - its KDoc argues that pointing at nothing beats leaving
+        // the last pick armed on a page it does not belong to - and acting only on a non-null
+        // request threw that away: the effect re-ran with the key gone from 1 to null, did
+        // nothing, and the local highlight kept pointing at the previous row. `sectionLevel` and
+        // `delegated` entries are highlightable = false WITH a real section, so this was reachable
+        // from ordinary rows: pick a highlightable Appearance row, then a section-level catch-all
+        // elsewhere, then Appearance's own catch-all, and the first row lit up unasked.
+        highlightNonce += 1
+        highlight = requestedHighlight?.copy(nonce = highlightNonce)
     }
 
     // If the selected page's plugin is disabled/unloaded, fall back to sections.

@@ -467,24 +467,24 @@ internal fun BossAppDialogs(state: BossAppState) {
         //
         // A supplier rather than a snapshot, so a plugin loading while the dialog is open is
         // findable without reopening it.
-        DisposableEffect(state.draggablePanelComponent) {
+        DisposableEffect(state.draggablePanelComponent, windowId) {
             val component = state.draggablePanelComponent
-            val supplier: () -> List<ToolSearchRecord> = {
+            // Registered under THIS window's id, and searched under it too, so two windows with a
+            // dialog open at once neither overwrite each other's tools nor empty the other's slot
+            // on close - and the tools offered always belong to the component that will be asked
+            // to open them.
+            SearchSources.registerTools(windowId) {
                 component.allSidebarTools().map {
                     ToolSearchRecord(panelId = it.pluginContentId.panelId, label = it.label)
                 }
             }
-            SearchSources.toolsSupplier = supplier
-            onDispose {
-                // Only if it is still ours. Two windows can have a dialog open at once, and
-                // clearing another window's registration would leave IT searching no tools.
-                if (SearchSources.toolsSupplier === supplier) SearchSources.toolsSupplier = null
-            }
+            onDispose { SearchSources.unregisterTools(windowId) }
         }
 
         GlobalSearchDialog(
             projectPath = selectedProject.path,
             workspaceManager = workspaceManager,
+            windowId = windowId,
             onDismiss = {
                 state.showGlobalSearchDialog = false
                 state.focusRequester.requestFocus()
@@ -667,6 +667,10 @@ internal fun BossAppDialogs(state: BossAppState) {
                 val panelId = setting.panelId
                 if (panelId != null) {
                     state.draggablePanelComponent.activatePlugin(panelId)
+                    // The same pair onToolSelect does, because this branch does the same work.
+                    // The reveal branch below deliberately does not: it is handing focus to the
+                    // Settings window, so pulling it back here would fight that.
+                    state.focusRequester.requestFocus()
                 } else {
                     // A plugin page navigates by page id; everything else by section. Both go
                     // through the same open(), which raises the window if it is already up and
