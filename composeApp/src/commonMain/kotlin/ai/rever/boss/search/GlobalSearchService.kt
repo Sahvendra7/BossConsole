@@ -163,17 +163,34 @@ object GlobalSearchService {
     }
 
     /**
-     * Get results filtered by the active category.
+     * Get results filtered by the active category, in the order they are drawn.
+     *
+     * **Category first, score second.** `_searchResults` is sorted by score alone, which is the
+     * right order for one category and the wrong one for "All": the dialog draws "All" grouped
+     * into sections, walking [SearchCategory] in declaration order, and it numbers rows as it goes.
+     * The keyboard indexes into THIS list. While the two orders disagreed, the highlighted row and
+     * the row Enter activated were different rows - and every appended category made that easier
+     * to hit. Sorting here is what keeps one order for drawing, arrowing and Enter.
+     *
+     * It is also what puts Tools first rather than a tool competing on score with fifteen files
+     * that share a word; see [SearchCategory] for why that order is what it is.
+     *
+     * A no-op for a single category, where the ordinal is constant and score order survives.
      */
     fun getFilteredResults(): List<SearchResult> {
         val category = _activeCategory.value
         val results = _searchResults.value
 
-        return if (category == SearchCategory.ALL) {
-            results
-        } else {
-            results.filter { it.category == category }
-        }
+        val inCategory =
+            if (category == SearchCategory.ALL) {
+                results
+            } else {
+                results.filter { it.category == category }
+            }
+
+        return inCategory.sortedWith(
+            compareBy<SearchResult> { it.category.ordinal }.thenByDescending { it.score },
+        )
     }
 
     /**

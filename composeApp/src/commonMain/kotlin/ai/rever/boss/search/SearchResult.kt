@@ -221,18 +221,31 @@ sealed class SearchResult {
 
 /**
  * Categories of search results for filtering.
+ *
+ * **Declaration order is display order**, in three places that have to agree: the chip row, the
+ * section order in the "All" view, and - because `SearchResultsList` numbers rows by walking these
+ * entries - which row the keyboard starts on. `getFilteredResults` sorts by this ordinal for that
+ * reason, so reordering here moves all three together and never desynchronises them.
+ *
+ * [TOOLS] leads because it is the most actionable thing the search offers: a tool is a thing you
+ * open and use, where a file match is a thing you then have to find something in. It also loses
+ * the most from being ranked by score alone - one tool competing with fifteen files whose names
+ * happen to share a word, as "atlas" did.
+ *
+ * [MCP] and [PAGES] sit last for the opposite reason: an MCP row cannot be activated at all, and a
+ * recent page is the weakest kind of intent.
  */
 enum class SearchCategory(
     val displayName: String,
     val icon: String,
 ) {
     ALL("All", "apps"),
+    TOOLS("Tools", "apps"),
     TABS("Open Tabs", "tab"),
     FILES("Files", "description"),
     BOOKMARKS("Bookmarks", "bookmark"),
     RUN_CONFIGS("Run Configs", "play_arrow"),
     COMMANDS("Commands", "terminal"),
-    TOOLS("Tools", "apps"),
     SETTINGS("Settings", "settings"),
     MCP("MCP Tools", "build"),
     PAGES("Recent Pages", "history"),
