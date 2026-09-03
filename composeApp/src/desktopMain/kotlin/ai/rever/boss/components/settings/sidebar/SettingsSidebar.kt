@@ -48,6 +48,11 @@ enum class SettingsSection(
         description = "Chromium engine version, downloads, and reinstall",
         icon = Icons.Outlined.Memory,
     ),
+    DEFAULT_APPS(
+        displayName = "Default Apps",
+        description = "Links, markdown, shell scripts and code files BOSS opens",
+        icon = Icons.Outlined.AppRegistration,
+    ),
     BOSS_EDITOR(
         displayName = "BossEditor",
         description = "Scroll behavior, code folding, and bracket matching",
@@ -72,11 +77,6 @@ enum class SettingsSection(
         displayName = "Workspace",
         description = "Default layout and workspace templates",
         icon = Icons.Outlined.GridView,
-    ),
-    LLM_PROVIDERS(
-        displayName = "AI Providers",
-        description = "API keys and model selection for AI providers",
-        icon = Icons.Outlined.AutoAwesome,
     ),
     UPDATES(
         displayName = "Updates",

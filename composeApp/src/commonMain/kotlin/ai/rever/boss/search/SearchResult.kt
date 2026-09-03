@@ -153,6 +153,9 @@ sealed class SearchResult {
      *
      * @property section The settings section to navigate to, or null for a plugin page
      * @property pluginPageId Set instead of [section] for a plugin's own settings page
+     * @property panelId Set instead of both for a row that is not in the Settings window at all:
+     *   picking it opens that sidebar panel, the way a `ToolResult` does. The Settings index calls
+     *   these signposts - a setting that moved out, keeping the words a user still types for it.
      * @property group The group within the section, for the highlight
      * @property label The setting's label, which is also what the highlight matches on
      * @property breadcrumb Where it lives, e.g. "Appearance > Tab Bar", shown as the subtitle
@@ -162,6 +165,7 @@ sealed class SearchResult {
     data class SettingResult(
         val section: String?,
         val pluginPageId: String?,
+        val panelId: String?,
         val group: String?,
         val label: String,
         val breadcrumb: String,

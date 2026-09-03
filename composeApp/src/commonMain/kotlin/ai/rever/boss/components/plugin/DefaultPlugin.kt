@@ -68,6 +68,7 @@ import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.PluginStorageFactory
 import ai.rever.boss.plugin.api.PluginStoreApiKeyProvider
 import ai.rever.boss.plugin.api.ProjectData
+import ai.rever.boss.plugin.api.ProjectSearchProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.ScreenCaptureProvider
 import ai.rever.boss.plugin.api.SearchProvider
@@ -94,6 +95,7 @@ import ai.rever.boss.plugin.sandbox.notification.BossPluginNotificationService
 import ai.rever.boss.plugin.sandbox.notification.PluginSandboxNotificationListener
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.plugin.ui.ContextMenuItemData
+import ai.rever.boss.search.ContentSearchService
 import ai.rever.boss.search.SearchRegistryImpl
 import ai.rever.boss.services.auth.AuthDataProviderImpl
 import ai.rever.boss.services.auth.AuthStateManager
@@ -132,7 +134,6 @@ import ai.rever.boss.components.plugin.panels.right_top.BrowserIntegration as In
 import ai.rever.boss.plugin.api.BrowserIntegration as ApiBrowserIntegration
 
 // DYNAMIC: Tab type registrations moved to dynamic plugins
-// import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 // import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
 
 /**
@@ -402,14 +403,25 @@ class DefaultPlugin(
     // folded into this same service — see BrowserConfig.profileName/ephemeralProfile/auth.
     override val browserService: BrowserService? = getBrowserServiceInstance(_windowId)
 
-    // Git data provider for plugins that display git information
-    override val gitDataProvider: GitDataProvider? by lazy {
-        if (windowGitState != null) {
-            GitDataProviderImpl(windowGitState) { _windowId }
-        } else {
-            null
+    // Git data provider for plugins that display git information.
+    // Named delegate so dispose() can cancel its collectors without forcing the lazy
+    // (see logDataProviderDelegate for the same pattern).
+    private val gitDataProviderDelegate =
+        lazy {
+            if (windowGitState != null) {
+                GitDataProviderImpl(
+                    windowGitState,
+                    { _windowId },
+                    // The window's own selected project: lets the provider bootstrap
+                    // windowGitState.projectPath when the project was picked outside
+                    // the top bar (e.g. the codebase panel's picker).
+                    { windowProjectState?.selectedProject?.value?.path },
+                )
+            } else {
+                null
+            }
         }
-    }
+    override val gitDataProvider: GitDataProvider? by gitDataProviderDelegate
 
     // Window ID for window-scoped operations
     override val windowId: String?
@@ -418,6 +430,84 @@ class DefaultPlugin(
     // Project path for project-specific operations
     override val projectPath: String?
         get() = windowProjectState?.selectedProject?.value?.path
+
+    // Project-wide content search (boss-plugin-api 1.0.87). Host-side engine.
+    //
+    // NEVER null: the engine exists whether or not a project is selected, and
+    // answers with empty results when there is none. A plugin cannot therefore
+    // use provider-presence to mean "a project is open" - it means "this host
+    // implements search". Check projectPath for the other question.
+    //
+    // UNGATED, deliberately, per the AGENTS.md rule for applicationEventBus
+    // ("gate at install time by choosing which plugins are allowed, not by
+    // trusting the bus") - but this is the first WRITE surface with that
+    // property: any installed plugin can read and rewrite any file inside the
+    // selected project. The corresponding line in the api KDoc (boss-plugin-api
+    // repo) lands with the next api bump; it is stated here now so the host
+    // never ships the surface without the caveat somewhere in-tree.
+    override val projectSearchProvider: ProjectSearchProvider? by lazy {
+        ContentSearchService(
+            projectPathProvider = { projectPath },
+            // Bridge over THIS window's registry, not the global EditorAPIAccess, so a
+            // search in this window edits this window's buffers.
+            bufferBridge =
+                object : ai.rever.boss.search.EditorBufferBridge {
+                    private fun provider() = getPluginAPI(ai.rever.boss.plugin.api.EditorTabPluginAPI::class.java)
+
+                    override suspend fun readBuffer(path: String) = provider()?.readBuffer(path)
+
+                    override suspend fun applyEdit(
+                        path: String,
+                        startLine: Int,
+                        startCol: Int,
+                        endLine: Int,
+                        endCol: Int,
+                        newText: String,
+                        expectedVersion: Long,
+                    ) = provider()?.applyEdit(path, startLine, startCol, endLine, endCol, newText, expectedVersion)
+                },
+            // The host knows which files have an editor tab open in this window, so the
+            // search asks the bridge about those alone instead of every walked file.
+            openEditorPathsProvider = { openEditorFilePaths() },
+        )
+    }
+
+    /**
+     * Absolute paths of every file with an editor tab open in THIS window, or null
+     * when the set cannot be trusted - null makes the search fall back to asking the
+     * editor about every file, which is correct, just slower. Untrusted means: no
+     * split view to enumerate, or an editor-typed tab whose class this host cannot
+     * read a path from (a plugin-constructed TabInfo, read by reflection like
+     * [ApiActiveTabsProviderAdapter] does for browser tabs).
+     */
+    private fun openEditorFilePaths(): Set<String>? =
+        runCatching {
+            val panels = splitViewState?.getAllPanels() ?: return@runCatching null
+            val paths = mutableSetOf<String>()
+            for (panel in panels) {
+                for (tab in panel.tabsComponent.tabsState.value.tabs) {
+                    when {
+                        tab is ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo -> {
+                            // A blank path is an unsaved "Untitled" buffer: no file on
+                            // disk can be that tab, so it cannot affect the walk.
+                            if (tab.filePath.isNotBlank()) paths.add(tab.filePath)
+                        }
+
+                        tab.typeId.typeId == "editor" -> {
+                            val p =
+                                runCatching {
+                                    tab.javaClass.getMethod("getFilePath").invoke(tab) as? String
+                                }.getOrNull()
+                            // An editor tab whose path we cannot read means the set is
+                            // incomplete - claiming it complete would skip a live buffer.
+                            if (p.isNullOrBlank()) return@runCatching null
+                            paths.add(p)
+                        }
+                    }
+                }
+            }
+            paths
+        }.getOrNull()
 
     // Auth data provider for plugins that need authentication state
     override val authDataProvider: AuthDataProvider by lazy {
@@ -632,13 +722,13 @@ class DefaultPlugin(
      * and [ai.rever.boss.plugin.api.LlmProvider.activeConfig] is null again when no
      * provider is fully set up.
      *
-     * Resolved against **this** instance's registry, not through LlmProviderAPIAccess.
-     * DefaultPlugin is created per window and [apiRegistry] is per instance, while that
-     * object's cached reference is a singleton overwritten by each window's
-     * `initialize()` — routing through it would hand window 1's plugins whatever window
-     * 2 registered, or null if window 2 hasn't registered yet, which is the exact
-     * failure this relay exists to avoid. The settings UI still needs the singleton
-     * because host composables have no plugin handle; this member already has `this`.
+     * Resolved against **this** instance's registry. There used to be a singleton
+     * (`LlmProviderAPIAccess`) as well, for the host's Settings > AI Providers section,
+     * and this relay deliberately did not use it: DefaultPlugin is created per window and
+     * [apiRegistry] is per instance, while that cached reference was overwritten by each
+     * window's `initialize()` - so routing through it would hand window 1's plugins
+     * whatever window 2 registered. The section now lives in the plugin's own panel, so
+     * the singleton is gone and this is the only path.
      *
      * A `get()` rather than `by lazy` on purpose: registration is asynchronous, so a
      * lazy would cache null forever.
@@ -894,8 +984,61 @@ class DefaultPlugin(
      */
     fun isPluginDisabled(pluginId: String) = sandboxManager.isPluginDisabled(pluginId)
 
+    /**
+     * Selects the tab a pop-out asked to return to, for this window.
+     *
+     * The request travels in-process ([PopOutReturnRequests]) rather than through a new plugin
+     * API: the host cannot select a tab it cannot name - the tab is a dynamic plugin's component
+     * type - but this class can, and the handle already learns its tab id when the plugin
+     * registers a fullscreen handler.
+     *
+     * A request naming another window is ignored here and answered by that window's own
+     * collector. A request nobody can answer is logged rather than dropped silently, which is
+     * how "Back-to-tab does nothing" would otherwise present.
+     */
+    private fun startPopOutReturnCollector() {
+        val splitView = splitViewState
+        val workspaces = workspaceManager
+        val ownWindowId = _windowId
+        if (splitView == null || workspaces == null || ownWindowId == null) return
+        pluginScope.launch {
+            ai.rever.boss.plugin.browser.PopOutReturnRequests.requests
+                .collect { request ->
+                    if (request.windowId != ownWindowId) return@collect
+                    runCatching {
+                        val panelId =
+                            splitView
+                                .collectAllActiveTabs(workspaces, ownWindowId)
+                                .firstOrNull { it.tabInfo.id == request.tabId }
+                                ?.panelId
+                        if (panelId != null) {
+                            splitView.selectTabInPanel(request.tabId, panelId)
+                        } else {
+                            logger.debug(
+                                LogCategory.UI,
+                                "Pop-out asked for a tab this window does not have",
+                                mapOf("tabId" to request.tabId),
+                            )
+                        }
+                    }.onFailure {
+                        // Rethrown, not logged: runCatching catches CancellationException too, and
+                        // swallowing it here breaks structured cancellation when the window closes.
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        logger.warn(LogCategory.UI, "Could not return to a pop-out's tab", error = it)
+                    }
+                }
+        }
+    }
+
     init {
         logger.info(LogCategory.SYSTEM, "Initializing DefaultPlugin with sandboxed contexts")
+
+        // Back-to-tab, started per window and unconditionally. This used to run from
+        // ApiActiveTabsProviderAdapter's init, which is created `by lazy` behind
+        // activeTabsProvider - a property that exists for one plugin - so where nothing read it
+        // the adapter was never built, nobody collected, and the pop-out's Back-to-tab button
+        // silently degraded to raising the window.
+        startPopOutReturnCollector()
 
         // ============================================================
         // REGISTER PLUGIN LOADER DELEGATE
@@ -923,7 +1066,6 @@ class DefaultPlugin(
 
         // DYNAMIC: Tab types moved to dynamic plugins loaded from ~/.boss/plugins/
         // registerFluck() // DYNAMIC: fluck-browser plugin
-        // registerCodeEditor() // DYNAMIC: editor-tab plugin
         // registerTerminalTab() // DYNAMIC: terminal-tab plugin
 
         // ============================================================
@@ -960,6 +1102,9 @@ class DefaultPlugin(
         // actually built: see [logDataProviderDelegate].
         if (logDataProviderDelegate.isInitialized()) {
             (logDataProvider as? DisposableProvider)?.dispose()
+        }
+        if (gitDataProviderDelegate.isInitialized()) {
+            (gitDataProvider as? DisposableProvider)?.dispose()
         }
         pluginScope.cancel()
     }
@@ -1231,12 +1376,16 @@ private class ApiActiveTabsProviderAdapter(
     private val scope: CoroutineScope,
 ) : ActiveTabsProvider {
     private val tabsLogger = BossLogger.forComponent("ActiveTabsProvider")
-    private val _activeTabs = kotlinx.coroutines.flow.MutableStateFlow<List<ActiveTabData>>(emptyList())
-    override val activeTabs: kotlinx.coroutines.flow.StateFlow<List<ActiveTabData>> = _activeTabs
 
     init {
         // Start polling loop (like bundled LLMRpaIntegration.kt does)
         // This ensures dynamic plugins receive tab updates
+        //
+        // Restored after a refactor deleted it: the pop-out return collector was briefly hosted
+        // in this init and, when it moved to DefaultPlugin, this loop went with it. Nothing else
+        // calls refreshTabs() on a schedule - both consumers of the flow only watch it - so
+        // _activeTabs stayed empty for the life of the process and every plugin observing tabs
+        // silently saw none.
         scope.launch {
             var consecutiveFailures = 0
             while (isActive) {
@@ -1259,6 +1408,9 @@ private class ApiActiveTabsProviderAdapter(
             }
         }
     }
+
+    private val _activeTabs = kotlinx.coroutines.flow.MutableStateFlow<List<ActiveTabData>>(emptyList())
+    override val activeTabs: kotlinx.coroutines.flow.StateFlow<List<ActiveTabData>> = _activeTabs
 
     override suspend fun refreshTabs() {
         val tabs = splitViewState.collectAllActiveTabs(workspaceManager, windowId)

@@ -16,12 +16,16 @@ data class ToolSearchRecord(
  *
  * A plain record rather than the index's own entry type, because that type lives in desktopMain
  * and this service does not.
+ *
+ * Exactly one of [section], [pluginPageId] and [panelId] is set - the index's own `init` requires
+ * it. [panelId] is the entry that navigates *out* of the Settings window; see `panelSignpost`.
  */
 data class SettingSearchRecord(
     val label: String,
     val breadcrumb: String,
     val section: String?,
     val pluginPageId: String?,
+    val panelId: String?,
     val group: String?,
     val keywords: List<String>,
     val highlightable: Boolean,

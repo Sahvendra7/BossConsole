@@ -240,9 +240,12 @@ plugin. The check is an entry whose `jarPath` still exists.
 
 ### A settings section can offer to install the plugin that serves it
 
-Three sections render a panel that belongs to a plugin - `Settings > AI Providers` (secret-manager),
-`Editor` and `Language servers` (both editor-tab). All three used to say "isn't loaded yet" for
-every reason there was no panel, which is true of exactly one of them. A plugin that was never
+Two sections render a panel that belongs to a plugin - `Editor` and `Language servers`, both
+editor-tab. (`Settings > AI Providers` was a third, served by secret-manager, until that section
+moved into the plugin's own panel; Settings search reaches it through a **panel signpost** now, and
+that entry is filtered on the panel being registered rather than explaining its absence.) Both used
+to say "isn't loaded yet" for every reason there was no panel, which is true of exactly one of
+them. A plugin that was never
 installed, or that the user switched off, does not arrive however long they look at it.
 
 `PluginSettingsUnavailableNotice` now tells the four apart and offers an Install button for the one
@@ -271,8 +274,8 @@ All three orderings are mutation-verified: reversing each one fails a named test
 registered but this version has no panel for that section. Without it a loaded plugin reported
 "isn't loaded yet" forever. Everything else, permissions included, is derived from the plugin id, so
 a new section gets the whole behaviour by naming its plugin. An earlier version took the permissions
-as a parameter and only one of the three sections passed it, which left the other two telling a user
-who cannot access the plugin to go and switch it on.
+as a parameter and only one of the then-three sections passed it, which left the other two telling a
+user who cannot access the plugin to go and switch it on.
 
 **The notice gates on `MissingPluginOffer.isInstalled`, not on "can I reach the API".** Those are
 different questions and they disagree exactly when the plugin is installed but not running - which
@@ -426,14 +429,45 @@ self-healing. Nothing has ever read it from that file - it is an **environment v
 the priority order above does not apply to it.
 
 - **AI providers** (chat, agents, plugin AI features) are owned entirely by the
-  **secret-manager** plugin: `Settings → AI Providers`. The host has no provider list; it
-  relays the plugin's through `PluginContext.llmProvider`. See that plugin's `AGENTS.md`.
+  **secret-manager** plugin, in the **AI section of its own panel**. The host has no provider
+  list and no settings section for one; it relays the plugin's through
+  `PluginContext.llmProvider`. See that plugin's `AGENTS.md`.
+
+  The host used to render `Settings > AI Providers` from that plugin, through a
+  `LlmProviderAPIAccess` singleton. Both are gone: the credentials live in that panel's vault,
+  so the page that manages them belongs beside them rather than two clicks away in another
+  window, and the singleton existed only to give host composables a plugin handle. What remains
+  is `DefaultPlugin.llmProvider`, which resolves against **its own** instance's registry -
+  deliberately never through a singleton, because `DefaultPlugin` is per window and a shared
+  cached reference would hand window 1's plugins whatever window 2 registered.
+
+  A stale `boss://settings?section=LLM_PROVIDERS` deep link now resolves to
+  `SettingsDeepLink.Unresolved`, so the window opens on its default section rather than
+  failing.
+
+  Settings search still answers for `api key`, `anthropic`, `claude` and the rest: a curated
+  **panel signpost** (`panelSignpost` in `SettingsSearchEntries.kt`) opens the Secret Manager
+  panel and raises the main window. It is the only search entry that navigates out of the
+  Settings window. The delegated-section keywords could not have covered this - a panel is not a
+  settings page, so nothing merges it into the index at query time.
+
+  **There is deliberately no version floor on secret-manager.** The AI section exists in that
+  plugin only from 1.2.19, and nothing in the host gates on it: secret-manager is not in the
+  `system_plugins` manifest, so no `min_version` applies, and plugin updates surface in the
+  Toolbox rather than installing themselves. A user on 1.2.18 who takes this host build gets the
+  Secret Manager panel with no AI section in it. That is accepted rather than overlooked, and it
+  is a weaker case than `RetiredPlugins.minReplacementVersion`, which names a release because
+  getting it wrong **deletes** the user's only secrets panel. Here nothing is deleted and nothing
+  is lost - the credentials stay in the vault, `PluginContext.llmProvider` keeps serving them to
+  every plugin that asks, and updating the plugin restores the page. The floor would have to be
+  enforced somewhere, and the only mechanism the host has for that is refusing to load the
+  plugin, which would take the vault down with it.
 - **AI self-healing / repair** is the one credential the host still resolves itself, because
   `SelfHealingSettingsManager` runs before any window or plugin exists and so cannot reach the
   plugin's store. It reads `AI_REPAIR_API_KEY`, then the provider's own variable
   (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / …), then the legacy `~/.boss/llm_settings.json` and
   its `.migrated` sibling - all as **env vars / files, never local.properties**. A key rotated
-  in Settings → AI Providers does not reach it.
+  in the Secret Manager panel's AI section does not reach it.
 
 There are NO credential fallbacks in source (public repo). Packaged builds get
 the JxBrowser license and Supabase settings baked in by the
@@ -559,6 +593,73 @@ restart. There is no Settings row and no per-site exclusion.
   `window.__bossInteractionStarted`. The sanitizers bound what can be *smuggled*
   through; nothing bounds a site lying about its own usage. Treat these as
   indicative, not as measurements, wherever a site has an incentive to lie.
+- **`PluginContext.projectSearchProvider` is the first UNGATED WRITE surface.**
+  Like the event bus it is available to every installed plugin, but where the
+  bus is a read, its `replaceInProject` rewrites file contents anywhere inside
+  the open project (the `project_replace` MCP tool sits behind a
+  `project.replace` permission on the *MCP* side, but the provider itself is
+  ungated). Confinement is to the open project only - `resolveFile` refuses
+  paths outside it, canonical and symlink-checked. A plugin that needs project
+  search should be vetted the same way one that subscribes to the bus is.
+
+## Two-finger swipe navigation (macOS)
+
+A two-finger horizontal trackpad swipe navigates back/forward. It is detected **inside the page**
+(`BrowserSwipeNavScript` + `swipe-nav.js`), because under `HARDWARE_ACCELERATED` the browser is a
+native surface and neither Compose nor AWT sees the wheel. JxBrowser's
+`enableOverscrollHistoryNavigation` does NOT provide this - measured 2026-08-28, it does nothing for
+a trackpad in either rendering mode, because it is a touchscreen feature.
+
+The recognizer is a port of Chrome's own (`history_swiper.mm`): three cancellation tiers, with
+vertical measured as a path length and horizontal as net displacement. Chrome's absolute thresholds
+are fractions of the trackpad from `NSTouch.normalizedPosition`, which a page cannot see, so those
+carry over as the same fractions of the commit distance.
+
+**It commits at the end of the gesture, not on crossing the commit distance** - and "end of
+gesture" is literally `GESTURE_GAP_MS` (120ms) with no wheel event, because AWT does not surface
+NSEvent's scroll phases and a time gap is the only segmentation signal there is. So it is not
+release: holding past the line and simply STOPPING, fingers still down, commits after 120ms too.
+The window in which reversing still cancels is 120ms of continuous motion, not "until you lift".
+The decision reads the LAST horizontal position, so easing back below the line cancels.
+
+That makes `GESTURE_GAP_MS` do three jobs at once: segmenting one gesture from the next, setting a
+floor on commit latency, and (as the minimum possible gap between two gesture ends) bounding
+`SWIPE_NAV_DEBOUNCE_MS` from above. Raising or lowering it touches all three, and
+`BrowserSwipeNavTest` reads it out of the script so the third one fails loudly.
+
+**Past the commit distance, vertical drift stops cancelling** (`reachedCommit`). Vertical is a path
+length and only ever grows, so every event after the crossing was one more chance to cancel a swipe
+the user had already completed. Before the line the three tiers apply unchanged; after it, only
+easing back or reversing can still cancel. Native swipe-back behaves the same way.
+
+**Two host-side windows, for two different things** (`BrowserSwipeNavBridge.kt`).
+`SWIPE_NAV_DEBOUNCE_MS` (32ms, any direction) catches a double-dispatch bug in the bridge.
+`SWIPE_NAV_REPEAT_MS` (400ms, same direction only) is the paused-drag guard: a slow drag that
+hesitates past `GESTURE_GAP_MS` with the fingers down is two gestures to the script and would
+navigate back twice. That guard cannot live in the page - the first commit navigates the tab and
+the script's state dies with the document. The cost is that two intentional same-direction swipes
+under 400ms apart become one; that is the deliberate trade, because a dropped swipe is retryable
+and an extra step back may not be, since the forward entry need not survive a redirect. A reversal
+is never held for the repeat window.
+
+**Momentum phase costs latency and nothing else.** A `CGEvent` tap on this hardware (measured
+2026-09-02) shows macOS emitting momentum-phase scroll for 180-870ms after the fingers lift,
+carrying 325-2500px of horizontal travel. Whether Chromium forwards those to the renderer as
+`wheel` events is NOT confirmed: if it does, each one re-arms the end-of-gesture timer and a flick
+commits at end-of-momentum instead of at release. It cannot change the ANSWER - a tail runs the
+flick's own direction, so it can neither reverse nor ease back, and `reachedCommit` is what closed
+the remaining path, a tail's `deltaY` tripping the vertical tiers. Synthetic phase-tagged events
+cannot settle the forwarding question - `CGEventPost` from another process never reaches the
+layered native browser surface, and does not even enter the session event stream - so it needs one
+real flick against a recording `wheel` listener.
+
+**Off switch**: `Settings > Browser > Trackpad`, stored in `~/.boss/swipe-nav.json`, or
+`BOSS_BROWSER_SWIPE_NAV=false` (also `0` / `no` / `off`). The environment wins, and the Settings row
+says so. The setting is published as a **system property** because the browser plugin draws the home
+surface, lives in another repo, and `PluginContext.settingsProvider` reads nothing - so both halves
+of the gesture read one key. An unparseable value owns nothing.
+
+Covered by running it: `node scripts/test/test-swipe-nav.js`, in `build.yml`.
 
 **Three modules apply the Compose compiler with no Compose code, on purpose** -
 `plugin-logging`, `plugin-bookmark-types` and `plugin-workspace-types`.
@@ -652,9 +753,223 @@ Linux) or a loopback port (Windows). Every request must present the token,
 "another instance is running" means something answered on the channel rather than
 a pid existing, and a descriptor nobody answers on is reclaimed.
 
+## Every OS open request becomes a `boss://` link
+
+Links and files arrive through four different doors and all four normalise to one
+deep link before anything else happens, via `fileDeepLinkFor` and
+`OsOpenArguments`:
+
+| Door | Platform | Handler |
+|---|---|---|
+| open-URI AppleEvent | macOS | `Desktop.setOpenURIHandler` |
+| open-file AppleEvent | macOS | `Desktop.setOpenFileHandler` |
+| a path or URL in `argv` | Windows, Linux | `DeepLinkHandler.processCommandLineArgs` |
+| a forward over the single-instance channel | all | `main.kt`, when the lock is held |
+
+The point of funnelling them is that `boss://file` and `boss://url` already carry
+the parts each new door would otherwise have to re-implement: path validation, the
+window resolve through `WindowFocusManager.resolveActionableWindowId`, and the
+`FileHandlerService` / `URLHandlerService` counters that stop the New Tab dialog
+destroying the tab being created during a cold start.
+
+Four things that were broken before this and are easy to break again:
+
+- **Nothing registered an open-file handler at all.** BOSS declared
+  `CFBundleDocumentTypes`, appeared in Finder's Open With menu, launched when a
+  file was double-clicked, and then did nothing with it. macOS discards the
+  AppleEvent once the queue drains with no handler set.
+- **`processCommandLineArgs` was gated on Windows.** Linux delivers a protocol URL
+  in `argv` too (`Exec=<app> %U`) and the JDK's X11 peer supports no
+  `APP_OPEN_URI` action, so a Linux user with BOSS as their default browser had
+  every cold-start link silently dropped.
+- **A CLI invocation must not be extracted as an open request.** `OsOpenArguments`
+  returns nothing when any argument names a `createBossCLI` subcommand, or
+  `boss file /tmp/x.md` opens the file twice. `OsOpenArgumentsTest` pins the
+  subcommand list against `BossCommand.kt`.
+- **A `file://` URL is not a path.** `Exec=%U` hands file managers' URLs over, and
+  `File(URI)` rejects any authority component, so `file://localhost/tmp/x` needs
+  the redundant host stripped before it resolves.
+
+`CLISecurityValidator` now has two path checks, and using the wrong one is a
+visible bug either way. `isValidOpenTargetPath` is for a file about to be **read**
+into the editor: NUL rejected, canonicalised, nothing else. `isValidPath` is for a
+path that may reach a **shell** and rejects `..`, `$`, `&`, `;`, `|` and a
+backtick - which are ordinary filename characters, so applying it to a file open
+meant `Q&A notes.md` could not be opened at all.
+
+## Default applications, and the engine bundle that stole them
+
+`boss-file-types.json` (in `composeApp/src/desktopMain/resources`) is the single
+source of truth for what BOSS can be made the default handler for: five
+categories over 83 extensions, which is exactly what `EditorLanguages.EXTENSIONS`
+can highlight. Three consumers read it and one test pins it:
+
+- `buildSrc/BossFileTypes` generates the `CFBundleURLTypes`,
+  `CFBundleDocumentTypes` and `UTExportedTypeDeclarations` blocks at build time.
+- `FileTypeCategories` serves the Settings screen and the registration calls.
+- `WindowsFileTypeHandler` and `LinuxFileTypeHandler` derive ProgIDs and MIME
+  associations from it.
+- `FileTypeCategoriesTest` asserts its extension set and its extension-to-language
+  map equal `EditorLanguages.EXTENSIONS`, so what BOSS offers to open cannot drift
+  from what it can render. (`buildSrc/BossFileTypesTest` checks the same thing by
+  regex, because `buildSrc` compiles first and cannot see the real object.)
+
+**Launch Services can only make an app the default for a *type*, never for an
+extension.** 42 of the 83 extensions resolve to a system UTI, which BOSS claims
+as-is - 31 distinct UTIs, since several extensions share one (`.cpp`, `.cc` and
+`.cxx` are all `public.c-plus-plus-source`). The other 41 have no system UTI
+(`UTType(filenameExtension:)` answers with a `dyn.*` placeholder, which cannot be
+set as a default), so BOSS exports its own type for them, grouped by language into
+24 declarations. The per-extension answers in the resource are
+**measured, not derived**, and three of them are the reason: `.ts` resolves to
+`public.mpeg-2-transport-stream` (a video container), `.as` to
+`com.apple.applesingle-archive` (a binary archive) and `.edn` to `com.adobe.edn`.
+Claiming any of those would make BOSS the default application for a format it
+cannot open, so they are recorded as `rejectedSystemType` and get an exported type
+instead.
+
+**Windows registration is one `reg import`, not hundreds of `reg add`s.**
+`WindowsRegistryScript` generates a `.reg` script and `WindowsFileTypeHandler`
+imports it in a single process; the status is one `reg query <FileExts> /s` parsed
+once. The per-`reg add` version ran on the order of 415 processes for a
+five-category "Set all" plus 83 more to read the status, each with its own
+timeout, from a Settings screen and from the first-run offer at startup.
+
+It also removes a quoting hazard rather than trying to get it right: the
+`shell\open\command` value is `"C:\path\BOSS.exe" "%1"`, a string that both
+begins and ends with a double quote, and Java's Windows `ProcessImpl` treats an
+argument in that shape as already quoted and passes it through unescaped - so
+`reg` would have stored only the exe path and treated `"%1"` as a stray token,
+killing the one write that makes a double-clicked file reach BOSS. That premise
+could not be verified on a mac (the JDK ships only the Unix `ProcessImpl`), which
+is itself a reason to prefer the form where the question cannot arise. In a `.reg`
+file the value is escaped by `regEscape` and never passes through a command line.
+
+**The three platform handlers share one fold.** `DefaultHandlerState.reduce` is
+the single definition of "BOSS only when every type in the category is BOSS, and
+`OurEngine` outranks `Other`". Each handler had its own copy; they agreed, which
+is the only reason nothing was broken, and a fourth copy would not have.
+
+**`Settings > Browser` reads that fold too, and used to hold a boolean instead.**
+`DefaultBrowserSection` is the older surface for the same two categories, and it
+flattened the answer to `Boolean?` - which cannot tell "Safari holds http" from
+"a BOSS component holds http". So on exactly the machines the three-way state
+exists for, it said "BOSS is not your default browser" while `Settings > Default
+Apps` reported `OurEngine` and offered a Repair: two screens, one machine,
+opposite stories, and the one a user reaches from `Settings > Browser` was the
+wrong one. It now renders all three states, offers **Repair** for `OurEngine`
+(the same claim call, relabelled, because setting and repairing are the same
+work), and **re-reads** the state after a successful set rather than assuming
+`Ours`. `browserHandlerState()` is not on the `expect` declaration:
+`DefaultHandlerState` is desktopMain and lifting it into commonMain to widen an
+interface with one implementation would be churn.
+
+**Windows counts schemes now, and could not before.** `web-links` is schemes with
+no extensions, and `WindowsFileTypeHandler` read only the per-extension
+`UserChoice` keys - so that row reported `Other` on every machine, including one
+where BOSS did hold http and https, and `register` returned early on "no
+extensions" without ever writing the `StartMenuInternet` entry that puts BOSS in
+the browser list its own settings page sends the user to. Both sides now consult
+`schemesFor`, through `WindowsDefaultBrowserHandler.schemeState` and
+`registerAsBrowserCandidate` rather than a second copy of those registry reads
+and writes. macOS always counted both. The `reg` calls cannot run on a mac or
+Linux runner, so what is pinned in a test is the data fact underneath
+(`FileTypeCategoriesTest`: `web-links` has schemes and no extensions, `web-pages`
+the reverse) - if that flips, the reason for reading both sides flips with it.
+
+`OurEngine` is unreachable on Windows and Linux, and that is a fact about those
+platforms rather than a gap: the second "BOSS" is a macOS `.app` that Launch
+Services indexes because it declares `CFBundleURLTypes`. Nothing registers the
+engine under `StartMenuInternet` or writes a desktop entry for it. The shared type
+is still used on all three so the card has one story to tell.
+
+**The engine bundle used to be a second app called "BOSS".**
+`~/.boss/boss-chromium/BOSS.app` is the branded JxBrowser engine, and being
+Chromium it inherited `CFBundleURLTypes` (http, https) and
+`CFBundleDocumentTypes` (`public.html`). Branded, its `CFBundleName` is also
+"BOSS" and its id is `ai.rever.boss.browser` - so System Settings offered two
+indistinguishable "BOSS" entries under Default web browser, and picking the wrong
+one handed every link to a bare rendering engine with no window, no tabs and no
+session. Measured on a real machine: http, https and `public.html` all resolved to
+`ai.rever.boss.browser` while the app itself reported "not the default browser".
+
+Both halves of the fix matter. `build-chromium-branding.yml` now deletes both keys
+from the engine's `Info.plist` before the re-sign (`EngineBundlePlistStripTest`
+pins that, including the ordering: after the re-sign the edit breaks the seal), so
+future engines are clean. And `DefaultHandlerState` is a three-way answer -
+`Ours` / `OurEngine` / `Other` - so an install already in the broken state is told
+what actually happened and offered a Repair rather than "BOSS is not your default
+browser", which is the wrong story to tell somebody who did set it.
+
+**An existing install cannot be fixed by a version number.** The engine fix ships
+inside a *rebuild* of an already-published engine, so `version.txt` reads the same
+before and after and `ChromiumAutoDownloader.isChromiumInstalled`'s equality test
+short-circuits. So that function also asks the extracted bundle what it actually
+declares (`declaresBrowserTypes`): on macOS, an `Info.plist` still carrying
+`CFBundleURLTypes` or `CFBundleDocumentTypes` invalidates the directory and the
+existing download path replaces it. Three things about that check:
+
+- It sits beside the execute-bit check in the same function, which exists for the
+  same reason: catching a cached engine that is the right *version* and the wrong
+  *content*.
+- It is **bounded to one attempt per version** by a marker outside the engine
+  directory (`~/.boss/boss-chromium.types-repair`; a re-download replaces the
+  directory itself). Without it, an engine that still declares the keys after the
+  re-download - the rebuild never published, or published unrepaired - would
+  re-fetch ~160 MB on every launch, silently.
+- It **fails closed**: an unreadable or absent plist answers false, because
+  forcing a large download over a file we could not read is the worse mistake.
+  It matches `<key>NAME</key>` rather than the bare key name, so a comment or a
+  string value naming the key is not a declaration.
+
+`lsregister -u` on the engine bundle was tried first and does nothing: it returns
+0 and the bundle is still a candidate for `https` and `public.html` afterwards, so
+there is no download-free way to take it out of Launch Services.
+
+Launch Services is reached through `utils/mac/LaunchServices.kt`, bound with JNA.
+It replaced a `swift <tempfile>` shell-out per call, which needed Xcode installed
+and so could not work at all on most machines; the Swift scripts remain only as a
+fallback for URL schemes if `Native.load` fails.
+
+## A missing plugin no longer fails silently
+
+Browser, editor and terminal tabs are plugin-provided. `addTab` logged "Dropped
+tab - no factory registered for its type", returned -1, and every caller ignored
+it: with the browser plugin absent the OS could hand BOSS a link and nothing at
+all appeared, which is what "BOSS is my default browser and clicking a link does
+nothing" was.
+
+`SplitViewState.requireTabTypeThen` now gates every open on
+`TabTypeAvailability.require`, which:
+
+1. returns immediately when the type is registered (the normal case, so the fast
+   path does not suspend);
+2. otherwise **waits** through `awaitRegistryCondition` - at a cold start the
+   plugins have not registered yet, and prompting there would be a false alarm on
+   every launch, the same reason `WorkspaceApplier.awaitTabTypes` exists;
+3. only then raises a `MissingHandlerPluginPrompt` on `MissingHandlerPluginEventBus`,
+   whose delivery copies `PluginDependencyBus` deliberately: a `Channel` so exactly
+   one window asks, buffered so reporting never suspends the open, `trySend` so an
+   overflow is refused and logged rather than silently dropped;
+4. waits again, up to five minutes, for the plugin to register. **The dialog has no
+   success callback**: installing or enabling registers the tab type, which fires
+   the registry listeners, which completes this wait and performs the deferred
+   open. The file the user double-clicked appears by itself.
+
+It offers **Enable**, not Install, when the plugin is on disk and `DISABLED`.
+Installing something already installed cannot fix it, and both halves share
+`PluginDependencyResolution.installedAndOnDisk` so they cannot disagree about
+"installed" - the trap this repo's own AGENTS.md records as having broken the
+dependency prompt once already.
+
+`TabTypePlugins` maps a tab type to the plugin that provides it. It has to be a
+literal table: the mapping lives in each plugin's `plugin.json` and when the
+plugin is absent there is no manifest to read. It keys on the **type string**, not
+the whole `TabTypeId`, whose equality includes `pluginId` and `defaultOrder`.
+
 ## Documentation
 
-- [Core Subsystems](docs/SUBSYSTEMS.md) - Auth, UI, keyboard shortcuts, threading, default browser, runner, BossTerm
+- [Core Subsystems](docs/SUBSYSTEMS.md) - Auth, UI, keyboard shortcuts, threading, default applications, runner, BossTerm
 - [BossEditor](docs/BOSSEDITOR.md) - External editor dependency, LSP, PSI, editor features
 - [Application Features](docs/FEATURES.md) - Performance monitoring, dashboard, downloads, Chromium branding
 - [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) - Detailed shortcuts reference

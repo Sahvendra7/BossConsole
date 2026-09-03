@@ -521,6 +521,7 @@ object GlobalSearchService {
                         SearchResult.SettingResult(
                             section = entry.section,
                             pluginPageId = entry.pluginPageId,
+                            panelId = entry.panelId,
                             group = entry.group,
                             label = entry.label,
                             breadcrumb = entry.breadcrumb,

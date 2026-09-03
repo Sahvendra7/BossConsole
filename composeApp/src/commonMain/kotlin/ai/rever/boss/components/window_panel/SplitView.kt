@@ -6,6 +6,7 @@ import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.model.TabDropTarget
 import ai.rever.boss.components.overlays.OverlayCorner
+import ai.rever.boss.components.plugin.TabTypeAvailability
 import ai.rever.boss.components.plugin.disposePluginBrowsers
 import ai.rever.boss.components.plugin.tab_types.PanelHostTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -32,9 +33,15 @@ import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
+import ai.rever.boss.plugin.events.DiffOpenEvent
+import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.diff.DiffTabInfo
+import ai.rever.boss.plugin.tab.diff.DiffTabType
+import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.plugin.tab.jupyter.JupyterTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.project.DefaultWorkingDirectory
 import ai.rever.boss.topofmind.ActiveTab
@@ -89,6 +96,10 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -197,6 +208,77 @@ class SplitViewState(
     private val windowId: String,
     initialTabsComponent: BossTabsComponent? = null,
 ) {
+    /**
+     * Scope for the deferred opens in [requireTabTypeThen].
+     *
+     * Window-lived and cancelled by [dispose], which `BossAppStartupEffects`
+     * calls from a `DisposableEffect` keyed on this state alone. What it holds is
+     * a wait of up to five minutes on a person answering a dialog, so closing the
+     * window has to abandon that rather than leave a coroutine holding a
+     * reference to a disposed window's panels.
+     *
+     * `Dispatchers.Main`: every continuation ends in an `addTab`, which touches
+     * Compose state.
+     */
+    private val openScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    /**
+     * Cancels the deferred opens. Called when this state leaves the composition.
+     *
+     * Deliberately NOT called from `SplitViewStateRegistry.unregister`, which was
+     * the first attempt: that runs from a `DisposableEffect` keyed on seven
+     * values, only one of which is this state, so a change to any of the other
+     * six would cancel a live window's scope and leave every later deferred open
+     * silently doing nothing.
+     */
+    internal fun dispose() {
+        openScope.cancel()
+    }
+
+    /**
+     * Runs [open] once [typeId]'s plugin is available, asking the user to install
+     * or enable it if it is not.
+     *
+     * Every open below goes through this, because the alternative is what shipped:
+     * `addTab` logs "Dropped tab - no factory registered for its type", returns
+     * -1, and every caller ignores it - so with the browser plugin absent the OS
+     * could hand BOSS a link and nothing whatsoever appeared.
+     *
+     * The fast path is synchronous in effect: [TabTypeAvailability.require]
+     * returns immediately when the type is registered, which is the normal case,
+     * and `launch` on `Dispatchers.Main` from the UI thread runs the continuation
+     * without yielding to another frame. The suspension only happens when there
+     * is genuinely something to wait for.
+     *
+     * @param purpose what the user was trying to do, for the dialog's copy.
+     */
+    private fun requireTabTypeThen(
+        typeId: TabTypeId,
+        purpose: String,
+        open: () -> Unit,
+    ) {
+        if (tabRegistry.isRegistered(typeId)) {
+            open()
+            return
+        }
+        openScope.launch {
+            if (!TabTypeAvailability.require(tabRegistry, typeId, purpose)) return@launch
+            // The wait can be five minutes long, because what it waits for is a
+            // person answering a dialog. Cancelling the scope is the primary
+            // guard; this is the one that survives a window teardown that did not
+            // reach it, rather than adding a tab to a panel tree nothing renders.
+            if (SplitViewStateRegistry.getState(windowId) !== this@SplitViewState) {
+                splitViewLogger.debug(
+                    LogCategory.UI,
+                    "Dropping a deferred open; its window is gone",
+                    mapOf("typeId" to typeId.typeId),
+                )
+                return@launch
+            }
+            open()
+        }
+    }
+
     // Root node of the split tree
     private var _rootNode =
         mutableStateOf<SplitNode>(
@@ -512,7 +594,9 @@ class SplitViewState(
     }
 
     private fun findPanelWithNotebookTab(filePath: String): PanelTabMatch? =
-        findPanelWithTabMatching { tab -> tab is JupyterTabInfo && tab.filePath == filePath }
+        findPanelWithTabMatching { tab ->
+            tab is JupyterTabInfo && TabPaths.pathsMatch(tab.filePath, filePath)
+        }
 
     /** Find the first panel containing a tab that satisfies [predicate]. */
     private fun findPanelWithTabMatching(predicate: (TabInfo) -> Boolean): PanelTabMatch? {
@@ -532,6 +616,15 @@ class SplitViewState(
      * Used by "Open With > Editor" context menu action.
      */
     fun openFileInEditorTab(
+        filePath: String,
+        fileName: String,
+    ) {
+        requireTabTypeThen(CodeEditorTabType.typeId, "Opening $fileName") {
+            openFileInEditorTabNow(filePath, fileName)
+        }
+    }
+
+    private fun openFileInEditorTabNow(
         filePath: String,
         fileName: String,
     ) {
@@ -565,6 +658,42 @@ class SplitViewState(
     }
 
     /**
+     * Open a git diff in the active panel (from a [DiffOpenEvent], i.e. the
+     * git data provider's `openDiff` or a deep link). The diff tab type is
+     * registered by the editor-tab PLUGIN, not the host, so the gate is real:
+     * with that plugin absent or still starting, [requireTabTypeThen] waits for
+     * the type (or prompts) rather than dropping the open.
+     */
+    fun openDiffTabInActivePanel(event: DiffOpenEvent) {
+        requireTabTypeThen(DiffTabType.typeId, "Opening diff") {
+            openDiffTabNow(event)
+        }
+    }
+
+    private fun openDiffTabNow(event: DiffOpenEvent) {
+        val activeComponent = getActiveTabsComponent() ?: return
+
+        // Reuse an open diff of the same thing, like every other open path.
+        // Without this, clicking a changed file added a tab per click.
+        findPanelWithDiffTab(event)?.let { (panelId, component, tabIndex) ->
+            component.selectTab(tabIndex)
+            setActivePanel(panelId)
+            return
+        }
+
+        val diffTab =
+            DiffTabInfo.create(
+                filePath = event.filePath,
+                staged = event.staged,
+                fromRef = event.fromRef,
+                toRef = event.toRef,
+            )
+        activeComponent.addTab(diffTab).takeIf { it >= 0 }?.let {
+            activeComponent.selectTab(it)
+        }
+    }
+
+    /**
      * Open a URL in the active panel
      *
      * If the URL is already open in any panel, switches to that tab.
@@ -578,6 +707,16 @@ class SplitViewState(
         url: String,
         title: String,
         forceNewTab: Boolean = false,
+    ) {
+        requireTabTypeThen(FluckTabType.typeId, "Opening $title") {
+            openUrlInActivePanelNow(url, title, forceNewTab)
+        }
+    }
+
+    private fun openUrlInActivePanelNow(
+        url: String,
+        title: String,
+        forceNewTab: Boolean,
     ) {
         val activeComponent = getActiveTabsComponent()
 
@@ -654,23 +793,41 @@ class SplitViewState(
         command: String? = null,
         workingDirectory: String? = null,
     ) {
-        val activeComponent = getActiveTabsComponent()
+        requireTabTypeThen(TerminalTabType.typeId, "Opening a terminal") {
+            openTerminalInActivePanelNow(command, workingDirectory)
+        }
+    }
 
-        // Use provided working directory, or fall back to project path
+    /**
+     * Where a terminal opened in this window should start.
+     *
+     * Extracted from [openTerminalInActivePanelNow] to keep that function under
+     * the length limit once the availability gate split it in two; the rule it
+     * encodes is worth reading on its own anyway.
+     *
+     * `selectedOrNull` on the override too, not just `?:`. A run configuration
+     * with an unset working directory reaches here as "", which is not null, so
+     * it would pass straight through to the terminal service and land in the home
+     * directory - the thing this is meant to stop. Blank counts as absent, the
+     * same rule DefaultWorkingDirectory applies to a project path.
+     */
+    private fun terminalWorkingDirectory(workingDirectory: String?): String {
         val projectPath =
             WindowProjectStateRegistry
                 .get(windowId)
                 ?.selectedProject
                 ?.value
                 ?.path ?: ""
-        // selectedOrNull on the override too, not just `?:`. A run configuration with an unset
-        // working directory reaches here as "", which is not null, so it would pass straight
-        // through to the terminal service and land in the home directory - the thing this is
-        // meant to stop. Blank counts as absent, the same rule DefaultWorkingDirectory applies
-        // to a project path.
-        val terminalWorkingDir =
-            DefaultWorkingDirectory.selectedOrNull(workingDirectory)
-                ?: DefaultWorkingDirectory.resolve(projectPath)
+        return DefaultWorkingDirectory.selectedOrNull(workingDirectory)
+            ?: DefaultWorkingDirectory.resolve(projectPath)
+    }
+
+    private fun openTerminalInActivePanelNow(
+        command: String?,
+        workingDirectory: String?,
+    ) {
+        val activeComponent = getActiveTabsComponent()
+        val terminalWorkingDir = terminalWorkingDirectory(workingDirectory)
 
         // If no active component, this is likely the first terminal on app startup
         // Find any available panel to add the tab to
@@ -1111,11 +1268,26 @@ class SplitViewState(
     )
 
     /**
-     * Find the panel that contains an editor tab for the given file path.
-     * Unlike findPanelWithFile, this only matches EditorTabInfo (not browser tabs).
+     * An open diff of the same scope: same file, same side of the index, same
+     * refs. A staged diff and a working-tree diff of one file are different
+     * views and each gets its own tab, as in VS Code.
      */
-    private fun findPanelWithEditorTab(filePath: String): PanelTabMatch? =
-        findPanelWithTabMatching { tab -> tab is EditorTabInfo && tab.filePath == filePath }
+    private fun findPanelWithDiffTab(event: DiffOpenEvent): PanelTabMatch? =
+        findPanelWithTabMatching { tab ->
+            tab is DiffTabInfo &&
+                diffTabMatches(tab, event.filePath, event.staged, event.fromRef, event.toRef)
+        }
+
+    private fun findPanelWithEditorTab(filePath: String): PanelTabMatch? {
+        // A blank path never matches: normalize("") is "", so a blank query
+        // would focus the first Untitled editor tab.
+        if (filePath.isBlank()) return null
+        // pathsMatch keeps the canonicalPath syscalls out of the common case
+        // (identical spellings), paying for them only on a lexical mismatch.
+        return findPanelWithTabMatching { tab ->
+            tab is EditorTabInfo && TabPaths.pathsMatch(tab.filePath, filePath)
+        }
+    }
 
     /**
      * Find the panel that contains a tab with the given URL
@@ -1802,11 +1974,21 @@ fun SplitViewPanel(
     /** Window chrome for the foot of the vertical bar. Ignored in TOP position, which has none. */
     verticalBarFooter: @Composable () -> Unit = {},
     /**
-     * Window chrome for BELOW the split map, at the very foot of the vertical bar - Settings,
-     * Search, Sign Out and the tools launcher when nothing else is left to hold them. Ignored in
-     * TOP position, where those go back to the top bar or a floating cluster.
+     * Window chrome for BELOW the split map, at the very foot of the FULL vertical bar - Settings,
+     * Search, Sign Out and the tools launcher when nothing else is left to hold them.
+     *
+     * Ignored in TOP position, which has no vertical bar: there the same actions go to the top bar
+     * if it is up, an open plugin panel's foot if one is open, and a floating cluster otherwise.
+     * See `focusQuickActionsPlacement`.
      */
     verticalBarBelowMap: @Composable () -> Unit = {},
+    /**
+     * The same chrome for when the bar is down to its RAIL, at the very foot of that.
+     *
+     * A separate slot because the rail and the hover drawer are on screen together, so one slot
+     * handed to both drew the actions twice - see `WindowVerticalTabBar.belowTabs`.
+     */
+    verticalBarRailActions: @Composable () -> Unit = {},
     /**
      * Clearance above the vertical bar.
      *
@@ -1819,9 +2001,10 @@ fun SplitViewPanel(
     /**
      * Reports whether the hover-revealed bar is on screen.
      *
-     * The window needs it because the host's actions live under the bar's split map, and a
-     * COLLAPSED bar has no foot to put them in - so they float instead, until the drawer opens and
-     * gives them one again. Only this composable knows: the reveal state machine lives here.
+     * The window needs it because it decides where the host's actions go: a collapsed bar puts
+     * them at the foot of its rail, and a revealed drawer IS a full bar, so while it is up they
+     * move from the rail's bottom into the bar's foot. Only this composable knows: the reveal
+     * state machine lives here. See `verticalBarHost`.
      */
     onDrawerVisibleChange: (Boolean) -> Unit = {},
     /**
@@ -1829,9 +2012,11 @@ fun SplitViewPanel(
      *
      * Not the same question as the `tabBarCollapsed` preference, which is what the window used to
      * ask: a bar also rails itself when there is no room for a full one, and only this composable
-     * has measured the width. The window needs the MEASURED answer, because a rail has no foot to
-     * put the host's actions in - and while it believed the preference, a narrow window sent them
-     * to a foot that was not being drawn and they rendered nowhere at all.
+     * has measured the width. The window needs the MEASURED answer because it picks which of the
+     * bar's two layouts hosts the host's actions - a row under the split map, or a column at the
+     * bottom of the rail - and the preference alone cannot tell a self-railed narrow window from
+     * an expanded one. While it believed the preference, a narrow window sent them to a foot that
+     * was not being drawn and they rendered nowhere at all.
      */
     onBarRailedChange: (Boolean) -> Unit = {},
 ) {
@@ -1896,6 +2081,7 @@ fun SplitViewPanel(
                 onTabDropResult = onTabDropResult,
                 footer = verticalBarFooter,
                 belowMap = verticalBarBelowMap,
+                belowTabs = verticalBarRailActions,
                 topInset = verticalBarTopInset,
                 splitTree = splitTree,
             )
@@ -1968,6 +2154,8 @@ private fun WindowBarRow(
     onTabDropResult: (TabDropResult) -> Unit,
     footer: @Composable () -> Unit,
     belowMap: @Composable () -> Unit,
+    /** The rail's own copy of that chrome. See `WindowVerticalTabBar.belowTabs`. */
+    belowTabs: @Composable () -> Unit,
     /** Clearance above the bar, for the macOS traffic lights. See [SplitViewPanel]. */
     topInset: Dp,
     splitTree: @Composable (Modifier) -> Unit,
@@ -2016,6 +2204,7 @@ private fun WindowBarRow(
                 tabDragComponent = tabDragComponent,
                 footer = footer,
                 belowMap = belowMap,
+                belowTabs = belowTabs,
                 zoomed = splitViewState.zoomedPanelId != null,
                 onExitZoom = splitViewState::exitZoom,
             )

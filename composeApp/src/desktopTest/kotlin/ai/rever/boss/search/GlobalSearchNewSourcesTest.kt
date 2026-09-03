@@ -102,6 +102,31 @@ class GlobalSearchNewSourcesTest {
     }
 
     @Test
+    fun `a signpost carries a panel id and names no page to navigate to`() {
+        // The entry kind that points *out* of the Settings window: "AI Providers" now lives in the
+        // Secret Manager panel, and the row keeps the words a user still types for it. The dialog
+        // routes on panelId, so it has to survive the flattening - with section and pluginPageId
+        // both null, a reveal() would raise Settings on whatever page it was last on and highlight
+        // a label that is not there.
+        SearchSources.settingsSupplier = {
+            listOf(
+                entry(
+                    label = "AI Providers",
+                    breadcrumb = "Plugins > Secret Manager panel",
+                    keywords = listOf("anthropic", "api key"),
+                    panelId = "secret-manager",
+                    highlightable = false,
+                ),
+            )
+        }
+
+        val hit = resultsOf<SearchResult.SettingResult>("anthropic").first()
+        assertEquals("secret-manager", hit.panelId)
+        assertEquals(null, hit.section)
+        assertEquals(null, hit.pluginPageId)
+    }
+
+    @Test
     fun `a plugin page carries its page id and cannot be highlighted`() {
         SearchSources.settingsSupplier = {
             listOf(
@@ -188,12 +213,14 @@ class GlobalSearchNewSourcesTest {
         breadcrumb: String,
         keywords: List<String> = emptyList(),
         pluginPageId: String? = null,
+        panelId: String? = null,
         highlightable: Boolean = true,
     ) = SettingSearchRecord(
         label = label,
         breadcrumb = breadcrumb,
-        section = if (pluginPageId == null) "APPEARANCE" else null,
+        section = if (pluginPageId == null && panelId == null) "APPEARANCE" else null,
         pluginPageId = pluginPageId,
+        panelId = panelId,
         group = null,
         keywords = keywords,
         highlightable = highlightable,

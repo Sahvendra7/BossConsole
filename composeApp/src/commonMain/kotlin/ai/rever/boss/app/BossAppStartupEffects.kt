@@ -105,6 +105,19 @@ internal fun BossAppStartupEffects(state: BossAppState) {
         SplitViewStateRegistry.register(windowId, splitViewState)
     }
 
+    // Cancel the split state's deferred-open scope when the state itself goes.
+    //
+    // Keyed on `splitViewState` ALONE, deliberately. The obvious place for this
+    // was `SplitViewStateRegistry.unregister`, which is called from the big
+    // DisposableEffect below - and that one is keyed on seven values, only one of
+    // which is the split state. A change to any of the other six would have
+    // cancelled the scope of a state that is still live, after which every
+    // deferred open in that window silently did nothing for the rest of the
+    // session, with no error anywhere.
+    DisposableEffect(splitViewState) {
+        onDispose { splitViewState.dispose() }
+    }
+
     // Register this window's panel component store so the plugin reload path can
     // reset open sidebar panel slots across all windows (see PanelComponentStoreRegistry).
     // DisposableEffect (not LaunchedEffect like the registries below): a store
@@ -407,11 +420,6 @@ internal fun BossAppStartupEffects(state: BossAppState) {
 
         // Initialize EditorAPIAccess so host code can access editor settings via the plugin system
         ai.rever.boss.services.editor.EditorAPIAccess
-            .initialize(plugin)
-
-        // Initialize LlmProviderAPIAccess so Settings → AI Providers and
-        // PluginContext.llmProvider can reach the plugin that owns provider config
-        ai.rever.boss.services.llm.LlmProviderAPIAccess
             .initialize(plugin)
 
         onDispose {

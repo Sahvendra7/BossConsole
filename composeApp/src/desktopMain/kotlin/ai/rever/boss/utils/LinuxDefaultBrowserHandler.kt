@@ -18,10 +18,14 @@ import java.io.InputStreamReader
  */
 object LinuxDefaultBrowserHandler {
     private val logger = BossLogger.forComponent("LinuxDefaultBrowserHandler")
+
+    /** The desktop entry that means BOSS, as `xdg-settings` reports it. */
+    private const val DESKTOP_FILE_NAME = "boss.desktop"
+
     private val DESKTOP_FILE_PATH =
         File(
             System.getProperty("user.home"),
-            ".local/share/applications/boss.desktop",
+            ".local/share/applications/$DESKTOP_FILE_NAME",
         )
 
     /**
@@ -29,17 +33,40 @@ object LinuxDefaultBrowserHandler {
      *
      * Uses xdg-settings to query default web browser
      */
-    suspend fun isDefaultBrowser(): Result<Boolean> =
+    suspend fun isDefaultBrowser(): Result<Boolean> = browserHandlerState().map { it.isOurs }
+
+    /**
+     * Who owns the browser role right now, as the three-way answer the Settings
+     * cards share.
+     *
+     * As on Windows, [DefaultHandlerState.OurEngine] cannot occur: the engine
+     * that stole the role on macOS is an `.app` bundle Launch Services indexes,
+     * and nothing writes a desktop entry for it here. A name that is not
+     * `boss.desktop` is another browser.
+     */
+
+    /**
+     * What an `xdg-settings` answer means, separated from the process call that
+     * produces it so the mapping can be tested.
+     *
+     * `xdg-settings` prints the desktop entry's file name; some environments echo
+     * it with different case, hence the case-insensitive comparison.
+     */
+    internal fun stateForDesktopEntry(desktopEntry: String?): DefaultHandlerState =
+        when {
+            desktopEntry == null -> DefaultHandlerState.Other(null)
+            desktopEntry.equals(DESKTOP_FILE_NAME, ignoreCase = true) -> DefaultHandlerState.Ours
+            else -> DefaultHandlerState.Other(desktopEntry)
+        }
+
+    internal suspend fun browserHandlerState(): Result<DefaultHandlerState> =
         withContext(Dispatchers.IO) {
             try {
                 val defaultBrowser = getDefaultWebBrowser()
 
                 logger.debug(LogCategory.BROWSER, "Linux default browser check", mapOf("defaultBrowser" to (defaultBrowser ?: "none")))
 
-                // BOSS is default if xdg-settings returns "boss.desktop"
-                val isDefault = defaultBrowser == "boss.desktop"
-
-                Result.success(isDefault)
+                Result.success(stateForDesktopEntry(defaultBrowser))
             } catch (e: Exception) {
                 logger.error(LogCategory.BROWSER, "Error checking default browser on Linux", error = e)
                 Result.failure(e)
@@ -92,6 +119,24 @@ object LinuxDefaultBrowserHandler {
         }
 
     /**
+     * Writes (or rewrites) `~/.local/share/applications/boss.desktop` and
+     * refreshes the desktop database.
+     *
+     * Exposed for the Default Apps screen, which claims a file-type category with
+     * `xdg-mime default`. That only associates a MIME type the desktop entry
+     * already declares in its `MimeType=` line, so a claim made without this
+     * having run records an association no file can ever match - it looks like it
+     * worked and does nothing.
+     *
+     * @return true when the entry is in place.
+     */
+    fun ensureDesktopEntry(): Boolean {
+        val created = createDesktopFile()
+        if (created) updateDesktopDatabase()
+        return created
+    }
+
+    /**
      * Get the current default web browser
      */
     private fun getDefaultWebBrowser(): String? =
@@ -131,6 +176,28 @@ object LinuxDefaultBrowserHandler {
 
             val iconPath = getIconPath()
 
+            // Every MIME type any file-type category claims, plus the three
+            // scheme handlers. Declared here because `xdg-mime default` will only
+            // associate a type the desktop entry already lists - see
+            // ensureDesktopEntry.
+            //
+            // Read from the shared table rather than hardcoded, so a category
+            // added to boss-file-types.json reaches Linux without a second edit.
+            // Falls back to the browser-only list if the table failed to load, so
+            // a resource problem cannot cost the user their default browser.
+            val mimeTypes =
+                buildList {
+                    add("x-scheme-handler/http")
+                    add("x-scheme-handler/https")
+                    add("x-scheme-handler/boss")
+                    addAll(
+                        ai.rever.boss.filetypes.LinuxFileTypeHandler
+                            .allMimeTypes(),
+                    )
+                    add("text/html")
+                    add("application/xhtml+xml")
+                }.distinct().joinToString(";", postfix = ";")
+
             val desktopContent =
                 """
                 [Desktop Entry]
@@ -138,11 +205,11 @@ object LinuxDefaultBrowserHandler {
                 Type=Application
                 Name=BOSS Console
                 Comment=Business Operating System + Simulation - Intelligent service automation platform
-                Exec=$appPath %u
+                Exec=$appPath %U
                 Icon=$iconPath
                 Terminal=false
-                Categories=Network;WebBrowser;
-                MimeType=x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/boss;text/html;application/xhtml+xml;
+                Categories=Network;WebBrowser;Development;TextEditor;
+                MimeType=$mimeTypes
                 StartupNotify=true
                 StartupWMClass=BOSS
                 """.trimIndent()
@@ -265,7 +332,7 @@ object LinuxDefaultBrowserHandler {
                     "xdg-settings",
                     "set",
                     "default-web-browser",
-                    "boss.desktop",
+                    DESKTOP_FILE_NAME,
                 ).redirectErrorStream(true).start()
 
             val output =
@@ -304,7 +371,7 @@ object LinuxDefaultBrowserHandler {
                     ProcessBuilder(
                         "xdg-mime",
                         "default",
-                        "boss.desktop",
+                        DESKTOP_FILE_NAME,
                         mimeType,
                     ).redirectErrorStream(true).start()
 

@@ -10,7 +10,9 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Properties
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 
 // Detect Windows ARM64 — microkernel modules excluded (no protoc binaries)
@@ -128,6 +130,21 @@ val macPrereleaseShortVersionKey: String =
 
 println("📦 Building BOSS Version: $appVersion")
 println("🔢 macOS CFBundleVersion (build id): $macBundleBuildVersion")
+
+// The file types BOSS can be made the default handler for, read from the same
+// resource the running app reads (see BossFileTypes and FileTypeCategories).
+// Feeds the generated CFBundleURLTypes / CFBundleDocumentTypes /
+// UTExportedTypeDeclarations blocks in nativeDistributions.macOS.infoPlist.
+//
+// Read through providers.fileContents, not File.readText(): a plain read at
+// configuration time is not a tracked configuration-cache input, so editing the
+// table would leave a cached configuration that still holds the old plist and an
+// app that claims types the resource no longer lists.
+val bossFileTypesJson =
+    providers
+        .fileContents(layout.projectDirectory.file("src/desktopMain/resources/boss-file-types.json"))
+        .asText
+val bossFileTypes: BossFileTypes.Table = BossFileTypes.parse(bossFileTypesJson.get())
 
 // Path to libs.versions.toml for reading JxBrowser version (single source of truth)
 val libsVersionsFile = layout.projectDirectory.file("../gradle/libs.versions.toml")
@@ -285,51 +302,232 @@ val downloadBundledPlugins =
         val destDir = layout.buildDirectory.dir("bundled-plugins")
         outputs.dir(destDir)
 
+        // List of bundled plugins to download from GitHub releases.
+        // These are core plugins that ship with BossConsole.
+        //
+        // Declared at CONFIGURATION time, not inside doLast, so it can be a task
+        // input. As a literal inside the action it was invisible to Gradle:
+        // editing it did not invalidate anything, the task went UP-TO-DATE on a
+        // warm build directory and never ran, and the JAR of a plugin removed
+        // from the list stayed in `build/bundled-plugins` forever. Switching
+        // prepareBundledPluginsResources to Sync fixed the hop after this one;
+        // this is the hop itself. Verified: with editor-tab removed from the
+        // list and a stale JAR planted in the output directory, the task
+        // reported UP-TO-DATE and 64.7 MB shipped anyway.
+        val bundledPlugins =
+            listOf(
+                "risa-labs-inc/boss-plugin-api" to "boss-plugin-api",
+                // NOT terminal-tab. At 35.1 MB it is the largest thing left
+                // here, and it is the one plugin whose unbundled behaviour is
+                // not a prediction: the prefix-collision bug deleted it from
+                // every shipped build for months, the terminal worked anyway
+                // via ensureSystemPluginsInstalled(), and nobody filed a bug.
+                // Bundling it back would ship 35 MB to restore a state no
+                // user has ever been in.
+                "risa-labs-inc/boss-plugin-terminal" to "boss-plugin-terminal",
+                "risa-labs-inc/boss-plugin-fluck-browser" to "boss-plugin-fluck-browser",
+                // NOT editor-tab. It is 64.7 MB, a quarter of the whole
+                // download, and bundling buys almost nothing: the host's
+                // ensureSystemPluginsInstalled() fetches it from the
+                // plugin's latest GitHub release before load when it is not
+                // on disk, which is already how every developer build and
+                // every install of BOSS gets it (copyBundledPluginsLocal
+                // below has never copied it either). Bundling only covered a
+                // first launch with no network, and it went stale fast: the
+                // seed is frozen at BOSS build time while editor-tab shipped
+                // five releases in two days, so a bundled JAR below the
+                // host's minVersion floor is replaced on startup anyway.
+                "risa-labs-inc/boss-plugin-plugin-manager" to "boss-plugin-plugin-manager",
+                "risa-labs-inc/boss-plugin-bookmarks" to "boss-plugin-bookmarks",
+            )
+
+        inputs.property("bundledPlugins", bundledPlugins.map { (repo, prefix) -> "$repo|$prefix" })
+
+        // The real input is "the latest release of each of those repos", which
+        // Gradle cannot see. Three sibling tasks in this file opt out for the
+        // same reason. Without it a second invocation in one workspace is
+        // UP-TO-DATE: the prune below never runs and a newer release is never
+        // picked up.
+        outputs.upToDateWhen { false }
+
+        // A Provider, not a captured value: `ciProvider.orNull` below is read at
+        // EXECUTION time, and what makes that configuration-cache safe is that
+        // Gradle tracks a Provider read as an input -- not that the value was
+        // captured early. (The sibling gate on `prepareBundledPluginsResources`
+        // still uses System.getenv at configuration time; the two agree today by
+        // different mechanisms, and only that one decides whether this task is in
+        // the graph at all.)
+        //
+        // `prepareBundledPluginsResources` only routes here when CI == "true", so
+        // the release path always has it set; a developer invoking this task by
+        // hand does not.
+        val ciProvider = providers.environmentVariable("CI")
+
+        // A GitHub token, if the environment has one. Unauthenticated
+        // api.github.com is 60 requests per hour PER IP and GitHub-hosted
+        // runners share egress IPs, so five calls per build hit a 403 whose body
+        // carries no assets - which this task then reported as "No JAR asset
+        // found in release" for every plugin, twice in a row, while the same
+        // request succeeded from a laptop. Authenticated is 5,000/hour.
+        //
+        // A Provider for the same reason ciProvider is one: read at execution
+        // time and tracked by Gradle as an input. GH_TOKEN as well as
+        // GITHUB_TOKEN because that is what `gh` exports and a developer running
+        // this by hand is likely to have.
+        val githubTokenProvider =
+            providers
+                .environmentVariable("GITHUB_TOKEN")
+                .orElse(providers.environmentVariable("GH_TOKEN"))
+
         doLast {
             val bundledPluginsDir = destDir.get().asFile
             bundledPluginsDir.mkdirs()
 
-            // List of bundled plugins to download from GitHub releases
-            // These are core plugins that ship with BossConsole
-            val bundledPlugins =
-                listOf(
-                    "risa-labs-inc/boss-plugin-api" to "boss-plugin-api",
-                    "risa-labs-inc/boss-plugin-terminal-tab" to "boss-plugin-terminal-tab",
-                    "risa-labs-inc/boss-plugin-terminal" to "boss-plugin-terminal",
-                    "risa-labs-inc/boss-plugin-fluck-browser" to "boss-plugin-fluck-browser",
-                    "risa-labs-inc/boss-plugin-editor-tab" to "boss-plugin-editor-tab",
-                    "risa-labs-inc/boss-plugin-plugin-manager" to "boss-plugin-plugin-manager",
-                    "risa-labs-inc/boss-plugin-bookmarks" to "boss-plugin-bookmarks",
-                )
+            // Drop JARs belonging to no listed plugin. The per-plugin cleanup
+            // further down only fires for prefixes still in the list, so nothing
+            // ever removed the JAR of a plugin that LEFT it -- which is the whole
+            // bug above. Boundary-aware for the reason the collision fix gives:
+            // `boss-plugin-terminal` is a prefix of
+            // `boss-plugin-terminal-tab-2.5.59.jar`, so a bare startsWith would
+            // keep a de-listed terminal-tab alive under terminal's entry.
+            val listedJar =
+                bundledPlugins.map { (_, prefix) -> Regex("""^${Regex.escape(prefix)}-\d.*\.jar$""") }
+            bundledPluginsDir
+                .listFiles()
+                ?.filter { it.name.endsWith(".jar") && listedJar.none { re -> re.matches(it.name) } }
+                ?.forEach { orphan ->
+                    logger.lifecycle("🗑️  Removing JAR for a plugin no longer bundled: ${orphan.name}")
+                    orphan.delete()
+                }
 
             for ((repo, artifactPrefix) in bundledPlugins) {
                 try {
                     logger.lifecycle("📦 Fetching latest release for $repo...")
 
-                    // Get latest release info from GitHub API using curl
+                    // Get latest release info from GitHub API using curl.
+                    //
+                    // The status code is appended on its own last line rather
+                    // than trusted from the exit code: `curl -s` without `-f`
+                    // exits 0 on a 403, so the old call could not tell a
+                    // rate-limit body from a release. Not `-f` alone either,
+                    // because the body of the error is what says WHICH failure
+                    // it was.
                     val apiUrl = "https://api.github.com/repos/$repo/releases/latest"
+                    val token = githubTokenProvider.orNull?.takeIf { it.isNotBlank() }
+                    val authHeader =
+                        if (token != null) listOf("-H", "Authorization: Bearer $token") else emptyList()
                     val curlProcess =
-                        ProcessBuilder("curl", "-s", "-H", "Accept: application/vnd.github.v3+json", apiUrl)
-                            .redirectErrorStream(true)
+                        ProcessBuilder(
+                            listOf("curl", "-s", "-w", "\n%{http_code}", "-H", "Accept: application/vnd.github.v3+json") +
+                                authHeader +
+                                listOf(apiUrl),
+                        ).redirectErrorStream(true)
                             .start()
-                    val responseText = curlProcess.inputStream.bufferedReader().readText()
+                    // Never log the command: it carries the token.
+                    val rawResponse = curlProcess.inputStream.bufferedReader().readText()
                     curlProcess.waitFor()
+
+                    val httpStatus = rawResponse.substringAfterLast('\n').trim()
+                    val responseText = rawResponse.substringBeforeLast('\n')
+
+                    if (httpStatus != "200") {
+                        // Say which failure it is. All three used to print "No
+                        // JAR asset found in release", which sent the last
+                        // investigation looking for a deleted Gradle task
+                        // instead of a quota.
+                        val apiMessage =
+                            Regex(""""message"\s*:\s*"([^"]{0,200})""").find(responseText)?.groupValues?.get(1)
+                        val hint =
+                            when {
+                                httpStatus in listOf("403", "429") && token == null -> {
+                                    "rate limited and no GITHUB_TOKEN was set (60 requests/hour per IP unauthenticated)"
+                                }
+
+                                httpStatus in listOf("403", "429") -> {
+                                    "rate limited even with a token"
+                                }
+
+                                httpStatus == "401" -> {
+                                    "the token was rejected"
+                                }
+
+                                httpStatus == "404" -> {
+                                    "no release, or the repository is unreachable"
+                                }
+
+                                else -> {
+                                    "unexpected status"
+                                }
+                            }
+                        logger.warn("⚠️  GitHub API returned $httpStatus for $repo - $hint${apiMessage?.let { ": $it" } ?: ""}")
+                        continue
+                    }
 
                     // Parse JSON to find the JAR asset
                     val tagNameMatch = Regex(""""tag_name"\s*:\s*"([^"]+)"""").find(responseText)
                     val tagName = tagNameMatch?.groupValues?.get(1) ?: "unknown"
 
-                    // Find the JAR download URL (look for browser_download_url ending in .jar)
-                    val jarUrlMatch = Regex(""""browser_download_url"\s*:\s*"([^"]+$artifactPrefix[^"]*\.jar)"""").find(responseText)
+                    // Find the JAR download URL.
+                    //
+                    // `findAll` + the `-thin.jar` filter, not `find`: a plugin
+                    // release publishes BOTH `<prefix>-<version>.jar` (what
+                    // buildPluginJar produces, with the plugin's dependencies
+                    // bundled) and `<prefix>-<version>-thin.jar` (the module's
+                    // bare `:jar` output, which is given that classifier purely
+                    // so it stops clobbering the real one). Whichever GitHub
+                    // happens to list first won here, and for fluck-browser that
+                    // was the thin one -- every shipped bundle through 9.4.33
+                    // contains `boss-plugin-fluck-browser-1.2.24-thin.jar`,
+                    // 1 MB of a 4 MB plugin, missing everything it needs to run.
+                    //
+                    // This is exactly PluginStoreSetup.pickPluginJarUrl, which
+                    // the host uses for the same decision and which
+                    // PluginStoreSetupMinVersionGateTest already guards against
+                    // picking a thin JAR. The two pickers must not disagree.
+                    val jarUrl =
+                        Regex(""""browser_download_url"\s*:\s*"([^"]+${Regex.escape(artifactPrefix)}[^"]*\.jar)"""")
+                            .findAll(responseText)
+                            .map { it.groupValues[1] }
+                            .firstOrNull { !it.endsWith("-thin.jar") }
 
-                    if (jarUrlMatch == null) {
-                        logger.warn("⚠️  No JAR asset found in release for $repo")
+                    if (jarUrl == null) {
+                        // Reached only on a 200, so this now means what it says:
+                        // the release really has no non-thin JAR for this prefix.
+                        logger.warn("⚠️  Release $tagName of $repo has no non-thin JAR asset for '$artifactPrefix'")
                         continue
                     }
 
-                    val jarUrl = jarUrlMatch.groupValues[1]
                     val jarFileName = jarUrl.substringAfterLast("/")
                     val destFile = File(bundledPluginsDir, jarFileName)
+
+                    // Clean up other versions of THIS plugin.
+                    //
+                    // `startsWith(artifactPrefix)` is not a plugin-name boundary.
+                    // "boss-plugin-terminal" is a prefix of
+                    // "boss-plugin-terminal-tab-2.5.59.jar", and terminal is
+                    // processed one entry after terminal-tab in the list above --
+                    // so this deleted the 35 MB terminal plugin it had just
+                    // downloaded, logged it as an "old version", and finished
+                    // green. terminal-tab is absent from every shipped bundle.
+                    //
+                    // A plugin JAR is `<prefix>-<version>.jar`, so requiring the
+                    // version separator (a hyphen followed by a digit) is what
+                    // makes the prefix a boundary: "-tab-2.5.59.jar" does not
+                    // start with a digit, "-1.0.10.jar" does. A stale
+                    // `-thin.jar` still matches and is still cleaned up.
+                    //
+                    // Runs BEFORE the already-have-it check, and never touches
+                    // the file about to be kept: a directory left holding both
+                    // the real JAR and a thin one from before the previous
+                    // commit needs the thin one gone even on a no-op run.
+                    val ownVersionedJar = Regex("""^${Regex.escape(artifactPrefix)}-\d.*\.jar$""")
+                    bundledPluginsDir
+                        .listFiles()
+                        ?.filter { ownVersionedJar.matches(it.name) && it.name != jarFileName }
+                        ?.forEach { oldFile ->
+                            logger.lifecycle("🗑️  Removing old version: ${oldFile.name}")
+                            oldFile.delete()
+                        }
 
                     // Check if we already have this version
                     if (destFile.exists()) {
@@ -337,27 +535,63 @@ val downloadBundledPlugins =
                         continue
                     }
 
-                    // Clean up old versions of this plugin
-                    bundledPluginsDir
-                        .listFiles()
-                        ?.filter {
-                            it.name.startsWith(artifactPrefix) && it.name.endsWith(".jar")
-                        }?.forEach { oldFile ->
-                            logger.lifecycle("🗑️  Removing old version: ${oldFile.name}")
-                            oldFile.delete()
-                        }
-
                     // Download the JAR using curl
                     logger.lifecycle("⬇️  Downloading $jarFileName...")
                     val downloadProcess =
-                        ProcessBuilder("curl", "-sL", "-o", destFile.absolutePath, jarUrl)
+                        ProcessBuilder("curl", "-fsSL", "-o", destFile.absolutePath, jarUrl)
                             .redirectErrorStream(true)
                             .start()
-                    downloadProcess.waitFor()
+                    val downloadOutput =
+                        downloadProcess.inputStream
+                            .bufferedReader()
+                            .readText()
+                            .trim()
+                    val downloadExit = downloadProcess.waitFor()
+
+                    // `-f` so curl fails on a non-2xx instead of writing the
+                    // error page into the file: without it a 404 left an HTML
+                    // body at a `.jar` name, which the completeness check below
+                    // then counted as present.
+                    if (downloadExit != 0) {
+                        logger.warn("⚠️  Could not download $jarFileName from $repo (curl exit $downloadExit) $downloadOutput")
+                        destFile.delete()
+                        continue
+                    }
 
                     logger.lifecycle("✅ Downloaded $jarFileName (version: $tagName, size: ${destFile.length()} bytes)")
                 } catch (e: Exception) {
                     logger.warn("⚠️  Failed to download bundled plugin from $repo: ${e.message}")
+                }
+            }
+
+            // Every path out of the loop above is a warn-and-continue: a release
+            // whose GitHub call 403s, whose repo has no release yet, or whose
+            // asset regex matches nothing produces a log line and a green build.
+            // That is how a missing terminal-tab and a thin fluck-browser both
+            // shipped for months -- nothing ever asserted the directory was
+            // complete. So assert it here.
+            val landed = bundledPluginsDir.listFiles()?.map { it.name }.orEmpty()
+            val missing =
+                bundledPlugins
+                    .map { (_, artifactPrefix) -> artifactPrefix }
+                    .filter { artifactPrefix ->
+                        val versioned = Regex("""^${Regex.escape(artifactPrefix)}-\d.*\.jar$""")
+                        landed.none { versioned.matches(it) }
+                    }
+
+            if (missing.isEmpty()) {
+                logger.lifecycle("✅ All ${bundledPlugins.size} bundled plugins present")
+            } else {
+                val summary =
+                    "Bundled plugins missing after download: ${missing.joinToString(", ")} " +
+                        "(present: ${landed.sorted().joinToString(", ").ifEmpty { "none" }})"
+                // On CI this is a release about to go out without plugins it
+                // promises, which is worse than a failed build. Locally it stays
+                // a warning: a developer may legitimately have no network.
+                if (ciProvider.orNull == "true") {
+                    throw GradleException(summary)
+                } else {
+                    logger.warn("⚠️  $summary")
                 }
             }
         }
@@ -536,7 +770,14 @@ val copyPluginManagerToDev =
 
 // Task to prepare bundled plugins for app resources (used by native distributions)
 val prepareBundledPluginsResources =
-    tasks.register<Copy>("prepareBundledPluginsResources") {
+    // Sync, not Copy: Copy only ever ADDS to its destination, so a plugin
+    // dropped from the bundled list kept shipping out of a warm build
+    // directory -- the JAR stayed in bundled-plugins-resources forever and
+    // jpackage kept picking it up. Removing editor-tab from the list above
+    // appeared to do nothing until the directory was deleted by hand. CI
+    // starts clean so no release was wrong, but anyone testing a change to
+    // that list locally was reading a stale answer.
+    tasks.register<Sync>("prepareBundledPluginsResources") {
         group = "build"
         description = "Prepares bundled plugins in app resources structure for native distribution"
 
@@ -724,7 +965,6 @@ kotlin {
 
             // Compose Icons dependencies
             implementation(libs.compose.icons.feather)
-            implementation(libs.compose.icons.fontawesome)
             implementation(libs.compose.icons.simpleicons)
 
             // Supabase dependencies
@@ -791,6 +1031,13 @@ kotlin {
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
             implementation(libs.junit.jupiter)
+            // Test-only: supabase-kt's auth exceptions carry the HttpResponse that produced
+            // them, so asserting on what a failed sign-in tells the user means minting a real
+            // response. MockEngine is the supported way to get one without a socket.
+            implementation(libs.ktor.client.mock)
+            // Test-only: runTest skips the retry backoff in virtual time, so the send loop
+            // can be driven end to end without the test actually waiting 2 seconds.
+            implementation(libs.kotlinx.coroutines.test)
             // Compose UI testing (createComposeRule / onNodeWithText), so renderer
             // behaviour can be asserted against a real composition instead of
             // reasoned about. The API is JUnit 4 only; this module runs on the
@@ -1101,15 +1348,101 @@ compose.desktop {
             copyright = "© 2024 Risa Labs Inc. All rights reserved."
             vendor = "Risa Labs Inc."
 
-            // Bundle a complete, self-contained JVM
-            includeAllModules = true
-
-            // Note: When includeAllModules is true, the modules() call is redundant
-            // as all modules will be included. If you want to optimize size later,
-            // set includeAllModules = false and specify only required modules:
-            // modules("java.base", "java.desktop", "java.logging", "java.net.http",
-            //         "java.sql", "java.prefs", "java.scripting", "jdk.unsupported",
-            //         "java.naming", "java.xml", "java.management", "jdk.crypto.ec")
+            // Bundle a self-contained JVM that can run the app and nothing else.
+            //
+            // This was `includeAllModules = true`, which jlinks the ENTIRE JDK into
+            // every package. That is not "a complete JVM" in any sense a user
+            // benefits from -- it is a JVM plus the toolchain for producing Java
+            // software, shipped to people who are running an app. The bundled
+            // runtime carried javadoc, jshell, the JDI debugger, jdeps, jlink,
+            // jpackage itself, the HotSpot serviceability agent and the JDWP
+            // debug agent -- none of which any code path in BOSS can reach,
+            // because the tools that use them are command-line entry points and
+            // jpackage strips `bin/` from the image anyway.
+            //
+            // Measured on macOS arm64 (`./gradlew :composeApp:createRuntimeImage`,
+            // `du -sh composeApp/build/compose/tmp/main/runtime`):
+            //
+            //     includeAllModules = true    141 MB
+            //     tooling dropped             124 MB   (-17 MB)
+            //     jdk.localedata dropped       91 MB   (-50 MB)
+            //
+            // The list below is the module set the old image actually contained,
+            // minus that tooling. It is deliberately NOT a jdeps-minimal list:
+            // jdeps only sees static references, so a minimal list silently drops
+            // whatever is reached through ServiceLoader or reflection (crypto
+            // providers, charsets, the zip filesystem, JNDI backends) and the
+            // failure shows up at runtime on a user's machine, not in CI.
+            //
+            // `java.se` is the aggregator for every `java.*` module, so no
+            // platform API can go missing here -- only `jdk.*` implementation
+            // modules are enumerated, and only ones with a runtime consumer.
+            includeAllModules = false
+            modules(
+                // Every java.* module, as one aggregator. Costs a few unused
+                // modules (java.rmi, java.transaction.xa) and buys the guarantee
+                // that nothing in the platform API disappears.
+                "java.se",
+                // Not part of java.se. Kept because the passkey/credential paths
+                // probe for smartcard providers.
+                "java.smartcardio",
+                // Screen-reader support on Windows and Linux.
+                "jdk.accessibility",
+                // Attaching to a JVM: the performance/diagnostics MCP tools and
+                // the plugin host supervisor. jdk.internal.jvmstat is its backend.
+                "jdk.attach",
+                "jdk.internal.jvmstat",
+                // Non-ASCII charsets. A terminal emulator and an editor both
+                // decode files in encodings outside the java.base default set.
+                "jdk.charsets",
+                // javac. Kept conservatively: the editor-tab plugin embeds the
+                // Kotlin compiler, whose Java-interop path can ask for
+                // ToolProvider.getSystemJavaCompiler(). Dropping this module
+                // (and the 7.9 MB lib/ct.sym that rides with it) is worth another
+                // 14 MB once Kotlin analysis in the editor is confirmed to work
+                // without it.
+                "jdk.compiler",
+                // TLS. Both are ServiceLoader-discovered security providers, so
+                // nothing references them statically -- exactly the class of
+                // module a jdeps-minimal list would drop.
+                "jdk.crypto.cryptoki",
+                "jdk.crypto.ec",
+                // Dynamic call sites (jsr223 / invokedynamic linkage).
+                "jdk.dynalink",
+                // com.sun.net.httpserver -- the local MCP endpoint and the OAuth
+                // loopback listener.
+                "jdk.httpserver",
+                // Flight Recorder, and the JMX/JFR management surface behind the
+                // performance snapshot tools.
+                "jdk.jfr",
+                "jdk.management",
+                "jdk.management.agent",
+                "jdk.management.jfr",
+                // JavaScript <-> JVM bridging for the embedded browser.
+                "jdk.jsobject",
+                // JNDI backends, reached by name, never by reference.
+                "jdk.naming.dns",
+                "jdk.naming.rmi",
+                // Socket options and mmap modes used by the IPC layer.
+                "jdk.net",
+                "jdk.nio.mapmode",
+                // RandomGenerator implementations beyond java.util.Random.
+                "jdk.random",
+                // JAAS login modules, also ServiceLoader-discovered.
+                "jdk.security.auth",
+                "jdk.security.jgss",
+                // sun.misc.Unsafe -- netty and protobuf both require it.
+                "jdk.unsupported",
+                "jdk.unsupported.desktop",
+                // org.w3c.dom.* extensions used by the XML paths.
+                "jdk.xml.dom",
+                // The zip FileSystemProvider. Plugin jars are read through it,
+                // and it is discovered by ServiceLoader.
+                "jdk.zipfs",
+                // NOT included: jdk.localedata, 33 MB of CLDR data for locales
+                // this app has no text in. See the commit that removed it for
+                // the exact blast radius (three date labels).
+            )
 
             windows {
                 menuGroup = "BOSS"
@@ -1182,7 +1515,7 @@ compose.desktop {
 
                 // Note: bundleJRE is not a valid property in current Compose Desktop
                 // The JVM is automatically bundled when creating native distributions
-                // Use includeAllModules = true above to ensure all JVM modules are included
+                // See the modules() list above for which JVM modules go into it
 
                 // Code signing configuration
                 signing {
@@ -1211,7 +1544,26 @@ compose.desktop {
                 // again produced a plist with duplicate keys that only worked because the
                 // last declaration wins — the single-source DSL settings replace that.
                 infoPlist {
-                    extraKeysRawXml =
+                    // The URL schemes, document types and exported UTIs are
+                    // GENERATED from src/desktopMain/resources/boss-file-types.json
+                    // by buildSrc/BossFileTypes, not written here.
+                    //
+                    // What used to be here was one document type - public.html and
+                    // public.url, role Viewer - so BOSS could not be made the
+                    // default for a .md, a .sh or any of the 83 extensions its
+                    // editor has a lexer for. Launch Services can only make an app
+                    // the default for a *type*, and 41 of those extensions have no
+                    // system UTI at all, so the app has to export its own. That is
+                    // 28 document types and 24 exported types: generated, because
+                    // hand-writing it guarantees it drifts from EditorLanguages,
+                    // and a drift means BOSS agreeing to open a file it cannot
+                    // highlight or refusing one it can.
+                    //
+                    // Concatenated rather than interpolated into a trimIndent
+                    // block: trimIndent runs after interpolation and would
+                    // re-indent the generated XML by its own first line, which is
+                    // how a generated plist ends up with a mangled prolog.
+                    val staticKeys =
                         """
                         $macPrereleaseShortVersionKey
                         <key>NSCameraUsageDescription</key>
@@ -1222,34 +1574,15 @@ compose.desktop {
                         <string>BOSS uses Bluetooth to let you sign in with a passkey stored on your phone or tablet.</string>
                         <key>NSBluetoothPeripheralUsageDescription</key>
                         <string>BOSS uses Bluetooth to let you sign in with a passkey stored on your phone or tablet.</string>
-                        <key>CFBundleURLTypes</key>
-                        <array>
-                            <dict>
-                                <key>CFBundleURLName</key>
-                                <string>ai.rever.boss</string>
-                                <key>CFBundleURLSchemes</key>
-                                <array>
-                                    <string>boss</string>
-                                    <string>http</string>
-                                    <string>https</string>
-                                </array>
-                            </dict>
-                        </array>
-                        <key>CFBundleDocumentTypes</key>
-                        <array>
-                            <dict>
-                                <key>CFBundleTypeName</key>
-                                <string>HTML Document</string>
-                                <key>CFBundleTypeRole</key>
-                                <string>Viewer</string>
-                                <key>LSItemContentTypes</key>
-                                <array>
-                                    <string>public.html</string>
-                                    <string>public.url</string>
-                                </array>
-                            </dict>
-                        </array>
                         """.trimIndent()
+
+                    extraKeysRawXml =
+                        listOf(
+                            staticKeys,
+                            BossFileTypes.urlTypesXml(bossFileTypes, ownScheme = "boss", urlName = "ai.rever.boss"),
+                            BossFileTypes.documentTypesXml(bossFileTypes),
+                            BossFileTypes.exportedTypesXml(bossFileTypes),
+                        ).filter { it.isNotBlank() }.joinToString("\n")
                 }
             }
         }
@@ -1342,6 +1675,156 @@ tasks.register("extractJcefNatives") {
         // The jcefmaven library will download natives automatically
         // We just need to ensure the directory exists
         println("JCEF natives directory: ${jcefNativeDir.absolutePath}")
+    }
+}
+
+// Remove natives for platforms this package will never run on.
+//
+// Two third-party jars ship every platform's binaries in a single artifact and
+// leave it to the loader to pick one at runtime. That is the right call for a
+// library on Maven Central and the wrong one for a jar inside a signed, per-
+// platform desktop bundle, where the other platforms' copies are bytes every
+// user downloads, stores and code-signs for nothing.
+//
+//   skiko-awt-runtime-macos-arm64  publishes BOTH macOS dylibs (arm64 + x64) in
+//     the artifact named for arm64. The Compose plugin extracts the one this
+//     build needs to `app/libskiko-macos-arm64.dylib` and removes it from the
+//     jar -- leaving the jar holding nothing but the 22 MB x86_64 dylib, which
+//     an arm64-only bundle can never load. 9.4 MB of the packaged app.
+//
+//   sqlite-jdbc  ships ~20 builds: Linux ppc64/riscv64/armv6/armv7/x86/musl,
+//     FreeBSD, Windows x86/arm, and both Macs. Exactly one is loadable in any
+//     given package; the other ~10 MB is dead in all of them.
+//
+// This runs on the built app image, before the macOS re-sign in
+// extractCLIToAppResources, so the signature covers the trimmed jars.
+tasks.register("stripForeignPlatformNatives") {
+    description = "Strips other platforms' native binaries out of skiko and sqlite-jdbc in the app image"
+    group = "build"
+
+    // Configuration cache: capture everything the action needs at configuration
+    // time. The doLast lambda must not reach the enclosing script object nor
+    // call Task.project at execution time -- same rule as extractCLIToAppResources.
+    val appDirProvider = layout.buildDirectory.dir("compose/binaries/main/app")
+    val osName = System.getProperty("os.name").lowercase()
+    val osArch = System.getProperty("os.arch").lowercase()
+
+    // The build host is the target: Compose packages for the platform it runs
+    // on, and release.yml gives each platform its own runner.
+    val skikoToken =
+        when {
+            osName.contains("mac") -> "macos"
+            osName.contains("win") -> "windows"
+            else -> "linux"
+        } + "-" + if (osArch == "aarch64" || osArch == "arm64") "arm64" else "x64"
+
+    val sqliteOs =
+        when {
+            osName.contains("mac") -> "Mac"
+            osName.contains("win") -> "Windows"
+            else -> "Linux"
+        }
+    val sqliteArch = if (osArch == "aarch64" || osArch == "arm64") "aarch64" else "x86_64"
+
+    doLast {
+        val appDir = appDirProvider.get().asFile
+        if (!appDir.isDirectory) {
+            println("ℹ️  No app image at ${appDir.absolutePath} - nothing to strip")
+            return@doLast
+        }
+
+        // Rewrites a jar keeping only the entries `keep` accepts. Local to the
+        // action so it captures nothing from the build script. Returns the bytes
+        // saved, or 0 if the jar was left alone.
+        fun rewriteJar(
+            jar: File,
+            keep: (String) -> Boolean,
+        ): Long {
+            val before = jar.length()
+            val temp = File(jar.parentFile, "${jar.name}.stripping")
+            var dropped = 0
+            ZipFile(jar).use { zip ->
+                ZipOutputStream(temp.outputStream().buffered()).use { out ->
+                    for (entry in zip.entries()) {
+                        if (!keep(entry.name)) {
+                            dropped++
+                            continue
+                        }
+                        // Copying the ZipEntry preserves the method, and for a
+                        // STORED entry also the size and CRC the writer demands.
+                        out.putNextEntry(ZipEntry(entry))
+                        zip.getInputStream(entry).use { it.copyTo(out) }
+                        out.closeEntry()
+                    }
+                }
+            }
+            if (dropped == 0) {
+                temp.delete()
+                return 0
+            }
+            check(temp.renameTo(jar) || (jar.delete() && temp.renameTo(jar))) {
+                "Could not replace ${jar.absolutePath} with the stripped jar"
+            }
+            return before - jar.length()
+        }
+
+        var saved = 0L
+
+        // skiko: keep the native for this platform, drop the rest. The matching
+        // one is usually already gone (Compose extracts it next to the jar), so
+        // its absence is expected and must not be treated as a mis-detection.
+        val skikoNative = Regex("""(?:lib)?skiko-(?:macos|linux|windows)-(?:arm64|x64)\.(?:dylib|so|dll)(?:\.sha256)?$""")
+        appDir
+            .walkTopDown()
+            .filter { it.isFile && it.name.startsWith("skiko-awt-runtime-") && it.name.endsWith(".jar") }
+            .forEach { jar ->
+                val freed =
+                    rewriteJar(jar) { name ->
+                        val leaf = name.substringAfterLast('/')
+                        !skikoNative.matches(leaf) || leaf.contains(skikoToken)
+                    }
+                if (freed > 0) {
+                    saved += freed
+                    println("🧹 ${jar.name}: freed ${freed / 1024} KB of non-$skikoToken skiko natives")
+                }
+            }
+
+        // sqlite-jdbc: keep org/sqlite/native/<OS>/<arch>/, drop the other ~19.
+        // On Linux keep the musl build of the same arch too -- it is ~1 MB and
+        // covers a glibc-built package installed on a musl system.
+        val keepPrefixes =
+            buildList {
+                add("org/sqlite/native/$sqliteOs/$sqliteArch/")
+                if (sqliteOs == "Linux") add("org/sqlite/native/Linux-Musl/$sqliteArch/")
+            }
+        appDir
+            .walkTopDown()
+            .filter { it.isFile && it.name.startsWith("sqlite-jdbc-") && it.name.endsWith(".jar") }
+            .forEach { jar ->
+                // Refuse to strip a jar that does not contain the native we
+                // believe this platform needs: that means the OS/arch mapping is
+                // wrong, and stripping would leave a jar with no loadable native
+                // at all. Leaving it whole costs 10 MB; getting it wrong breaks
+                // every SQLite read on the platform.
+                val hasOurs =
+                    ZipFile(jar).use { zip ->
+                        zip.entries().asSequence().any { e -> keepPrefixes.any { e.name.startsWith(it) } }
+                    }
+                if (!hasOurs) {
+                    println("⚠️  ${jar.name}: no native under ${keepPrefixes.first()} - leaving it intact")
+                    return@forEach
+                }
+                val freed =
+                    rewriteJar(jar) { name ->
+                        !name.startsWith("org/sqlite/native/") || keepPrefixes.any { name.startsWith(it) }
+                    }
+                if (freed > 0) {
+                    saved += freed
+                    println("🧹 ${jar.name}: freed ${freed / 1024} KB of non-$sqliteOs/$sqliteArch SQLite natives")
+                }
+            }
+
+        println("✅ Foreign-platform natives stripped: ${saved / 1024 / 1024} MB freed")
     }
 }
 
@@ -1806,11 +2289,15 @@ afterEvaluate {
         // Ensure bundled plugins are prepared
         dependsOn("prepareBundledPluginsResources")
 
-        // Task chain: createDistributable → signPty4jBinaries → extractCLIToAppResources.
-        // Both finalizers are wired unconditionally so the signing decision is NOT
-        // needed at configuration time (keeps the keychain scan lazy): when signing
-        // is disabled, signPty4jBinaries skips itself via its own onlyIf and the
-        // CLI extraction still runs.
+        // Every platform trims the app image; only macOS signs it afterwards.
+        finalizedBy("stripForeignPlatformNatives")
+
+        // Task chain: createDistributable → stripForeignPlatformNatives →
+        // signPty4jBinaries → extractCLIToAppResources.
+        // The signing finalizers are wired unconditionally so the signing decision
+        // is NOT needed at configuration time (keeps the keychain scan lazy): when
+        // signing is disabled, signPty4jBinaries skips itself via its own onlyIf
+        // and the CLI extraction still runs.
         if (isMacOS) {
             finalizedBy("signPty4jBinaries", "extractCLIToAppResources")
             println(
@@ -1819,9 +2306,15 @@ afterEvaluate {
         }
     }
 
-    // signPty4jBinaries runs after createDistributable, then triggers extractCLIToAppResources
-    tasks.findByName("signPty4jBinaries")?.apply {
+    // The strip must land before anything signs or packages the image, or the
+    // signature seals jars that are about to change underneath it.
+    tasks.findByName("stripForeignPlatformNatives")?.apply {
         mustRunAfter("createDistributable")
+    }
+
+    // signPty4jBinaries runs after the image is trimmed, then triggers extractCLIToAppResources
+    tasks.findByName("signPty4jBinaries")?.apply {
+        mustRunAfter("createDistributable", "stripForeignPlatformNatives")
         if (isMacOS) {
             finalizedBy("extractCLIToAppResources")
             println("📝 signPty4jBinaries will be finalized by extractCLIToAppResources")
@@ -1833,7 +2326,7 @@ afterEvaluate {
     // is skipped — so it needs no config-time signing check.
     tasks.findByName("extractCLIToAppResources")?.apply {
         dependsOn("generateVersionedCLIScripts")
-        mustRunAfter("signPty4jBinaries")
+        mustRunAfter("signPty4jBinaries", "stripForeignPlatformNatives")
         println("📝 extractCLIToAppResources will depend on generateVersionedCLIScripts")
     }
 
@@ -1843,6 +2336,12 @@ afterEvaluate {
             mustRunAfter("signPty4jBinaries", "extractCLIToAppResources")
             println("📝 packageDmg will run after PTY4J signing and CLI extraction")
         }
+    }
+
+    // Linux and Windows have no signing step to order against, so they need the
+    // strip wired to their packaging tasks directly.
+    listOf("packageDeb", "packageRpm", "packageMsi", "packageAppImage").forEach { name ->
+        tasks.findByName(name)?.mustRunAfter("stripForeignPlatformNatives")
     }
 
     // Linux: Fix .desktop file after DEB packaging to add StartupWMClass
