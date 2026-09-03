@@ -2379,7 +2379,16 @@ internal class BrowserHandleImpl(
         return try {
             block()
         } catch (e: Exception) {
-            if (isTransportFailure(e)) connectionDead.set(true)
+            if (isTransportFailure(e)) {
+                connectionDead.set(true)
+                // isValid has just flipped without a disposal, and nothing unregisters here -
+                // the registration is only dropped later by reconcileOrphanedBrowsers or at
+                // window teardown. ActiveBrowserRegistry recomputes only on register/unregister,
+                // so without this its window set stays stale in the dangerous direction: the
+                // browser menu items stay ENABLED, keep swallowing Cmd+[ window-wide, and
+                // activeIn then answers null. Republishing re-reads isValid and drops the window.
+                ActiveBrowserRegistry.republish()
+            }
             logger.debug(
                 LogCategory.BROWSER,
                 "Browser sync call failed",
