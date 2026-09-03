@@ -242,11 +242,29 @@ class NewTabUrlFieldTest {
         settle()
         rule.onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
         settle()
+        rule.onNodeWithText(DEEP_ROW).assertDoesNotExist()
         confirm()
 
         // Escape rejected the proposal, so the typed text is what is left - and "git" is
         // not an address, so it is searched for.
         assertEquals(listOf("https://www.google.com/search?q=git"), opened)
+    }
+
+    @Test
+    fun `accepting a completion leaves the list closed`() {
+        openDialog()
+
+        rule.onNode(hasSetTextAction()).performTextInput("git")
+        settle()
+        rule.onNodeWithText(DEEP_ROW).assertExists()
+
+        rule.onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Tab) }
+        settle()
+
+        // Accepting rewrites the field, which re-keys the debounced lookup - so closing the
+        // list by clearing the flag alone left it to re-open one debounce later, under a
+        // comment claiming the opposite.
+        rule.onNodeWithText(DEEP_ROW).assertDoesNotExist()
     }
 
     @Test
@@ -286,5 +304,34 @@ class NewTabUrlFieldTest {
         val row = UrlHistoryProvider.getSuggestions("foo & bar", limit = 10).single { it.isSearchSuggestion }
 
         assertEquals("https://www.google.com/search?q=foo+%26+bar", row.url)
+    }
+
+    @Test
+    fun `a percent and a plus in the query survive encoding`() {
+        // Sharing the encoder fixed `&` and `#` but left these two: `100%` went out as a
+        // truncated escape, `a%26b` reached Google as `a&b` - the user's own text read back
+        // as a separator - and `a + b` became `a+++b`, which reads as `a   b`.
+        assertEquals(
+            "https://www.google.com/search?q=100%25+cotton",
+            searchRowFor("100% cotton"),
+        )
+        assertEquals("https://www.google.com/search?q=a+%2B+b", searchRowFor("a + b"))
+        // The `%` a replacement introduces must not itself be re-escaped, which is why `%`
+        // is replaced first.
+        assertEquals("https://www.google.com/search?q=a%2526b", searchRowFor("a%26b"))
+    }
+
+    private fun searchRowFor(query: String): String {
+        val rows = UrlHistoryProvider.getSuggestions(query, limit = 10)
+        return rows.single { it.isSearchSuggestion }.url
+    }
+
+    private companion object {
+        /**
+         * A dropdown row's title, and only a dropdown row's: the field itself renders the
+         * URL, so this is what tells "the list is on screen" apart from "the field holds a
+         * completion".
+         */
+        const val DEEP_ROW = "Pull requests"
     }
 }

@@ -152,9 +152,19 @@ enum class TabType(
  * Internal so the suggestion provider builds its search row with the same encoder the
  * confirm path uses - they produced different URLs for the same text, so clicking the row
  * and pressing Enter searched for different things.
+ *
+ * Order is load-bearing, and both leading replacements are there because of a character
+ * this used to pass through:
+ *  - `%` goes FIRST, or the escapes the later replacements introduce get re-escaped. Left
+ *    out entirely, searching for `100%` sent Google a truncated escape and `a%26b` reached
+ *    it as `a&b` - the user's literal text read back as a separator.
+ *  - `+` goes before the space, or the `+` this line writes for a space is turned back into
+ *    a literal plus. Left out, `a + b` became `a+++b`, which Google reads as `a   b`.
  */
 internal fun encodeUrlParameter(input: String): String =
     input
+        .replace("%", "%25")
+        .replace("+", "%2B")
         .replace(" ", "+")
         .replace("&", "%26")
         .replace("#", "%23")
@@ -343,6 +353,13 @@ fun NewTabDialog(
     // completion after a delete for the same reason. Only an edit that ADDS characters
     // re-arms it.
     var completionAllowed by remember { mutableStateOf(true) }
+    // The text a dismissal applies to, or null. Escape and an accepted completion both put
+    // the list away, but neither of them can do that by writing `showUrlDropdown` alone:
+    // the suggestion lookup is debounced, so a lookup already in flight - or the one an
+    // accept starts by rewriting the field - lands afterwards and re-opens the list from
+    // under them. Held as the TEXT rather than a flag so it expires the moment the user
+    // types something else, which is exactly when the list should come back.
+    var suggestionsDismissedFor by remember { mutableStateOf<String?>(null) }
     // Two suppressions, both DERIVED rather than written into state:
     //  - over a selection the ghost reads as field content that escaped the highlight, and
     //    Enter would commit the very text the user selected in order to replace it.
@@ -395,7 +412,8 @@ fun NewTabDialog(
             // stored entry, which is milliseconds at the 1000-entry cap but is still work
             // that has no business between a keystroke and its frame.
             urlSuggestions = withContext(Dispatchers.Default) { UrlHistoryProvider.getSuggestions(urlText) }
-            showUrlDropdown = urlSuggestions.isNotEmpty()
+            // Read after the delay, so a dismissal made DURING the debounce is honoured.
+            showUrlDropdown = urlSuggestions.isNotEmpty() && urlText != suggestionsDismissedFor
             selectedSuggestionIndex = -1
         } else {
             urlSuggestions = emptyList()
@@ -1217,6 +1235,10 @@ fun NewTabDialog(
                                     }
                                     urlField = newValue
                                     if (!textChanged) return@OutlinedTextField
+                                    // Typing is what un-dismisses the list: a dismissal is
+                                    // about the text it was made against, and this is no
+                                    // longer that text.
+                                    suggestionsDismissedFor = null
                                     inputText = newValue.text
                                     urlText = newValue.text
                                     // Recomputed HERE, against the suggestions already in
@@ -1309,7 +1331,13 @@ fun NewTabDialog(
                                                             // Accepting moves past the list, so it
                                                             // closes with the proposal - the same
                                                             // as the address bar's Right path.
+                                                            // Recorded against the accepted text
+                                                            // too: the write above re-keys the
+                                                            // suggestion effect, which would
+                                                            // otherwise re-open the list one
+                                                            // debounce later.
                                                             showUrlDropdown = false
+                                                            suggestionsDismissedFor = completion.display
                                                             true
                                                         } else {
                                                             // Nothing to accept: Tab has to keep
@@ -1341,6 +1369,10 @@ fun NewTabDialog(
                                                     Key.Escape -> {
                                                         if (showUrlDropdown || urlCompletion != null) {
                                                             showUrlDropdown = false
+                                                            // A lookup still inside the debounce
+                                                            // would otherwise land and re-open
+                                                            // the list Escape just closed.
+                                                            suggestionsDismissedFor = urlField.text
                                                             // The ghost is a proposal, so the key
                                                             // that rejects the list rejects it
                                                             // too. Leaving it behind meant Escape

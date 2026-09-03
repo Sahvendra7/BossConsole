@@ -173,6 +173,33 @@ internal fun startsWord(
     }
 
 /**
+ * What matching needs to know about one stored URL, derived from the URL string alone.
+ *
+ * [canonicalUrlKey] scans and [suggestableHost] constructs a `java.net.URL` - and throws and
+ * unwinds a `MalformedURLException` for every malformed row - and both used to run per entry
+ * per KEYSTROKE. Neither depends on anything but the URL, so the result is memoized on it
+ * and the hot loop is left as string scanning.
+ *
+ * Keyed by the whole URL and never invalidated, because there is nothing to invalidate: the
+ * same string always derives the same facts. That leaves only growth to bound, and the store
+ * these describe is itself capped, so the table is emptied rather than evicted from once it
+ * drifts past the cap - a stale key costs one re-derive, and re-deriving is what this used
+ * to do every time.
+ */
+private class UrlFacts(
+    val address: String,
+    val suggestable: Boolean,
+)
+
+private val urlFacts = ConcurrentHashMap<String, UrlFacts>()
+
+private fun factsFor(url: String): UrlFacts {
+    urlFacts[url]?.let { return it }
+    if (urlFacts.size > MAX_ENTRIES + PRUNE_SLACK) urlFacts.clear()
+    return urlFacts.getOrPut(url) { UrlFacts(canonicalUrlKey(url), suggestableHost(url) != null) }
+}
+
+/**
  * One matched entry with the facts its ranking needs, computed once.
  *
  * [canonicalUrlKey] parses, and reading it from inside a comparator would parse the same URL
@@ -236,26 +263,34 @@ internal fun rankMatches(
     val typed = normalized.lowercase()
 
     return entries
-        // The gate `addUrl` applies to new visits, applied here to what gets SUGGESTED. It
-        // cannot be applied on load: `loadHistory` feeds the map that `saveHistory` writes
-        // back, so dropping an entry there silently purges it from the user's history file.
-        // A `javascript:` or `file://` row in a legacy or tampered file is not something to
-        // offer as a completion the field fills in and Enter opens.
-        .filter { suggestableHost(it.url) != null }
         .mapNotNull { entry ->
-            val address = canonicalUrlKey(entry.url)
+            val facts = factsFor(entry.url)
+            // The gate `addUrl` applies to new visits, applied here to what gets SUGGESTED.
+            // It cannot be applied on load: `loadHistory` feeds the map that `saveHistory`
+            // writes back, so dropping an entry there silently purges it from the user's
+            // history file. A `javascript:` or `file://` row in a legacy or tampered file is
+            // not something to offer as a completion the field fills in and Enter opens.
+            if (!facts.suggestable) return@mapNotNull null
+            val address = facts.address
+            // Capped HERE as well as in `addUrl`, because a file written by an older build
+            // can hold a title of any length, and this is the loop the cap exists to bound.
+            // Capping in `loadHistory` instead would be destructive: that map is what
+            // `saveHistory` writes back, so it would truncate the user's own file.
+            // `take` returns the receiver when it is already short enough, so the common
+            // case allocates nothing.
+            val title = entry.title.take(MAX_TITLE_LENGTH)
             // Per-term address hits, computed ONCE. Falling through to the title used to
             // re-scan the address for every term, which is the common case (most entries
             // do not match) and measured about a third of the whole matching pass.
             val addressHits = terms.map { startsWord(address, it) }
             val addressWordStart = addressHits.all { it }
             val wordStart =
-                addressWordStart || terms.indices.all { addressHits[it] || startsWord(entry.title, terms[it]) }
+                addressWordStart || terms.indices.all { addressHits[it] || startsWord(title, terms[it]) }
             // The fallback: every term appears SOMEWHERE. Only consulted when no word-start
             // reading of the query works, so it can never displace a word-start hit.
             val loose =
                 !wordStart &&
-                    terms.all { address.contains(it, ignoreCase = true) || entry.title.contains(it, ignoreCase = true) }
+                    terms.all { address.contains(it, ignoreCase = true) || title.contains(it, ignoreCase = true) }
             if (!wordStart && !loose) {
                 null
             } else {
@@ -327,7 +362,14 @@ private const val MAX_ENTRIES = 1000
 /** How far past [MAX_ENTRIES] the map may drift before a prune, so pruning stays amortised. */
 private const val PRUNE_SLACK = 200
 
-/** Longest stored page title. Attacker-controlled, and word-scanned on every keystroke. */
+/**
+ * Longest page title a match will scan. Attacker-controlled - a page sets its own
+ * `document.title` - and word-scanned on every keystroke of every URL field.
+ *
+ * Enforced in two places on purpose: `addUrl` caps what is STORED, and [rankMatches] caps
+ * what is READ, because a history file written before the cap existed still holds whatever
+ * the page put there.
+ */
 private const val MAX_TITLE_LENGTH = 256
 
 object UrlHistoryManager {

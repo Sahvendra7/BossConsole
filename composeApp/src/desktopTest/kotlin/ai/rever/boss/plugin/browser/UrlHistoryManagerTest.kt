@@ -14,8 +14,10 @@ import kotlin.test.assertTrue
  * recorded, how one page recorded under two spellings collapses, and the ordering the URL
  * bar actually sees.
  *
- * [UrlHistoryManager.historyFile] is pointed at a scratch file so this exercises the real
- * read/write path without reading or writing the developer's own history.
+ * [UrlHistoryManager.historyFile] is pointed at a scratch file so no test here reads or
+ * writes the developer's own history. The teardown does re-read it, deliberately:
+ * [UrlHistoryManager] is a process-global store, and leaving it holding a deleted scratch
+ * file would strand every other test in the run.
  */
 class UrlHistoryManagerTest {
     private lateinit var tempFile: File
@@ -197,5 +199,63 @@ class UrlHistoryManagerTest {
 
         val held = UrlHistoryManager.getSuggestions("example", limit = 10_000)
         assertTrue(held.size <= 1_200, "expected the store to be pruned, held ${held.size}")
+    }
+
+    @Test
+    fun `a title from an older file is only scanned up to the cap`() {
+        // `addUrl` caps what it STORES, but a file written before that cap existed still
+        // holds whatever the page put in its `document.title` - and matching is the loop the
+        // cap exists to bound. Capping in `loadHistory` instead would be destructive: that
+        // map is what `saveHistory` writes back.
+        val title = "x".repeat(300) + " needle"
+        tempFile.writeText(
+            """
+            [{"url": "https://example.com/", "title": "$title",
+              "domain": "example.com", "visitCount": 1, "lastVisited": $NOW}]
+            """.trimIndent(),
+        )
+        UrlHistoryManager.loadHistory()
+
+        // "needle" starts at index 301, past the 256-character cap, so it is not scanned.
+        assertEquals(emptyList(), UrlHistoryManager.getSuggestions("needle"))
+        // And the entry itself is untouched: the cap bounds the scan, it does not rewrite
+        // the user's history.
+        assertEquals(title, UrlHistoryManager.getSuggestions("example.com").single().title)
+    }
+
+    @Test
+    fun `the prune waits for the slack and then cuts back to the cap`() {
+        // The test above only shows that SOMETHING prunes. What makes it affordable is the
+        // shape: pruning is a sort, so it must not run on every visit past the cap, and when
+        // it does run it has to cut all the way back - otherwise the next visit sorts again.
+        fun store(size: Int) =
+            (1..size)
+                .associate { i ->
+                    // Keyed the way the store keys itself, or `retainAll` drops everything.
+                    distinctPageKey("https://site$i.example/") to
+                        UrlHistoryEntry(
+                            url = "https://site$i.example/",
+                            title = "Site $i",
+                            domain = "site$i.example",
+                            visitCount = i,
+                            lastVisited = NOW,
+                        )
+                }.toMutableMap()
+
+        val atSlack = store(1_200)
+        pruneIfOversized(atSlack, NOW)
+        assertEquals(1_200, atSlack.size, "the slack is what keeps pruning amortised")
+
+        val pastSlack = store(1_201)
+        pruneIfOversized(pastSlack, NOW)
+        assertEquals(1_000, pastSlack.size, "a prune has to cut to the cap, not to the slack")
+        // What survives is the best-ranked tail, not an arbitrary 1000.
+        assertTrue(distinctPageKey("https://site1201.example/") in pastSlack)
+        assertTrue(distinctPageKey("https://site1.example/") !in pastSlack)
+    }
+
+    private companion object {
+        /** A fixed clock, so ranking inside a prune does not depend on when the test runs. */
+        const val NOW = 1_800_000_000_000L
     }
 }

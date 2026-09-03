@@ -155,6 +155,17 @@ class HistoryMatchingTest {
     }
 
     @Test
+    fun `a row with no suggestable host is never answered`() {
+        // The gate `addUrl` applies to new visits, applied here to what gets SUGGESTED. It
+        // cannot be applied on load - `loadHistory` feeds the map `saveHistory` writes back -
+        // so a `javascript:` or `file://` row in a legacy or tampered file has to be dropped
+        // at match time instead. It is not something to offer as a completion the field fills
+        // in and Enter opens.
+        assertEquals(emptyList(), rank("alert", entry("javascript:alert(1)", title = "note", visits = 99)))
+        assertEquals(emptyList(), rank("notes", entry("file:///Users/me/notes.html", title = "notes", visits = 99)))
+    }
+
+    @Test
     fun `the mid-word fallback does not resurrect query-string noise above a real hit`() {
         val real = entry("https://localhost:3000/", title = "Dev")
         val oauth =

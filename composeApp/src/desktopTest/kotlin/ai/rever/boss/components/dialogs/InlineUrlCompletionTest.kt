@@ -190,6 +190,65 @@ class InlineUrlCompletionTest {
     }
 
     @Test
+    fun `a query string disqualifies the address, not the host it is on`() {
+        // Both reasons for refusing it - a tail longer than the field, and replaying an
+        // expired request - are about the full address. Applied to the entry instead, the
+        // sole `accounts.google.com` visit being an OAuth URL meant typing "acc" offered
+        // nothing at all.
+        val oauth = history("https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=y")
+
+        assertEquals("accounts.google.com", display("acc", oauth))
+    }
+
+    @Test
+    fun `userinfo in a stored URL never reaches the field`() {
+        // `canonicalUrlKey` keeps a `user@`, while `java.net.URL` reads the host as what
+        // follows it - so a single drive-by visit to this would put `github.com@…` one Tab
+        // away from a typed "git", and Enter would open evil.example.
+        val spoof = history("https://github.com@evil.example/")
+
+        assertNull(display("git", spoof))
+        assertNull(display("github.com", spoof))
+    }
+
+    @Test
+    fun `a typed scheme still completes`() {
+        // `https://git` carries a `:`, which used to read as "a host has been named" and
+        // turned the ghost off entirely - while the dropdown, which canonicalises a pasted
+        // query, found the entry. The two halves disagreed on the easiest input to compare.
+        val suggestions = history("https://github.com/")
+
+        assertEquals("https://github.com", display("https://git", suggestions))
+        assertEquals("http://github.com", display("http://git", suggestions))
+        // And the security rule survives the normalization: a scheme does not reopen the
+        // host once the typed text names one.
+        assertNull(display("https://paypal.com", history("https://paypal.com-login.evil.example/")))
+    }
+
+    @Test
+    fun `a typed scheme completes a path under the typed host`() {
+        val suggestions = history("https://github.com/risa-labs-inc/BossConsole/pulls")
+
+        assertEquals(
+            "https://github.com/risa-labs-inc/BossConsole/pulls",
+            display("https://github.com/risa", suggestions),
+        )
+    }
+
+    @Test
+    fun `the navigation guard uses the same rule that built the display`() {
+        // `urlCompletionTarget` exists to keep the drawn text and the opened address
+        // together, so it cannot certify a string the completion rules would have refused:
+        // the path is case-SENSITIVE on both sides.
+        val deep = UrlCompletion("github.com/BossConsole/pulls", "https://github.com/BossConsole/pulls")
+
+        assertEquals(deep, urlCompletionTarget(deep, "github.com/Boss"))
+        assertNull(urlCompletionTarget(deep, "github.com/boss"))
+        // The host stays case-insensitive, which is what a host is.
+        assertEquals(deep, urlCompletionTarget(deep, "GitHub.com/Boss"))
+    }
+
+    @Test
     fun `candidates carrying invisible characters are refused`() {
         // A bidi override in a stored path can reorder the whole rendered line, so the
         // address the user reads is not the address Enter opens.

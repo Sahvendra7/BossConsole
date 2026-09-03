@@ -46,14 +46,29 @@ private fun hostOf(canonical: String): String = canonical.substringBefore('/').s
 private fun String.hasInvisibleCharacters(): Boolean = any { it.isISOControl() || it.category == CharCategory.FORMAT }
 
 /**
- * Whether this stored address is unfit to be offered as a completion at all.
+ * Whether this stored address is unfit to be offered as a completion at all, host included.
  *
- * Empty: nothing to key on. Invisible characters: see [hasInvisibleCharacters]. A query
- * string: a stored OAuth URL is hundreds of characters of dead `state=` parameters, so its
- * tail would be longer than the field it is drawn in - and opening it replays an expired
- * request.
+ * Empty: nothing to key on. Invisible characters: see [hasInvisibleCharacters]. Userinfo -
+ * a `user@` before the authority ends - because [canonicalUrlKey] keeps it while
+ * `java.net.URL` reads the host as whatever follows the `@`. A stored
+ * `https://github.com@evil.example/` canonicalises to `github.com@evil.example`, which
+ * extends a typed `git` while the host is still open, so one Tab would hand the field a
+ * host the user never named and Enter would open `evil.example`. Chrome strips userinfo
+ * out of the omnibox for the same reason.
  */
-private fun String.isUnofferable(): Boolean = isEmpty() || hasInvisibleCharacters() || contains('?')
+private fun String.isUnofferable(): Boolean = isEmpty() || hasInvisibleCharacters() || hostOf(this).contains('@')
+
+/**
+ * Whether the full stored ADDRESS is unfit to be offered even though its host is fine.
+ *
+ * A stored OAuth URL is hundreds of characters of dead `state=` parameters, so its tail
+ * would be longer than the field it is drawn in - and opening it replays an expired
+ * request. Both reasons are about the address, which is why this is not folded into
+ * [isUnofferable]: an entry whose only visit carries a query still knows what host it is
+ * on, and if the one `accounts.google.com` visit is an OAuth URL then typing "acc" should
+ * still complete to the host.
+ */
+private fun String.isUnofferableAddress(): Boolean = contains('?')
 
 /**
  * Whether [candidate] is a completion of [typed] - a strict extension of it, with the host
@@ -65,7 +80,7 @@ private fun String.isUnofferable(): Boolean = isEmpty() || hasInvisibleCharacter
  * `github.com/risa-labs-inc/boss` against a stored `…/BossConsole/pulls` offered
  * `…/bossConsole/pulls`, a 404 on any case-sensitive server.
  */
-private fun extendsTyped(
+internal fun extendsTyped(
     candidate: String,
     typed: String,
 ): Boolean {
@@ -99,10 +114,16 @@ private fun extendsTyped(
  *    that "looks finished" left every prefix on the way to it open, and left `192.168.4`
  *    free to complete to `192.168.4.20:8123`, a different machine. The cost is no ghost
  *    while a dotted host is half-typed; the dropdown still lists the match.
- *  - a candidate carrying a query string is not offered: a stored OAuth URL is 500-2000
- *    characters of dead `state=` parameters, and it makes the ghost longer than the field.
+ *  - a candidate ADDRESS carrying a query string is not offered: a stored OAuth URL is
+ *    500-2000 characters of dead `state=` parameters, and it makes the ghost longer than
+ *    the field. Its host is still offered - see [isUnofferableAddress].
  *  - text with whitespace in it is a search, never an address, and the "Search Google for
  *    …" row is never a completion candidate.
+ *  - a typed `scheme://` is normalized away before any of the above, the same way
+ *    `rankMatches` normalizes a pasted query, because the entries are matched in their
+ *    canonical spelling. Without it a typed `https://git` carried a `:`, which read as a
+ *    host already named and left the ghost blank on the one input where the dropdown and
+ *    the field are easiest to compare side by side.
  *
  * Candidate order follows the suggestion list, which is already ranked.
  *
@@ -113,7 +134,15 @@ internal fun inlineUrlCompletion(
     typed: String,
     suggestions: List<UrlSuggestion>,
 ): UrlCompletion? {
-    if (typed.isBlank() || typed.any { it.isWhitespace() } || typed.hasInvisibleCharacters()) return null
+    // Matched in the entries' own spelling, so a typed scheme (and the `www.` behind it)
+    // does not have to appear in every stored address for the ghost to appear. The typed
+    // text itself is still what the ghost is drawn after, so the scheme stays on screen.
+    val matchable = if (typed.contains("://")) canonicalUrlKey(typed) else typed
+    // Whitespace means this is a search, not an address, and completing it would eat what is
+    // still being typed. A blank field needs no clause of its own: an empty one carries no
+    // `://`, so it reaches here as an empty [matchable], and an all-whitespace one is caught
+    // by the first clause.
+    if (typed.any { it.isWhitespace() } || typed.hasInvisibleCharacters() || matchable.isEmpty()) return null
 
     val entries =
         suggestions
@@ -128,10 +157,16 @@ internal fun inlineUrlCompletion(
                 }
             }
 
-    val typedHost = hostOf(typed)
+    val typedHost = hostOf(matchable)
     // No dot and no colon means no host has been named yet, so the host is still the thing
     // being completed. Anything else and the user has committed to a host.
-    val hostStillOpen = typed.none { it == '.' || it == ':' }
+    val hostStillOpen = matchable.none { it == '.' || it == ':' }
+
+    val addresses =
+        entries
+            .asSequence()
+            .filterNot { (canonical, _, _) -> canonical.isUnofferableAddress() }
+            .map { (canonical, url, _) -> UrlCompletion(canonical, url) }
 
     val candidates =
         if (hostStillOpen) {
@@ -139,19 +174,16 @@ internal fun inlineUrlCompletion(
             // does not pay for the rest.
             entries.asSequence().map { (canonical, url, scheme) ->
                 UrlCompletion(display = hostOf(canonical), target = "$scheme://${storedAuthority(url)}")
-            } + entries.asSequence().map { (canonical, url, _) -> UrlCompletion(canonical, url) }
+            } + addresses
         } else {
-            entries
-                .asSequence()
-                .filter { (canonical, _, _) -> hostOf(canonical).equals(typedHost, ignoreCase = true) }
-                .map { (canonical, url, _) -> UrlCompletion(canonical, url) }
+            addresses.filter { hostOf(it.display).equals(typedHost, ignoreCase = true) }
         }
 
     return candidates
-        .firstOrNull { extendsTyped(it.display, typed) }
+        .firstOrNull { extendsTyped(it.display, matchable) }
         // The user's own casing survives in the host, which is case-insensitive anyway; the
         // path comes through verbatim because `extendsTyped` matched it exactly.
-        ?.let { it.copy(display = typed + it.display.substring(typed.length)) }
+        ?.let { it.copy(display = typed + it.display.substring(matchable.length)) }
 }
 
 /**
@@ -176,7 +208,7 @@ internal fun ghostTextTransformation(
     color: Color,
 ): VisualTransformation =
     VisualTransformation { text ->
-        val tail = completion?.display?.takeIf { it.extends(text.text) }?.substring(text.length)
+        val tail = completion?.display?.takeIf { extendsTyped(it, text.text) }?.substring(text.length)
         if (tail == null) {
             TransformedText(text, OffsetMapping.Identity)
         } else {
@@ -205,11 +237,13 @@ internal fun ghostTextTransformation(
  * debounced, so there is a window where [typed] has already moved on from the completion it
  * produced, and in that window the field correctly shows no ghost while a commit would have
  * taken the stale address.
+ *
+ * The guard is [extendsTyped] - the same rule that BUILT the display, case-sensitive in the
+ * path and not just in the host. A looser test here would have let this function certify a
+ * string the completion rules would not have produced, which is the one thing it exists to
+ * prevent.
  */
 internal fun urlCompletionTarget(
     completion: UrlCompletion?,
     typed: String,
-): UrlCompletion? = completion?.takeIf { it.display.extends(typed) }
-
-/** A strict, case-insensitive extension of [typed] - the one rule both of the above share. */
-private fun String.extends(typed: String): Boolean = length > typed.length && startsWith(typed, true)
+): UrlCompletion? = completion?.takeIf { extendsTyped(it.display, typed) }
