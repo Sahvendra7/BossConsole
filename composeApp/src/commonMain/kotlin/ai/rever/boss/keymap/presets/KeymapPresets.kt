@@ -1017,6 +1017,10 @@ object KeymapPresets {
     /**
      * [this] with every chord [preset] already claims removed, or null if that leaves nothing.
      *
+     * Internal because migration needs the same predicate: adding a preset's new actions to a
+     * STORED keymap verbatim would ship exactly the conflicts this drops, and a customised
+     * keymap is where the user has claimed chords the preset does not know about.
+     *
      * Per-KEYSTROKE rather than per-binding, because these bindings carry alternates that a
      * preset's claim on the primary says nothing about: VS Code and IntelliJ both put panel
      * navigation on Cmd+Alt+Arrow, which is the primary of positional tab stepping — dropping
@@ -1024,7 +1028,7 @@ object KeymapPresets {
      * presets with no way to step tabs at all. The first surviving keystroke becomes the
      * primary, since [KeyBinding.key] is what the menu bar reads for its accelerator.
      */
-    private fun KeyBinding.withoutChordsTakenBy(preset: List<KeyBinding>): KeyBinding? {
+    internal fun KeyBinding.withoutChordsTakenBy(preset: List<KeyBinding>): KeyBinding? {
         val survivors =
             allKeystrokes.filter { keystroke ->
                 preset.none { existing -> existing.claimsChord(keystroke, context) }
@@ -1038,7 +1042,7 @@ object KeymapPresets {
     }
 
     /** Does [this] answer to [keystroke] in a context where it and [candidateContext] overlap? */
-    private fun KeyBinding.claimsChord(
+    internal fun KeyBinding.claimsChord(
         keystroke: KeyStroke,
         candidateContext: ShortcutContext,
     ): Boolean {

@@ -196,6 +196,17 @@ matches the preset. A rebound chord is left alone. Chords are compared order- an
 case-insensitively on both halves, so a hand-edited `["Shift","Cmd"]` reads the same as
 `["Cmd","Shift"]`.
 
+Migration is chord-checked the same way the merge is: a new action whose chords a stored keymap
+already claims is dropped rather than added as a live conflict, which matters here because one
+migration lands twenty chords onto a keymap the user may have customised.
+
+Host bindings beat plugin defaults, and this is where that starts to bite: the new Cmd+1..Cmd+9
+entries permanently shadow any plugin GLOBAL default on those chords, and a host binding the
+interceptor matches but does not dispatch now stops there rather than falling through to the
+plugin pass. That is the documented rule working as intended, but Cmd+1..9 are popular plugin
+chords, and this is the change that closes them. A plugin wanting one has to be rebound by the
+user, which puts it in the keymap where it wins the earlier pass.
+
 A chord that cannot act is not claimed. Cmd+1..Cmd+8 with fewer tabs than that, Cmd+9 with no
 tabs, Cmd+Shift+T with an empty history, tab stepping in a single-tab panel and panel navigation
 in a single-panel window all propagate to whatever has focus instead of being swallowed. This

@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The stack Cmd+Shift+T pops: recently closed tabs, newest first, per WINDOW.
@@ -22,9 +21,12 @@ import java.util.concurrent.ConcurrentHashMap
  * component is NOT retained: `removeTab` destroys it (and with it any Chromium process) before
  * this ever sees the entry, so a deep history costs a handful of config objects, not browsers.
  *
- * `java.util.concurrent` in commonMain follows [ai.rever.boss.plugin.browser.ActiveBrowserRegistry]:
- * composeApp has a single `jvm("desktop")` target. Entries are written from the Compose UI thread
- * and read from the menu-flow collectors.
+ * Every operation holds ONE monitor rather than a lock per window. Two rounds of review found
+ * races in the finer-grained version, both of the same shape: the deque a caller is holding is
+ * no longer the map's, so a depth gets published for a window that has been closed, or a fresh
+ * deque outlives the window that owned it. Neither had a cheap fix that stayed local. Nothing
+ * here contends - callers are on the Compose UI thread and the menu collectors only read a
+ * StateFlow - so the coarse lock costs nothing and removes the whole class.
  */
 object ClosedTabHistory {
     /**
@@ -33,7 +35,7 @@ object ClosedTabHistory {
      */
     const val MAX_ENTRIES = 25
 
-    private val byWindow = ConcurrentHashMap<String, ArrayDeque<TabInfo>>()
+    private val byWindow = mutableMapOf<String, ArrayDeque<TabInfo>>()
 
     private val _depths = MutableStateFlow<Map<String, Int>>(emptyMap())
 
@@ -57,51 +59,39 @@ object ClosedTabHistory {
     fun record(
         windowId: String,
         tab: TabInfo,
-    ) {
-        // computeIfAbsent, not getOrPut: the latter is a get-then-put extension on MutableMap
-        // and two first-closures racing for one window would each build a deque, one silently
-        // discarded along with its entry.
-        val stack = byWindow.computeIfAbsent(windowId) { ArrayDeque() }
-        synchronized(stack) {
-            // The window can close between the line above and this one - a tab closing as its
-            // window closes is exactly the interleaving [clear] produces - and this deque is
-            // then no longer the map's. Publishing a depth for it would leave File > Reopen
-            // Closed Tab enabled for the life of the process while [pop] and [hasEntries] both
-            // answer empty. [clear] takes this same lock, so the two orderings are: it wins and
-            // the check below fails, or this wins and its depth is removed straight after.
-            if (byWindow[windowId] !== stack) return
-
-            // Re-closing a reopened tab should move it to the top, not add a second copy.
-            stack.removeAll { it.id == tab.id }
-            stack.addFirst(tab)
-            while (stack.size > MAX_ENTRIES) stack.removeLast()
-            // Published inside the lock: computing the depth here and publishing outside would
-            // let a concurrent record and pop publish their depths in the opposite order.
-            publishDepth(windowId, stack.size)
-        }
+    ) = synchronized(byWindow) {
+        val stack = byWindow.getOrPut(windowId) { ArrayDeque() }
+        // Re-closing a reopened tab should move it to the top, not add a second copy.
+        stack.removeAll { it.id == tab.id }
+        stack.addFirst(tab)
+        while (stack.size > MAX_ENTRIES) stack.removeLast()
+        // Published under the lock: computing the depth here and publishing outside would let a
+        // concurrent record and pop publish their depths in the opposite order.
+        publishDepth(windowId, stack.size)
     }
 
     /** Remove and return the most recently closed tab in [windowId], or null if there is none. */
-    fun pop(windowId: String): TabInfo? {
-        val stack = byWindow[windowId] ?: return null
-        return synchronized(stack) {
+    fun pop(windowId: String): TabInfo? =
+        synchronized(byWindow) {
+            val stack = byWindow[windowId] ?: return null
             stack.removeFirstOrNull()?.also { publishDepth(windowId, stack.size) }
         }
-    }
 
     /** Whether [windowId] has anything to reopen (drives the menu item's enabled state). */
-    fun hasEntries(windowId: String): Boolean {
-        val stack = byWindow[windowId] ?: return false
-        return synchronized(stack) { stack.isNotEmpty() }
-    }
+    fun hasEntries(windowId: String): Boolean = synchronized(byWindow) { byWindow[windowId]?.isNotEmpty() == true }
 
-    /** Drop a closed window's history. */
-    fun clear(windowId: String) {
-        byWindow.remove(windowId)?.let { stack -> synchronized(stack) { stack.clear() } }
-        // After the lock, so a [record] that was mid-flight when the window closed has already
-        // published whatever it was going to and this removal is the last word.
-        _depths.update { it - windowId }
-    }
+    /**
+     * Drop a closed window's history.
+     *
+     * Both the map entry and the depth go under one lock, so a closure landing as the window
+     * closes cannot leave a depth for a window with no deque, nor a deque for a window that is
+     * gone - each holding up to 25 TabInfos for the life of the process.
+     */
+    fun clear(windowId: String) =
+        synchronized(byWindow) {
+            byWindow.remove(windowId)
+            _depths.update { it - windowId }
+        }
 
     private fun publishDepth(
         windowId: String,

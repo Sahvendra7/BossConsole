@@ -5,9 +5,11 @@ import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.keymap.model.canonicalModifiers
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -591,34 +593,22 @@ class KeymapMatcherTest {
     }
 
     @Test
-    fun `crossPlatform creates binding with Cmd and Ctrl alternates`() {
-        val binding =
-            KeyBinding.crossPlatform(
-                actionId = "copy",
-                key = "C",
-                context = ShortcutContext.GLOBAL,
-                description = "Copy",
-            )
+    fun `modifier aliases fold together, and Cmd and Ctrl stay distinct`() {
+        // These two cases covered KeyBinding.crossPlatform, which manufactured a Ctrl alternate
+        // beside a Cmd primary. It was inert while alternateKeystrokes was consulted by neither
+        // matcher and wrong in both directions once both walked allKeystrokes, so it is gone;
+        // the note where it lived says why. What replaced it is the one canonicaliser the
+        // matchers and the migration now share, and this is where its contract lives: Cmd and
+        // Ctrl are DIFFERENT modifiers, whatever a platform maps them onto at match time.
+        assertEquals(setOf("cmd"), canonicalModifiers(listOf("Cmd")))
+        assertEquals(setOf("cmd"), canonicalModifiers(listOf("Meta")))
+        assertEquals(setOf("ctrl"), canonicalModifiers(listOf("Ctrl")))
+        assertEquals(setOf("ctrl"), canonicalModifiers(listOf("Control")))
+        assertEquals(setOf("alt"), canonicalModifiers(listOf("Option")))
+        assertEquals(setOf("alt"), canonicalModifiers(listOf("Alt")))
 
-        assertEquals("C", binding.key)
-        assertEquals(listOf("Cmd"), binding.modifiers)
-        assertEquals(1, binding.alternateKeystrokes.size)
-        assertEquals("C", binding.alternateKeystrokes[0].key)
-        assertEquals(listOf("Ctrl"), binding.alternateKeystrokes[0].modifiers)
-    }
-
-    @Test
-    fun `crossPlatform with additional modifiers works correctly`() {
-        val binding =
-            KeyBinding.crossPlatform(
-                actionId = "copy.special",
-                key = "C",
-                "Shift",
-                context = ShortcutContext.GLOBAL,
-                description = "Copy special",
-            )
-
-        assertEquals(listOf("Cmd", "Shift"), binding.modifiers)
-        assertEquals(listOf("Ctrl", "Shift"), binding.alternateKeystrokes[0].modifiers)
+        assertNotEquals(canonicalModifiers(listOf("Cmd")), canonicalModifiers(listOf("Ctrl")))
+        // Order and case do not survive, which is what makes a hand-edited file comparable.
+        assertEquals(canonicalModifiers(listOf("Shift", "cmd")), canonicalModifiers(listOf("Meta", "SHIFT")))
     }
 }

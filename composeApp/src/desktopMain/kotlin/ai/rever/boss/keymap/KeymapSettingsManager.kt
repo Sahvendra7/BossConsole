@@ -2,7 +2,10 @@ package ai.rever.boss.keymap
 
 import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapSettings
+import ai.rever.boss.keymap.model.canonicalModifiers
 import ai.rever.boss.keymap.presets.KeymapPresets
+import ai.rever.boss.keymap.presets.KeymapPresets.claimsChord
+import ai.rever.boss.keymap.presets.KeymapPresets.withoutChordsTakenBy
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -136,7 +139,12 @@ actual object KeymapSettingsManager {
                     // chord in the file and in allSignatures(), which the conflict badge reads.
                     val gained =
                         preset.alternateKeystrokes.filter { candidate ->
-                            stored.alternateKeystrokes.none { it.sameChordAs(candidate) }
+                            stored.alternateKeystrokes.none { it.sameChordAs(candidate) } &&
+                                // And not a chord this keymap already gives to something else,
+                                // for the same reason the additions below are filtered.
+                                loaded.shortcuts.values.none {
+                                    it.actionId != actionId && it.claimsChord(candidate, stored.context)
+                                }
                         }
                     if (untouched && gained.isNotEmpty()) {
                         actionId to stored.copy(alternateKeystrokes = stored.alternateKeystrokes + gained)
@@ -145,7 +153,32 @@ actual object KeymapSettingsManager {
                     }
                 }.toMap()
 
-        if (missingActions.isEmpty() && alternateTopUps.isEmpty()) {
+        // Chord-checked against the keymap as it will stand, exactly as withStandardBrowserBindings
+        // checks additions against the preset. Adding a preset's new actions verbatim would ship
+        // precisely the conflicts that merge exists to prevent, and a CUSTOMISED keymap is where
+        // the user has claimed chords the preset knows nothing about: someone who rebound
+        // panel.navigate_right to Cmd+Opt+Right would otherwise also receive
+        // tab.next_positional on it. The stored binding wins the match, so the new chord would
+        // do nothing while the conflict badge lit up - and this PR lands twenty chords in one
+        // migration, not one. An action whose every chord is taken is dropped, as in the merge.
+        val toppedUp = loaded.shortcuts + alternateTopUps
+        val newActions =
+            missingActions.values
+                .mapNotNull { it.withoutChordsTakenBy(toppedUp.values.toList()) }
+                .associateBy { it.actionId }
+
+        val dropped = missingActions.keys - newActions.keys
+        if (dropped.isNotEmpty()) {
+            // Said out loud: a user who reads the docs, does not get Cmd+3, and finds no
+            // conflict badge has nothing else to go on.
+            logger.info(
+                LogCategory.SYSTEM,
+                "Keymap migration dropped new actions whose chords this keymap already claims",
+                mapOf("actionIds" to dropped.joinToString()),
+            )
+        }
+
+        if (newActions.isEmpty() && alternateTopUps.isEmpty()) {
             return loaded // No migration needed
         }
 
@@ -153,15 +186,15 @@ actual object KeymapSettingsManager {
             LogCategory.SYSTEM,
             "Migrating keymap settings",
             mapOf(
-                "newActions" to missingActions.size,
-                "actionIds" to missingActions.keys.joinToString(),
+                "newActions" to newActions.size,
+                "actionIds" to newActions.keys.joinToString(),
                 "alternateTopUps" to alternateTopUps.size,
                 "alternateActionIds" to alternateTopUps.keys.joinToString(),
             ),
         )
 
-        // Merge: user settings, alternates topped up on untouched bindings, then missing actions
-        val mergedShortcuts = loaded.shortcuts + alternateTopUps + missingActions
+        // Merge: user settings, alternates topped up on untouched bindings, then new actions
+        val mergedShortcuts = toppedUp + newActions
 
         return loaded.copy(shortcuts = mergedShortcuts)
     }
@@ -274,20 +307,21 @@ actual object KeymapSettingsManager {
 }
 
 /**
- * Same key and same set of modifiers, whatever order or spelling they are written in.
+ * Same key and same set of modifiers, whatever order or spelling either is written in.
  *
  * KeyStroke.modifiers is a List, and the keymap file is documented as hand-editable, so
  * ["Shift","Cmd"] would otherwise read as a rebind and silently miss the alternate top-up.
  *
- * Key names go through [AWTKeyboardInterceptor.keyNameMatches] rather than a bare
- * case-insensitive compare, so this and the interceptor agree on aliases. "Left" and
- * "DirectionLeft" are the same key to the matcher, and a keymap written by an older build or
- * imported from another machine can hold either; without the fold such a file reads as rebound
- * and misses the top-up.
+ * Both halves go through the same folds the matchers apply: key names through
+ * [AWTKeyboardInterceptor.keyNameMatches] ("Left" and "DirectionLeft" are one key) and
+ * modifiers through [canonicalModifiers] ("Meta" and "Cmd" are one modifier). A keymap written
+ * by an older build, hand-edited, or imported from another machine can hold either spelling;
+ * without the folds such a file reads as rebound and silently misses the top-up, though both
+ * matchers would have fired it.
  *
  * Top-level rather than a member of the object: it is a property of two KeyStrokes, and the
  * object is at its TooManyFunctions threshold.
  */
 private fun KeyStroke.sameChordAs(other: KeyStroke): Boolean =
     AWTKeyboardInterceptor.keyNameMatches(key, other.key) &&
-        modifiers.map { it.lowercase() }.toSet() == other.modifiers.map { it.lowercase() }.toSet()
+        canonicalModifiers(modifiers) == canonicalModifiers(other.modifiers)

@@ -1,5 +1,6 @@
 package ai.rever.boss.keymap
 
+import ai.rever.boss.keymap.handler.KeymapValidator
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapActions
@@ -9,6 +10,7 @@ import ai.rever.boss.keymap.presets.KeymapPresets
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -29,6 +31,85 @@ class KeymapMigrationTest {
                 .filterKeys { it !in KeymapActions.TAB_SELECT_BY_INDEX && it != KeymapActions.TAB_REOPEN_CLOSED }
                 .mapValues { (_, binding) -> binding.clearAlternateKeystrokes() }
         return KeymapSettings(shortcuts = stripped, presetName = "BOSS Default")
+    }
+
+    @Test
+    fun `a new action is dropped when the stored keymap already claims its chord`() {
+        // A customised keymap is exactly where the user holds chords the preset does not know
+        // about. Adding the preset's new actions verbatim would ship the conflicts
+        // withStandardBrowserBindings exists to prevent, twenty at a time.
+        val legacy = legacySettings()
+        val rebound =
+            assertNotNull(legacy.getBinding(KeymapActions.PANEL_NAVIGATE_RIGHT))
+                .copy(key = "Three", modifiers = listOf("Cmd"))
+        val customised =
+            legacy.copy(shortcuts = legacy.shortcuts + (KeymapActions.PANEL_NAVIGATE_RIGHT to rebound))
+
+        val migrated = KeymapSettingsManager.migrateSettings(customised)
+
+        assertEquals(
+            "Three",
+            migrated.getBinding(KeymapActions.PANEL_NAVIGATE_RIGHT)?.key,
+            "the user's own binding is untouched",
+        )
+        assertNull(
+            migrated.getBinding(KeymapActions.TAB_SELECT_BY_INDEX[2]),
+            "Cmd+3 was taken, so the new action is dropped rather than shipped as a conflict",
+        )
+        // The rest of the batch still lands: dropping is per action, not all-or-nothing.
+        assertNotNull(migrated.getBinding(KeymapActions.TAB_SELECT_BY_INDEX[0]))
+        assertNotNull(migrated.getBinding(KeymapActions.TAB_REOPEN_CLOSED))
+    }
+
+    @Test
+    fun `migration never introduces a conflict onto a customised keymap`() {
+        val legacy = legacySettings()
+        // Two rebinds sitting on chords this migration is about to deliver.
+        val customised =
+            legacy.copy(
+                shortcuts =
+                    legacy.shortcuts +
+                        mapOf(
+                            KeymapActions.PANEL_NAVIGATE_RIGHT to
+                                assertNotNull(legacy.getBinding(KeymapActions.PANEL_NAVIGATE_RIGHT))
+                                    .copy(key = "Three", modifiers = listOf("Cmd")),
+                            KeymapActions.WORKSPACE_SAVE to
+                                assertNotNull(legacy.getBinding(KeymapActions.WORKSPACE_SAVE)).copy(
+                                    key = "T",
+                                    modifiers = listOf("Cmd", "Shift"),
+                                    context = ShortcutContext.GLOBAL,
+                                ),
+                        ),
+            )
+        assertTrue(KeymapValidator.validate(customised).isEmpty(), "the input itself is conflict-free")
+
+        val migrated = KeymapSettingsManager.migrateSettings(customised)
+
+        assertTrue(
+            KeymapValidator.validate(migrated).isEmpty(),
+            "migration must leave the keymap as conflict-free as it found it: " +
+                KeymapValidator.validate(migrated).joinToString { it.description() },
+        )
+        assertNull(migrated.getBinding(KeymapActions.TAB_REOPEN_CLOSED), "Cmd+Shift+T was taken")
+    }
+
+    @Test
+    fun `a modifier alias does not read as a rebind`() {
+        // The file is documented as hand-editable, and both matchers treat Meta as Cmd. Without
+        // the fold this reads as rebound and silently misses the alternate top-up.
+        val legacy = legacySettings()
+        val metaSpelled =
+            assertNotNull(legacy.getBinding(KeymapActions.BROWSER_ZOOM_IN)).copy(modifiers = listOf("Meta"))
+        val handEdited =
+            legacy.copy(shortcuts = legacy.shortcuts + (KeymapActions.BROWSER_ZOOM_IN to metaSpelled))
+
+        val migrated = KeymapSettingsManager.migrateSettings(handEdited)
+
+        val zoomIn = assertNotNull(migrated.getBinding(KeymapActions.BROWSER_ZOOM_IN))
+        assertTrue(
+            zoomIn.alternateKeystrokes.any { it.key == "Equals" && "Shift" in it.modifiers },
+            "the Cmd+Shift+Equals alternate should still be topped up",
+        )
     }
 
     @Test

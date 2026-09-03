@@ -2,11 +2,11 @@ package ai.rever.boss.window
 
 import ai.rever.boss.components.plugin.registries.PluginShortcutRegistryImpl
 import ai.rever.boss.keymap.KeymapSettingsManager
-import ai.rever.boss.keymap.handler.KeymapMatcher
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.keymap.model.TabSwitchMode
+import ai.rever.boss.keymap.model.canonicalModifiers
 import ai.rever.boss.utils.SystemUtils
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
@@ -212,12 +212,8 @@ object AWTKeyboardInterceptor {
                 val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
                 val windowId = findWindowId(focusedWindow) ?: return@KeyEventDispatcher false
 
-                // Get current keymap settings and create matcher
-                val settings = KeymapSettingsManager.currentSettings.value
-                val matcher = KeymapMatcher(settings)
-
                 // Try to match the key event against shortcuts
-                val binding = findMatchingBinding(event, matcher)
+                val binding = findMatchingBinding(event)
 
                 if (binding != null) {
                     // Dispatch the action through MenuActionsHandler
@@ -395,11 +391,12 @@ object AWTKeyboardInterceptor {
      * Find a matching binding for the AWT KeyEvent.
      * Context-aware: skips component-specific bindings when the focused component
      * doesn't match, and prefers bindings whose context matches the current focus.
+     *
+     * Reads the keymap itself rather than taking a KeymapMatcher: it used to take one and never
+     * consult it, so the caller built a matcher per keypress for nothing. The Compose-side
+     * matcher is a different path (the Shortcuts tester and getMatchingBindings read it).
      */
-    private fun findMatchingBinding(
-        event: KeyEvent,
-        matcher: KeymapMatcher,
-    ): KeyBinding? {
+    private fun findMatchingBinding(event: KeyEvent): KeyBinding? {
         val keyName = getKeyName(event.keyCode)
         val settings = KeymapSettingsManager.currentSettings.value
 
@@ -482,10 +479,11 @@ object AWTKeyboardInterceptor {
         modifiers: Collection<String>,
         event: KeyEvent,
     ): Boolean {
-        val hasCmd = modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
-        val hasCtrl = modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) }
-        val hasShift = modifiers.any { it.equals("Shift", true) }
-        val hasAlt = modifiers.any { it.equals("Alt", true) || it.equals("Option", true) }
+        val canonical = canonicalModifiers(modifiers.toList())
+        val hasCmd = "cmd" in canonical
+        val hasCtrl = "ctrl" in canonical
+        val hasShift = "shift" in canonical
+        val hasAlt = "alt" in canonical
 
         val primaryMatch =
             if (hasCmd || hasCtrl) {

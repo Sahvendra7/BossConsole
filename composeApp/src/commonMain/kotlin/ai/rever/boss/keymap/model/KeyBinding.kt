@@ -4,6 +4,27 @@ import androidx.compose.ui.input.key.Key
 import kotlinx.serialization.Serializable
 
 /**
+ * The modifier set a chord really requires, with the aliases every matcher already accepts
+ * folded together: Cmd and Meta are one modifier, so are Ctrl and Control, and so are Alt and
+ * Option. Order and case do not survive.
+ *
+ * One definition because there were three that had to agree - `KeymapMatcher.RequiredModifiers`,
+ * `AWTKeyboardInterceptor.chordMatchesEvent` and the migration's chord comparison - and the
+ * third had drifted: a hand-edited keymap written with "Meta" read as rebound and silently
+ * missed its alternate top-up, though both matchers would have fired it.
+ */
+internal fun canonicalModifiers(modifiers: List<String>): Set<String> =
+    modifiers
+        .mapTo(mutableSetOf()) { modifier ->
+            when (val lower = modifier.lowercase()) {
+                "cmd", "meta" -> "cmd"
+                "ctrl", "control" -> "ctrl"
+                "alt", "option" -> "alt"
+                else -> lower
+            }
+        }
+
+/**
  * Represents a single key combination (key + modifiers).
  * Used to support multiple key combos per action (e.g., Cmd+C AND Ctrl+C).
  *
@@ -125,15 +146,18 @@ data class KeyBinding(
 ) {
     /**
      * Returns the primary keystroke for this binding.
+     *
+     * Computed once rather than per access: both matchers now walk [allKeystrokes] for every
+     * binding on every modified keypress, and as getters these allocated a KeyStroke and a list
+     * per binding per event. Body properties, so serialization and data-class equality are
+     * unaffected.
      */
-    val primaryKeystroke: KeyStroke
-        get() = KeyStroke(key, modifiers)
+    val primaryKeystroke: KeyStroke = KeyStroke(key, modifiers)
 
     /**
      * Returns all keystrokes (primary + alternates) for this binding.
      */
-    val allKeystrokes: List<KeyStroke>
-        get() = listOf(primaryKeystroke) + alternateKeystrokes
+    val allKeystrokes: List<KeyStroke> = listOf(primaryKeystroke) + alternateKeystrokes
 
     /**
      * Returns a display string for this key binding (primary keystroke only).
@@ -242,34 +266,14 @@ data class KeyBinding(
             )
         }
 
-        /**
-         * Creates a cross-platform KeyBinding with Cmd on macOS and Ctrl on other platforms.
-         * The primary keystroke uses Cmd, and an alternate uses Ctrl.
-         *
-         * Example: crossPlatform("copy", "C", "Shift") creates Cmd+Shift+C with Ctrl+Shift+C alternate
-         */
-        fun crossPlatform(
-            actionId: String,
-            key: String,
-            vararg additionalModifiers: String,
-            context: ShortcutContext = ShortcutContext.GLOBAL,
-            category: String = "Other",
-            description: String = "",
-        ): KeyBinding {
-            val cmdModifiers = listOf("Cmd") + additionalModifiers.toList()
-            val ctrlModifiers = listOf("Ctrl") + additionalModifiers.toList()
-
-            return KeyBinding(
-                actionId = actionId,
-                key = key,
-                modifiers = cmdModifiers,
-                alternateKeystrokes = listOf(KeyStroke(key, ctrlModifiers)),
-                context = context,
-                enabled = true,
-                category = category,
-                description = description,
-            )
-        }
+        // `crossPlatform(actionId, key, ...)` used to live here, manufacturing a Ctrl+<key>
+        // alternate beside a Cmd+<key> primary. It was inert while alternateKeystrokes was
+        // consulted by neither matcher; now that both walk allKeystrokes it would be wrong in
+        // both directions, so it is gone rather than left as a trap. On macOS the alternate
+        // really fires, so Ctrl+N would open a window as well as Cmd+N. On Windows and Linux
+        // "Ctrl" maps to isMetaDown, so the alternate demands the Super key and is unreachable
+        // - while the Cmd primary already matches the Control key, which is the whole thing the
+        // helper was reaching for. No preset ever used it.
 
         /**
          * Creates a KeyBinding with multiple keystrokes.

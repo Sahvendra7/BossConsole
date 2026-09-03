@@ -1412,7 +1412,13 @@ fun BossTabsComponent.BossMainPanelContent(modifier: Modifier) {
                     PluginCrashRegistry.registerActiveTab(
                         pluginIdToRegister,
                         tabIdToClose,
-                        closeAction = { this@BossMainPanelContent.removeTabById(tabIdToClose) },
+                        // recordForReopen = false: the crash handler closes this tab, not the
+                        // user, and reopening it re-enters the composition that just threw. A
+                        // crash-looping plugin would also push an entry per tab and bury real
+                        // closures. Same call as the plugin-unload teardown makes.
+                        closeAction = {
+                            this@BossMainPanelContent.removeTabById(tabIdToClose, recordForReopen = false)
+                        },
                     )
                 }
                 DisposableEffect(tabIdToClose, pluginIdToRegister) {

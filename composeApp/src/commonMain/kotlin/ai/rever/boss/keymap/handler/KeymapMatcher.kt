@@ -4,6 +4,7 @@ import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.keymap.model.canonicalModifiers
 import ai.rever.boss.utils.SystemUtils
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -150,13 +151,15 @@ class KeymapMatcher(
         val alt: Boolean,
     ) {
         companion object {
-            fun of(modifiers: List<String>): RequiredModifiers =
-                RequiredModifiers(
-                    cmd = modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) },
-                    ctrl = modifiers.any { it.equals("Ctrl", true) || it.equals("Control", true) },
-                    shift = modifiers.any { it.equals("Shift", true) },
-                    alt = modifiers.any { it.equals("Alt", true) || it.equals("Option", true) },
+            fun of(modifiers: List<String>): RequiredModifiers {
+                val canonical = canonicalModifiers(modifiers)
+                return RequiredModifiers(
+                    cmd = "cmd" in canonical,
+                    ctrl = "ctrl" in canonical,
+                    shift = "shift" in canonical,
+                    alt = "alt" in canonical,
                 )
+            }
         }
     }
 
