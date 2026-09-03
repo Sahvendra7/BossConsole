@@ -78,6 +78,10 @@ internal class SettingsWindowState {
         label: String,
         highlightable: Boolean,
     ) {
+        // open() first, and the highlight after, because open() clears it - see its KDoc. Compose
+        // only observes settled state at recomposition, so the order within one call is invisible
+        // to the window; getting it backwards would simply lose every highlight.
+        open(section)
         highlight =
             if (highlightable) {
                 highlightNonce += 1
@@ -85,7 +89,6 @@ internal class SettingsWindowState {
             } else {
                 null
             }
-        open(section)
     }
 
     /**
@@ -94,8 +97,18 @@ internal class SettingsWindowState {
      *
      * [section] is applied only when given. Passing null means "just show settings" and must not
      * clear a section another caller navigated to, which a plain assignment would.
+     *
+     * **Clears [highlight], for the reason [close] does.** A highlight belongs to the pick that
+     * asked for it and to no later navigation. Without this, revealing a row from search and then
+     * opening Settings again from anywhere else - a menu item naming a different section, say -
+     * left the consumed highlight armed while the window navigated elsewhere, and the window's
+     * effect is keyed on the nonce so it never re-ran to correct it. Harmless until a row with the
+     * same group and label exists on the page it landed on, at which point it lights unasked:
+     * the same wrong-page highlight the unconditional adoption in `SettingsContent` closes,
+     * arriving by the other door. [reveal] re-arms it immediately afterwards.
      */
     fun open(section: String? = null) {
+        highlight = null
         if (section != null) {
             this.section = section
             sectionRequest++

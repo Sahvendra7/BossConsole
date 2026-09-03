@@ -68,6 +68,32 @@ class SettingsWindowRevealTest {
     }
 
     @Test
+    fun `opening settings again disarms a highlight the last pick consumed`() {
+        // The other door onto the wrong-page highlight. Reveal a row, then open Settings from
+        // somewhere else naming a different section: the window navigates, and the highlight from
+        // the earlier pick must not still be pointing at a row on the page it left. The window's
+        // effect is keyed on the nonce, so nothing downstream would ever correct it.
+        val state = SettingsWindowState()
+        state.reveal(section = "THEME", group = "App Theme", label = "Accent", highlightable = true)
+
+        state.open(section = "KEYMAP")
+
+        assertEquals("KEYMAP", state.section)
+        assertNull(state.highlight, "a consumed highlight must not survive a later navigation")
+    }
+
+    @Test
+    fun `reveal still arms the highlight even though open clears it`() {
+        // reveal() calls open() and then sets the highlight; reversing that order would silently
+        // lose every highlight, and every other test here would still pass.
+        val state = SettingsWindowState()
+
+        state.reveal(section = "THEME", group = "App Theme", label = "Accent", highlightable = true)
+
+        assertEquals("Accent", state.highlight?.label)
+    }
+
+    @Test
     fun `a plain open leaves an unrelated section alone and only raises the window`() {
         // The bug the whole holder exists for: assigning `true` to an already-true flag changed
         // nothing, and Settings read as a dead button. open() with no section must bump the

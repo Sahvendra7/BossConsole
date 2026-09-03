@@ -101,6 +101,9 @@ private const val EMPTY_STATE_TILES_PER_ROW = 5
  */
 private val EmptyStateTileWidth = 76.dp
 
+/** Ceiling for a result row's trailing chip, so a long plugin id cannot squeeze the title. */
+private val TRAILING_CHIP_MAX_WIDTH = 140.dp
+
 /**
  * Global search dialog for BOSS Spotlight - quickly find files, tabs, bookmarks, and run configs.
  *
@@ -1241,11 +1244,21 @@ private fun SimpleResultItem(
             Box(
                 modifier =
                     Modifier
+                        .widthIn(max = TRAILING_CHIP_MAX_WIDTH)
                         .clip(RoundedCornerShape(4.dp))
                         .background(row.accent.copy(alpha = 0.15f))
                         .padding(horizontal = 6.dp, vertical = 3.dp),
             ) {
-                Text(text = trailing, fontSize = 10.sp, color = row.accent)
+                // Bounded and ellipsised, as every other text in this row is. The chip carries a
+                // plugin id and those run long (`ai.rever.boss.plugin.dynamic.terminal-tab`);
+                // unbounded, it squeezed the title, which is the column with weight(1f).
+                Text(
+                    text = trailing,
+                    fontSize = 10.sp,
+                    color = row.accent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

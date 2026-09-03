@@ -474,9 +474,14 @@ internal fun BossAppDialogs(state: BossAppState) {
             // on close - and the tools offered always belong to the component that will be asked
             // to open them.
             SearchSources.registerTools(windowId) {
-                component.allSidebarTools().map {
-                    ToolSearchRecord(panelId = it.pluginContentId.panelId, label = it.label)
-                }
+                // distinctBy panelId, because allSidebarTools dedupes by SidebarItem.id and this
+                // record keys on the PANEL id - a different key, as slotForItem and activatePlugin
+                // between them show. Two items sharing a panel id across slots would otherwise
+                // give two identical Tool rows, and picking either reaches the same panel.
+                component
+                    .allSidebarTools()
+                    .map { ToolSearchRecord(panelId = it.pluginContentId.panelId, label = it.label) }
+                    .distinctBy { it.panelId }
             }
             onDispose { SearchSources.unregisterTools(windowId) }
         }
@@ -652,9 +657,10 @@ internal fun BossAppDialogs(state: BossAppState) {
             },
             onToolSelect = { panelId ->
                 state.showGlobalSearchDialog = false
-                // The same entry point a sidebar icon click takes, so a tool opened from search
-                // behaves exactly as it does from its icon - custom onClick handlers included.
-                state.draggablePanelComponent.activatePlugin(panelId)
+                // revealPlugin, not activatePlugin: a search asks for a thing, so it must not
+                // toggle the panel shut, and it must focus the tab a tool is already hosted in
+                // rather than re-open it in the sidebar. Plugin-supplied onClick still wins.
+                state.draggablePanelComponent.revealPlugin(panelId)
                 state.focusRequester.requestFocus()
             },
             onSettingSelect = { setting ->
@@ -666,7 +672,9 @@ internal fun BossAppDialogs(state: BossAppState) {
                 // is not there - the wrong-page highlight its own KDoc exists to prevent.
                 val panelId = setting.panelId
                 if (panelId != null) {
-                    state.draggablePanelComponent.activatePlugin(panelId)
+                    // Same verb as onToolSelect, for the same reasons - a signpost is a request to
+                    // be taken somewhere, not a switch.
+                    state.draggablePanelComponent.revealPlugin(panelId)
                     // The same pair onToolSelect does, because this branch does the same work.
                     // The reveal branch below deliberately does not: it is handing focus to the
                     // Settings window, so pulling it back here would fight that.

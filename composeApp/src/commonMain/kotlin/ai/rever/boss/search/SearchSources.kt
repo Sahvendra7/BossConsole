@@ -1,5 +1,8 @@
 package ai.rever.boss.search
 
+import ai.rever.boss.dashboard.RecentBrowserPagesManager
+import ai.rever.boss.mcp.McpToolRegistryImpl
+
 /**
  * A tool the global search can offer, flattened out of a window's sidebar.
  *
@@ -68,10 +71,16 @@ internal data class PageSearchRecord(
  *
  * **Testability.** MCP tools and recent pages *are* reachable - `McpToolRegistryImpl` and
  * `RecentBrowserPagesManager` are both commonMain - and were read directly at first. They come
- * through here now because reading a singleton made two things impossible: injecting a fake, so
- * the RBAC filter on MCP tools (the one path where a regression would leak admin-only tool names
- * and descriptions to a signed-out user) had no test at all; and running a unit test without
- * touching `~/.boss`, because reaching the registry forces it to load its disabled-tools file.
+ * through here because reading a singleton made two things impossible: injecting a fake, so the
+ * RBAC filter on MCP tools (the one path where a regression would leak admin-only tool names and
+ * descriptions to a signed-out user) had no test at all; and running a unit test without touching
+ * `~/.boss`, because reaching the registry forces it to load its disabled-tools file.
+ *
+ * Those two therefore **default** to reading their singleton, with [registerMcpTools] and
+ * [registerRecentPages] as test overrides, rather than requiring registration. An earlier version
+ * required it, which put the failure this object exists to prevent - a source that contributes
+ * nothing and says nothing - behind two lines in `main()` and a comment asking not to separate
+ * them. A default cannot be forgotten, and a fake still displaces it.
  *
  * Suppliers rather than snapshots: every one of these sets changes while the app runs - a plugin
  * loads, a window takes focus, a page is visited - and a list captured at registration would go
@@ -200,3 +209,45 @@ internal object SearchSources {
         recentPagesSupplier = null
     }
 }
+
+/**
+ * The MCP tools the search offers by default: every tool THIS user may see, disabled ones included.
+ *
+ * `permittedTools()`, not `allTools`. `allTools` is deliberately unfiltered for the management UI,
+ * which shows every tool with its state; this is the everyday launcher, open to every user and to
+ * nobody signed in yet, where a name and a full description of an admin-only tool would be
+ * enumerable by typing.
+ *
+ * The argument stands on its own and deliberately does not lean on the settings source: built-in
+ * settings entries are not RBAC-filtered at all - there is no permission check on a
+ * `SettingsSection` - only plugin pages are, through `visiblePages()`.
+ */
+internal fun defaultMcpTools(): List<McpToolSearchRecord> {
+    val disabled = McpToolRegistryImpl.disabledToolNames.value
+    return McpToolRegistryImpl.permittedTools().map { registered ->
+        McpToolSearchRecord(
+            name = registered.definition.name,
+            providerId = registered.providerId,
+            description = registered.definition.description,
+            // Exposure is "permitted AND not switched off", and the list is already permitted, so
+            // what is left to ask is whether it was switched off. Getting this wrong showed a
+            // permission-denied tool as live when no client could see it - and answering "is this
+            // switched off" is the row's entire job.
+            enabled = registered.definition.name !in disabled,
+        )
+    }
+}
+
+/**
+ * The recent pages the search offers by default.
+ *
+ * **No permission gate, where MCP tools have one.** Not an oversight: an MCP tool's name and
+ * description describe a capability of the *install*, so on a shared or signed-out machine they
+ * enumerate what the operator can be made to run. Recent pages are the browsing history of whoever
+ * is sitting at the machine, shown to that same person on the surface they just browsed with - the
+ * dashboard already lists them unfiltered, and gating them here but not there would read as a bug
+ * rather than a boundary. Worth revisiting together if BOSS ever gets real multi-user profiles on
+ * one install.
+ */
+internal fun defaultRecentPages(): List<PageSearchRecord> =
+    RecentBrowserPagesManager.recentPages.value.map { PageSearchRecord(url = it.url, title = it.title) }

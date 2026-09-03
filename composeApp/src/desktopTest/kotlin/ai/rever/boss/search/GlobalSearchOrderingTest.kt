@@ -117,10 +117,17 @@ class GlobalSearchOrderingTest {
     }
 
     @Test
-    fun `Tools is the first category after All`() {
+    fun `the destinations lead - Tools then Settings, both above Files`() {
         // The chip row, the section order and the row the keyboard starts on all read this order,
-        // so it is worth asserting rather than trusting a diff not to reshuffle the enum.
+        // so it is worth asserting rather than trusting a diff not to reshuffle the enum. Files
+        // below both is the point: the ordering is absolute, so whatever precedes Files wins
+        // outright - "dark theme" must reach the setting, not DarkTheme.kt.
         assertEquals(SearchCategory.ALL, SearchCategory.entries.first())
         assertEquals(SearchCategory.TOOLS, SearchCategory.entries[1])
+        assertEquals(SearchCategory.SETTINGS, SearchCategory.entries[2])
+        assertTrue(
+            SearchCategory.SETTINGS.ordinal < SearchCategory.FILES.ordinal,
+            "a settings row must outrank a file that merely shares a word",
+        )
     }
 }

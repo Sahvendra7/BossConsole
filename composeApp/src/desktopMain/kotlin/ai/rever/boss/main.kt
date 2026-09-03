@@ -23,7 +23,6 @@ import ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
 import ai.rever.boss.plugin.sandbox.ui.PluginRenderRecovery
 import ai.rever.boss.plugin.ui.BossThemeController
 import ai.rever.boss.project.DefaultWorkingDirectory
-import ai.rever.boss.search.registerHostSearchSources
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.DeepLinkOrigin
@@ -843,10 +842,6 @@ fun main(args: Array<String>) {
     // Hand the settings index to the global search. Once, here, because the index is desktopMain
     // and the search that reads it is commonMain - see SearchSources.
     SettingsSearchIndex.registerWithGlobalSearch()
-
-    // The two host singletons the search reads go through the same seam, so they are injectable in
-    // tests rather than reached through a singleton - see registerHostSearchSources.
-    registerHostSearchSources()
 
     // Initialize plugin store (remote repository, download cache, update manager)
     PluginStoreSetup.initialize()

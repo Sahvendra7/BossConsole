@@ -137,7 +137,9 @@ object GlobalSearchService {
      * with large datasets. Also queries registered search providers from plugins.
      *
      * @param query The search query
-     * @return List of matching search results, sorted by relevance
+     * @return every match from every source, in no particular order. [getFilteredResults] is what
+     *   orders them - by category, then score - and is the only order anything draws or arrows
+     *   through.
      */
     suspend fun search(
         query: String,
@@ -168,8 +170,11 @@ object GlobalSearchService {
                                 async { searchRecentPages(query) },
                             ).awaitAll().flatten()
 
-                        // Sort by score
-                        searchResults.sortedByDescending { it.score }
+                        // Deliberately NOT sorted here. getFilteredResults is what orders results
+                        // for every reader - category first, then score - and sorting again on the
+                        // way in only invited the belief that this list is the drawn order. It is
+                        // not; it is the unordered union of the sources.
+                        searchResults
                     }
                 }
 

@@ -291,7 +291,7 @@ class GlobalSearchNewSourcesTest {
     @Test
     fun `a tool the host withheld is not searchable`() {
         // The RBAC boundary, from this side. The host supplies only permitted tools - see
-        // registerHostSearchSources - so a name and a full description that never arrive here
+        // defaultMcpTools - so a name and a full description that never arrive here
         // cannot be enumerated by typing. Withholding has to mean invisible, not merely unranked.
         SearchSources.registerMcpTools {
             listOf(McpToolSearchRecord("git_status", "git", "Working tree status", enabled = true))

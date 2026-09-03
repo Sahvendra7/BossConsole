@@ -227,10 +227,18 @@ sealed class SearchResult {
  * entries - which row the keyboard starts on. `getFilteredResults` sorts by this ordinal for that
  * reason, so reordering here moves all three together and never desynchronises them.
  *
- * [TOOLS] leads because it is the most actionable thing the search offers: a tool is a thing you
- * open and use, where a file match is a thing you then have to find something in. It also loses
- * the most from being ranked by score alone - one tool competing with fifteen files whose names
- * happen to share a word, as "atlas" did.
+ * [TOOLS] then [SETTINGS] lead because they are the destinations: a tool or a settings row is a
+ * thing you open and use, where a file match is a thing you then have to find something in. They
+ * also lose the most from being ranked by score alone, because the category ordering is absolute -
+ * any file match outranks every settings match, however good, and selection starts at index 0, so
+ * whatever leads is what Enter opens. "atlas" put one tool under fifteen files that shared the
+ * word; "dark theme" in a repo holding a `DarkTheme.kt` did the same to the settings row that
+ * actually changes the theme.
+ *
+ * The absoluteness is the trade. A per-category score bonus would let an exceptional file match
+ * beat a mediocre settings one, which is arguably better ranking and definitely worse to predict -
+ * and predictability is what a launcher is for. Ordering stays absolute; the order itself is the
+ * knob.
  *
  * [MCP] and [PAGES] sit last for the opposite reason: an MCP row cannot be activated at all, and a
  * recent page is the weakest kind of intent.
@@ -241,12 +249,12 @@ enum class SearchCategory(
 ) {
     ALL("All", "apps"),
     TOOLS("Tools", "apps"),
+    SETTINGS("Settings", "settings"),
     TABS("Open Tabs", "tab"),
     FILES("Files", "description"),
     BOOKMARKS("Bookmarks", "bookmark"),
     RUN_CONFIGS("Run Configs", "play_arrow"),
     COMMANDS("Commands", "terminal"),
-    SETTINGS("Settings", "settings"),
     MCP("MCP Tools", "build"),
     PAGES("Recent Pages", "history"),
 }
