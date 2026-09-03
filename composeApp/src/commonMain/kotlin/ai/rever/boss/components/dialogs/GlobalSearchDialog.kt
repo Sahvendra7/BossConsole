@@ -81,6 +81,18 @@ private val CardShape = RoundedCornerShape(12.dp)
 private val SmallCardShape = RoundedCornerShape(8.dp)
 private val SectionTitleColor get() = BossThemeController.current.colors.textMuted
 
+/** Tiles per row in the empty state. Five keeps two rows at ten categories and fits a narrow window. */
+private const val EMPTY_STATE_TILES_PER_ROW = 5
+
+/**
+ * Width of an empty-state tile.
+ *
+ * Fixed, so the row is a grid rather than ten columns each as wide as its own label: the names come
+ * from [SearchCategory.displayName] and run from "Files" to "Recent Pages", which laid out
+ * unconstrained gives visibly uneven gaps. Wide enough for two lines of the longest name.
+ */
+private val EmptyStateTileWidth = 76.dp
+
 /**
  * Global search dialog for BOSS Spotlight - quickly find files, tabs, bookmarks, and run configs.
  *
@@ -673,7 +685,7 @@ private fun SearchInputField(
                 Box {
                     if (query.isEmpty()) {
                         Text(
-                            text = "Search files, tabs, commands...",
+                            text = "Search tools, settings, files, tabs, commands...",
                             color = BossTheme.colors.textSecondary,
                             fontSize = 16.sp,
                         )
@@ -715,18 +727,30 @@ private fun EmptySearchState() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // Search categories preview
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            SearchCategoryPreview(Icons.Outlined.Tab, "Tabs", TabsAccent)
-            SearchCategoryPreview(Icons.Outlined.Description, "Files", SelectionAccent)
-            SearchCategoryPreview(Icons.Outlined.Terminal, "Commands", CommandsAccent)
-            SearchCategoryPreview(Icons.Outlined.Bookmark, "Bookmarks", BookmarksAccent)
-            SearchCategoryPreview(Icons.Outlined.PlayArrow, "Run", RunConfigAccent)
-        }
+        // Every category the search actually has, read off the enum rather than listed here.
+        //
+        // Listing them by hand is what left this panel advertising five sources after four more
+        // were added: tools, settings, MCP tools and recent pages were all searchable and nothing
+        // on this screen said so. Derived, it cannot drift again - a new category appears here the
+        // moment it exists, in the same order as the chips and the sections.
+        //
+        // Chunked rather than one row: ten tiles do not fit a narrow window, and wrapping keeps
+        // them centred instead of clipping the last ones.
+        SearchCategory.entries
+            .filter { it != SearchCategory.ALL }
+            .chunked(EMPTY_STATE_TILES_PER_ROW)
+            .forEach { row ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    row.forEach { category ->
+                        SearchCategoryPreview(category.chipIcon(), category.displayName, category.accent())
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         Text(
             text = "Search Everything",
@@ -738,7 +762,9 @@ private fun EmptySearchState() {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Find files, switch tabs, run commands, open bookmarks, or run configs",
+            text =
+                "Open a tool or a settings page, find a file, switch tabs, run a command " +
+                    "or a config, open a bookmark or a recent page, or look up an MCP tool",
             color = BossTheme.colors.textSecondary,
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
@@ -778,6 +804,7 @@ private fun SearchCategoryPreview(
     color: Color,
 ) {
     Column(
+        modifier = Modifier.width(EmptyStateTileWidth),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -800,6 +827,7 @@ private fun SearchCategoryPreview(
             text = label,
             color = BossTheme.colors.textSecondary,
             fontSize = 11.sp,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -977,18 +1005,11 @@ private fun SectionHeader(
                 .padding(vertical = 8.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val icon =
-            when (category) {
-                SearchCategory.FILES -> Icons.Outlined.Description
-                SearchCategory.TABS -> Icons.Outlined.Tab
-                SearchCategory.BOOKMARKS -> Icons.Outlined.Bookmark
-                SearchCategory.RUN_CONFIGS -> Icons.Outlined.PlayArrow
-                SearchCategory.COMMANDS -> Icons.Outlined.Terminal
-                else -> Icons.Outlined.Apps
-            }
-
         Icon(
-            imageVector = icon,
+            // chipIcon, not a second table: this one named only the five original categories and
+            // fell through to Apps, so every section added by this PR - Tools, Settings, MCP Tools,
+            // Recent Pages - drew the generic grid icon while its own chip drew the right one.
+            imageVector = category.chipIcon(),
             contentDescription = null,
             tint = SectionTitleColor,
             modifier = Modifier.size(14.dp),
@@ -1180,8 +1201,10 @@ internal data class SimpleRow(
 /**
  * How each of the four simple results is drawn.
  *
- * The differences between them are data - an icon, an accent, which field is the subtitle - so
- * they live here as a table rather than as four call sites whose padding and icon sizes drift.
+ * The differences between them are data - which field is the subtitle, and whether there is a chip
+ * on the end - so they live here as a table rather than as four call sites whose padding and icon
+ * sizes drift. Icon and accent are not among the differences: both come from [chipIcon] and
+ * [accent], so a category looks the same on a result row, its chip and its empty-state tile.
  *
  * Null for the five types that draw themselves; [SearchResultItem] branches on that to pick the
  * family. Not `@Composable`, and `internal` rather than private, because it is a pure mapping over
@@ -1191,18 +1214,18 @@ internal data class SimpleRow(
 internal fun SearchResult.simpleRow(): SimpleRow? =
     when (this) {
         is SearchResult.ToolResult -> {
-            SimpleRow(Icons.Outlined.Apps, ToolsAccent, label, panelId)
+            SimpleRow(category.chipIcon(), category.accent(), label, panelId)
         }
 
         is SearchResult.SettingResult -> {
             // The breadcrumb, which is most of what tells two similarly named settings apart.
-            SimpleRow(Icons.Outlined.Settings, SettingsAccent, label, breadcrumb)
+            SimpleRow(category.chipIcon(), category.accent(), label, breadcrumb)
         }
 
         is SearchResult.McpToolResult -> {
             SimpleRow(
-                icon = Icons.Outlined.Build,
-                accent = McpAccent,
+                icon = category.chipIcon(),
+                accent = category.accent(),
                 // The name clients call it by, so what is on screen is what gets typed.
                 title = "${McpToolRegistryImpl.CLIENT_TOOL_PREFIX}$name",
                 subtitle = description,
@@ -1213,7 +1236,7 @@ internal fun SearchResult.simpleRow(): SimpleRow? =
         }
 
         is SearchResult.PageResult -> {
-            SimpleRow(Icons.Outlined.History, PagesAccent, title.ifBlank { url }, url)
+            SimpleRow(category.chipIcon(), category.accent(), title.ifBlank { url }, url)
         }
 
         // Named one by one rather than left to an `else`, which is the whole point: this `when` is
@@ -1669,6 +1692,27 @@ private fun SearchCategory.chipIcon(): ImageVector =
         SearchCategory.SETTINGS -> Icons.Outlined.Settings
         SearchCategory.MCP -> Icons.Outlined.Build
         SearchCategory.PAGES -> Icons.Outlined.History
+    }
+
+/**
+ * The category's accent colour.
+ *
+ * Beside [chipIcon] and for the same reason: one definition per category, so a result row and the
+ * empty-state tile for the same category cannot drift apart. Section headers deliberately do not
+ * use it - they tint everything with [SectionTitleColor], which is what keeps them quiet.
+ */
+private fun SearchCategory.accent(): Color =
+    when (this) {
+        SearchCategory.ALL -> SelectionAccent
+        SearchCategory.FILES -> SelectionAccent
+        SearchCategory.TABS -> TabsAccent
+        SearchCategory.BOOKMARKS -> BookmarksAccent
+        SearchCategory.RUN_CONFIGS -> RunConfigAccent
+        SearchCategory.COMMANDS -> CommandsAccent
+        SearchCategory.TOOLS -> ToolsAccent
+        SearchCategory.SETTINGS -> SettingsAccent
+        SearchCategory.MCP -> McpAccent
+        SearchCategory.PAGES -> PagesAccent
     }
 
 /**
