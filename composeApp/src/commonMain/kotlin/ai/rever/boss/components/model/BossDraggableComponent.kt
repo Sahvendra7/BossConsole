@@ -306,9 +306,13 @@ class BossDraggableComponent(
      *
      * Not remembered anywhere: `itemsBySlot` is Compose state, so reading it inside composition is
      * what keeps `ToolLauncherDialog` subscribed to a plugin loading or unloading. The global
-     * search's supplier gets no subscription - it runs on a background coroutine with no snapshot
-     * observer - and does not need one: it is re-invoked per search, which is the freshness that
-     * matters there.
+     * search's supplier gets no subscription and does not need one - it is re-invoked per search,
+     * which is the freshness that matters there.
+     *
+     * Note the reason is the reading CONTEXT, not the thread: `GlobalSearchService.search` invokes
+     * the supplier from the dialog's `LaunchedEffect` before it hands off to `Dispatchers.Default`,
+     * so it is not a background thread - but an effect body is not a snapshot observation scope
+     * either way, so nothing subscribes.
      */
     fun allSidebarTools(): List<SidebarItem> =
         SidebarVisibilitySettings.ALL_SLOT_IDS

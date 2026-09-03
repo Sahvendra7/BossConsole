@@ -1179,7 +1179,15 @@ private fun DetailedResultItem(
         is SearchResult.McpToolResult,
         is SearchResult.PageResult,
         -> {
-            error("DetailedResultItem got a simple result type: ${result::class.simpleName}")
+            // Logged and skipped rather than thrown. `simpleRow` already makes a new result type a
+            // compile error, so this branch is unreachable - and it runs inside a composable,
+            // where a throw means the render-recovery path takes out the whole dialog. One missing
+            // row is the better failure for something that cannot happen.
+            globalSearchLogger.error(
+                LogCategory.UI,
+                "DetailedResultItem got a simple result type; skipping the row",
+                mapOf("type" to result::class.simpleName.orEmpty()),
+            )
         }
     }
 }

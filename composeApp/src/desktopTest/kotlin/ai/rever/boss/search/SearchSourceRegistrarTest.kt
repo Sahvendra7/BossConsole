@@ -7,7 +7,10 @@ import ai.rever.boss.plugin.api.McpToolDefinition
 import ai.rever.boss.plugin.api.McpToolHandler
 import ai.rever.boss.plugin.api.McpToolProvider
 import ai.rever.boss.plugin.api.McpToolResult
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import java.io.File
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -24,13 +27,44 @@ import kotlin.test.assertTrue
  * whole suite green while the shipped app silently lost signposts or highlighted the wrong row,
  * because a search index is the one place staleness and misrouting are invisible.
  *
+ * The two MCP tests touch `McpToolRegistryImpl`, which forces the `~/.boss` disabled-tools read
+ * that `SearchSources`' KDoc cites as a reason for the seam. That is accepted here and only here:
+ * it is read-only, and a test whose whole purpose is the unregistered production path cannot
+ * substitute the thing it is testing. The recent-pages half would also WRITE, which is why
+ * `settingsFile` is redirected in `setUp`.
+ *
  * Asserts against a real built-in row rather than a fixture, so a rename in
  * `SettingsSearchEntries.kt` that this file does not follow shows up here. `SettingsSearchIndexDriftTest`
  * already guarantees the label exists; this guarantees it survives the trip into the global search.
  */
 class SearchSourceRegistrarTest {
+    private companion object {
+        const val PROBE_PAGE = "https://registrar-probe.example.com/page"
+        const val RECORD_TIMEOUT_MS = 5_000L
+    }
+
+    private lateinit var realPagesFile: File
+    private lateinit var tempPagesFile: File
+
     @BeforeTest
     fun setUp() {
+        // RecentBrowserPagesManager persists, and its own KDoc says settingsFile is "overridable so
+        // tests exercise the real read/write path without touching ~/.boss". The recent-pages test
+        // below records a probe page, so without this it queues a write of that probe into the
+        // developer's real profile - and `removePage` saves immediately, so a mistimed cleanup
+        // could leave it there for good.
+        //
+        // The object's own initialiser has already read the real file by the time this runs; that
+        // read is harmless and unavoidable for a singleton. What matters is that no WRITE lands
+        // there.
+        realPagesFile = RecentBrowserPagesManager.settingsFile
+        tempPagesFile =
+            kotlin.io.path
+                .createTempDirectory("registrar-test")
+                .toFile()
+                .resolve("recent-browser-pages.json")
+        RecentBrowserPagesManager.settingsFile = tempPagesFile
+
         // Empty suppliers for MCP and pages, which is right for the tests that want a source
         // absent and wrong for the three below, which exist to exercise the production default.
         // Those re-clear with useProductionDefaults for themselves.
@@ -42,6 +76,9 @@ class SearchSourceRegistrarTest {
 
     @AfterTest
     fun tearDown() {
+        RecentBrowserPagesManager.settingsFile = realPagesFile
+        tempPagesFile.parentFile?.deleteRecursively()
+
         SearchSources.clearForTests()
         GlobalSearchService.clearResults()
         GlobalSearchService.setActiveCategory(SearchCategory.ALL)
@@ -165,20 +202,29 @@ class SearchSourceRegistrarTest {
     fun `with no override registered, recent pages come from the real manager`() {
         SearchSources.clearForTests(useProductionDefaults = true)
         RecentBrowserPagesManager.recordPageVisit(
-            url = "https://registrar-probe.example.com/page",
+            url = PROBE_PAGE,
             title = "Registrar Probe Page",
         )
         try {
+            // recordPageVisit dispatches its update into a coroutine on IO and returns, so the
+            // page is not in the flow yet. Waiting on the state rather than assuming the nine
+            // async hops of a search are enough slack - and if the update landed after the
+            // `finally`, the cleanup would run first and leave the probe behind.
+            runBlocking {
+                withTimeout(RECORD_TIMEOUT_MS) {
+                    RecentBrowserPagesManager.recentPages.first { pages -> pages.any { it.url == PROBE_PAGE } }
+                }
+            }
             val hits =
                 runBlocking { GlobalSearchService.search("registrar probe", windowId = null) }
                     .filterIsInstance<SearchResult.PageResult>()
 
             assertTrue(
-                hits.any { it.url == "https://registrar-probe.example.com/page" },
+                hits.any { it.url == PROBE_PAGE },
                 "the default supplier must read the real recent-pages manager",
             )
         } finally {
-            RecentBrowserPagesManager.removePage("https://registrar-probe.example.com/page")
+            RecentBrowserPagesManager.removePage(PROBE_PAGE)
         }
     }
 

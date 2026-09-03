@@ -93,13 +93,12 @@ object GlobalSearchService {
         queryLower: String,
         field: String,
     ): Int? {
-        // Trimmed, because `contains` is exact where the name match is fuzzy: a trailing space off
-        // a paste turned a description hit into a miss while the name hit survived, and nothing on
-        // the row would explain the asymmetry.
-        val needle = queryLower.trim()
+        // `search()` trims the query for every source, so this needs no trim of its own - it did
+        // once, and having only this one trim is what made whitespace change the shape of the
+        // results rather than their number.
         val fieldLower = field.lowercase()
-        if (needle.isEmpty() || !fieldLower.contains(needle)) return null
-        return FuzzyMatcher.match(needle, field, fieldLower)?.score?.takeIf { it >= MIN_SCORE }
+        if (queryLower.isEmpty() || !fieldLower.contains(queryLower)) return null
+        return FuzzyMatcher.match(queryLower, field, fieldLower)?.score?.takeIf { it >= MIN_SCORE }
     }
 
     /**
@@ -147,9 +146,15 @@ object GlobalSearchService {
      *   through.
      */
     suspend fun search(
-        query: String,
+        rawQuery: String,
         windowId: String?,
     ): List<SearchResult> {
+        // Trimmed once, here, so all nine sources agree. proseScore trimmed its own needle and the
+        // fuzzy sources did not, which made trailing whitespace change the SHAPE of the results
+        // rather than just their number: typing "git " and pausing dropped every Tools row, since
+        // a space is not a subsequence of `git_status`, while the description hit survived. That is
+        // the same asymmetry proseScore's trim was added to avoid, pointing the other way.
+        val query = rawQuery.trim()
         if (query.isBlank()) {
             _searchResults.value = emptyList()
             return emptyList()
