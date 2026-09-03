@@ -17,11 +17,24 @@ import kotlin.test.assertTrue
  * Unit tests for [ClosedTabHistory], the stack behind Cmd+Shift+T.
  */
 class ClosedTabHistoryTest {
+    private companion object {
+        const val DOOMED_PLUGIN = "com.example.doomed"
+    }
+
     private data class FakeTab(
         override val id: String,
         override val title: String = id,
     ) : TabInfo {
         override val typeId = TabTypeId("test", "test")
+        override val icon: ImageVector = Icons.Default.Add
+        override val tabIcon: TabIcon? = null
+    }
+
+    private data class PluginTab(
+        override val id: String,
+        override val title: String = id,
+    ) : TabInfo {
+        override val typeId = TabTypeId("plugin-tab", DOOMED_PLUGIN)
         override val icon: ImageVector = Icons.Default.Add
         override val tabIcon: TabIcon? = null
     }
@@ -77,6 +90,45 @@ class ClosedTabHistoryTest {
         // The oldest entries were dropped, not the newest.
         val newest = ClosedTabHistory.pop(windowA)
         assertEquals("tab-${ClosedTabHistory.MAX_ENTRIES + 9}", newest?.id)
+    }
+
+    @Test
+    fun `re-closing an id deep in a full stack moves it up without changing depth`() {
+        // record does removeAll -> addFirst -> trim, and the three interact: at MAX_ENTRIES the
+        // dedupe has to remove before the trim, or the re-closed tab pushes the oldest entry off
+        // and the depth is wrong by one. Subtle enough to pin.
+        repeat(ClosedTabHistory.MAX_ENTRIES) { i -> ClosedTabHistory.record(windowA, FakeTab("tab-$i")) }
+        assertEquals(ClosedTabHistory.MAX_ENTRIES, ClosedTabHistory.depths.value[windowA])
+
+        // The oldest surviving entry, reopened and closed again.
+        ClosedTabHistory.record(windowA, FakeTab("tab-0"))
+
+        assertEquals(
+            ClosedTabHistory.MAX_ENTRIES,
+            ClosedTabHistory.depths.value[windowA],
+            "moving an entry must not evict another",
+        )
+        assertEquals("tab-0", ClosedTabHistory.pop(windowA)?.id, "and it is on top")
+        // Every other id is still there exactly once.
+        val remaining = generateSequence { ClosedTabHistory.pop(windowA) }.map { it.id }.toList()
+        assertEquals(remaining.size, remaining.distinct().size, "no duplicates")
+        assertEquals((1 until ClosedTabHistory.MAX_ENTRIES).map { "tab-$it" }.toSet(), remaining.toSet())
+    }
+
+    @Test
+    fun `an unloaded plugin's entries are dropped across every window`() {
+        // Entries the user closed BEFORE the unload would otherwise pin the plugin's classloader,
+        // and after an update hand the new factory an instance of the old class.
+        ClosedTabHistory.record(windowA, FakeTab("keep-a"))
+        ClosedTabHistory.record(windowA, PluginTab("doomed-a"))
+        ClosedTabHistory.record(windowB, PluginTab("doomed-b"))
+
+        ClosedTabHistory.dropEntriesFor(DOOMED_PLUGIN)
+
+        assertEquals(1, ClosedTabHistory.depths.value[windowA])
+        assertEquals("keep-a", ClosedTabHistory.pop(windowA)?.id)
+        assertNull(ClosedTabHistory.depths.value[windowB], "the window's last entry was that plugin's")
+        assertFalse(ClosedTabHistory.hasEntries(windowB))
     }
 
     @Test

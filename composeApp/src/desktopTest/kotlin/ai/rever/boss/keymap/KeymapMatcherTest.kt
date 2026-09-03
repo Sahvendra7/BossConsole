@@ -209,9 +209,22 @@ class KeymapMatcherTest {
                 enabled = true,
             )
 
-        val signature = binding.signature()
-        // Should be sorted modifiers + uppercase key
-        assertEquals("BROWSER:Cmd+Shift+N", signature)
+        // The signature is an opaque comparison key, not a display string: it canonicalises
+        // both halves so that everything asking "is this the same chord" agrees with
+        // findMatchingBinding, which folds aliases when it matches. Asserting its literal shape
+        // would pin the format rather than the contract, so these assert the contract.
+        assertTrue(binding.signature().startsWith("BROWSER:"), binding.signature())
+        assertEquals(
+            binding.signature(),
+            binding.copy(key = "N", modifiers = listOf("Shift", "Meta")).signature(),
+            "spelling and order do not change a chord",
+        )
+        assertNotEquals(
+            binding.signature(),
+            binding.copy(context = ShortcutContext.EDITOR).signature(),
+            "context is part of the identity",
+        )
+        assertNotEquals(binding.signature(), binding.copy(modifiers = listOf("Cmd")).signature())
     }
 
     @Test
@@ -225,8 +238,12 @@ class KeymapMatcherTest {
                 enabled = true,
             )
 
-        val signature = binding.signature()
-        assertEquals("GLOBAL:ESCAPE", signature)
+        assertEquals(
+            binding.signature(),
+            binding.copy(key = "Esc").signature(),
+            "Esc and Escape are the same key",
+        )
+        assertNotEquals(binding.signature(), binding.copy(modifiers = listOf("Cmd")).signature())
     }
 
     // ==================== MATCHES TESTS ====================
@@ -398,10 +415,30 @@ class KeymapMatcherTest {
     }
 
     @Test
-    fun `KeyStroke signature formats correctly`() {
+    fun `KeyStroke signature ignores order, case and modifier spelling`() {
         val keystroke = KeyStroke("N", listOf("Shift", "Cmd"))
-        // Modifiers should be sorted
-        assertEquals("Cmd+Shift+N", keystroke.signature())
+
+        assertEquals(keystroke.signature(), KeyStroke("N", listOf("Cmd", "Shift")).signature())
+        assertEquals(keystroke.signature(), KeyStroke("n", listOf("Meta", "shift")).signature())
+        assertNotEquals(keystroke.signature(), KeyStroke("N", listOf("Ctrl", "Shift")).signature())
+    }
+
+    @Test
+    fun `KeyStroke signature folds key-name aliases`() {
+        // The case that let migration add a second action onto an occupied chord: a hand-edited
+        // or older keymap file spelling an arrow "Right" while the presets say "DirectionRight".
+        assertEquals(
+            KeyStroke("Right", listOf("Cmd", "Alt")).signature(),
+            KeyStroke("DirectionRight", listOf("Meta", "Option")).signature(),
+        )
+        assertEquals(
+            KeyStroke("[", emptyList()).signature(),
+            KeyStroke("OpenBracket", emptyList()).signature(),
+        )
+        assertNotEquals(
+            KeyStroke("OpenBracket", emptyList()).signature(),
+            KeyStroke("CloseBracket", emptyList()).signature(),
+        )
     }
 
     @Test
@@ -506,8 +543,8 @@ class KeymapMatcherTest {
 
         val signatures = binding.allSignatures()
         assertEquals(2, signatures.size)
-        assertTrue(signatures.contains("GLOBAL:Cmd+C"))
-        assertTrue(signatures.contains("GLOBAL:Ctrl+C"))
+        assertTrue(signatures.contains(KeyStroke("C", listOf("Cmd")).signature().let { "GLOBAL:$it" }))
+        assertTrue(signatures.contains(KeyStroke("C", listOf("Ctrl")).signature().let { "GLOBAL:$it" }))
     }
 
     @Test

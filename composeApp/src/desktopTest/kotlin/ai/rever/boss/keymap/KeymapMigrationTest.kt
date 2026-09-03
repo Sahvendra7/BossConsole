@@ -17,8 +17,8 @@ import kotlin.test.assertTrue
  * Migration of an existing ~/.boss/keymap-settings.json onto a newer preset.
  *
  * Adding missing ACTIONS was enough while presets only ever gained actions. A preset can also
- * gain a new alternate chord for an action every keymap file already contains — zoom in picking
- * up Cmd+Shift+Equals, what a US keyboard reports for "Cmd+Plus" — and that change reaches
+ * gain a new alternate chord for an action every keymap file already contains - zoom in picking
+ * up Cmd+Shift+Equals, what a US keyboard reports for "Cmd+Plus" - and that change reaches
  * nobody who has launched BOSS before, because the stored alternate-less copy wins.
  */
 class KeymapMigrationTest {
@@ -91,6 +91,66 @@ class KeymapMigrationTest {
                 KeymapValidator.validate(migrated).joinToString { it.description() },
         )
         assertNull(migrated.getBinding(KeymapActions.TAB_REOPEN_CLOSED), "Cmd+Shift+T was taken")
+    }
+
+    @Test
+    fun `an alias-spelled stored chord still counts as taken`() {
+        // The case sameChordAs exists for, applied to the other half of migration: a keymap file
+        // written by an older build, hand-edited, or imported can spell a chord
+        // ["Meta","Option"] + "Right" where the presets say ["Cmd","Alt"] + "DirectionRight".
+        // findMatchingBinding folds both, so if the chord check does not, migration adds a
+        // second action onto an occupied chord and neither one reliably wins - with no conflict
+        // badge either, since the validator compares the same signatures.
+        val legacy = legacySettings()
+        val aliasSpelled =
+            assertNotNull(legacy.getBinding(KeymapActions.PANEL_NAVIGATE_RIGHT))
+                .copy(key = "Three", modifiers = listOf("Meta"))
+        val customised =
+            legacy.copy(shortcuts = legacy.shortcuts + (KeymapActions.PANEL_NAVIGATE_RIGHT to aliasSpelled))
+
+        val migrated = KeymapSettingsManager.migrateSettings(customised)
+
+        assertNull(
+            migrated.getBinding(KeymapActions.TAB_SELECT_BY_INDEX[2]),
+            "Meta+3 is Cmd+3, so the chord is taken",
+        )
+        assertTrue(
+            KeymapValidator.validate(migrated).isEmpty(),
+            KeymapValidator.validate(migrated).joinToString { it.description() },
+        )
+    }
+
+    @Test
+    fun `an alias-spelled key name still counts as taken`() {
+        // Same case, on the key half. "Right" is what an older build wrote for what the presets
+        // now call "DirectionRight", and tab.next_positional is one of the actions this
+        // migration delivers on Cmd+Alt+DirectionRight.
+        val legacy = legacySettings()
+        val aliasSpelled =
+            assertNotNull(legacy.getBinding(KeymapActions.PANEL_NAVIGATE_RIGHT))
+                .copy(key = "Right", modifiers = listOf("Cmd", "Alt"))
+        val customised =
+            legacy.copy(
+                shortcuts =
+                    legacy.shortcuts - KeymapActions.TAB_NEXT_POSITIONAL +
+                        (KeymapActions.PANEL_NAVIGATE_RIGHT to aliasSpelled),
+            )
+        assertTrue(KeymapValidator.validate(customised).isEmpty(), "the input itself is conflict-free")
+
+        val migrated = KeymapSettingsManager.migrateSettings(customised)
+
+        assertTrue(
+            KeymapValidator.validate(migrated).isEmpty(),
+            "Cmd+Alt+Right is Cmd+Alt+DirectionRight: " +
+                KeymapValidator.validate(migrated).joinToString { it.description() },
+        )
+        // The Cmd+Shift+] alternate is free, so the action still lands - on that chord alone.
+        val stepping = migrated.getBinding(KeymapActions.TAB_NEXT_POSITIONAL)
+        val heldChord = aliasSpelled.primaryKeystroke.signature()
+        assertTrue(
+            stepping == null || stepping.allKeystrokes.none { it.signature() == heldChord },
+            "it must not have been given the chord panel navigation holds",
+        )
     }
 
     @Test

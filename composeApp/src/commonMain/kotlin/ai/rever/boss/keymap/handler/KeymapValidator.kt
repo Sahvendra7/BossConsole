@@ -100,7 +100,8 @@ object KeymapValidator {
             // chords, only one is listed, and which signature survives follows shortcuts.values
             // iteration order. Under-counting is the safer end of that trade (a badge that says
             // 1 for one visible problem beats 2 for one), and reporting per chord is the only
-            // alternative while KeymapConflict carries a single signature.
+            // alternative while KeymapConflict carries a single signature. The visible symptom
+            // is that fixing the reported chord surfaces the second one with no prior warning.
             .distinctBy { conflict -> conflict.bindings.map { it.actionId }.toSet() }
     }
 

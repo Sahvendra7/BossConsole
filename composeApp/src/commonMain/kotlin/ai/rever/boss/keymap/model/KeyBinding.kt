@@ -26,6 +26,63 @@ internal fun canonicalModifiers(modifiers: List<String>): Set<String> =
         }
 
 /**
+ * The one name a key answers to, with every spelling the codebase can produce folded together.
+ *
+ * Three vocabularies reach this: Compose's `Key` property names, which the presets store
+ * ("DirectionLeft", "OpenBracket"); Compose's rendered display names ("Left Bracket", the arrow
+ * glyphs, U+2423 for space), which the Compose matcher sees; and AWT's `getKeyText` output plus
+ * the older `"Left"` spelling a keymap file written by an earlier build still carries. They are
+ * the same keys, so a comparison that does not fold them answers "different chord" for one the
+ * user experiences as identical.
+ *
+ * The result is an opaque comparison key, not a display string. Case is not preserved.
+ */
+internal fun canonicalKeyName(keyName: String): String {
+    val lower = keyName.lowercase()
+    return KEY_ALIASES[lower] ?: lower
+}
+
+/**
+ * Every spelling that is not already its own canonical name, keyed lowercase.
+ *
+ * A table rather than a `when` so adding a spelling is a one-line edit and the function stays
+ * trivial. Anything absent canonicalises to itself, lowercased, which is what makes the presets'
+ * own vocabulary the default answer.
+ */
+private val KEY_ALIASES: Map<String, String> =
+    buildMap {
+        fun alias(
+            canonical: String,
+            vararg spellings: String,
+        ) = spellings.forEach { put(it, canonical) }
+
+        alias("directionleft", "left", "arrowleft", "←")
+        alias("directionright", "right", "arrowright", "→")
+        alias("directionup", "up", "arrowup", "↑")
+        alias("directiondown", "down", "arrowdown", "↓")
+        alias("space", "spacebar", "␣", " ")
+        alias("escape", "esc")
+        alias("enter", "return")
+        // A dedicated + key and Shift+= are the same chord to every preset: zoom in is stored as
+        // Equals with a Cmd+Shift+Equals alternate.
+        alias("equals", "plus", "+", "=")
+        alias("minus", "-")
+        alias("openbracket", "left bracket", "leftbracket", "[")
+        alias("closebracket", "right bracket", "rightbracket", "]")
+        // Shift+/ reports "?" on a US layout.
+        alias("slash", "/", "?")
+        alias("backslash", "\\")
+        alias("semicolon", ";")
+        alias("apostrophe", "'")
+        alias("comma", ",")
+        alias("period", ".")
+        alias("grave", "`")
+        // Digit characters against the word forms the presets store ("One" for Cmd+1).
+        listOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+            .forEachIndexed { digit, word -> put(digit.toString(), word) }
+    }
+
+/**
  * Represents a single key combination (key + modifiers).
  * Used to support multiple key combos per action (e.g., Cmd+C AND Ctrl+C).
  *
@@ -81,8 +138,14 @@ data class KeyStroke(
      * Format: "modifiers+key"
      */
     fun signature(): String {
-        val modifierStr = modifiers.sorted().joinToString("+")
-        val keyStr = key.uppercase()
+        // Canonicalised on both halves, not merely sorted and uppercased. Everything that asks
+        // "is this the same chord" compares signatures - KeymapValidator's conflict grouping,
+        // KeymapPresets.claimsChord, the migration's chord check - while findMatchingBinding
+        // folds aliases when it matches. A file spelling a chord ["Meta","Option"]+"Right" is
+        // the same chord to the matcher and used to be a different one here, which let migration
+        // add a second action onto it: a chord that then neither works nor shows a badge.
+        val modifierStr = canonicalModifiers(modifiers).sorted().joinToString("+")
+        val keyStr = canonicalKeyName(key)
         return if (modifierStr.isNotEmpty()) "$modifierStr+$keyStr" else keyStr
     }
 

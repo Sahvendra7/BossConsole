@@ -3,14 +3,12 @@ package ai.rever.boss.keymap
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeyStroke
 import ai.rever.boss.keymap.model.KeymapSettings
-import ai.rever.boss.keymap.model.canonicalModifiers
 import ai.rever.boss.keymap.presets.KeymapPresets
 import ai.rever.boss.keymap.presets.KeymapPresets.claimsChord
 import ai.rever.boss.keymap.presets.KeymapPresets.withoutChordsTakenBy
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.window.AWTKeyboardInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -139,9 +137,11 @@ actual object KeymapSettingsManager {
 
         val dropped = missingActions.keys - newActions.keys
         if (dropped.isNotEmpty()) {
-            // Said out loud: a user who reads the docs, does not get Cmd+3, and finds no
-            // conflict badge has nothing else to go on.
-            logger.info(
+            // Said out loud so a user who reads the docs, does not get Cmd+3, and finds no
+            // conflict badge has something to go on. At DEBUG because when every new chord is
+            // taken there is nothing to persist, migrateSettings returns `loaded` unchanged, and
+            // an INFO line would repeat on every launch for the rest of that keymap's life.
+            logger.debug(
                 LogCategory.SYSTEM,
                 "Keymap migration dropped new actions whose chords this keymap already claims",
                 mapOf("actionIds" to dropped.joinToString()),
@@ -342,16 +342,13 @@ private fun chordHolders(settings: KeymapSettings): List<KeyBinding> = settings.
  * KeyStroke.modifiers is a List, and the keymap file is documented as hand-editable, so
  * ["Shift","Cmd"] would otherwise read as a rebind and silently miss the alternate top-up.
  *
- * Both halves go through the same folds the matchers apply: key names through
- * [AWTKeyboardInterceptor.keyNameMatches] ("Left" and "DirectionLeft" are one key) and
- * modifiers through [canonicalModifiers] ("Meta" and "Cmd" are one modifier). A keymap written
- * by an older build, hand-edited, or imported from another machine can hold either spelling;
- * without the folds such a file reads as rebound and silently misses the top-up, though both
- * matchers would have fired it.
+ * Just [KeyStroke.signature], which canonicalises both halves - "Left" and "DirectionLeft" are
+ * one key, "Meta" and "Cmd" one modifier. It reads as its own function because the question here
+ * is "did the user rebind this", and because there used to be a hand-rolled comparison in its
+ * place that folded key names but not modifiers, so a keymap written with "Meta" read as rebound
+ * and silently missed its top-up though both matchers would have fired it.
  *
  * Top-level rather than a member of the object: it is a property of two KeyStrokes, and the
  * object is at its TooManyFunctions threshold.
  */
-private fun KeyStroke.sameChordAs(other: KeyStroke): Boolean =
-    AWTKeyboardInterceptor.keyNameMatches(key, other.key) &&
-        canonicalModifiers(modifiers) == canonicalModifiers(other.modifiers)
+private fun KeyStroke.sameChordAs(other: KeyStroke): Boolean = signature() == other.signature()

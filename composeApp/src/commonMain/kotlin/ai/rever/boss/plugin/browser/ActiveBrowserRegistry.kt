@@ -45,6 +45,14 @@ object ActiveBrowserRegistry {
     private val handles = ConcurrentHashMap<String, BrowserHandle>()
     private val sequencer = AtomicLong(0)
 
+    /**
+     * Guards the mutate-then-recompute pair behind [publishWindows].
+     *
+     * Its own object rather than the map: [entries] is a ConcurrentHashMap read lock-free by
+     * [activeIn], so locking on it would put two different jobs under one name.
+     */
+    private val publishLock = Any()
+
     private val _windowsWithActiveBrowser = MutableStateFlow<Set<String>>(emptySet())
 
     /**
@@ -89,7 +97,7 @@ object ActiveBrowserRegistry {
      * the problem because it recomputes per call.
      */
     private fun publishWindows() =
-        synchronized(entries) {
+        synchronized(publishLock) {
             _windowsWithActiveBrowser.value = activeBrowserWindows(entries.values.toList(), ::isLive)
         }
 
@@ -125,7 +133,7 @@ object ActiveBrowserRegistry {
                 panelActive = panelActive,
                 sequence = sequencer.incrementAndGet(),
             )
-        synchronized(entries) {
+        synchronized(publishLock) {
             handles[handle.id] = handle
             entries[handle.id] = entry
         }
@@ -148,7 +156,7 @@ object ActiveBrowserRegistry {
     ) {
         if (token !is Entry) return
         val removed =
-            synchronized(entries) {
+            synchronized(publishLock) {
                 entries.remove(handleId, token).also { if (it) handles.remove(handleId) }
             }
         if (removed) publishWindows()
@@ -156,7 +164,7 @@ object ActiveBrowserRegistry {
 
     /** Unconditional removal, for handle disposal - the handle is gone, so no successor exists. */
     fun unregister(handleId: String) {
-        synchronized(entries) {
+        synchronized(publishLock) {
             entries.remove(handleId)
             handles.remove(handleId)
         }

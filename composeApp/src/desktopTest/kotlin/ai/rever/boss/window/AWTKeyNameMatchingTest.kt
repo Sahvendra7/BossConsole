@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
  *
  * The interceptor compares an AWT keycode's name against the `key` string stored in the keymap.
  * Those two vocabularies drifted: the presets use Compose's `Key.DirectionLeft` naming while the
- * interceptor emitted `"Left"`, so no arrow binding ever matched on this path — Cmd+Arrow panel
+ * interceptor emitted `"Left"`, so no arrow binding ever matched on this path - Cmd+Arrow panel
  * navigation survived only on the native menu accelerator and went dead whenever a terminal or
  * browser held focus. Cmd+Opt+Arrow tab stepping has no menu fallback at all, so it depends on
  * this agreeing.

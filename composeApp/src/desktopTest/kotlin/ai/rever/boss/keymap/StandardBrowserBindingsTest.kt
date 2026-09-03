@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
  * [KeymapPresets.withStandardBrowserBindings].
  *
  * The merge exists so the conventions live in one place instead of four hand-written preset
- * lists; these tests pin the two things that merge makes easy to get wrong — that the chords actually
+ * lists; these tests pin the two things that merge makes easy to get wrong - that the chords actually
  * land in each preset, and that landing them never introduces a conflict with a preset's own
  * opinion about a key.
  */
@@ -131,7 +131,7 @@ class StandardBrowserBindingsTest {
 
     @Test
     fun `a preset claiming the primary keeps the surviving alternate`() {
-        // VS Code and IntelliJ both put panel navigation on Cmd+Alt+Arrow — the primary of
+        // VS Code and IntelliJ both put panel navigation on Cmd+Alt+Arrow - the primary of
         // positional tab stepping. Dropping the whole binding there would take Cmd+Shift+[ and
         // Cmd+Shift+] with it and leave those presets unable to step tabs at all.
         listOf("VS Code" to KeymapPresets.getVSCodePreset(), "IntelliJ IDEA" to KeymapPresets.getIntelliJPreset())

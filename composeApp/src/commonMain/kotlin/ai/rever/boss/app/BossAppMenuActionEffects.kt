@@ -187,7 +187,7 @@ internal fun BossAppMenuActionEffects(
                     }
 
                     // Discrete chords (Cmd+Opt+Arrow, Cmd+Shift+Bracket): step in tab-bar order
-                    // and leave the overlay alone — there is no cycle for it to describe.
+                    // and leave the overlay alone - there is no cycle for it to describe.
                     MenuActionsHandler.TabSwitchAction.NEXT_POSITIONAL -> {
                         comp?.switchToNextTabPositional()
                     }
@@ -431,7 +431,7 @@ internal fun BossAppMenuActionEffects(
     }
 
     // Cmd+Shift+T. The history is window-scoped (see ClosedTabHistory) but the tab has to land
-    // in a panel, so it reopens into the active one. Works for every tab type — the entry is a
+    // in a panel, so it reopens into the active one. Works for every tab type - the entry is a
     // TabInfo, rebuilt through its own tab-type factory.
     //
     // The liveness check is passed in because tab ids are unique across the WINDOW while a

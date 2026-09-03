@@ -220,6 +220,12 @@ object MenuActionsHandler {
      * How many tabs the active panel of [windowId] holds, 0 before the first panel composes.
      *
      * Drives the interceptor's Cmd+1..Cmd+9 gate as well as [canStepTabs].
+     *
+     * The 0 default means those chords PROPAGATE for the frames between the interceptor going
+     * live and the publishing LaunchedEffect landing, while [panelCountState] defaults to 1 and
+     * so lets panel navigation through in the same window. Opposite defaults, deliberately: each
+     * one fails toward "do not claim a chord we cannot serve", which for a count of tabs is 0 and
+     * for a count of panels is 1.
      */
     fun activePanelTabCount(windowId: String): Int = _activePanelTabCountState.value[windowId] ?: 0
 
@@ -252,8 +258,8 @@ object MenuActionsHandler {
      * @param windowId The window ID to clean up
      */
     fun cleanupWindow(windowId: String) {
-        _splitEnabledState.value = _splitEnabledState.value - windowId
-        _panelCountState.value = _panelCountState.value - windowId
+        _splitEnabledState.update { it - windowId }
+        _panelCountState.update { it - windowId }
         _activePanelTabCountState.update { it - windowId }
         // Co-located with the other per-window state rather than left to the window-close path
         // alone: this one holds up to 25 TabInfos per window, so a future close path that

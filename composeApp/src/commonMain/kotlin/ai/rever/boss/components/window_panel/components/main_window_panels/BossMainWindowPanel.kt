@@ -2005,7 +2005,7 @@ class BossTabsComponent(
      * Remove a tab by index.
      *
      * @param recordForReopen whether this closure should be reopenable with Cmd+Shift+T. False
-     *   for closures the user did not ask for and could not undo anyway — a tab dropped because
+     *   for closures the user did not ask for and could not undo anyway - a tab dropped because
      *   its plugin was disabled has no factory left to rebuild it, and a workspace swap's
      *   teardown would otherwise bury the user's real closures under its own bookkeeping.
      */
@@ -2016,7 +2016,7 @@ class BossTabsComponent(
         val config = tabsState.value.tabs.getOrNull(index)
         config?.let {
             // Before the component is disposed, and while `it` is still the panel's live
-            // TabInfo — so a reopened browser tab returns to the page it was showing.
+            // TabInfo - so a reopened browser tab returns to the page it was showing.
             //
             // Every tab TYPE is reopenable: the entry is a TabInfo and [addTab] rebuilds it
             // through the same tab-type factory that opened it, so terminals, editors, Jupyter
@@ -2024,7 +2024,7 @@ class BossTabsComponent(
             // Runner terminals are the one exception, and not because of their type: their id
             // is the handle RunnerTerminalService tracks, and the line below has just told the
             // service to forget it. Rebuilding that id would produce a shell the service no
-            // longer associates with any run — a tab that looks like a runner terminal and is
+            // longer associates with any run - a tab that looks like a runner terminal and is
             // wired to nothing.
             if (recordForReopen && !it.id.startsWith(RUNNER_TERMINAL_PREFIX)) {
                 ClosedTabHistory.record(windowId, it)
@@ -2181,7 +2181,7 @@ class BossTabsComponent(
      * Cmd+Shift+Bracket.
      *
      * Separate from [switchToNextTab] because those chords have no "cycling modifier" whose
-     * release could commit an MRU cycle — Ctrl+Tab holds Ctrl down across several presses, but
+     * release could commit an MRU cycle - Ctrl+Tab holds Ctrl down across several presses, but
      * Cmd+Opt+Right is a discrete action. Routing them through the MRU path would start cycles
      * that never commit, leaving the switcher overlay on screen and the MRU order unchanged.
      */
@@ -2213,7 +2213,7 @@ class BossTabsComponent(
     /**
      * Default liveness check for [reopenLastClosedTab]: this panel only.
      *
-     * Callers that can see the whole window should pass their own — ids are unique across the
+     * Callers that can see the whole window should pass their own - ids are unique across the
      * WINDOW, and a panel cannot see its siblings.
      */
     private fun isTabIdInThisPanel(tabId: String): Boolean = tabsState.value.tabs.any { it.id == tabId }
@@ -2221,7 +2221,7 @@ class BossTabsComponent(
     /**
      * Reopen the most recently closed tab in this window (Cmd+Shift+T), into THIS panel.
      *
-     * Returns false when there was nothing to reopen, or when the tab could not be rebuilt —
+     * Returns false when there was nothing to reopen, or when the tab could not be rebuilt -
      * [addTab] returns -1 when no factory is registered for the type, which happens if the
      * owning plugin was unloaded since the tab was closed. That entry is consumed (it will not
      * rebuild on the next press either, and leaving it on the stack would wedge the shortcut on
@@ -2272,7 +2272,26 @@ class BossTabsComponent(
      * with nothing on screen to explain where they went.
      */
     private fun rebuildClosedTab(closed: TabInfo): Boolean {
-        val index = addTab(closed)
+        // addTab signals "no factory" with -1, but a factory that IS registered can still throw
+        // on a stale entry: after a plugin update the new classloader's factory may receive an
+        // instance of the old class, and `config as MyTabInfo` then fails. Discard rather than
+        // let it out of the reopenClosedTabEvents collector.
+        val index =
+            try {
+                addTab(closed)
+                // Throwable, not Exception: a stale entry across a plugin update surfaces as
+                // ClassCastException or NoClassDefFoundError, and the second is an Error.
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: Throwable,
+            ) {
+                bossMainWindowPanelLogger.warn(
+                    LogCategory.UI,
+                    "Tab factory threw rebuilding a closed tab; discarding the entry",
+                    mapOf("tabId" to closed.id, "typeId" to closed.typeId.typeId),
+                    error = e,
+                )
+                -1
+            }
         if (index < 0) {
             bossMainWindowPanelLogger.debug(
                 LogCategory.UI,

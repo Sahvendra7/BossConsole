@@ -244,10 +244,10 @@ object AWTKeyboardInterceptor {
                     }
 
                     // Begin (or continue) an MRU tab cycle: remember which modifier is
-                    // sustaining it so its release — and only its release — commits the cycle.
+                    // sustaining it so its release - and only its release - commits the cycle.
                     // This arms even when the focused panel has <=1 tab (the component-side
                     // switchTab/commit then no-op), so the interceptor may briefly believe a
-                    // cycle is active when none is — harmless, and Tab stays swallowed.
+                    // cycle is active when none is - harmless, and Tab stays swallowed.
                     if ((binding.actionId == KeymapActions.TAB_NEXT || binding.actionId == KeymapActions.TAB_PREVIOUS) &&
                         KeymapSettingsManager.currentSettings.value.tabSwitchMode == TabSwitchMode.MRU
                     ) {
@@ -398,6 +398,12 @@ object AWTKeyboardInterceptor {
             else -> bindingContext == currentContext
         }
 
+    /** A binding, and WHICH of its keystrokes the event matched. See [cyclingModifierKeyCode]. */
+    internal data class BindingMatch(
+        val binding: KeyBinding,
+        val keystroke: KeyStroke,
+    )
+
     /**
      * Find a matching binding for the AWT KeyEvent.
      * Context-aware: skips component-specific bindings when the focused component
@@ -407,13 +413,6 @@ object AWTKeyboardInterceptor {
      * consult it, so the caller built a matcher per keypress for nothing. The Compose-side
      * matcher is a different path (the Shortcuts tester and getMatchingBindings read it).
      */
-
-    /** A binding, and WHICH of its keystrokes the event matched. See [cyclingModifierKeyCode]. */
-    internal data class BindingMatch(
-        val binding: KeyBinding,
-        val keystroke: KeyStroke,
-    )
-
     private fun findMatchingBinding(event: KeyEvent): BindingMatch? {
         // Canonicalised once: keyNameMatches folds both sides, so doing it per keystroke per
         // binding meant two lowercase() allocations for each of ~47 bindings per keypress.
@@ -432,7 +431,7 @@ object AWTKeyboardInterceptor {
         for (binding in settings.shortcuts.values) {
             if (!binding.enabled) continue
 
-            // Primary keystroke OR any alternate — allKeystrokes is what makes Cmd+Plus reach
+            // Primary keystroke OR any alternate - allKeystrokes is what makes Cmd+Plus reach
             // zoom in alongside Cmd+Equals. Matching only `binding.key` silently ignored every
             // alternateKeystrokes entry the model has always been able to express. WHICH
             // keystroke matched is kept, not just that one did: the MRU cycle arms on its
@@ -532,36 +531,21 @@ object AWTKeyboardInterceptor {
         eventKeyName: String,
     ): Boolean = canonicalKeyName(bindingKey) == canonicalKeyName(eventKeyName)
 
+    /**
+     * The key-name fold, delegated to the model so this path and the Compose matcher cannot
+     * drift again. This file used to own a copy, which is how "Left" and "DirectionLeft"
+     * managed to be different keys on one path and the same on the other.
+     */
     private fun canonicalKeyName(keyName: String): String =
-        when (keyName.lowercase()) {
-            "left", "arrowleft", "directionleft" -> "directionleft"
-
-            "right", "arrowright", "directionright" -> "directionright"
-
-            "up", "arrowup", "directionup" -> "directionup"
-
-            "down", "arrowdown", "directiondown" -> "directiondown"
-
-            "space", "spacebar" -> "space"
-
-            "esc", "escape" -> "escape"
-
-            "enter", "return" -> "enter"
-
-            // A layout with a dedicated + key reports VK_PLUS, which getKeyName spells "Plus".
-            // Folding it onto Equals is what lets such a keyboard reach the Cmd+Shift+Equals
-            // zoom-in alternate; leaving it as its own name looked handled but matched nothing.
-            "plus", "equals" -> "equals"
-
-            else -> keyName.lowercase()
-        }
+        ai.rever.boss.keymap.model
+            .canonicalKeyName(keyName)
 
     /**
      * Convert AWT key code to key name string.
      *
      * The vocabulary here has to be the one the presets store, which is Compose's `Key` naming:
      * the arrows are "DirectionLeft" and friends, NOT "Left". They used to be spelled "Left",
-     * which meant no arrow binding ever matched on this path — Cmd+Arrow panel navigation
+     * which meant no arrow binding ever matched on this path - Cmd+Arrow panel navigation
      * worked only because the native menu carries its own accelerator, and fell dead the moment
      * a terminal or browser held focus. [keyNameMatches] accepts both spellings so an older or
      * hand-edited keymap file still resolves.
@@ -798,7 +782,7 @@ object AWTKeyboardInterceptor {
             // start" in a text field or a web page whenever the window has a single panel: the
             // default bindings are bare Cmd+Arrow, which macOS also reserves for caret movement,
             // so an unconditional `true` here would consume the chord and hand back nothing.
-            // (With a split open the chord is the user's panel navigation either way — that is
+            // (With a split open the chord is the user's panel navigation either way - that is
             // already what the enabled menu accelerator does today.)
             KeymapActions.PANEL_NAVIGATE_LEFT -> {
                 dispatchIfMultiPanel(windowId) { MenuActionsHandler.triggerNavigatePanelLeft(it) }
@@ -901,7 +885,7 @@ object AWTKeyboardInterceptor {
                         }
                     }
 
-                    // Plugin-contributed actions ("plugin.<pluginId>.<name>") —
+                    // Plugin-contributed actions ("plugin.<pluginId>.<name>") -
                     // reached when the user rebound a plugin shortcut (the binding
                     // then lives in the keymap settings and matches the main pass).
                     actionId.startsWith(PluginShortcutRegistryImpl.ACTION_ID_PREFIX) -> {

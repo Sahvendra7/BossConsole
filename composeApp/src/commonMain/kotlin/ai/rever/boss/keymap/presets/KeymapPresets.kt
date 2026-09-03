@@ -965,6 +965,19 @@ object KeymapPresets {
      * the two costs the shortcut and nothing else: an unmatched plugin action id dispatches to
      * nothing and the chord propagates.
      */
+
+    /**
+     * Plugin action ids the HOST binds on a plugin's behalf, rather than the plugin contributing
+     * a default.
+     *
+     * The Shortcuts screen hides these when the owning plugin is not loaded - a rebindable
+     * "Focus the browser address bar" on an install with no address bar is noise. Membership,
+     * not the `plugin.` prefix, is the test: a user's own rebind of some other plugin's shortcut
+     * is a real stored binding they must still be able to see and reset while that plugin is
+     * disabled or mid-update.
+     */
+    internal val HOST_AUTHORED_PLUGIN_ACTIONS = setOf(FLUCK_FOCUS_ADDRESS_BAR_ACTION)
+
     internal const val FLUCK_FOCUS_ADDRESS_BAR_ACTION =
         "plugin.ai.rever.boss.plugin.dynamic.fluckbrowser.focus_address_bar"
 
@@ -978,6 +991,12 @@ object KeymapPresets {
      * get no Cmd+1 tab select) - a preset's own opinion outranks the convention, and silently
      * shipping a real conflict would just move the problem into the conflict badge. An action
      * the preset already binds is likewise left alone.
+     *
+     * Each addition is checked against the PRESET, not against additions already accepted, so a
+     * future standard binding whose surviving fallback landed on another standard binding's chord
+     * would ship a live conflict. What makes that safe is that [standardBrowserBindings] is
+     * asserted internally conflict-free on its own, and every preset is asserted conflict-free
+     * after the merge - see StandardBrowserBindingsTest.
      */
     internal fun withStandardBrowserBindings(preset: List<KeyBinding>): List<KeyBinding> {
         val withZoomAlternate = preset.map { binding -> binding.withZoomInShiftAlternate(preset) }
@@ -999,19 +1018,21 @@ object KeymapPresets {
      * Chord-checked against [preset] like every other addition in [withStandardBrowserBindings],
      * rather than applied blind. Nothing claims Cmd+Shift+Equals in any preset today, so this
      * changes no shipped keymap - but it is the same asymmetry that would otherwise let a future
-     * preset ship a conflict past the merge that exists to prevent exactly that. Skipped when the
-     * chord already carries Shift, which would produce ["Cmd","Shift","Shift"].
+     * preset ship a conflict past the merge that exists to prevent exactly that.
+     *
+     * Skipped when the chord already carries Shift, which would produce ["Cmd","Shift","Shift"],
+     * and when this exact variant is already an alternate. Scoped to that variant rather than to
+     * "has any alternates", so a preset gaining some unrelated alternate on zoom in does not
+     * silently lose Cmd+Plus.
      */
     private fun KeyBinding.withZoomInShiftAlternate(preset: List<KeyBinding>): KeyBinding {
-        val eligible =
-            actionId == KeymapActions.BROWSER_ZOOM_IN &&
-                !hasAlternates &&
-                modifiers.none { it.equals("Shift", ignoreCase = true) }
-        if (!eligible) return this
-
         val shiftVariant = KeyStroke(key, modifiers + "Shift")
-        val taken = preset.any { it.actionId != actionId && it.claimsChord(shiftVariant, context) }
-        return if (taken) this else withAlternateKeystroke(shiftVariant)
+        val wanted =
+            actionId == KeymapActions.BROWSER_ZOOM_IN &&
+                modifiers.none { it.equals("Shift", ignoreCase = true) } &&
+                alternateKeystrokes.none { it.signature() == shiftVariant.signature() } &&
+                preset.none { it.actionId != actionId && it.claimsChord(shiftVariant, context) }
+        return if (wanted) withAlternateKeystroke(shiftVariant) else this
     }
 
     /**
@@ -1023,7 +1044,7 @@ object KeymapPresets {
      *
      * Per-KEYSTROKE rather than per-binding, because these bindings carry alternates that a
      * preset's claim on the primary says nothing about: VS Code and IntelliJ both put panel
-     * navigation on Cmd+Alt+Arrow, which is the primary of positional tab stepping — dropping
+     * navigation on Cmd+Alt+Arrow, which is the primary of positional tab stepping - dropping
      * the whole binding there would take Cmd+Shift+[ and Cmd+Shift+] with it and leave those
      * presets with no way to step tabs at all. The first surviving keystroke becomes the
      * primary, since [KeyBinding.key] is what the menu bar reads for its accelerator.

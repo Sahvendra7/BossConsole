@@ -28,6 +28,7 @@ import ai.rever.boss.plugin.sandbox.ui.PluginUiMountRegistry
 import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.window.ClosedTabHistory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -753,6 +754,12 @@ class PluginLoaderDelegateImpl(
         pluginId: String?,
         tabs: List<Pair<BossTabsComponent, String>>,
     ) {
+        // Entries the USER closed before this unload are still on the reopen stack, and a
+        // plugin's TabInfo is one of its own classes: leaving them pins the classloader, and an
+        // update would hand the new factory an instance of the old class. Dropped before the
+        // teardown loop so it happens even if a removeTabById throws below.
+        pluginId?.let { ClosedTabHistory.dropEntriesFor(it) }
+
         if (tabs.isEmpty()) return
         runOnEdtAndWait {
             tabs.forEach { (component, tabId) ->

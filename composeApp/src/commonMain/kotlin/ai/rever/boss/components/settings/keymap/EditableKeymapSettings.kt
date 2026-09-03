@@ -9,6 +9,7 @@ import ai.rever.boss.keymap.lifecycle.ShortcutLifecycleManager
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.TabSwitchMode
+import ai.rever.boss.keymap.presets.KeymapPresets
 import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -85,22 +86,22 @@ fun EditableKeymapSettings() {
     // presets bind the fluck browser's Focus Address Bar, because only a keymap entry can carry
     // a ShortcutContext and Cmd+L has to mean Go To Line in an editor. Harmless to dispatch when
     // the plugin is absent (nothing owns the id), but it should not be listed and rebindable on
-    // an install with no address bar to focus. Filtered by registry membership, like the
-    // synthetic rows above, so this generalises to any future host-authored plugin binding.
-    val ownedPluginActionIds =
+    // an install with no address bar to focus.
+    //
+    // Scoped to the ids the HOST authors, not to the plugin. prefix: a user's own rebind of some
+    // other plugin's shortcut is a stored binding they must still be able to see and reset while
+    // that plugin is disabled or mid-update, and it was listed before this filter existed.
+    val hiddenPluginActionIds =
         remember(registeredPluginShortcuts) {
-            registeredPluginShortcuts.mapTo(mutableSetOf()) { it.spec.actionId }
+            val owned = registeredPluginShortcuts.mapTo(mutableSetOf()) { it.spec.actionId }
+            KeymapPresets.HOST_AUTHORED_PLUGIN_ACTIONS - owned
         }
 
     // Filter shortcuts based on search and category
     val filteredShortcuts =
-        remember(keymapSettings, pluginDefaultRows, ownedPluginActionIds, searchQuery, selectedCategory) {
-            val hostAuthored =
-                keymapSettings.shortcuts.values.filter { binding ->
-                    !binding.actionId.startsWith(PluginShortcutRegistryImpl.ACTION_ID_PREFIX) ||
-                        binding.actionId in ownedPluginActionIds
-                }
-            val shortcuts = hostAuthored + pluginDefaultRows
+        remember(keymapSettings, pluginDefaultRows, hiddenPluginActionIds, searchQuery, selectedCategory) {
+            val listable = keymapSettings.shortcuts.values.filter { it.actionId !in hiddenPluginActionIds }
+            val shortcuts = listable + pluginDefaultRows
             shortcuts
                 .filter { binding ->
                     val matchesSearch =

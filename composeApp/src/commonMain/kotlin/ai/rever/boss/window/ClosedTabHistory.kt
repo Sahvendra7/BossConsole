@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.update
  *
  * Window-scoped rather than panel-scoped on purpose. A panel can be closed by the same gesture
  * that closes its last tab (see the close-tab handler in BossAppMenuActionEffects), so a stack
- * owned by the panel would be collected exactly when the user wants to undo — and browsers scope
+ * owned by the panel would be collected exactly when the user wants to undo - and browsers scope
  * this to the window anyway. Reopening therefore lands in whichever panel is active now, not
  * necessarily the one the tab was closed from; that is the same compromise Chrome makes when the
  * originating window is gone.
@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.update
  * history" action, this stack has to be part of it and such tabs should skip [record] the way
  * runner terminals do.
  *
- * What is recorded is the panel's CURRENT [TabInfo] — the live navigation state, so reopening a
+ * What is recorded is the panel's CURRENT [TabInfo] - the live navigation state, so reopening a
  * browser tab returns to the page it was showing, not the URL it was opened with. The tab's
  * component is NOT retained: `removeTab` destroys it (and with it any Chromium process) before
  * this ever sees the entry, so a deep history costs a handful of config objects, not browsers.
@@ -49,7 +49,7 @@ object ClosedTabHistory {
      * How many reopenable closures each window holds.
      *
      * Exposed as state, not just queried, because the File menu's "Reopen Closed Tab" item has
-     * to grey itself out the moment the stack empties — the same reason MenuActionsHandler
+     * to grey itself out the moment the stack empties - the same reason MenuActionsHandler
      * publishes splitEnabledState rather than letting the menu ask.
      */
     val depths: StateFlow<Map<String, Int>> = _depths.asStateFlow()
@@ -91,6 +91,29 @@ object ClosedTabHistory {
      * readings of one piece of state.
      */
     fun hasEntries(windowId: String): Boolean = (_depths.value[windowId] ?: 0) > 0
+
+    /**
+     * Drop every recorded entry whose tab type belongs to [pluginId], across all windows.
+     *
+     * The teardown loop passes `recordForReopen = false` for the tabs IT closes, but entries the
+     * user closed before the unload are already on the stack, and a third-party plugin's own
+     * `TabInfo` implementation is one of its classes: holding 25 of them for a window's lifetime
+     * pins the plugin's classloader, which is the leak shape this repo takes seriously.
+     *
+     * It also removes a crash. An update is uninstall then reinstall, so a surviving entry hands
+     * the NEW classloader's factory an instance of the OLD class; `TabInfo` is parent-first so
+     * the interface matches, but a factory doing `config as MyTabInfo` throws. [pop] answering
+     * with such an entry is the only way that reaches `addTab`.
+     */
+    fun dropEntriesFor(pluginId: String) =
+        synchronized(byWindow) {
+            byWindow.keys.toList().forEach { windowId ->
+                val stack = byWindow.getValue(windowId)
+                if (stack.removeAll { it.typeId.pluginId == pluginId }) {
+                    publishDepth(windowId, stack.size)
+                }
+            }
+        }
 
     /**
      * Drop a closed window's history.
