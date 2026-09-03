@@ -13,12 +13,14 @@ import com.teamdev.jxbrowser.frame.Frame
 import com.teamdev.jxbrowser.js.JsObject
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import java.net.InetSocketAddress
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Host-side WebRTC peer running inside a hidden JxBrowser page.
@@ -54,7 +56,20 @@ internal class CoBrowseRtcPeerImpl(
     onState: (Boolean) -> Unit,
 ) : CoBrowseRtcPeer {
     private val logger = CoBrowseRtcProviderImpl.logger
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // Off-thread executor for this peer's blocking JxBrowser round trips, for the reason
+    // BrowserHandleImpl.handleCallExecutor spells out at length: executeJavaScript and putProperty
+    // block until the renderer answers, nothing can interrupt that wait, and made from
+    // Dispatchers.Main a peer page that stops answering takes the EDT - and with the AppKit main
+    // thread parked behind it, the whole application and the macOS menu bar.
+    //
+    // One thread, and daemon, so a wedged peer page costs one parked thread and the ops that queue
+    // behind it are this peer's own - which is the right blast radius for a share that has failed.
+    private val callExecutor =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "boss-rtc-peer-call").apply { isDaemon = true }
+        }
+    private val scope = CoroutineScope(SupervisorJob() + callExecutor.asCoroutineDispatcher())
     private val bridge =
         CoBrowseRtcBridge(onAnswer, onIce, onInput, onState).also {
             it.onVideoError = { msg -> logger.warn(LogCategory.BROWSER, "WebRTC video capture error: $msg") }
@@ -63,7 +78,9 @@ internal class CoBrowseRtcPeerImpl(
 
     @Volatile private var browser: Browser? = null
 
-    @Volatile private var injected = false
+    // Atomic rather than @Volatile: injection is now posted off the callback thread, so a plain
+    // read-then-write would let two LoadFinished events both see "not injected" and queue it twice.
+    private val injected = AtomicBoolean(false)
 
     @Volatile private var ready = false
 
@@ -111,17 +128,30 @@ internal class CoBrowseRtcPeerImpl(
                 // Inject the bridge + init the peer once the served page (and its
                 // script) has finished loading.
                 b.navigation().on(LoadFinished::class.java) {
-                    try {
-                        if (!injected) {
+                    // Posted, not run here. LoadFinished is delivered on JxBrowser's RPC thread, and
+                    // [injectInto]'s blocking executeJavaScript made from it re-enters
+                    // RpcThreadCallExecutor and parks on a queue only the thread it is blocking
+                    // could drain - so the reply can never arrive. That is the deadlock PR #268
+                    // fixed for the page helpers; this call site was missed by it.
+                    //
+                    // Claimed before the launch rather than inside it: two LoadFinished events would
+                    // otherwise both see "not injected" and queue a second injection. Released again
+                    // on failure, so a frame that was not there yet does not cost this peer its one
+                    // chance to initialize.
+                    if (!injected.compareAndSet(false, true)) return@on
+                    scope.launch {
+                        try {
                             val f = b.mainFrame().orElse(null)
-                            if (f != null) {
-                                injectInto(f)
-                                injected = true
-                                logger.info(LogCategory.BROWSER, "WebRTC peer initialized")
+                            if (f == null) {
+                                injected.set(false)
+                                return@launch
                             }
+                            injectInto(f)
+                            logger.info(LogCategory.BROWSER, "WebRTC peer initialized")
+                        } catch (e: Exception) {
+                            injected.set(false)
+                            logger.warn(LogCategory.BROWSER, "WebRTC peer init failed", error = e)
                         }
-                    } catch (e: Exception) {
-                        logger.warn(LogCategory.BROWSER, "WebRTC peer init failed", error = e)
                     }
                 }
                 b.navigation().loadUrl(RtcHostServer.baseUrl())
@@ -205,6 +235,10 @@ internal class CoBrowseRtcPeerImpl(
             }
             browser = null
         }
+        // shutdown() not shutdownNow(): the close above is already queued and must still run, and a
+        // call parked inside JxBrowser cannot be interrupted anyway. The thread is daemon, so a
+        // wedged peer cannot hold up exit.
+        callExecutor.shutdown()
     }
 
     private companion object {
