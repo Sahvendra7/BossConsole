@@ -67,8 +67,13 @@ private val KEY_ALIASES: Map<String, String> =
         // Equals with a Cmd+Shift+Equals alternate.
         alias("equals", "plus", "+", "=")
         alias("minus", "-")
-        alias("openbracket", "left bracket", "leftbracket", "[")
-        alias("closebracket", "right bracket", "rightbracket", "]")
+        // Both spaced spellings: Compose renders the bracket keys "Left Bracket"/"Right Bracket"
+        // on some platforms and "Open Bracket"/"Close Bracket" on others, and the presets store
+        // Compose's own Key property names. Dropping either half takes Cmd+[ and Cmd+] out on
+        // exactly the platforms that use the spelling you dropped, which a macOS-only test run
+        // cannot see - CI caught this one.
+        alias("openbracket", "open bracket", "left bracket", "leftbracket", "[")
+        alias("closebracket", "close bracket", "right bracket", "rightbracket", "]")
         // Shift+/ reports "?" on a US layout.
         alias("slash", "/", "?")
         alias("backslash", "\\")
