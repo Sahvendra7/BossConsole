@@ -9,12 +9,12 @@ import ai.rever.boss.services.supabase.models.SecretShareEntry
 import ai.rever.boss.services.supabase.models.ShareSecretRequest
 import ai.rever.boss.services.supabase.models.UnshareSecretRequest
 import ai.rever.boss.services.supabase.models.UpdateSecretRequest
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
-import ai.rever.boss.utils.logging.BossLogger
-import ai.rever.boss.utils.logging.LogCategory
 
 /**
  * Service for managing secrets (website credentials)
