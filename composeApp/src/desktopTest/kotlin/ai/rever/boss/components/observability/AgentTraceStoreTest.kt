@@ -17,7 +17,7 @@ class AgentTraceStoreTest {
 
     @Test
     fun `startTrace creates a RUNNING event`() = runBlocking {
-        val id = AgentTraceStore.startTrace("test.tool", "{\"key\":\"value\"}")
+        val id = AgentTraceStore.startTrace("test.tool", "{\"key\":\"[REDACTED]\"}")
         
         val events = AgentTraceStore.events.value
         assertEquals(1, events.size)
@@ -26,7 +26,7 @@ class AgentTraceStoreTest {
         assertEquals(id, event.id)
         assertEquals("test.tool", event.toolName)
         assertEquals(TraceStatus.RUNNING, event.status)
-        assertEquals("{\"key\":\"value\"}", event.argumentsJson)
+        assertEquals("{\"key\":\"[REDACTED]\"}", event.argumentsJson)
     }
 
     @Test

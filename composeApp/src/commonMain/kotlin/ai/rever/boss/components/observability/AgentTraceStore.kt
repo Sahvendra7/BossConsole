@@ -104,18 +104,24 @@ object AgentTraceStore {
         val needsTruncation = raw.length > MAX_PAYLOAD_LENGTH
         val parseableRaw = if (needsTruncation) raw.take(MAX_PAYLOAD_LENGTH) else raw
         
-        return try {
-            if (needsTruncation) {
-                throw Exception("Truncated payload cannot be safely parsed as JSON")
+        val looksLikeJson = parseableRaw.trimStart().let { it.startsWith("{") || it.startsWith("[") }
+        
+        if (looksLikeJson) {
+            try {
+                if (needsTruncation) {
+                    throw Exception("Truncated payload cannot be safely parsed as JSON")
+                }
+                val element = json.parseToJsonElement(raw)
+                val sanitized = sanitizeJsonElement(element)
+                return json.encodeToString(sanitized)
+            } catch (e: Exception) {
+                // Fall through to raw text sanitization
             }
-            val element = json.parseToJsonElement(raw)
-            val sanitized = sanitizeJsonElement(element)
-            json.encodeToString(sanitized)
-        } catch (e: Exception) {
-            // If parsing fails, sanitize as a generic string to prevent raw secret leaks
-            val safeRaw = LogSanitizer.sanitizeLogMessage(parseableRaw)
-            if (needsTruncation) "$safeRaw... [TRUNCATED]" else safeRaw
         }
+        
+        // If parsing fails or it's not JSON, sanitize as a generic string
+        val safeRaw = LogSanitizer.sanitizeLogMessage(parseableRaw)
+        return if (needsTruncation) "$safeRaw... [TRUNCATED]" else safeRaw
     }
     
     private fun sanitizeJsonElement(element: JsonElement): JsonElement {

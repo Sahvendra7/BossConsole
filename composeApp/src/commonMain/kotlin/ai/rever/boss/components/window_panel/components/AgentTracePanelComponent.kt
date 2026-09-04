@@ -3,8 +3,7 @@ package ai.rever.boss.components.window_panel.components
 import ai.rever.boss.components.observability.AgentTraceStore
 import ai.rever.boss.components.observability.McpTraceEvent
 import ai.rever.boss.components.observability.TraceStatus
-import ai.rever.boss.components.ui.theme.BossTheme
-import ai.rever.boss.components.window_panel.model.PanelComponentWithUI
+import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,7 +19,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material3.*
+import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,17 +32,17 @@ import kotlinx.datetime.Instant
 
 class AgentTracePanelComponent(
     componentContext: ComponentContext,
-    val info: PanelInfo,
+    override val panelInfo: PanelInfo,
 ) : PanelComponentWithUI, ComponentContext by componentContext {
-    override val contentId: ai.rever.boss.plugin.api.PanelId = info.id
 
     @Composable
-    override fun Content(modifier: Modifier) {
+    override fun Content() {
+        val modifier = Modifier
         val events by AgentTraceStore.events.collectAsState()
         var selectedEventId by remember { mutableStateOf<String?>(null) }
         val selectedEvent = events.find { it.id == selectedEventId }
 
-        Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colors.background)) {
             // Header
             Row(
                 modifier = Modifier
@@ -52,18 +51,18 @@ class AgentTracePanelComponent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Agent Trace", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                Text("Agent Trace", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onBackground)
                 Button(
                     onClick = { 
                         AgentTraceStore.clear() 
                         selectedEventId = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                    colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.surface, contentColor = MaterialTheme.colors.onSurface)
                 ) {
                     Text("Clear")
                 }
             }
-            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            Divider(color = MaterialTheme.colors.onSurface.copy(alpha = 0.12f))
 
             Row(modifier = Modifier.fillMaxSize()) {
                 // Master List
@@ -79,7 +78,7 @@ class AgentTracePanelComponent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { selectedEventId = event.id }
-                                .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .background(if (isSelected) MaterialTheme.colors.primary.copy(alpha = 0.1f) else Color.Transparent)
                                 .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -91,26 +90,26 @@ class AgentTracePanelComponent(
                                 TraceStatus.CANCELLED -> Icons.Default.Cancel
                             }
                             val color = when (event.status) {
-                                TraceStatus.RUNNING -> MaterialTheme.colorScheme.primary
-                                TraceStatus.SUCCESS -> BossTheme.colors.success
-                                TraceStatus.FAILURE, TraceStatus.TIMEOUT -> MaterialTheme.colorScheme.error
-                                TraceStatus.CANCELLED -> MaterialTheme.colorScheme.outline
+                                TraceStatus.RUNNING -> MaterialTheme.colors.primary
+                                TraceStatus.SUCCESS -> Color(0xFF4CAF50)
+                                TraceStatus.FAILURE, TraceStatus.TIMEOUT -> MaterialTheme.colors.error
+                                TraceStatus.CANCELLED -> MaterialTheme.colors.onSurface.copy(alpha = 0.38f)
                             }
                             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Column {
-                                Text(event.toolName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground)
+                                Text(event.toolName, style = MaterialTheme.typography.body2, color = MaterialTheme.colors.onBackground)
                                 val durationText = event.durationMs?.let { "${it}ms" } ?: "..."
-                                Text(durationText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(durationText, style = MaterialTheme.typography.caption, color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f))
                             }
                         }
-                        Divider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                        Divider(color = MaterialTheme.colors.onSurface.copy(alpha = 0.12f), thickness = 0.5.dp)
                     }
                 }
 
                 Divider(
                     modifier = Modifier.fillMaxHeight().width(1.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.12f)
                 )
 
                 // Detail View
@@ -129,41 +128,41 @@ class AgentTracePanelComponent(
                             DetailSection("Duration", "${selectedEvent.durationMs}ms")
                         }
                         
-                        Text("Arguments", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp), color = MaterialTheme.colorScheme.onBackground)
+                        Text("Arguments", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp), color = MaterialTheme.colors.onBackground)
                         SelectionContainer {
                             Text(
                                 text = selectedEvent.argumentsJson,
                                 fontFamily = FontFamily.Monospace,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = MaterialTheme.typography.caption,
+                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                             )
                         }
 
                         if (selectedEvent.resultJson != null) {
-                            Text("Result", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp), color = MaterialTheme.colorScheme.onBackground)
+                            Text("Result", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp), color = MaterialTheme.colors.onBackground)
                             SelectionContainer {
                                 Text(
                                     text = selectedEvent.resultJson!!,
                                     fontFamily = FontFamily.Monospace,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = BossTheme.colors.success
+                                    style = MaterialTheme.typography.caption,
+                                    color = Color(0xFF4CAF50)
                                 )
                             }
                         }
                         
                         if (selectedEvent.errorMessage != null) {
-                            Text("Error", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp), color = MaterialTheme.colorScheme.onBackground)
+                            Text("Error", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp), color = MaterialTheme.colors.onBackground)
                             SelectionContainer {
                                 Text(
                                     text = selectedEvent.errorMessage!!,
                                     fontFamily = FontFamily.Monospace,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
+                                    style = MaterialTheme.typography.caption,
+                                    color = MaterialTheme.colors.error
                                 )
                             }
                         }
                     } else {
-                        Text("Select a trace event to view details", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
+                        Text("Select a trace event to view details", color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f), modifier = Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
             }
@@ -173,9 +172,9 @@ class AgentTracePanelComponent(
     @Composable
     private fun DetailSection(label: String, value: String) {
         Row(modifier = Modifier.padding(bottom = 4.dp)) {
-            Text("$label: ", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text("$label: ", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onBackground)
             SelectionContainer {
-                Text(value, color = MaterialTheme.colorScheme.onBackground)
+                Text(value, color = MaterialTheme.colors.onBackground)
             }
         }
     }
