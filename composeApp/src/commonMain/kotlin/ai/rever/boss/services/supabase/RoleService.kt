@@ -185,7 +185,7 @@ object RoleService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val roles = supabaseJson.decodeFromJsonElement<List<UserRole>>(jsonElement)
+            val roles = decodeListRecovering<UserRole>(jsonElement, logger, "getUserRoles")
 
             Result.success(roles)
         } catch (e: Exception) {
@@ -310,7 +310,7 @@ object RoleService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val permissions = supabaseJson.decodeFromJsonElement<List<RolePermission>>(jsonElement)
+            val permissions = decodeListRecovering<RolePermission>(jsonElement, logger, "getRolePermissions")
 
             Result.success(permissions)
         } catch (e: Exception) {

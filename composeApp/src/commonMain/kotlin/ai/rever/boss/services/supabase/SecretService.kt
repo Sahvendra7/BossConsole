@@ -9,6 +9,7 @@ import ai.rever.boss.services.supabase.models.SecretShareEntry
 import ai.rever.boss.services.supabase.models.ShareSecretRequest
 import ai.rever.boss.services.supabase.models.UnshareSecretRequest
 import ai.rever.boss.services.supabase.models.UpdateSecretRequest
+import ai.rever.boss.utils.logging.BossLogger
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.serialization.Serializable
@@ -47,6 +48,7 @@ import kotlinx.serialization.json.*
  * ```
  */
 object SecretService {
+    private val logger = BossLogger.forComponent("SecretService")
     private val client
         get() = SupabaseConfig.client
 
@@ -75,7 +77,7 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secrets = supabaseJson.decodeFromJsonElement<List<SecretEntry>>(jsonElement)
+            val secrets = decodeListRecovering<SecretEntry>(jsonElement, logger, "getUserSecrets")
             val hasMore = secrets.size >= limit
 
             Result.success(PaginatedSecrets(data = secrets, hasMore = hasMore))
@@ -111,7 +113,7 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secrets = supabaseJson.decodeFromJsonElement<List<SecretEntry>>(jsonElement)
+            val secrets = decodeListRecovering<SecretEntry>(jsonElement, logger, "searchSecrets")
 
             // Check if there might be more results
             val hasMore = secrets.size >= limit
@@ -288,7 +290,8 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secretsWithSharing = supabaseJson.decodeFromJsonElement<List<SecretEntryWithSharing>>(jsonElement)
+            val secretsWithSharing =
+                decodeListRecovering<SecretEntryWithSharing>(jsonElement, logger, "getUserSecretsWithShared")
             val secrets = secretsWithSharing.map { it.toSecretEntry() }
             val hasMore = secrets.size >= limit
 
@@ -326,7 +329,12 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secretsWithSharing = supabaseJson.decodeFromJsonElement<List<SecretEntryWithSharing>>(jsonElement)
+            val secretsWithSharing =
+                decodeListRecovering<SecretEntryWithSharing>(
+                    jsonElement,
+                    logger,
+                    "getUserSecretsWithSharingInfo",
+                )
             val hasMore = secretsWithSharing.size >= limit
 
             Result.success(PaginatedSecretsWithSharing(data = secretsWithSharing, hasMore = hasMore))
@@ -440,7 +448,7 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val shares = supabaseJson.decodeFromJsonElement<List<SecretShareEntry>>(jsonElement)
+            val shares = decodeListRecovering<SecretShareEntry>(jsonElement, logger, "getSecretShares")
 
             Result.success(shares)
         } catch (e: Exception) {
