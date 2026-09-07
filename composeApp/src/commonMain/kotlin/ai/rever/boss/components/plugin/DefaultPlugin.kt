@@ -1048,9 +1048,10 @@ class DefaultPlugin(
 
         // Register core panels that haven't been moved to dynamic plugins yet
         panelRegistry.registerPanel(
-            ai.rever.boss.components.window_panel.components.AgentTracePanelInfo
+            ai.rever.boss.components.window_panel.components.AgentTracePanelInfo,
         ) { ctx, info ->
-            ai.rever.boss.components.window_panel.components.AgentTracePanelComponent(ctx, info)
+            ai.rever.boss.components.window_panel.components
+                .AgentTracePanelComponent(ctx, info)
         }
 
         // ============================================================

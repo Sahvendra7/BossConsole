@@ -1,8 +1,10 @@
+@file:Suppress("PackageNaming")
+
 package ai.rever.boss.components.window_panel.components
 
 import ai.rever.boss.components.plugin.PanelIds
-import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.api.Panel
+import ai.rever.boss.plugin.api.PanelInfo
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 

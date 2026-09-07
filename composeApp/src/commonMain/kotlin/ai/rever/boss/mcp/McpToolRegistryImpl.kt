@@ -560,6 +560,7 @@ internal class McpToolRegistryCore(
         return permissions.containsAll(def.requiredPermissions)
     }
 
+    @Suppress("CyclomaticComplexMethod", "LongMethod", "SwallowedException")
     suspend fun invoke(
         toolName: String,
         arguments: String,
@@ -571,18 +572,22 @@ internal class McpToolRegistryCore(
         val args = parseArgs(arguments)
 
         // Start tracing, catching trace errors so they don't break the tool
-        val traceId = try {
-            ai.rever.boss.components.observability.AgentTraceStore.startTrace(toolName, arguments)
-        } catch (t: Throwable) {
-            "untraced"
-        }
+        val traceId =
+            try {
+                ai.rever.boss.components.observability.AgentTraceStore
+                    .startTrace(toolName, arguments)
+            } catch (t: Throwable) {
+                "untraced"
+            }
 
         return try {
             val result = withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
             if (traceId != "untraced") {
                 try {
-                    ai.rever.boss.components.observability.AgentTraceStore.completeTrace(traceId, result)
-                } catch (_: Throwable) {}
+                    ai.rever.boss.components.observability.AgentTraceStore
+                        .completeTrace(traceId, result)
+                } catch (ignored: Throwable) {
+                }
             }
             result
         } catch (t: TimeoutCancellationException) {
@@ -594,8 +599,13 @@ internal class McpToolRegistryCore(
             )
             if (traceId != "untraced") {
                 try {
-                    ai.rever.boss.components.observability.AgentTraceStore.failTrace(traceId, t, isTimeout = true)
-                } catch (_: Throwable) {}
+                    ai.rever.boss.components.observability.AgentTraceStore.failTrace(
+                        traceId,
+                        t,
+                        isTimeout = true,
+                    )
+                } catch (ignored: Throwable) {
+                }
             }
             McpToolResult("Tool '$toolName' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
         } catch (t: CancellationException) {
@@ -603,8 +613,14 @@ internal class McpToolRegistryCore(
             // would break structured concurrency during request cancel/shutdown.
             if (traceId != "untraced") {
                 try {
-                    ai.rever.boss.components.observability.AgentTraceStore.failTrace(traceId, t, isTimeout = false, isCancelled = true)
-                } catch (_: Throwable) {}
+                    ai.rever.boss.components.observability.AgentTraceStore.failTrace(
+                        traceId,
+                        t,
+                        isTimeout = false,
+                        isCancelled = true,
+                    )
+                } catch (ignored: Throwable) {
+                }
             }
             throw t
         } catch (t: Throwable) {
@@ -619,8 +635,10 @@ internal class McpToolRegistryCore(
             )
             if (traceId != "untraced") {
                 try {
-                    ai.rever.boss.components.observability.AgentTraceStore.failTrace(traceId, t, isTimeout = false)
-                } catch (_: Throwable) {}
+                    ai.rever.boss.components.observability.AgentTraceStore
+                        .failTrace(traceId, t, isTimeout = false)
+                } catch (ignored: Throwable) {
+                }
             }
             McpToolResult("Tool '$toolName' failed: ${t.message ?: t::class.simpleName}", isError = true)
         }

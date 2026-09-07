@@ -5,7 +5,7 @@ enum class TraceStatus {
     SUCCESS,
     FAILURE,
     TIMEOUT,
-    CANCELLED
+    CANCELLED,
 }
 
 data class McpTraceEvent(
@@ -16,7 +16,7 @@ data class McpTraceEvent(
     val completedAtMs: Long? = null,
     val status: TraceStatus = TraceStatus.RUNNING,
     val resultJson: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
 ) {
     val durationMs: Long?
         get() = completedAtMs?.let { it - startedAtMs }
