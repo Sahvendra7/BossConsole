@@ -98,6 +98,7 @@ internal fun sanitizeSupabaseFailure(
             val diagnostic = error.error ?: "PostgREST error"
             SupabaseFailure("$operation: $diagnostic")
         }
+
         is SerializationException -> {
             val diagnostic =
                 error.message
@@ -106,7 +107,10 @@ internal fun sanitizeSupabaseFailure(
                     ?: "malformed response"
             SupabaseFailure("$operation: $diagnostic")
         }
-        else -> error
+
+        else -> {
+            error
+        }
     }
 
 /**
