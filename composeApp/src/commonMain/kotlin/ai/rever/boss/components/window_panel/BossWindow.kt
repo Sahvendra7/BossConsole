@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -256,7 +258,7 @@ internal fun PanelColumn(
     content: @Composable BoxScope.() -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(1f), content = content)
+        Box(modifier = Modifier.weight(1f).fillMaxWidth(), content = content)
         if (footerEdge == column) footer()
     }
 }
