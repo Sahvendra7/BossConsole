@@ -1,7 +1,7 @@
 package ai.rever.boss.services.supabase
 
-import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.services.auth.authFailure
+import ai.rever.boss.services.supabase.models.SecretEntry
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -33,7 +33,7 @@ class SupabaseJsonTest {
         val raw = authFailure(HttpStatusCode.BadRequest, "private-error-value", "private-server-value")
         assertTrue(raw.message.orEmpty().contains("private-server-value"))
         val safe = sanitizeSupabaseFailure("getSecretShares", raw)
-        assertEquals("getSecretShares: PostgREST request failed", safe.message)
+        assertEquals("getSecretShares: Supabase request failed (HTTP 400)", safe.message)
         assertNull(safe.cause)
         assertFalse(safe.stackTraceToString().contains("private-"))
     }

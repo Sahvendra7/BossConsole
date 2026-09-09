@@ -4,10 +4,9 @@ import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.utils.logging.BossLogger
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
-import kotlin.test.assertFailsWith
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -85,24 +84,35 @@ class SupabaseDecodingRecoveryTest {
         assertNotNull(result, "Should successfully parse SecretEntry")
         assertTrue(result.tags.isEmpty(), "Null tags should be coerced to emptyList()")
     }
+
     @Test
     fun `non-array response fails without including its contents`() {
-        val error = assertFailsWith<SupabaseFailure> {
-            decodeListRecovering<SecretEntry>(Json.parseToJsonElement("\"private-password\""), logger, "list")
-        }
+        val error =
+            assertFailsWith<SupabaseFailure> {
+                decodeListRecovering<SecretEntry>(Json.parseToJsonElement("\"private-password\""), logger, "list")
+            }
         assertEquals("list: expected response array", error.message)
     }
 
     @Test
-    fun `empty array succeeds and malformed elements are skipped`() {
+    fun `empty array succeeds but all malformed rows fail`() {
         assertTrue(decodeListRecovering<SecretEntry>(Json.parseToJsonElement("[]"), logger, "list").isEmpty())
-        assertTrue(decodeListRecovering<SecretEntry>(Json.parseToJsonElement("[null,42,{}]"), logger, "list").isEmpty())
+        val error =
+            assertFailsWith<SupabaseFailure> {
+                decodeListRecovering<SecretEntry>(Json.parseToJsonElement("[null,42,{}]"), logger, "list")
+            }
+        assertEquals("list: no decodable rows", error.message)
     }
 
     @Test
     fun `coercion does not invent a required primary key`() {
         assertFailsWith<SerializationException> {
-            supabaseJson.decodeFromJsonElement(SecretEntry.serializer(), JsonNull)
+            supabaseJson.decodeFromJsonElement(
+                SecretEntry.serializer(),
+                Json.parseToJsonElement(
+                    """{"website":"w","username":"u","password":"p","created_at":"x","updated_at":"x"}""",
+                ),
+            )
         }
     }
 }

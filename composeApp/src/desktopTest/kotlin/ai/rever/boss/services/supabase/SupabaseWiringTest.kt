@@ -54,7 +54,7 @@ class SupabaseWiringTest {
          *    returned message; `SecretService` (BossConsole#145) does the same but passes
          *    `safe` straight to `Result.failure` rather than re-wrapping `safe.message` in a
          *    new `Exception`, which is a second legitimate shape of the same "sanitize once"
-         *    rule, not a second rule. This helper only sanitizes SerializationException;
+         *    rule, not a second rule. This helper sanitizes serialization and REST failures;
          *    the legacy error = safe exemption is not a guarantee for arbitrary server errors.
          *    SecretService is checked separately below and must not log the throwable at all;
          *  - the declaration of `supabaseJson`, which is necessarily a `Json { }`;
@@ -97,36 +97,68 @@ class SupabaseWiringTest {
             .ifEmpty { fail("no sources under ${sourceDir()}") }
 
     private fun scan(pattern: Regex): List<String> =
-        sources().filter { pattern != STRICT_JSON || it.name != "SupabaseJson.kt" }.flatMap { file ->
-            file
-                .readLines()
+        sources().flatMap { file ->
+            val lines = file.readLines()
+            lines
                 .withIndex()
                 .filter { (_, line) -> pattern.containsMatchIn(line) && !ALLOWED.containsMatchIn(line) }
-                .map { (i, line) -> "${file.name}:${i + 1}: ${line.trim()}" }
+                .filterNot { (index, line) ->
+                    file.name == "SupabaseJson.kt" && line.trim() == "Json {" &&
+                        lines.getOrNull(index - 1)?.trim() == "internal val supabaseJson ="
+                }.map { (i, line) -> "${file.name}:${i + 1}: ${line.trim()}" }
         }
 
     @Test
+    fun `authorization lists reject incomplete decoding instead of returning a denial`() {
+        val source = File(sourceDir(), "RoleService.kt").readText()
+        assertTrue(source.contains("supabaseJson.decodeFromJsonElement<List<UserRole>>"))
+        assertTrue(source.contains("supabaseJson.decodeFromJsonElement<List<RolePermission>>"))
+        assertFalse(source.contains("decodeListRecovering"))
+    }
+
+    @Test
+    fun `paginated secrets preserve the row count used by plugin offsets`() {
+        val source = File(sourceDir(), "SecretService.kt").readText()
+        val operations =
+            listOf(
+                "getUserSecrets",
+                "searchSecrets",
+                "getUserSecretsWithShared",
+                "getUserSecretsWithSharingInfo",
+            )
+        operations.forEach { operation ->
+            val body = source.substringAfter("suspend fun $operation(").substringBefore("catch (e: Exception)")
+            assertTrue(body.contains("supabaseJson.decodeFromJsonElement<List<"), "$operation must decode atomically")
+            assertFalse(body.contains("decodeListRecovering"), "$operation needs a cursor API before dropping rows")
+        }
+    }
+
+    @Test
     fun `Supabase consumers throughout the repository avoid default Json decoding`() {
-        val root = generateSequence(sourceDir()) { it.parentFile }
-            .first { File(it, "settings.gradle.kts").isFile }
-        val consumers = root.walkTopDown()
-            .onEnter { it.name !in setOf("build", ".gradle", ".git", ".worktrees") }
-            .filter { file ->
-                file.isFile && file.extension == "kt" &&
-                    file.relativeTo(root).invariantSeparatorsPath.contains(Regex("/src/[^/]*Main/")) &&
-                    file.readText().contains("import io.github.jan.supabase")
-            }.toList()
+        val root =
+            generateSequence(sourceDir()) { it.parentFile }
+                .first { File(it, "settings.gradle.kts").isFile }
+        val consumers =
+            root
+                .walkTopDown()
+                .onEnter { it.name !in setOf("build", ".gradle", ".git", ".worktrees") }
+                .filter { file ->
+                    file.isFile && file.extension == "kt" &&
+                        file.relativeTo(root).invariantSeparatorsPath.contains(Regex("/src/[^/]*Main/")) &&
+                        file.readText().contains("import io.github.jan.supabase")
+                }.toList()
         assertTrue(consumers.any { it.name == "SecretService.kt" }, "guard must find real production consumers")
         val defaultDecode = Regex("""(?<![A-Za-z0-9_])Json\.(Default\.)?(decodeFrom|parseToJsonElement)""")
-        val violations = consumers.flatMap { file ->
-            file.readLines().mapIndexedNotNull { index, line ->
-                if (defaultDecode.containsMatchIn(line) && !line.trimStart().startsWith("//")) {
-                    "${file.relativeTo(root)}:${index + 1}"
-                } else {
-                    null
+        val violations =
+            consumers.flatMap { file ->
+                file.readLines().mapIndexedNotNull { index, line ->
+                    if (defaultDecode.containsMatchIn(line) && !line.trimStart().startsWith("//")) {
+                        "${file.relativeTo(root)}:${index + 1}"
+                    } else {
+                        null
+                    }
                 }
             }
-        }
         assertEquals(emptyList(), violations, "Supabase consumers must configure their decoder")
     }
 
