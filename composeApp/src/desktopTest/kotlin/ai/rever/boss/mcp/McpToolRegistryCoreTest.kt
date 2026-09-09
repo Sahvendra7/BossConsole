@@ -635,57 +635,74 @@ class McpToolRegistryCoreTest {
     }
 
     @Test
-    fun `observer registration ignores duplicates`() = kotlinx.coroutines.runBlocking {
-        val registry = McpToolRegistryCore(disabledFile = null)
-        val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
-            override val observerId = "test.observer"
-            override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
-            override fun onExecutionFinished(request: ai.rever.boss.plugin.api.McpExecutionRequest, outcome: ai.rever.boss.plugin.api.McpExecutionOutcome) {}
+    fun `observer registration ignores duplicates`() =
+        kotlinx.coroutines.runBlocking {
+            val registry = McpToolRegistryCore(disabledFile = null)
+            val observer =
+                object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                    override val observerId = "test.observer"
+
+                    override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {
+                        // no-op for test
+                    }
+
+                    override fun onExecutionFinished(
+                        request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                        outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
+                    ) {
+                        // no-op for test
+                    }
+                }
+
+            registry.registerExecutionObserver(observer)
+            registry.registerExecutionObserver(observer)
+
+            registry.unregisterExecutionObserver("test.observer")
+
+            registry.registerProvider(provider("p1", echoTool("tool1")))
+
+            val result = registry.invoke("tool1", "{}")
+            kotlin.test.assertTrue(result.text.contains("ok:tool1"))
         }
-        
-        registry.registerExecutionObserver(observer)
-        registry.registerExecutionObserver(observer)
-        
-        registry.unregisterExecutionObserver("test.observer")
-        
-        registry.registerProvider(provider("p1", echoTool("tool1")))
-        
-        val result = registry.invoke("tool1", "{}")
-        kotlin.test.assertTrue(result.text.contains("ok:tool1"))
-    }
 
     @Test
-    fun `observer exceptions do not break tool execution`() = kotlinx.coroutines.runBlocking {
-        val registry = McpToolRegistryCore(disabledFile = null)
-        
-        var startedCalled = false
-        var finishedCalled = false
-        
-        val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
-            override val observerId = "faulty.observer"
-            override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {
-                startedCalled = true
-                throw RuntimeException("Observer crashed on start")
-            }
-            override fun onExecutionFinished(request: ai.rever.boss.plugin.api.McpExecutionRequest, outcome: ai.rever.boss.plugin.api.McpExecutionOutcome) {
-                finishedCalled = true
-                throw RuntimeException("Observer crashed on finish")
-            }
+    fun `observer exceptions do not break tool execution`() =
+        kotlinx.coroutines.runBlocking {
+            val registry = McpToolRegistryCore(disabledFile = null)
+
+            var startedCalled = false
+            var finishedCalled = false
+
+            val observer =
+                object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                    override val observerId = "faulty.observer"
+
+                    override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {
+                        startedCalled = true
+                        error("Observer crashed on start")
+                    }
+
+                    override fun onExecutionFinished(
+                        request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                        outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
+                    ) {
+                        finishedCalled = true
+                        error("Observer crashed on finish")
+                    }
+                }
+
+            registry.registerExecutionObserver(observer)
+
+            registry.registerProvider(provider("p1", echoTool("tool1")))
+
+            val result = registry.invoke("tool1", "{}")
+
+            kotlin.test.assertTrue(result.text.contains("ok:tool1"))
+            kotlin.test.assertTrue(startedCalled)
+            kotlin.test.assertTrue(finishedCalled)
         }
-        
-        registry.registerExecutionObserver(observer)
-        
-        registry.registerProvider(provider("p1", echoTool("tool1")))
-        
-        val result = registry.invoke("tool1", "{}")
-        
-        kotlin.test.assertTrue(result.text.contains("ok:tool1"))
-        kotlin.test.assertTrue(startedCalled)
-        kotlin.test.assertTrue(finishedCalled)
-    }
 
     // ---------------------------------------------------------------------
     // Governed Autonomy - Policy, Approval Gate, and Operation Ledger
     // ---------------------------------------------------------------------
-
 }

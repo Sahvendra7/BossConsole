@@ -588,12 +588,14 @@ class DefaultPlugin(
     // plugin bridges McpToolRegistryImpl onto the live MCP server.
     // ============================================================
 
-        override fun registerMcpToolExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) {
-        ai.rever.boss.mcp.McpToolRegistryImpl.registerExecutionObserver(observer)
+    override fun registerMcpToolExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) {
+        ai.rever.boss.mcp.McpToolRegistryImpl
+            .registerExecutionObserver(observer)
     }
 
     override fun unregisterMcpToolExecutionObserver(observerId: String) {
-        ai.rever.boss.mcp.McpToolRegistryImpl.unregisterExecutionObserver(observerId)
+        ai.rever.boss.mcp.McpToolRegistryImpl
+            .unregisterExecutionObserver(observerId)
     }
 
     override fun registerMcpToolProvider(provider: ai.rever.boss.plugin.api.McpToolProvider) {
