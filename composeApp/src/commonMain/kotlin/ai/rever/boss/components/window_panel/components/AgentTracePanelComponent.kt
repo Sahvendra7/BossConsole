@@ -122,7 +122,7 @@ class AgentTracePanelComponent(
 
     @Composable
     private fun TraceList(
-        events: List<ai.rever.boss.components.observability.McpTraceEvent>,
+        events: List<McpTraceEvent>,
         selectedEventId: String?,
         onEventSelected: (String) -> Unit,
         modifier: Modifier = Modifier,
@@ -188,7 +188,7 @@ class AgentTracePanelComponent(
     @Composable
     @Suppress("LongMethod")
     private fun TraceDetail(
-        selectedEvent: ai.rever.boss.components.observability.McpTraceEvent?,
+        selectedEvent: McpTraceEvent?,
         modifier: Modifier = Modifier,
     ) {
         Column(

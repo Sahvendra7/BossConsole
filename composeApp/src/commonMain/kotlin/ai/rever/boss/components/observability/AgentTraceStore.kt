@@ -2,12 +2,10 @@ package ai.rever.boss.components.observability
 
 import ai.rever.boss.plugin.api.McpToolResult
 import ai.rever.boss.utils.logging.LogSanitizer
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -15,8 +13,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 object AgentTraceStore {
     private const val MAX_EVENTS = 500
@@ -125,70 +121,57 @@ object AgentTraceStore {
         }
     }
 
-    @Suppress("TooGenericExceptionCaught")
+    // Do not feed incomplete JSON to the free-text sanitizer: quoted keys and
+    // escaped values do not follow its name=value grammar.
+    @Suppress("TooGenericExceptionCaught", "SwallowedException", "ReturnCount")
     private fun sanitizePayload(raw: String): String {
-        if (raw.isBlank()) {
-            return raw
-        }
-
-        val needsTruncation = raw.length > MAX_PAYLOAD_LENGTH
-        val parseableRaw = if (needsTruncation) raw.take(MAX_PAYLOAD_LENGTH) else raw
-        val looksLikeJson = parseableRaw.trimStart().let { it.startsWith("{") || it.startsWith("[") }
-
-        var result: String? = null
-        if (looksLikeJson) {
-            try {
-                require(!needsTruncation) { "Truncated payload cannot be safely parsed as JSON" }
-                val element = json.parseToJsonElement(raw)
-                val sanitized = sanitizeJsonElement(element)
-                result = json.encodeToString(sanitized)
-            } catch (ignored: Exception) {
-                // Fall through to raw text sanitization
+        if (raw.length > MAX_PAYLOAD_LENGTH) return "[Payload omitted: exceeds 5000 characters]"
+        if (raw.isBlank()) return raw
+        val trimmed = raw.trimStart()
+        val looksLikeJson = trimmed.first() in "{[\""
+        val sanitized =
+            if (looksLikeJson) {
+                try {
+                    json.encodeToString(sanitizeJsonElement(json.parseToJsonElement(raw)))
+                } catch (ignored: Exception) {
+                    "[Payload omitted: invalid or deeply nested JSON]"
+                }
+            } else {
+                LogSanitizer.sanitizeLogMessage(raw)
             }
+        // Redaction can expand short values; the stored/displayed value is bounded too.
+        return if (sanitized.length > MAX_PAYLOAD_LENGTH) {
+            "[Payload omitted: sanitized output exceeds 5000 characters]"
+        } else {
+            sanitized
         }
-
-        if (result == null) {
-            // If parsing fails or it's not JSON, sanitize as a generic string
-            val safeRaw = LogSanitizer.sanitizeLogMessage(parseableRaw)
-            result = if (needsTruncation) "$safeRaw... [TRUNCATED]" else safeRaw
-        }
-        return result
     }
 
-    private fun sanitizeJsonElement(element: JsonElement): JsonElement =
-        when (element) {
+    private fun sanitizeJsonElement(
+        element: JsonElement,
+        depth: Int = 0,
+    ): JsonElement {
+        require(depth <= 32) { "JSON nesting exceeds trace limit" }
+        return when (element) {
             is JsonObject -> {
-                // Convert to map of String -> Any? to feed LogSanitizer
-                val tempMap =
-                    element.mapValues { (_, v) ->
-                        when (v) {
-                            is JsonPrimitive -> if (v.isString) v.content else v.contentOrNull
-                            else -> "..."
-                        }
-                    }
-                val sanitizedMap = LogSanitizer.sanitizeMap(tempMap)
-
-                // Reconstruct JsonObject
-                val sanitizedContent =
-                    element.mapValues { (k, v) ->
-                        val sanitizedValue = sanitizedMap[k]
-                        if (sanitizedValue == "[REDACTED]") {
-                            JsonPrimitive("[REDACTED]")
-                        } else if (v is JsonObject || v is JsonArray) {
-                            sanitizeJsonElement(v) // Recurse
+                val values = element.mapValues { (_, value) ->
+                    if (value is JsonPrimitive) value.contentOrNull else "..."
+                }
+                val sanitized = LogSanitizer.sanitizeMap(values)
+                JsonObject(
+                    element.mapValues { (key, value) ->
+                        val safeValue = sanitized[key]
+                        if (safeValue != values[key]) {
+                            JsonPrimitive(safeValue?.toString())
                         } else {
-                            v
+                            sanitizeJsonElement(value, depth + 1)
                         }
-                    }
-                JsonObject(sanitizedContent)
+                    },
+                )
             }
-
-            is JsonArray -> {
-                JsonArray(element.map { sanitizeJsonElement(it) })
-            }
-
-            else -> {
-                element
-            }
+            is JsonArray -> JsonArray(element.map { sanitizeJsonElement(it, depth + 1) })
+            is JsonPrimitive ->
+                if (element.isString) JsonPrimitive(LogSanitizer.sanitizeLogMessage(element.content)) else element
         }
+    }
 }
