@@ -1,8 +1,8 @@
 package ai.rever.boss.mcp
 
-import McpExecutionError
-import McpExecutionOutcome
-import McpExecutionRequest
+import ai.rever.boss.plugin.api.McpExecutionError
+import ai.rever.boss.plugin.api.McpExecutionOutcome
+import ai.rever.boss.plugin.api.McpExecutionRequest
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.mcp.sandbox.DefaultMcpRiskEvaluator
 import ai.rever.boss.plugin.api.McpToolArgs
@@ -11,6 +11,7 @@ import ai.rever.boss.plugin.api.McpToolProvider
 import ai.rever.boss.plugin.api.McpToolRegistry
 import ai.rever.boss.plugin.api.McpToolResult
 import ai.rever.boss.plugin.api.RegisteredMcpTool
+import ai.rever.boss.plugin.api.McpToolExecutionObserver
 import ai.rever.boss.plugin.logging.LogSanitizer
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.atomicWriteText
@@ -38,6 +39,8 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import java.io.File
 import java.io.IOException
+
+internal const val MAX_MCP_RESULT_CHARS: Int = 150_000
 
 /**
  * Process-wide registry aggregating MCP tools contributed by active plugins.
@@ -303,9 +306,36 @@ internal fun mcpToolPermitted(
  * [onFault] is how a kill-switch persistence failure reaches the operator (the
  * façade turns it into a status-bar message); it is also mirrored into [fault].
  */
+
+internal fun capMcpResultText(
+    text: String,
+    cap: Int = MAX_MCP_RESULT_CHARS,
+): String {
+    if (cap <= 0 || text.length <= cap) return text
+    // Worst case is "nothing kept", the most digits `dropped` can carry; the real marker is
+    // therefore never longer than this, so reserving its length cannot overflow the cap.
+    val reserved = truncationMarker(total = text.length, dropped = text.length, cap = cap).length
+    val budget = (cap - reserved).coerceAtLeast(0)
+    // Never end on a high surrogate: its low partner is in the part being dropped.
+    val keep = if (budget > 0 && text[budget - 1].isHighSurrogate()) budget - 1 else budget
+    return text.take(keep) + truncationMarker(total = text.length, dropped = text.length - keep, cap = cap)
+}
+
+private fun truncationMarker(
+    total: Int,
+    dropped: Int,
+    cap: Int,
+): String =
+    "\n\n[BOSS host cap: this tool result was $total characters, over the $cap-character " +
+        "limit, so the last $dropped characters were cut. Whatever the tool put at the end is " +
+        "gone, including any note it appended about content it had already left out. Re-run " +
+        "with a narrower query, a filter, or a smaller range to get the rest.]"
+
 internal class McpToolRegistryCore(
+
     private val disabledFile: File?,
     private val invokeTimeoutMs: Long = 60_000L,
+    private val maxResultChars: Int = MAX_MCP_RESULT_CHARS,
     private val onFault: (McpKillSwitchFault) -> Unit = {},
     val policyEngine: McpPolicyEngine = McpPolicyEngine(),
     val approvalBus: McpApprovalBus = McpApprovalBus(),
@@ -688,6 +718,7 @@ internal class McpToolRegistryCore(
         toolName: String,
         arguments: String,
     ): McpToolResult {
+                val executionId = java.util.UUID.randomUUID().toString()
         val tool =
             _tools.value.firstOrNull { it.definition.name == toolName }
                 ?: return McpToolResult("Unknown or disabled MCP tool: $toolName", isError = true)
@@ -718,7 +749,7 @@ internal class McpToolRegistryCore(
                             policyEngine.trustForSession(toolName)
                         }
                         executionStarted = true
-                        executeAuthorized(tool, args, arguments)
+                        executeAuthorized(executionId, tool, args, arguments)
                     }
                 }
             return requireNotNull(result)
@@ -733,6 +764,7 @@ internal class McpToolRegistryCore(
         } finally {
             withContext(NonCancellable + Dispatchers.IO) {
                 ledger.record(
+                    id = executionId,
                     toolName = toolName,
                     providerId = tool.providerId,
                     policyApplied = policy,
@@ -801,39 +833,55 @@ internal class McpToolRegistryCore(
             }
         }
 
-    @Suppress("TooGenericExceptionCaught") // Plugin handlers may throw any implementation-specific exception.
+
+    private fun capResult(
+        toolName: String,
+        result: McpToolResult,
+    ): McpToolResult {
+        if (result.text.length <= maxResultChars) return result
+        logger.warn(
+            LogCategory.SYSTEM,
+            "MCP tool result exceeded the host cap and was truncated",
+            mapOf("tool" to toolName, "chars" to result.text.length, "cap" to maxResultChars),
+        )
+        return result.copy(text = capMcpResultText(result.text, maxResultChars))
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+ // Plugin handlers may throw any implementation-specific exception.
     private suspend fun executeAuthorized(
+        executionId: String,
         tool: RegisteredMcpTool,
         args: McpToolArgs,
         rawArguments: String,
     ): McpToolResult {
-        val executionId =
-            java.util.UUID
-                .randomUUID()
-                .toString()
-        val request = McpExecutionRequest(executionId, tool.definition.name, rawArguments)
-        val currentObservers = observers.toList()
+                val currentObservers = observers.toList()
+
+        val sanitizedArgsMap = McpArgumentSanitizer.sanitize(McpArgumentSanitizer.parseArguments(rawArguments))
+        val sanitizedArgsString = kotlinx.serialization.json.JsonObject(sanitizedArgsMap.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }).toString()
+        val request = McpExecutionRequest(executionId, tool.definition.name, sanitizedArgsString)
 
         dispatchExecutionStarted(request, currentObservers)
 
-        return try {
-            val result = withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
-            dispatchExecutionFinished(request, McpExecutionOutcome.Success(result), currentObservers)
-            result
+        val rawResult = try {
+            kotlinx.coroutines.withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
         } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
+            val result = McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
             dispatchExceptionOutcome(request, currentObservers, t, McpExecutionOutcome::Timeout)
-            McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
+            return result
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             dispatchExceptionOutcome(request, currentObservers, cancelled, McpExecutionOutcome::Cancelled)
             throw cancelled
         } catch (failure: Throwable) {
+            val reason = ai.rever.boss.plugin.logging.LogSanitizer.sanitizeExceptionMessage(failure.message ?: failure::class.simpleName)
+            val result = McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
             dispatchExceptionOutcome(request, currentObservers, failure, McpExecutionOutcome::Failure)
-            val reason =
-                ai.rever.boss.utils.logging.LogSanitizer.sanitizeExceptionMessage(
-                    failure.message ?: failure::class.simpleName,
-                )
-            McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
+            return result
         }
+
+        val cappedResult = capResult(tool.definition.name, rawResult)
+        dispatchExecutionFinished(request, McpExecutionOutcome.Success(cappedResult), currentObservers)
+        return cappedResult
     }
 
     private fun dispatchExceptionOutcome(
@@ -842,10 +890,12 @@ internal class McpToolRegistryCore(
         e: Throwable,
         outcomeConstructor: (McpExecutionError) -> McpExecutionOutcome,
     ) {
+        val rawMessage = e.message ?: e::class.simpleName
+        val sanitizedMessage = ai.rever.boss.plugin.logging.LogSanitizer.sanitizeExceptionMessage(rawMessage)
         val errorDetails =
             McpExecutionError(
                 type = e::class.simpleName ?: "Error",
-                message = e.message,
+                message = sanitizedMessage,
             )
         dispatchExecutionFinished(request, outcomeConstructor(errorDetails), currentObservers)
     }

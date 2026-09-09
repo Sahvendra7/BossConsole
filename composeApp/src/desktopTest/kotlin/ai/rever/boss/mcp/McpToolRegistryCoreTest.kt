@@ -705,4 +705,201 @@ class McpToolRegistryCoreTest {
     // ---------------------------------------------------------------------
     // Governed Autonomy - Policy, Approval Gate, and Operation Ledger
     // ---------------------------------------------------------------------
+
+    private fun payloadCore(
+        text: String,
+        cap: Int,
+        isError: Boolean = false,
+    ): McpToolRegistryCore =
+        McpToolRegistryCore(disabledFile = null, maxResultChars = cap).also {
+            it.registerProvider(
+                provider("p1", echoTool("big", handler = McpToolHandler { McpToolResult(text, isError) })),
+            )
+        }
+
+    @Test
+    fun `a result under the cap comes back byte-identical`() =
+        kotlinx.coroutines.runBlocking {
+            val payload = "y".repeat(999) + "\n[504 older matching lines omitted...]"
+
+            val result = payloadCore(payload, cap = 100_000).invoke("big", "{}")
+
+            kotlin.test.assertEquals(payload, result.text)
+            kotlin.test.assertFalse(result.isError)
+        }
+
+    @Test
+    fun `a result of exactly the cap is untouched`() =
+        kotlinx.coroutines.runBlocking {
+            val cap = 1_000
+            val payload = "z".repeat(cap)
+
+            val result = payloadCore(payload, cap = cap).invoke("big", "{}")
+
+            kotlin.test.assertEquals(payload, result.text)
+            kotlin.test.assertEquals(cap, result.text.length)
+        }
+
+    @Test
+    fun `a result over the cap is cut and carries a marker saying so`() =
+        kotlinx.coroutines.runBlocking {
+            val cap = 1_000
+            val payload = "x".repeat(5_000) + "\n[504 older matching lines omitted...]"
+
+            val result = payloadCore(payload, cap = cap).invoke("big", "{}")
+
+            kotlin.test.assertTrue(result.text.length <= cap, "cap holds marker included, got ${result.text.length}")
+            kotlin.test.assertTrue(result.text.startsWith("x".repeat(100)), "the head of the answer survives")
+            kotlin.test.assertTrue(
+                result.text.contains("BOSS host cap"),
+                "a silent cut reads as a complete answer",
+            )
+        }
+
+    @Test
+    fun `an oversized error result is capped too and stays an error`() =
+        kotlinx.coroutines.runBlocking {
+            val cap = 1_000
+            val result = payloadCore("e".repeat(20_000), cap = cap, isError = true).invoke("big", "{}")
+            kotlin.test.assertTrue(result.isError)
+            kotlin.test.assertTrue(result.text.length <= cap)
+            kotlin.test.assertTrue(result.text.contains("BOSS host cap"))
+        }
+
+    @Test
+    fun `cutting never leaves a lone surrogate, at either boundary parity`() {
+        val text = "\uD83D\uDE00".repeat(1_000)
+        for (cap in 600..620) {
+            val out = capMcpResultText(text, cap)
+            val kept = out.substringBefore("\n\n[BOSS host cap")
+            kotlin.test.assertTrue(kept.isNotEmpty())
+            kotlin.test.assertFalse(kept.last().isHighSurrogate())
+        }
+    }
+
+    @Test
+    fun `observer receives capped result and does not receive over-cap result`() =
+        kotlinx.coroutines.runBlocking {
+            val registry = McpToolRegistryCore(disabledFile = null, maxResultChars = 1_000)
+            registry.registerProvider(
+                provider("p1", echoTool("tool1", handler = McpToolHandler { McpToolResult("x".repeat(5_000)) }))
+            )
+            
+            var observerResultText: String? = null
+            
+            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                override val observerId = "test.obs"
+                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
+                override fun onExecutionFinished(
+                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
+                ) {
+                    if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Success) {
+                        observerResultText = outcome.result.text
+                    }
+                }
+            }
+            registry.registerExecutionObserver(observer)
+            registry.invoke("tool1", "{}")
+            
+            val result = observerResultText
+            kotlin.test.assertNotNull(result)
+            kotlin.test.assertTrue(result!!.length <= 1_000)
+            kotlin.test.assertTrue(result.contains("BOSS host cap"))
+            kotlin.test.assertFalse(result.length > 1_000)
+        }
+
+    @Test
+    fun `sensitive MCP arguments are sanitized before observer delivery`() =
+        kotlinx.coroutines.runBlocking {
+            val registry = McpToolRegistryCore(disabledFile = null)
+            registry.registerProvider(
+                provider("p1", echoTool("tool1"))
+            )
+            
+            var observerArgsText: String? = null
+            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                override val observerId = "test.obs"
+                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {
+                    observerArgsText = request.arguments
+                }
+                override fun onExecutionFinished(
+                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
+                ) {}
+            }
+            registry.registerExecutionObserver(observer)
+            
+            val rawArgs = "{\"api_key\": \"sk-1234567890\", \"nested\": {\"password\": \"foo\"}, \"safe\": \"bar\"}"
+            registry.invoke("tool1", rawArgs)
+            
+            val argsStr = observerArgsText
+            kotlin.test.assertNotNull(argsStr)
+            kotlin.test.assertTrue(argsStr!!.contains("[REDACTED]"))
+            kotlin.test.assertFalse(argsStr.contains("sk-1234567890"))
+            kotlin.test.assertFalse(argsStr.contains("foo"))
+            kotlin.test.assertTrue(argsStr.contains("bar"))
+        }
+
+    @Test
+    fun `sensitive exception messages are not exposed raw`() =
+        kotlinx.coroutines.runBlocking {
+            val registry = McpToolRegistryCore(disabledFile = null)
+            registry.registerProvider(
+                provider("p1", echoTool("tool1", handler = McpToolHandler { error("Crashed with token sk-1234567890") }))
+            )
+            
+            var outcomeErrorMsg: String? = null
+            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                override val observerId = "test.obs"
+                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
+                override fun onExecutionFinished(
+                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
+                ) {
+                    if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Failure) {
+                        outcomeErrorMsg = outcome.error.message
+                    }
+                }
+            }
+            registry.registerExecutionObserver(observer)
+            registry.invoke("tool1", "{}")
+            
+            val msg = outcomeErrorMsg
+            kotlin.test.assertNotNull(msg)
+            println("MESSAGE: $msg")
+
+            kotlin.test.assertFalse(msg.contains("sk-1234567890"))
+        }
+
+    @Test
+    fun `observer receives correct timeout outcome`() =
+        kotlinx.coroutines.runBlocking {
+            val registry = McpToolRegistryCore(disabledFile = null, invokeTimeoutMs = 100)
+            registry.registerProvider(
+                provider("p1", echoTool("tool1", handler = McpToolHandler { 
+                    kotlinx.coroutines.delay(500)
+                    McpToolResult("done") 
+                }))
+            )
+            
+            var didTimeout = false
+            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                override val observerId = "test.obs"
+                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
+                override fun onExecutionFinished(
+                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
+                ) {
+                    if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Timeout) {
+                        didTimeout = true
+                    }
+                }
+            }
+            registry.registerExecutionObserver(observer)
+            registry.invoke("tool1", "{}")
+            
+            kotlin.test.assertTrue(didTimeout)
+        }
+
 }

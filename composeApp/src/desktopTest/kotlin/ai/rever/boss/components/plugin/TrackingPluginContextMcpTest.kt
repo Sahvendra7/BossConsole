@@ -73,10 +73,10 @@ class TrackingPluginContextMcpTest {
         object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
             override val observerId = id
 
-            override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpToolExecutionRequest) { /* no-op */ }
+            override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) { /* no-op */ }
 
             override fun onExecutionFinished(
-                request: ai.rever.boss.plugin.api.McpToolExecutionRequest,
+                request: ai.rever.boss.plugin.api.McpExecutionRequest,
                 outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
             ) { /* no-op */ }
         }
