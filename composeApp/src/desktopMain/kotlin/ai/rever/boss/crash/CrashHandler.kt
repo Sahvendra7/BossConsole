@@ -926,8 +926,8 @@ object CrashHandler {
     internal fun attributePluginId(
         throwable: Throwable,
         scopedPluginId: String? = PluginExecutionBoundary.currentPluginId(),
-    ): String? {
-        return PluginExecutionBoundary.attributionFor(throwable)
+    ): String? =
+        PluginExecutionBoundary.attributionFor(throwable)
             ?: scopedPluginId
             ?: try {
                 // Root cause first: the crash origin outranks the layers that wrapped it.
@@ -941,7 +941,6 @@ object CrashHandler {
                 logger.warn(LogCategory.SYSTEM, "Plugin attribution failed: ${e.message}")
                 null
             }
-    }
 
     /**
      * Get the full stack trace as a string.
