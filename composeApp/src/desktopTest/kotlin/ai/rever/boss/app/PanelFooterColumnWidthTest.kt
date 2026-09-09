@@ -41,6 +41,7 @@ class PanelFooterColumnWidthTest {
         assertAtRightEdge()
         rule.runOnIdle { width = 320.dp }
         assertAtRightEdge()
+        // Guard the sibling-footer structure as well as the no-footer alignment contract.
         rule.runOnIdle { footer = true }
         assertAtRightEdge()
         rule.runOnIdle { width = 96.dp }
@@ -51,7 +52,7 @@ class PanelFooterColumnWidthTest {
         rule.waitForIdle()
         val column = rule.onNodeWithTag("column").fetchSemanticsNode().boundsInRoot
         val control = rule.onNodeWithTag("control").fetchSemanticsNode().boundsInRoot
-        assertEquals(column.right, control.right)
-        assertEquals(with(rule.density) { 32.dp.toPx() }, control.width)
+        assertEquals(column.right, control.right, "end alignment must use the whole panel column")
+        assertEquals(with(rule.density) { 32.dp.roundToPx().toFloat() }, control.width, "the control must keep its full width")
     }
 }
