@@ -96,8 +96,7 @@ class SupabaseJsonTest {
 
     @Test
     fun `a non-serialization failure passes through untouched`() {
-        // Network and auth failures are not ours to rewrite, and losing their type would
-        // break any caller that distinguishes them.
+        // Unrelated failures preserve their type; REST failures are sanitized separately.
         val original = IllegalStateException("connection reset")
 
         val result = sanitizeSupabaseFailure("getUserSecrets", original)

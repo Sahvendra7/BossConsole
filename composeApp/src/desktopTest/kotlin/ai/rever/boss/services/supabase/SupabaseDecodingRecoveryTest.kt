@@ -1,6 +1,7 @@
 package ai.rever.boss.services.supabase
 
 import ai.rever.boss.services.supabase.models.SecretEntry
+import ai.rever.boss.services.supabase.models.SecretShareEntry
 import ai.rever.boss.utils.logging.BossLogger
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -56,9 +57,22 @@ class SupabaseDecodingRecoveryTest {
     }
 
     @Test
+    fun `share recovery drops null access level while retaining valid shares`() {
+        val payload =
+            Json.parseToJsonElement(
+                """[
+                    {"share_id":"readable","access_level":"read","created_at":"now"},
+                    {"share_id":"malformed","access_level":null,"created_at":"now"},
+                    {"share_id":"writable","access_level":"write","created_at":"now"}
+                ]""",
+            )
+        val shares = decodeListRecovering<SecretShareEntry>(payload, logger, "getSecretShares")
+        assertEquals(listOf("readable", "writable"), shares.map { it.shareId })
+        assertEquals(listOf("read", "write"), shares.map { it.accessLevel })
+    }
+
+    @Test
     fun `coerceInputValues allows nulls for properties with default values`() {
-        // Here tags is omitted, which should use default emptyList().
-        // But what if it's explicitly null?
         // With coerceInputValues = true, a null for a non-nullable property with a default value
         // will be coerced to the default value instead of throwing an exception.
         val payload =

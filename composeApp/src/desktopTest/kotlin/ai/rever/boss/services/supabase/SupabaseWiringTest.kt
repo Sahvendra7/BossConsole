@@ -57,7 +57,6 @@ class SupabaseWiringTest {
          *    rule, not a second rule. This helper sanitizes serialization and REST failures;
          *    the legacy error = safe exemption is not a guarantee for arbitrary server errors.
          *    SecretService is checked separately below and must not log the throwable at all;
-         *  - the declaration of `supabaseJson`, which is necessarily a `Json { }`;
          *  - `validate().getOrElse { return Result.failure(it) }`, which returns an
          *    `IllegalArgumentException` this code constructed from the caller's own request.
          *    No server payload has been touched at that point, so there is nothing to strip.
@@ -68,7 +67,7 @@ class SupabaseWiringTest {
         val ALLOWED =
             Regex(
                 """sanitizeSupabaseFailure\(|error = safe|\$\{safe\.message\}|Result\.failure\(safe\)|""" +
-                    """val supabaseJson = Json|validate\(\)\.getOrElse""",
+                    """validate\(\)\.getOrElse""",
             )
     }
 
@@ -102,6 +101,7 @@ class SupabaseWiringTest {
             lines
                 .withIndex()
                 .filter { (_, line) -> pattern.containsMatchIn(line) && !ALLOWED.containsMatchIn(line) }
+                // Only the shared decoder declaration may construct Json in this package.
                 .filterNot { (index, line) ->
                     file.name == "SupabaseJson.kt" && line.trim() == "Json {" &&
                         lines.getOrNull(index - 1)?.trim() == "internal val supabaseJson ="
@@ -127,9 +127,45 @@ class SupabaseWiringTest {
                 "getUserSecretsWithSharingInfo",
             )
         operations.forEach { operation ->
+            assertTrue(source.contains("suspend fun $operation("), "$operation moved or was renamed; update this guard")
             val body = source.substringAfter("suspend fun $operation(").substringBefore("catch (e: Exception)")
             assertTrue(body.contains("supabaseJson.decodeFromJsonElement<List<"), "$operation must decode atomically")
             assertFalse(body.contains("decodeListRecovering"), "$operation needs a cursor API before dropping rows")
+        }
+    }
+
+    @Test
+    fun `security response fields cannot silently acquire coercible defaults`() {
+        val contracts =
+            mapOf(
+                "RoleCreationService.kt" to
+                    mapOf(
+                        "RpcResponse" to listOf("success: Boolean"),
+                        "RolesResponseNew" to listOf("success: Boolean"),
+                        "PermissionsResponseNew" to listOf("success: Boolean"),
+                        "RolePermissionsResponse" to listOf("success: Boolean"),
+                        "RoleDataNew" to listOf("isSystem: Boolean"),
+                        "PermissionDataNew" to listOf("isSystem: Boolean"),
+                    ),
+                "models/SecretModels.kt" to
+                    mapOf(
+                        "SecretEntryWithSharing" to listOf("isOwner: Boolean", "accessLevel: String"),
+                        "SecretShareEntry" to listOf("shareId: String", "accessLevel: String", "createdAt: String"),
+                    ),
+            )
+        contracts.forEach { (file, models) ->
+            val source = File(sourceDir(), file).readText()
+            models.forEach { (model, fields) ->
+                val marker = "data class $model("
+                assertTrue(source.contains(marker), "$model moved; update the coercion guard")
+                val declaration = source.substringAfter(marker).substringBefore("\n)")
+                fields.forEach { field ->
+                    assertTrue(
+                        declaration.lineSequence().any { it.trim() == "val $field," },
+                        "$model.$field must remain required without a default",
+                    )
+                }
+            }
         }
     }
 
