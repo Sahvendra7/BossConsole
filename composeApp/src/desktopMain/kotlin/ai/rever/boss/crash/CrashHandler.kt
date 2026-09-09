@@ -292,22 +292,11 @@ object CrashHandler {
             // ~/.boss/crash-reports and sweepOldReports would delete the developer's
             // actual reports — the exact hazard the override exists to prevent.
             val dir = containedReportDir()
-            // The thread's plugin scope is read *here* for the same class of reason,
-            // and it is the one attribution source that cannot survive the hop:
-            // [PluginExecutionBoundary.currentPluginId] is a ThreadLocal, so on the
-            // writer thread it is always null. A fault the host caught while still
-            // inside a plugin call - which is what a contained render fault is - has
-            // no boundary tag either, because nothing escaped a runAttributed frame
-            // to be tagged on the way out. So the whole ladder fell through to the
-            // classloader scan, found only host frames, and every such report read
-            // "(unattributed)". The inline branch below got this right by accident,
-            // which meant one fault attributed differently depending on whether the
-            // process was about to exit.
-            //
-            // Only the scope is captured, not the whole answer: the other two
-            // sources key off the throwable and are correct on any thread, and the
-            // classloader scan is the expensive one this function moved off the EDT
-            // in the first place - see the comment above the signature.
+            // Preserve a live calling-thread scope across the writer hop. Normal
+            // exception handlers run after the boundary unwinds and use its tag;
+            // a caller reporting before unwinding instead needs this ThreadLocal.
+            // Capture only the scope so the expensive classloader scan stays off
+            // the EDT. This cannot identify an originally unscoped callback.
             val scopedPluginId = PluginExecutionBoundary.currentPluginId()
             // Inline when the caller is about to end the process. The writer is a
             // daemon thread with nothing draining it at shutdown, so a queued task
