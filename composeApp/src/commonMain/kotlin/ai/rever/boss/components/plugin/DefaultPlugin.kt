@@ -583,7 +583,7 @@ class DefaultPlugin(
     }
 
     // ============================================================
-    // MCP TOOL PROVIDER REGISTRATION
+    // MCP TOOL AND EXECUTION OBSERVER REGISTRATION
     // Plugins contribute tools to the `boss` MCP server; the terminal-tab
     // plugin bridges McpToolRegistryImpl onto the live MCP server.
     // ============================================================

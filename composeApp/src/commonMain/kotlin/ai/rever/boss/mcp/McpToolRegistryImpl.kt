@@ -894,6 +894,7 @@ internal class McpToolRegistryCore(
                     }
                 },
             )
+        // Keep preview bounds no larger than a configured caller cap, including smaller test caps.
         val outcome =
             terminal ?: McpExecutionOutcome.Success(
                 result.copy(text = McpObservationPreview.sanitize(result.text, maxResultChars)),

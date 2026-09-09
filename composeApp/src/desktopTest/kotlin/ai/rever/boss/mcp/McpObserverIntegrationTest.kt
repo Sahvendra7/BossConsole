@@ -475,4 +475,93 @@ class McpObserverIntegrationTest {
 
             kotlin.test.assertTrue(didTimeout)
         }
+
+    @Test
+    fun `caller cancellation emits one cancelled outcome and preserves cancellation`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+            core.registerProvider(
+                provider(
+                    "p",
+                    echoTool(
+                        "waiting",
+                        handler =
+                            McpToolHandler {
+                                entered.complete(Unit)
+                                kotlinx.coroutines.awaitCancellation()
+                            },
+                    ),
+                ),
+            )
+            val outcomes = mutableListOf<McpExecutionOutcome>()
+            core.registerExecutionObserver(
+                object : McpToolExecutionObserver {
+                    override val observerId = "cancel"
+
+                    override fun onExecutionStarted(request: McpExecutionRequest) = Unit
+
+                    override fun onExecutionFinished(
+                        request: McpExecutionRequest,
+                        outcome: McpExecutionOutcome,
+                    ) {
+                        outcomes += outcome
+                    }
+                },
+            )
+            val call = async { core.invoke("waiting", "{}") }
+            entered.await()
+            call.cancel()
+            call.join()
+            assertTrue(call.isCancelled)
+            assertEquals(1, outcomes.size)
+            assertTrue(outcomes.single() is McpExecutionOutcome.Cancelled)
+        }
+
+    @Test
+    fun `unregister during handler suppresses completion from the captured subscription`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+            core.registerProvider(
+                provider(
+                    "p",
+                    echoTool(
+                        "waiting",
+                        handler =
+                            McpToolHandler {
+                                entered.complete(Unit)
+                                release.await()
+                                McpToolResult("done")
+                            },
+                    ),
+                ),
+            )
+            var starts = 0
+            var finishes = 0
+            core.registerExecutionObserver(
+                object : McpToolExecutionObserver {
+                    override val observerId = "removal"
+
+                    override fun onExecutionStarted(request: McpExecutionRequest) {
+                        starts++
+                    }
+
+                    override fun onExecutionFinished(
+                        request: McpExecutionRequest,
+                        outcome: McpExecutionOutcome,
+                    ) {
+                        finishes++
+                    }
+                },
+            )
+            val call = async { core.invoke("waiting", "{}") }
+            entered.await()
+            core.unregisterExecutionObserver("removal")
+            release.complete(Unit)
+            assertEquals("done", call.await().text)
+            assertEquals(1, starts)
+            assertEquals(0, finishes)
+        }
 }

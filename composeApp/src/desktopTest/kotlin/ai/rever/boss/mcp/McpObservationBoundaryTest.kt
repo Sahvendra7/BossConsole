@@ -1,6 +1,8 @@
 package ai.rever.boss.mcp
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
@@ -64,5 +66,26 @@ class McpObservationBoundaryTest {
     fun `brackets inside quoted values do not consume nesting budget`() {
         val raw = "{\"value\":\"" + "[".repeat(20) + "\"}"
         assertEquals(raw, McpObservationPreview.sanitize(raw))
+    }
+
+    @Test
+    fun `private key prose and string values use the same sensitive vocabulary`() {
+        val inputs =
+            listOf("private_key: PRIVATE_SENTINEL", "ssh_key = PRIVATE_SENTINEL", "auth_token=PRIVATE_SENTINEL")
+        for (raw in inputs) {
+            assertFalse(McpObservationPreview.sanitize(raw).contains("PRIVATE_SENTINEL"))
+            val json = JsonObject(mapOf("note" to JsonPrimitive(raw)))
+            assertFalse(McpObservationPreview.sanitize(json.toString()).contains("PRIVATE_SENTINEL"))
+        }
+    }
+
+    @Test
+    fun `complete and truncated PEM private keys are redacted in prose and JSON strings`() {
+        for (suffix in listOf("", "\n-----END RSA PRIVATE KEY-----")) {
+            val raw = "-----BEGIN RSA PRIVATE KEY-----\nPRIVATE_SENTINEL" + suffix
+            assertFalse(McpObservationPreview.sanitize(raw).contains("PRIVATE_SENTINEL"))
+            val json = JsonObject(mapOf("note" to JsonPrimitive(raw)))
+            assertFalse(McpObservationPreview.sanitize(json.toString()).contains("PRIVATE_SENTINEL"))
+        }
     }
 }

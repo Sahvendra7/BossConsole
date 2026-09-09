@@ -1055,10 +1055,20 @@ and JSON scalar types are preserved. Exception details are omitted from observat
 plugin callback failures never log plugin-defined exception messages or identifiers.
 Text redaction is best effort and cannot identify arbitrary private prose.
 
-Registration identifiers are process-global; plugins must use unique names. Tracking
+Plugin-facing observer identifiers are scoped to a unique plugin-context instance;
+equal names from different plugins and older loads cannot remove each other. Tracking
 contexts remove registrations on unload. Snapshot handles are deactivated on removal,
 so completion dispatch admitted after removal cannot call the old plugin. An already
 admitted callback may finish; removal does not wait while holding plugin code. Callbacks are synchronous
 and must be non-blocking; no latency isolation from a blocking callback is promised.
 No callback runs under the registration lock. The proposed API
 release must document this contract before this host PR is merge-ready.
+
+Observation previews accept at most 16,384 input characters and eight nesting levels,
+then return at most 4,096 characters (or a smaller configured result cap). Larger
+previews are omitted in full. Private-key assignments and complete/truncated PEM
+private-key blocks are redacted in prose and JSON string values; arbitrary prose
+still cannot be classified perfectly. A handler-returned `isError` result remains
+an execution `Success` carrying `isError`; `Failure` means a thrown handler error.
+Synchronous observer callbacks contribute to the ledger's measured duration. These
+preview and outcome semantics must be reflected in the published API contract.

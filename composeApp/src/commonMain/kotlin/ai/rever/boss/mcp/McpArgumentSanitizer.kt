@@ -19,8 +19,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * sk_/pk_ vendor key) - never on length alone.
  */
 object McpArgumentSanitizer {
-    private val sensitiveKeyWords =
-        setOf("token", "password", "secret", "api_key", "apikey", "key", "credential")
+    internal val sensitiveKeyWords =
+        setOf("token", "password", "secret", "key", "credential", "auth")
 
     /** Same credential shapes [LogSanitizer] recognizes: a JWT, a GitHub token, or a vendor sk_/pk_ key. */
     private val credentialShapePattern =
@@ -53,7 +53,7 @@ object McpArgumentSanitizer {
         depth: Int,
     ): Map<String, String> =
         args.mapValues { (key, value) ->
-            if (sensitiveKeyWords.any { key.contains(it, ignoreCase = true) } || key.contains("auth", true)) {
+            if (sensitiveKeyWords.any { key.contains(it, ignoreCase = true) }) {
                 "[REDACTED]"
             } else {
                 sanitizeValue(value, depth).take(4096)
@@ -97,13 +97,16 @@ object McpArgumentSanitizer {
 
     private val sensitiveAssignment =
         Regex(
-            """(?i)"?(?:password|token|secret|api[_-]?key|authorization|credential)"?""" +
+            """(?i)"?[A-Za-z0-9_-]*(?:${sensitiveKeyWords.joinToString("|")})[A-Za-z0-9_-]*"?""" +
                 """\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s&,;}]+)""",
         )
+    private val privateKeyBlock =
+        Regex("(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)")
     private val bearer = Regex("""(?i)Bearer\s+[^\s"',;}]+""")
 
     fun sanitizeMessage(text: String): String =
         text
+            .replace(privateKeyBlock, "[REDACTED PRIVATE KEY]")
             .replace(credentialShapePattern, "[REDACTED]")
             .replace(sensitiveAssignment, "[REDACTED]")
             .replace(bearer, "Bearer [REDACTED]")

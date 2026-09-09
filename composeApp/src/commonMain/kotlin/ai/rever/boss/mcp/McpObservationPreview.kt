@@ -11,7 +11,6 @@ internal object McpObservationPreview {
     const val MAX_CHARS = 4096
     private const val MAX_INPUT_CHARS = 16384
     private const val MAX_DEPTH = 8
-    private val sensitive = listOf("token", "password", "secret", "key", "credential", "auth")
 
     fun sanitize(
         raw: String,
@@ -45,7 +44,7 @@ internal object McpObservationPreview {
             is JsonObject -> {
                 JsonObject(
                     element.mapValues { (key, value) ->
-                        if (sensitive.any { key.contains(it, ignoreCase = true) }) {
+                        if (McpArgumentSanitizer.sensitiveKeyWords.any { key.contains(it, ignoreCase = true) }) {
                             JsonPrimitive("[REDACTED]")
                         } else {
                             sanitizeElement(value)
@@ -59,7 +58,8 @@ internal object McpObservationPreview {
             }
 
             is JsonPrimitive -> {
-                if (element.isString) JsonPrimitive(McpArgumentSanitizer.sanitizeMessage(element.content)) else element
+                val sanitized = McpArgumentSanitizer.sanitizeMessage(element.content)
+                if (element.isString || sanitized != element.content) JsonPrimitive(sanitized) else element
             }
         }
 
