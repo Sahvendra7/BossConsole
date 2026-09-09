@@ -32,14 +32,18 @@ class PluginStateBridgeTest {
     @Before
     fun setup() {
         mockService = MockPluginStateService()
-        server = ServerBuilder.forPort(0)
-            .addService(mockService)
-            .build()
-            .start()
-            
-        channel = ManagedChannelBuilder.forAddress("localhost", server.port)
-            .usePlaintext()
-            .build()
+        server =
+            ServerBuilder
+                .forPort(0)
+                .addService(mockService)
+                .build()
+                .start()
+
+        channel =
+            ManagedChannelBuilder
+                .forAddress("localhost", server.port)
+                .usePlaintext()
+                .build()
 
         bridge = PluginStateBridge("test-plugin", "test-instance", channel)
     }
