@@ -1,3 +1,5 @@
+@file:Suppress("PackageNaming")
+
 package ai.rever.boss.components.window_panel
 
 import ai.rever.boss.plugin.api.TabComponentWithUI
