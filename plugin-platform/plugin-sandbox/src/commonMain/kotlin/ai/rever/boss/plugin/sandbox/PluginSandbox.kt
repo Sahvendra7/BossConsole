@@ -44,6 +44,15 @@ interface PluginSandbox : PluginSandboxRef {
 
     /**
      * Stop the sandbox and clean up resources.
+     *
+     * Returning means the plugin's coroutines have been cancelled AND given a
+     * bounded chance to finish unwinding, so a caller that is about to close
+     * this plugin's classloader may do so. Cancelling alone would not be enough:
+     * a coroutine suspended off the sandbox's own pool is still alive when
+     * `cancel()` returns, and resuming it after the loader has closed is
+     * BossConsole#207. An implementation that cannot honour the wait must still
+     * bound it and say so rather than blocking for ever.
+     *
      * @return Result indicating success or failure
      */
     suspend fun stop(): Result<Unit>

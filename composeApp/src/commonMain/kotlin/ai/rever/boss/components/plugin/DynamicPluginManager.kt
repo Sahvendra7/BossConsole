@@ -1497,10 +1497,17 @@ class DynamicPluginManager(
                 val trackingContext = trackingContexts.remove(pluginId)
                 trackingContext?.unregisterAll()
 
-                // Remove sandbox
-                managerScope.launch {
-                    sandboxManager.removeSandbox(pluginId)
-                }
+                // Remove sandbox. Awaited rather than detached, because
+                // `pluginLoader.unloadPlugin` below closes this plugin's
+                // classloader and `removeSandbox` is what stops its sandbox -
+                // which is where the plugin's coroutines are cancelled and
+                // boundedly waited on. Launched, the two raced: the loader
+                // closed while a coroutine suspended off the sandbox pool was
+                // still unwinding, and it resumed into classes that no longer
+                // resolved (BossConsole#207). The wait inside `stop()` is
+                // bounded and logs when it expires, so a plugin that declines
+                // to be cancelled delays this unload but cannot wedge it.
+                sandboxManager.removeSandbox(pluginId)
 
                 // Terminate out-of-process child if applicable
                 if (manifest.isolationMode == "out-of-process") {
