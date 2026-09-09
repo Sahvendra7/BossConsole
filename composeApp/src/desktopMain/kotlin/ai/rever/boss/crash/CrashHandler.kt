@@ -927,21 +927,20 @@ object CrashHandler {
         throwable: Throwable,
         scopedPluginId: String? = PluginExecutionBoundary.currentPluginId(),
     ): String? {
-        PluginExecutionBoundary.attributionFor(throwable)?.let { return it }
-        scopedPluginId?.let { return it }
-        return try {
-            // Root cause first: the crash origin outranks the layers that wrapped it.
-            for (cause in throwable.chainOfCauses().asReversed()) {
-                (cause.javaClass.classLoader as? PluginClassLoader)?.let { return it.pluginId }
-                for (frame in cause.stackTrace) {
-                    PluginClassLoader.findPluginForClass(frame.className)?.let { return it }
+        return PluginExecutionBoundary.attributionFor(throwable)
+            ?: scopedPluginId
+            ?: try {
+                // Root cause first: the crash origin outranks the layers that wrapped it.
+                throwable.chainOfCauses().asReversed().firstNotNullOfOrNull { cause ->
+                    (cause.javaClass.classLoader as? PluginClassLoader)?.pluginId
+                        ?: cause.stackTrace.firstNotNullOfOrNull { frame ->
+                            PluginClassLoader.findPluginForClass(frame.className)
+                        }
                 }
+            } catch (e: Throwable) {
+                logger.warn(LogCategory.SYSTEM, "Plugin attribution failed: ${e.message}")
+                null
             }
-            null
-        } catch (e: Throwable) {
-            logger.warn(LogCategory.SYSTEM, "Plugin attribution failed: ${e.message}")
-            null
-        }
     }
 
     /**
