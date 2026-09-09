@@ -180,6 +180,41 @@ object ChromiumAutoDownloader {
         }
     }
 
+    internal fun isMacFrameworkMismatch(
+        dir: java.nio.file.Path,
+        executableNameFile: java.io.File,
+        requiredChromium: String,
+        installedVersion: String,
+        isMacOverride: Boolean? = null
+    ): Boolean {
+        val isMac = isMacOverride ?: System.getProperty("os.name").orEmpty().lowercase().contains("mac")
+        if (!isMac) return false
+        val execName = executableNameFile.readText().trim()
+
+        var isMismatch = false
+        if (execName.isNotEmpty()) {
+            val versionsDir = dir.resolve("$execName.app")
+                .resolve("Contents")
+                .resolve("Frameworks")
+                .resolve("Chromium Framework.framework")
+                .resolve("Versions")
+                .toFile()
+
+            if (versionsDir.exists() && !versionsDir.resolve(requiredChromium).isDirectory) {
+                logger.info(
+                    LogCategory.BROWSER,
+                    "Chromium build mismatch",
+                    mapOf(
+                        "required" to requiredChromium,
+                        "installed_engine" to installedVersion
+                    )
+                )
+                isMismatch = true
+            }
+        }
+        return isMismatch
+    }
+
     /**
      * Check if Chromium is already installed, valid, and matches the effective
      * engine version (Settings pin, else the bundled JxBrowser version).
@@ -205,10 +240,15 @@ object ChromiumAutoDownloader {
                 LogCategory.BROWSER,
                 "Chromium version mismatch",
                 mapOf(
-                    "installed" to installedVersion,
-                    "required" to effectiveVersion,
-                ),
+                    "expected" to effectiveVersion,
+                    "installed" to installedVersion
+                )
             )
+            return false
+        }
+
+        val requiredChromium = com.teamdev.jxbrowser.VersionInfo.chromiumVersion()
+        if (isMacFrameworkMismatch(dir, executableNameFile, requiredChromium, installedVersion)) {
             return false
         }
 

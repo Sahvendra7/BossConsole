@@ -250,4 +250,67 @@ class ChromiumAutoDownloaderTest {
             assertEquals("network down", reportedError)
             assertFalse(File(target, "version.txt").exists())
         }
+
+    // ---- isMacFrameworkMismatch: preflight rejection of broken pins ----
+
+    @Test
+    fun `isMacFrameworkMismatch returns false on non-macOS platforms`() {
+        assertFalse(
+            ChromiumAutoDownloader.isMacFrameworkMismatch(
+                dir = target.toPath(),
+                executableNameFile = File(target, "executable.name"),
+                requiredChromium = "151.0.7922.72",
+                installedVersion = "9.4.0",
+                isMacOverride = false
+            )
+        )
+    }
+
+    @Test
+    fun `isMacFrameworkMismatch returns true when framework exists but required version is missing`() {
+        val execFile = File(target, "executable.name").apply {
+            parentFile.mkdirs()
+            writeText("BOSS")
+        }
+
+        // Setup the framework directory with a DIFFERENT version than required
+        val versionsDir = File(target, "BOSS.app/Contents/Frameworks/Chromium Framework.framework/Versions")
+        versionsDir.mkdirs()
+        File(versionsDir, "150.0.7871.47").mkdirs() // Not the required one
+
+        assertTrue(
+            ChromiumAutoDownloader.isMacFrameworkMismatch(
+                dir = target.toPath(),
+                executableNameFile = execFile,
+                requiredChromium = "151.0.7922.72",
+                installedVersion = "pinned-version",
+                isMacOverride = true
+            ),
+            "Should reject when framework exists but required version is absent"
+        )
+    }
+
+    @Test
+    fun `isMacFrameworkMismatch returns false when required framework version exists`() {
+        val execFile = File(target, "executable.name").apply {
+            parentFile.mkdirs()
+            writeText("BOSS")
+        }
+
+        val requiredChromium = "151.0.7922.72"
+        val versionsDir = File(target, "BOSS.app/Contents/Frameworks/Chromium Framework.framework/Versions")
+        versionsDir.mkdirs()
+        File(versionsDir, requiredChromium).mkdirs() // The required one exists
+
+        assertFalse(
+            ChromiumAutoDownloader.isMacFrameworkMismatch(
+                dir = target.toPath(),
+                executableNameFile = execFile,
+                requiredChromium = requiredChromium,
+                installedVersion = "9.4.0",
+                isMacOverride = true
+            ),
+            "Should accept when the required version directory exists"
+        )
+    }
 }
