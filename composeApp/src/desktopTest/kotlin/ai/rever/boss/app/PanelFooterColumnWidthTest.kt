@@ -53,6 +53,10 @@ class PanelFooterColumnWidthTest {
         val column = rule.onNodeWithTag("column").fetchSemanticsNode().boundsInRoot
         val control = rule.onNodeWithTag("control").fetchSemanticsNode().boundsInRoot
         assertEquals(column.right, control.right, "end alignment must use the whole panel column")
-        assertEquals(with(rule.density) { 32.dp.roundToPx().toFloat() }, control.width, "the control must keep its full width")
+        assertEquals(
+            with(rule.density) { 32.dp.roundToPx().toFloat() },
+            control.width,
+            "the control must keep its full width",
+        )
     }
 }
