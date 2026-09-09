@@ -1873,19 +1873,18 @@ class SplitViewState(
             val currentTabs = mutableListOf<ActiveTab>()
 
             getAllPanels().forEach { panel ->
-                panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    if (!seenTabIds.contains(tab.id)) {
-                        currentTabs.add(
-                            ActiveTab(
-                                tabInfo = tab,
-                                workspaceId = workspaceId,
-                                workspaceName = getWorkspaceName(workspaceId),
-                                panelId = panel.id,
-                                windowId = windowId,
-                            ),
-                        )
-                        seenTabIds.add(tab.id)
-                    }
+                val activeTab = panel.tabsComponent.tabsState.value.activeTab
+                if (activeTab != null && !seenTabIds.contains(activeTab.id)) {
+                    currentTabs.add(
+                        ActiveTab(
+                            tabInfo = activeTab,
+                            workspaceId = workspaceId,
+                            workspaceName = getWorkspaceName(workspaceId),
+                            panelId = panel.id,
+                            windowId = windowId,
+                        ),
+                    )
+                    seenTabIds.add(activeTab.id)
                 }
             }
 
