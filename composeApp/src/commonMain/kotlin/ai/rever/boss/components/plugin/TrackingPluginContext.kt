@@ -428,6 +428,8 @@ class TrackingPluginContext(
     // MCP tool provider registration - track per plugin so tools are removed
     // automatically in unregisterAll() when the plugin is disabled/unloaded.
     override fun registerMcpToolExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) {
+        val id = observer.observerId
+        tracker.recordUiExtensionRegistration(pluginId) { delegate.unregisterMcpToolExecutionObserver(id) }
         delegate.registerMcpToolExecutionObserver(observer)
     }
 

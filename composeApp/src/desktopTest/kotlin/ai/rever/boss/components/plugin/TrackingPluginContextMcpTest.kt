@@ -35,12 +35,15 @@ class TrackingPluginContextMcpTest {
         val registered = mutableListOf<String>()
         val unregistered = mutableListOf<String>()
 
+        val registeredObservers = mutableListOf<String>()
+        val unregisteredObservers = mutableListOf<String>()
+
         override fun registerMcpToolExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) {
-            // no-op for test double
+            registeredObservers += observer.observerId
         }
 
         override fun unregisterMcpToolExecutionObserver(observerId: String) {
-            // no-op for test double
+            unregisteredObservers += observerId
         }
 
         override fun registerMcpToolProvider(provider: McpToolProvider) {
@@ -64,6 +67,18 @@ class TrackingPluginContextMcpTest {
                         handler = McpToolHandler { McpToolResult("ok") },
                     ),
                 )
+        }
+
+    private fun observer(id: String) =
+        object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+            override val observerId = id
+
+            override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpToolExecutionRequest) { /* no-op */ }
+
+            override fun onExecutionFinished(
+                request: ai.rever.boss.plugin.api.McpToolExecutionRequest,
+                outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
+            ) { /* no-op */ }
         }
 
     @Test
@@ -122,5 +137,48 @@ class TrackingPluginContextMcpTest {
 
         assertTrue("plugin.a" in delegate.unregistered)
         assertTrue("plugin.b" !in delegate.unregistered, "plugin B's provider must survive plugin A's teardown")
+    }
+
+    @Test
+    fun `unregisterAll unregisters every MCP tool execution observer the plugin registered`() {
+        val delegate = RecordingContext()
+        val tracker = PluginRegistrationTracker()
+        val tracking =
+            TrackingPluginContext(
+                pluginId = "test.plugin",
+                delegate = delegate,
+                tracker = tracker,
+            )
+
+        tracking.registerMcpToolExecutionObserver(observer("test.plugin.obs1"))
+        tracking.registerMcpToolExecutionObserver(observer("test.plugin.obs2"))
+        assertEquals(listOf("test.plugin.obs1", "test.plugin.obs2"), delegate.registeredObservers)
+
+        tracking.unregisterAll()
+
+        assertEquals(
+            setOf("test.plugin.obs1", "test.plugin.obs2"),
+            delegate.unregisteredObservers.toSet(),
+            "every registered MCP execution observer must be unregistered on plugin teardown",
+        )
+    }
+
+    @Test
+    fun `explicitly unregistering an observer manually works and unregisterAll just repeats idempotently`() {
+        val delegate = RecordingContext()
+        val tracker = PluginRegistrationTracker()
+        val tracking =
+            TrackingPluginContext(
+                pluginId = "test.plugin",
+                delegate = delegate,
+                tracker = tracker,
+            )
+
+        tracking.registerMcpToolExecutionObserver(observer("test.plugin.obs1"))
+        tracking.unregisterMcpToolExecutionObserver("test.plugin.obs1")
+        assertEquals(listOf("test.plugin.obs1"), delegate.unregisteredObservers)
+
+        tracking.unregisterAll()
+        assertEquals(listOf("test.plugin.obs1", "test.plugin.obs1"), delegate.unregisteredObservers)
     }
 }
