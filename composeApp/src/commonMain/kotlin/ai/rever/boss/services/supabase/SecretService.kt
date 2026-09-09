@@ -10,6 +10,7 @@ import ai.rever.boss.services.supabase.models.ShareSecretRequest
 import ai.rever.boss.services.supabase.models.UnshareSecretRequest
 import ai.rever.boss.services.supabase.models.UpdateSecretRequest
 import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.serialization.Serializable
@@ -48,7 +49,14 @@ import kotlinx.serialization.json.*
  * ```
  */
 object SecretService {
+    // BossConsole#145: every catch here used to fail silently - the only WARN in the log came
+    // from the *calling plugin*, not the code that actually failed, which is why an exception
+    // emptying every secret panel once read as a cosmetic glitch rather than an outage.
+    // sanitizeSupabaseFailure only rewrites serialization failures. Other exceptions can contain
+    // server-echoed secret values, so logs keep the operation/type, never the message or throwable.
+    // NETWORK matches NamedSupabaseLogging; these events diagnose RPC failures, not sign-in events.
     private val logger = BossLogger.forComponent("SecretService")
+
     private val client
         get() = SupabaseConfig.client
 
@@ -82,7 +90,13 @@ object SecretService {
 
             Result.success(PaginatedSecrets(data = secrets, hasMore = hasMore))
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("getUserSecrets", e))
+            val safe = sanitizeSupabaseFailure("getUserSecrets", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "getUserSecrets", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
 
     /**
@@ -125,7 +139,13 @@ object SecretService {
                 ),
             )
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("searchSecrets", e))
+            val safe = sanitizeSupabaseFailure("searchSecrets", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "searchSecrets", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
 
     /**
@@ -176,7 +196,13 @@ object SecretService {
                 Result.failure(Exception(result.error ?: "Failed to create secret"))
             }
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("createSecret", e))
+            val safe = sanitizeSupabaseFailure("createSecret", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "createSecret", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
     }
 
@@ -230,7 +256,13 @@ object SecretService {
                 Result.failure(Exception(result.error ?: "Failed to update secret"))
             }
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("updateSecret", e))
+            val safe = sanitizeSupabaseFailure("updateSecret", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "updateSecret", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
     }
 
@@ -262,7 +294,13 @@ object SecretService {
                 Result.failure(Exception(result.error ?: "Failed to delete secret"))
             }
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("deleteSecret", e))
+            val safe = sanitizeSupabaseFailure("deleteSecret", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "deleteSecret", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
 
     /**
@@ -297,7 +335,13 @@ object SecretService {
 
             Result.success(PaginatedSecrets(data = secrets, hasMore = hasMore))
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("getUserSecretsWithShared", e))
+            val safe = sanitizeSupabaseFailure("getUserSecretsWithShared", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "getUserSecretsWithShared", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
 
     /**
@@ -339,7 +383,13 @@ object SecretService {
 
             Result.success(PaginatedSecretsWithSharing(data = secretsWithSharing, hasMore = hasMore))
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("getUserSecretsWithSharingInfo", e))
+            val safe = sanitizeSupabaseFailure("getUserSecretsWithSharingInfo", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "getUserSecretsWithSharingInfo", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
 
     /**
@@ -384,7 +434,13 @@ object SecretService {
                 Result.failure(Exception(result.error ?: "Failed to share secret"))
             }
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("shareSecret", e))
+            val safe = sanitizeSupabaseFailure("shareSecret", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "shareSecret", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
     }
 
@@ -424,7 +480,13 @@ object SecretService {
                 Result.failure(Exception(result.error ?: "Failed to unshare secret"))
             }
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("unshareSecret", e))
+            val safe = sanitizeSupabaseFailure("unshareSecret", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "unshareSecret", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
     }
 
@@ -452,7 +514,13 @@ object SecretService {
 
             Result.success(shares)
         } catch (e: Exception) {
-            Result.failure(sanitizeSupabaseFailure("getSecretShares", e))
+            val safe = sanitizeSupabaseFailure("getSecretShares", e)
+            logger.warn(
+                LogCategory.NETWORK,
+                "Secret RPC failed",
+                data = mapOf("operation" to "getSecretShares", "errorType" to e::class.simpleName),
+            )
+            Result.failure(safe)
         }
 
     /**
