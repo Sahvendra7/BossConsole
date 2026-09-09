@@ -12,7 +12,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 
 object AgentTraceStore {
     private const val MAX_EVENTS = 500
@@ -68,6 +67,7 @@ object AgentTraceStore {
         updateEvent(id) {
             it.copy(
                 completedAtMs = completedAtMs,
+                durationMs = it.startMark.elapsedNow().inWholeMilliseconds,
                 status = if (result.isError) TraceStatus.FAILURE else TraceStatus.SUCCESS,
                 resultJson = if (!result.isError) resultPayload else null,
                 errorMessage = if (result.isError) resultPayload else null,
@@ -88,6 +88,7 @@ object AgentTraceStore {
         updateEvent(id) {
             it.copy(
                 completedAtMs = completedAtMs,
+                durationMs = it.startMark.elapsedNow().inWholeMilliseconds,
                 status =
                     when {
                         isTimeout -> TraceStatus.TIMEOUT
@@ -154,9 +155,14 @@ object AgentTraceStore {
         require(depth <= 32) { "JSON nesting exceeds trace limit" }
         return when (element) {
             is JsonObject -> {
-                val values = element.mapValues { (_, value) ->
-                    if (value is JsonPrimitive) value.contentOrNull else "..."
-                }
+                val values =
+                    element.mapValues { (_, value) ->
+                        if (value is JsonPrimitive) {
+                            if (value.isString) value.content else null
+                        } else {
+                            "..."
+                        }
+                    }
                 val sanitized = LogSanitizer.sanitizeMap(values)
                 JsonObject(
                     element.mapValues { (key, value) ->
@@ -169,9 +175,14 @@ object AgentTraceStore {
                     },
                 )
             }
-            is JsonArray -> JsonArray(element.map { sanitizeJsonElement(it, depth + 1) })
-            is JsonPrimitive ->
+
+            is JsonArray -> {
+                JsonArray(element.map { sanitizeJsonElement(it, depth + 1) })
+            }
+
+            is JsonPrimitive -> {
                 if (element.isString) JsonPrimitive(LogSanitizer.sanitizeLogMessage(element.content)) else element
+            }
         }
     }
 }

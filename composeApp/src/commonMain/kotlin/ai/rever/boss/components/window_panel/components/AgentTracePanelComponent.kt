@@ -7,6 +7,7 @@ import ai.rever.boss.components.observability.McpTraceEvent
 import ai.rever.boss.components.observability.TraceStatus
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
+import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +29,6 @@ import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
@@ -67,7 +67,7 @@ class AgentTracePanelComponent(
             modifier =
                 modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colors.background),
+                    .background(BossTheme.colors.panel),
         ) {
             // Header
             Row(
@@ -75,14 +75,9 @@ class AgentTracePanelComponent(
                     Modifier
                         .fillMaxWidth()
                         .padding(8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Agent Trace",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colors.onBackground,
-                )
                 Button(
                     onClick = {
                         AgentTraceStore.clear()
@@ -90,14 +85,14 @@ class AgentTracePanelComponent(
                     },
                     colors =
                         ButtonDefaults.buttonColors(
-                            backgroundColor = MaterialTheme.colors.surface,
-                            contentColor = MaterialTheme.colors.onSurface,
+                            backgroundColor = BossTheme.colors.raised,
+                            contentColor = BossTheme.colors.textPrimary,
                         ),
                 ) {
                     Text("Clear")
                 }
             }
-            Divider(color = MaterialTheme.colors.onSurface.copy(alpha = 0.12f))
+            Divider(color = BossTheme.colors.line)
 
             Row(modifier = Modifier.fillMaxSize()) {
                 TraceList(
@@ -109,7 +104,7 @@ class AgentTracePanelComponent(
 
                 Divider(
                     modifier = Modifier.fillMaxHeight().width(1.dp),
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.12f),
+                    color = BossTheme.colors.line,
                 )
 
                 TraceDetail(
@@ -133,6 +128,16 @@ class AgentTracePanelComponent(
                     .fillMaxHeight()
                     .padding(end = 8.dp),
         ) {
+            if (events.isEmpty()) {
+                item {
+                    Text(
+                        "No MCP calls yet",
+                        color = BossTheme.colors.textSecondary,
+                        style = BossTheme.type.body,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
             items(events, key = { it.id }) { event ->
                 val isSelected = event.id == selectedEventId
                 Row(
@@ -142,47 +147,52 @@ class AgentTracePanelComponent(
                             .clickable { onEventSelected(event.id) }
                             .background(
                                 if (isSelected) {
-                                    MaterialTheme.colors.primary.copy(alpha = 0.1f)
+                                    BossTheme.colors.signalWash
                                 } else {
                                     Color.Transparent
                                 },
                             ).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val icon =
-                        when (event.status) {
-                            TraceStatus.RUNNING -> Icons.Default.HourglassEmpty
-                            TraceStatus.SUCCESS -> Icons.Default.CheckCircle
-                            TraceStatus.FAILURE -> Icons.Default.Error
-                            TraceStatus.TIMEOUT -> Icons.Default.Block
-                            TraceStatus.CANCELLED -> Icons.Default.Cancel
-                        }
-                    val color =
-                        when (event.status) {
-                            TraceStatus.RUNNING -> MaterialTheme.colors.primary
-                            TraceStatus.SUCCESS -> Color(0xFF4CAF50)
-                            TraceStatus.FAILURE, TraceStatus.TIMEOUT -> MaterialTheme.colors.error
-                            TraceStatus.CANCELLED -> MaterialTheme.colors.onSurface.copy(alpha = 0.38f)
-                        }
-                    Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+                    TraceStatusIcon(event.status)
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
                             event.toolName,
-                            style = MaterialTheme.typography.body2,
-                            color = MaterialTheme.colors.onBackground,
+                            style = BossTheme.type.body,
+                            color = BossTheme.colors.textPrimary,
                         )
                         val durationText = event.durationMs?.let { "${it}ms" } ?: "..."
                         Text(
                             durationText,
-                            style = MaterialTheme.typography.caption,
-                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+                            style = BossTheme.type.body,
+                            color = BossTheme.colors.textSecondary,
                         )
                     }
                 }
-                Divider(color = MaterialTheme.colors.onSurface.copy(alpha = 0.12f), thickness = 0.5.dp)
+                Divider(color = BossTheme.colors.line, thickness = 0.5.dp)
             }
         }
+    }
+
+    @Composable
+    private fun TraceStatusIcon(status: TraceStatus) {
+        val icon =
+            when (status) {
+                TraceStatus.RUNNING -> Icons.Default.HourglassEmpty
+                TraceStatus.SUCCESS -> Icons.Default.CheckCircle
+                TraceStatus.FAILURE -> Icons.Default.Error
+                TraceStatus.TIMEOUT -> Icons.Default.Block
+                TraceStatus.CANCELLED -> Icons.Default.Cancel
+            }
+        val color =
+            when (status) {
+                TraceStatus.RUNNING -> BossTheme.colors.signalText
+                TraceStatus.SUCCESS -> BossTheme.colors.ok
+                TraceStatus.FAILURE, TraceStatus.TIMEOUT -> BossTheme.colors.alert
+                TraceStatus.CANCELLED -> BossTheme.colors.textMuted
+            }
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
     }
 
     @Composable
@@ -210,14 +220,14 @@ class AgentTracePanelComponent(
                     "Arguments",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
-                    color = MaterialTheme.colors.onBackground,
+                    color = BossTheme.colors.textPrimary,
                 )
                 SelectionContainer {
                     Text(
                         text = selectedEvent.argumentsJson,
                         fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.caption,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+                        style = BossTheme.type.body,
+                        color = BossTheme.colors.textSecondary,
                     )
                 }
 
@@ -226,14 +236,14 @@ class AgentTracePanelComponent(
                         "Result",
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
-                        color = MaterialTheme.colors.onBackground,
+                        color = BossTheme.colors.textPrimary,
                     )
                     SelectionContainer {
                         Text(
                             text = selectedEvent.resultJson!!,
                             fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.caption,
-                            color = Color(0xFF4CAF50),
+                            style = BossTheme.type.body,
+                            color = BossTheme.colors.ok,
                         )
                     }
                 }
@@ -243,21 +253,21 @@ class AgentTracePanelComponent(
                         "Error",
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
-                        color = MaterialTheme.colors.onBackground,
+                        color = BossTheme.colors.textPrimary,
                     )
                     SelectionContainer {
                         Text(
                             text = selectedEvent.errorMessage!!,
                             fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.caption,
-                            color = MaterialTheme.colors.error,
+                            style = BossTheme.type.body,
+                            color = BossTheme.colors.alert,
                         )
                     }
                 }
             } else {
                 Text(
                     "Select a trace event to view details",
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+                    color = BossTheme.colors.textSecondary,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
@@ -270,9 +280,9 @@ class AgentTracePanelComponent(
         value: String,
     ) {
         Row(modifier = Modifier.padding(bottom = 4.dp)) {
-            Text("$label: ", fontWeight = FontWeight.Bold, color = MaterialTheme.colors.onBackground)
+            Text("$label: ", fontWeight = FontWeight.Bold, color = BossTheme.colors.textPrimary)
             SelectionContainer {
-                Text(value, color = MaterialTheme.colors.onBackground)
+                Text(value, color = BossTheme.colors.textPrimary)
             }
         }
     }
