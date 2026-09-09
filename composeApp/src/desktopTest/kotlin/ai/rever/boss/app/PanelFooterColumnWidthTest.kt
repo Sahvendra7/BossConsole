@@ -1,5 +1,6 @@
-package ai.rever.boss.components.window_panel
+package ai.rever.boss.app
 
+import ai.rever.boss.components.window_panel.PanelColumn
 import ai.rever.boss.plugin.api.Panel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -18,7 +19,7 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 
-class PanelColumnWidthTest {
+class PanelFooterColumnWidthTest {
     @get:Rule
     val rule = createComposeRule()
 
