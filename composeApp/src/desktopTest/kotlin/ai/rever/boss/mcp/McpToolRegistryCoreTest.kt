@@ -782,26 +782,29 @@ class McpToolRegistryCoreTest {
         kotlinx.coroutines.runBlocking {
             val registry = McpToolRegistryCore(disabledFile = null, maxResultChars = 1_000)
             registry.registerProvider(
-                provider("p1", echoTool("tool1", handler = McpToolHandler { McpToolResult("x".repeat(5_000)) }))
+                provider("p1", echoTool("tool1", handler = McpToolHandler { McpToolResult("x".repeat(5_000)) })),
             )
-            
+
             var observerResultText: String? = null
-            
-            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
-                override val observerId = "test.obs"
-                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
-                override fun onExecutionFinished(
-                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
-                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
-                ) {
-                    if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Success) {
-                        observerResultText = outcome.result.text
+
+            val observer =
+                object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                    override val observerId = "test.obs"
+
+                    override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                        outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
+                    ) {
+                        if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Success) {
+                            observerResultText = outcome.result.text
+                        }
                     }
                 }
-            }
             registry.registerExecutionObserver(observer)
             registry.invoke("tool1", "{}")
-            
+
             val result = observerResultText
             kotlin.test.assertNotNull(result)
             kotlin.test.assertTrue(result!!.length <= 1_000)
@@ -814,25 +817,28 @@ class McpToolRegistryCoreTest {
         kotlinx.coroutines.runBlocking {
             val registry = McpToolRegistryCore(disabledFile = null)
             registry.registerProvider(
-                provider("p1", echoTool("tool1"))
+                provider("p1", echoTool("tool1")),
             )
-            
+
             var observerArgsText: String? = null
-            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
-                override val observerId = "test.obs"
-                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {
-                    observerArgsText = request.arguments
+            val observer =
+                object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                    override val observerId = "test.obs"
+
+                    override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {
+                        observerArgsText = request.arguments
+                    }
+
+                    override fun onExecutionFinished(
+                        request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                        outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
+                    ) {}
                 }
-                override fun onExecutionFinished(
-                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
-                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
-                ) {}
-            }
             registry.registerExecutionObserver(observer)
-            
+
             val rawArgs = "{\"api_key\": \"sk-1234567890\", \"nested\": {\"password\": \"foo\"}, \"safe\": \"bar\"}"
             registry.invoke("tool1", rawArgs)
-            
+
             val argsStr = observerArgsText
             kotlin.test.assertNotNull(argsStr)
             kotlin.test.assertTrue(argsStr!!.contains("[REDACTED]"))
@@ -846,25 +852,28 @@ class McpToolRegistryCoreTest {
         kotlinx.coroutines.runBlocking {
             val registry = McpToolRegistryCore(disabledFile = null)
             registry.registerProvider(
-                provider("p1", echoTool("tool1", handler = McpToolHandler { error("Crashed with token sk-1234567890") }))
+                provider("p1", echoTool("tool1", handler = McpToolHandler { error("Crashed with token sk-1234567890") })),
             )
-            
+
             var outcomeErrorMsg: String? = null
-            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
-                override val observerId = "test.obs"
-                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
-                override fun onExecutionFinished(
-                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
-                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
-                ) {
-                    if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Failure) {
-                        outcomeErrorMsg = outcome.error.message
+            val observer =
+                object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                    override val observerId = "test.obs"
+
+                    override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                        outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
+                    ) {
+                        if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Failure) {
+                            outcomeErrorMsg = outcome.error.message
+                        }
                     }
                 }
-            }
             registry.registerExecutionObserver(observer)
             registry.invoke("tool1", "{}")
-            
+
             val msg = outcomeErrorMsg
             kotlin.test.assertNotNull(msg)
             println("MESSAGE: $msg")
@@ -877,29 +886,38 @@ class McpToolRegistryCoreTest {
         kotlinx.coroutines.runBlocking {
             val registry = McpToolRegistryCore(disabledFile = null, invokeTimeoutMs = 100)
             registry.registerProvider(
-                provider("p1", echoTool("tool1", handler = McpToolHandler { 
-                    kotlinx.coroutines.delay(500)
-                    McpToolResult("done") 
-                }))
+                provider(
+                    "p1",
+                    echoTool(
+                        "tool1",
+                        handler =
+                            McpToolHandler {
+                                kotlinx.coroutines.delay(500)
+                                McpToolResult("done")
+                            },
+                    ),
+                ),
             )
-            
+
             var didTimeout = false
-            val observer = object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
-                override val observerId = "test.obs"
-                override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
-                override fun onExecutionFinished(
-                    request: ai.rever.boss.plugin.api.McpExecutionRequest,
-                    outcome: ai.rever.boss.plugin.api.McpExecutionOutcome
-                ) {
-                    if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Timeout) {
-                        didTimeout = true
+            val observer =
+                object : ai.rever.boss.plugin.api.McpToolExecutionObserver {
+                    override val observerId = "test.obs"
+
+                    override fun onExecutionStarted(request: ai.rever.boss.plugin.api.McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: ai.rever.boss.plugin.api.McpExecutionRequest,
+                        outcome: ai.rever.boss.plugin.api.McpExecutionOutcome,
+                    ) {
+                        if (outcome is ai.rever.boss.plugin.api.McpExecutionOutcome.Timeout) {
+                            didTimeout = true
+                        }
                     }
                 }
-            }
             registry.registerExecutionObserver(observer)
             registry.invoke("tool1", "{}")
-            
+
             kotlin.test.assertTrue(didTimeout)
         }
-
 }

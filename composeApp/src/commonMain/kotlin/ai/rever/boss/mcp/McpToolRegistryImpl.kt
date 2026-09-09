@@ -1,17 +1,17 @@
 package ai.rever.boss.mcp
 
+import ai.rever.boss.components.bars.horizontal.StatusMessageManager
+import ai.rever.boss.mcp.sandbox.DefaultMcpRiskEvaluator
 import ai.rever.boss.plugin.api.McpExecutionError
 import ai.rever.boss.plugin.api.McpExecutionOutcome
 import ai.rever.boss.plugin.api.McpExecutionRequest
-import ai.rever.boss.components.bars.horizontal.StatusMessageManager
-import ai.rever.boss.mcp.sandbox.DefaultMcpRiskEvaluator
 import ai.rever.boss.plugin.api.McpToolArgs
 import ai.rever.boss.plugin.api.McpToolDefinition
+import ai.rever.boss.plugin.api.McpToolExecutionObserver
 import ai.rever.boss.plugin.api.McpToolProvider
 import ai.rever.boss.plugin.api.McpToolRegistry
 import ai.rever.boss.plugin.api.McpToolResult
 import ai.rever.boss.plugin.api.RegisteredMcpTool
-import ai.rever.boss.plugin.api.McpToolExecutionObserver
 import ai.rever.boss.plugin.logging.LogSanitizer
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.atomicWriteText
@@ -332,7 +332,6 @@ private fun truncationMarker(
         "with a narrower query, a filter, or a smaller range to get the rest.]"
 
 internal class McpToolRegistryCore(
-
     private val disabledFile: File?,
     private val invokeTimeoutMs: Long = 60_000L,
     private val maxResultChars: Int = MAX_MCP_RESULT_CHARS,
@@ -718,7 +717,10 @@ internal class McpToolRegistryCore(
         toolName: String,
         arguments: String,
     ): McpToolResult {
-                val executionId = java.util.UUID.randomUUID().toString()
+        val executionId =
+            java.util.UUID
+                .randomUUID()
+                .toString()
         val tool =
             _tools.value.firstOrNull { it.definition.name == toolName }
                 ?: return McpToolResult("Unknown or disabled MCP tool: $toolName", isError = true)
@@ -833,7 +835,6 @@ internal class McpToolRegistryCore(
             }
         }
 
-
     private fun capResult(
         toolName: String,
         result: McpToolResult,
@@ -848,36 +849,45 @@ internal class McpToolRegistryCore(
     }
 
     @Suppress("TooGenericExceptionCaught")
- // Plugin handlers may throw any implementation-specific exception.
+    // Plugin handlers may throw any implementation-specific exception.
     private suspend fun executeAuthorized(
         executionId: String,
         tool: RegisteredMcpTool,
         args: McpToolArgs,
         rawArguments: String,
     ): McpToolResult {
-                val currentObservers = observers.toList()
+        val currentObservers = observers.toList()
 
         val sanitizedArgsMap = McpArgumentSanitizer.sanitize(McpArgumentSanitizer.parseArguments(rawArguments))
-        val sanitizedArgsString = kotlinx.serialization.json.JsonObject(sanitizedArgsMap.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) }).toString()
+        val sanitizedArgsString =
+            kotlinx.serialization.json
+                .JsonObject(
+                    sanitizedArgsMap.mapValues {
+                        kotlinx.serialization.json.JsonPrimitive(it.value)
+                    },
+                ).toString()
         val request = McpExecutionRequest(executionId, tool.definition.name, sanitizedArgsString)
 
         dispatchExecutionStarted(request, currentObservers)
 
-        val rawResult = try {
-            kotlinx.coroutines.withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
-        } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
-            val result = McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
-            dispatchExceptionOutcome(request, currentObservers, t, McpExecutionOutcome::Timeout)
-            return result
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            dispatchExceptionOutcome(request, currentObservers, cancelled, McpExecutionOutcome::Cancelled)
-            throw cancelled
-        } catch (failure: Throwable) {
-            val reason = ai.rever.boss.plugin.logging.LogSanitizer.sanitizeExceptionMessage(failure.message ?: failure::class.simpleName)
-            val result = McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
-            dispatchExceptionOutcome(request, currentObservers, failure, McpExecutionOutcome::Failure)
-            return result
-        }
+        val rawResult =
+            try {
+                kotlinx.coroutines.withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
+            } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
+                val result = McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
+                dispatchExceptionOutcome(request, currentObservers, t, McpExecutionOutcome::Timeout)
+                return result
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                dispatchExceptionOutcome(request, currentObservers, cancelled, McpExecutionOutcome::Cancelled)
+                throw cancelled
+            } catch (failure: Throwable) {
+                val reason =
+                    ai.rever.boss.plugin.logging.LogSanitizer
+                        .sanitizeExceptionMessage(failure.message ?: failure::class.simpleName)
+                val result = McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
+                dispatchExceptionOutcome(request, currentObservers, failure, McpExecutionOutcome::Failure)
+                return result
+            }
 
         val cappedResult = capResult(tool.definition.name, rawResult)
         dispatchExecutionFinished(request, McpExecutionOutcome.Success(cappedResult), currentObservers)
@@ -891,7 +901,9 @@ internal class McpToolRegistryCore(
         outcomeConstructor: (McpExecutionError) -> McpExecutionOutcome,
     ) {
         val rawMessage = e.message ?: e::class.simpleName
-        val sanitizedMessage = ai.rever.boss.plugin.logging.LogSanitizer.sanitizeExceptionMessage(rawMessage)
+        val sanitizedMessage =
+            ai.rever.boss.plugin.logging.LogSanitizer
+                .sanitizeExceptionMessage(rawMessage)
         val errorDetails =
             McpExecutionError(
                 type = e::class.simpleName ?: "Error",
