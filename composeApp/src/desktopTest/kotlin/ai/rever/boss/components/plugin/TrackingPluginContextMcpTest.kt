@@ -35,7 +35,10 @@ class TrackingPluginContextMcpTest {
         val registered = mutableListOf<String>()
         val unregistered = mutableListOf<String>()
 
-        override fun registerMcpToolProvider(provider: McpToolProvider) {
+                override fun registerMcpToolExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) {}
+        override fun unregisterMcpToolExecutionObserver(observerId: String) {}
+
+    override fun registerMcpToolProvider(provider: McpToolProvider) {
             registered += provider.providerId
         }
 

@@ -267,6 +267,9 @@ class SandboxedPluginContext(
 
     // MCP tool provider registration - delegate to underlying context so
     // plugin-contributed MCP tools reach the host McpToolRegistry.
+        override fun registerMcpToolExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) = delegate.registerMcpToolExecutionObserver(observer)
+    override fun unregisterMcpToolExecutionObserver(observerId: String) = delegate.unregisterMcpToolExecutionObserver(observerId)
+
     override fun registerMcpToolProvider(provider: McpToolProvider) = delegate.registerMcpToolProvider(provider)
 
     override fun unregisterMcpToolProvider(providerId: String) = delegate.unregisterMcpToolProvider(providerId)

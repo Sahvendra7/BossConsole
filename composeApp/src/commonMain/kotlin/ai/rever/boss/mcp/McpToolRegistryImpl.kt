@@ -6,6 +6,9 @@ import ai.rever.boss.plugin.api.McpToolArgs
 import ai.rever.boss.plugin.api.McpToolDefinition
 import ai.rever.boss.plugin.api.McpToolProvider
 import ai.rever.boss.plugin.api.McpToolRegistry
+import ai.rever.boss.plugin.api.McpExecutionRequest
+import ai.rever.boss.plugin.api.McpExecutionOutcome
+import ai.rever.boss.plugin.api.McpExecutionError
 import ai.rever.boss.plugin.api.McpToolResult
 import ai.rever.boss.plugin.api.RegisteredMcpTool
 import ai.rever.boss.plugin.logging.LogSanitizer
@@ -161,6 +164,14 @@ object McpToolRegistryImpl : McpToolRegistry {
         isAdmin: Boolean,
         permissions: Set<String>,
     ) = core.updateAccess(isAdmin, permissions)
+
+    fun registerExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) {
+        core.registerExecutionObserver(observer)
+    }
+
+    fun unregisterExecutionObserver(observerId: String) {
+        core.unregisterExecutionObserver(observerId)
+    }
 
     override suspend fun invoke(
         toolName: String,
@@ -410,6 +421,10 @@ internal class McpToolRegistryCore(
 
     /** Enabled tools = registered minus user-disabled minus permission-denied. This is what the bridge mirrors. */
     private val _tools = MutableStateFlow<List<RegisteredMcpTool>>(emptyList())
+
+    @kotlin.jvm.Volatile
+    private var observers: List<ai.rever.boss.plugin.api.McpToolExecutionObserver> = emptyList()
+
     val tools: StateFlow<List<RegisteredMcpTool>> = _tools.asStateFlow()
 
     fun registerProvider(provider: McpToolProvider) {
@@ -486,6 +501,20 @@ internal class McpToolRegistryCore(
      * [onFault] is invoked after the lock is released, so host UI never runs under
      * the mutation lock (see [mutationLock]).
      */
+    fun registerExecutionObserver(observer: ai.rever.boss.plugin.api.McpToolExecutionObserver) {
+        synchronized(mutationLock) {
+            if (observers.none { it.observerId == observer.observerId }) {
+                observers = observers + observer
+            }
+        }
+    }
+
+    fun unregisterExecutionObserver(observerId: String) {
+        synchronized(mutationLock) {
+            observers = observers.filterNot { it.observerId == observerId }
+        }
+    }
+
     fun setToolEnabled(
         toolName: String,
         enabled: Boolean,
@@ -689,7 +718,7 @@ internal class McpToolRegistryCore(
                             policyEngine.trustForSession(toolName)
                         }
                         executionStarted = true
-                        executeAuthorized(tool, args)
+                        executeAuthorized(tool, args, arguments)
                     }
                 }
             return requireNotNull(result)
@@ -719,6 +748,7 @@ internal class McpToolRegistryCore(
                         },
                 )
             }
+
         }
     }
 
@@ -773,18 +803,59 @@ internal class McpToolRegistryCore(
         }
 
     @Suppress("TooGenericExceptionCaught") // Plugin handlers may throw any implementation-specific exception.
-    private suspend fun executeAuthorized(tool: RegisteredMcpTool, args: McpToolArgs): McpToolResult =
-        try {
-            withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
-        } catch (_: TimeoutCancellationException) {
+    private suspend fun executeAuthorized(tool: RegisteredMcpTool, args: McpToolArgs, rawArguments: String): McpToolResult {
+        val executionId = java.util.UUID.randomUUID().toString()
+        val request = ai.rever.boss.plugin.api.McpExecutionRequest(executionId, tool.definition.name, rawArguments)
+        val currentObservers = observers.toList()
+        
+        for (obs in currentObservers) {
+            try {
+                obs.onExecutionStarted(request)
+            } catch (t: Throwable) {
+                logger.warn(LogCategory.SYSTEM, "MCP execution observer failed on start", mapOf("observerId" to obs.observerId, "error" to (t.message ?: t::class.simpleName)))
+            }
+        }
+        
+        return try {
+            val result = withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
+            for (obs in currentObservers) {
+                try {
+                    obs.onExecutionFinished(request, ai.rever.boss.plugin.api.McpExecutionOutcome.Success(result))
+                } catch (t: Throwable) {
+                    logger.warn(LogCategory.SYSTEM, "MCP execution observer failed on success", mapOf("observerId" to obs.observerId, "error" to (t.message ?: t::class.simpleName)))
+                }
+            }
+            result
+        } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
+            for (obs in currentObservers) {
+                try {
+                    obs.onExecutionFinished(request, ai.rever.boss.plugin.api.McpExecutionOutcome.Timeout(ai.rever.boss.plugin.api.McpExecutionError(t::class.simpleName ?: "Timeout", t.message)))
+                } catch (e: Throwable) {
+                    logger.warn(LogCategory.SYSTEM, "MCP execution observer failed on timeout", mapOf("observerId" to obs.observerId, "error" to (e.message ?: e::class.simpleName)))
+                }
+            }
             McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
-        } catch (cancelled: CancellationException) {
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            for (obs in currentObservers) {
+                try {
+                    obs.onExecutionFinished(request, ai.rever.boss.plugin.api.McpExecutionOutcome.Cancelled(ai.rever.boss.plugin.api.McpExecutionError(cancelled::class.simpleName ?: "Cancelled", cancelled.message)))
+                } catch (e: Throwable) {
+                    logger.warn(LogCategory.SYSTEM, "MCP execution observer failed on cancel", mapOf("observerId" to obs.observerId, "error" to (e.message ?: e::class.simpleName)))
+                }
+            }
             throw cancelled
         } catch (failure: Throwable) {
-            // The tool caller receives a sanitized failure; never log the raw plugin exception.
-            val reason = LogSanitizer.sanitizeExceptionMessage(failure.message ?: failure::class.simpleName)
+            for (obs in currentObservers) {
+                try {
+                    obs.onExecutionFinished(request, ai.rever.boss.plugin.api.McpExecutionOutcome.Failure(ai.rever.boss.plugin.api.McpExecutionError(failure::class.simpleName ?: "Failure", failure.message)))
+                } catch (e: Throwable) {
+                    logger.warn(LogCategory.SYSTEM, "MCP execution observer failed on failure", mapOf("observerId" to obs.observerId, "error" to (e.message ?: e::class.simpleName)))
+                }
+            }
+            val reason = ai.rever.boss.utils.logging.LogSanitizer.sanitizeExceptionMessage(failure.message ?: failure::class.simpleName)
             McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
         }
+    }
 
     /**
      * Read the persisted disabled set. "Absent" and "unparseable" are NOT the same
