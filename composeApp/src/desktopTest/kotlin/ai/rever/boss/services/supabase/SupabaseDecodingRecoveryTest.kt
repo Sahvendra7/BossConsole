@@ -2,7 +2,10 @@ package ai.rever.boss.services.supabase
 
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.utils.logging.BossLogger
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlin.test.assertFailsWith
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -81,5 +84,25 @@ class SupabaseDecodingRecoveryTest {
 
         assertNotNull(result, "Should successfully parse SecretEntry")
         assertTrue(result.tags.isEmpty(), "Null tags should be coerced to emptyList()")
+    }
+    @Test
+    fun `non-array response fails without including its contents`() {
+        val error = assertFailsWith<SupabaseFailure> {
+            decodeListRecovering<SecretEntry>(Json.parseToJsonElement("\"private-password\""), logger, "list")
+        }
+        assertEquals("list: expected response array", error.message)
+    }
+
+    @Test
+    fun `empty array succeeds and malformed elements are skipped`() {
+        assertTrue(decodeListRecovering<SecretEntry>(Json.parseToJsonElement("[]"), logger, "list").isEmpty())
+        assertTrue(decodeListRecovering<SecretEntry>(Json.parseToJsonElement("[null,42,{}]"), logger, "list").isEmpty())
+    }
+
+    @Test
+    fun `coercion does not invent a required primary key`() {
+        assertFailsWith<SerializationException> {
+            supabaseJson.decodeFromJsonElement(SecretEntry.serializer(), JsonNull)
+        }
     }
 }

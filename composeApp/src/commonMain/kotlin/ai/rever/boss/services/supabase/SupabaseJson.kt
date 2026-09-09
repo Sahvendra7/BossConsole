@@ -7,7 +7,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.JsonArray
 
 /**
  * The Json instance for every Supabase payload in this package, in both directions.
@@ -40,11 +40,9 @@ import kotlinx.serialization.json.jsonArray
  * as an alias until those builds age out. Do not read this instance as blanket tolerance
  * of schema drift.
  */
-internal val supabaseJson =
-    Json {
-        ignoreUnknownKeys = true
-        coerceInputValues = true
-    }
+// Coercion only helps fields with defaults. It also hides server null/enum bugs;
+// required fields still fail and are recovered only at an explicit list boundary.
+internal val supabaseJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
 /**
  * The marker kotlinx puts before the offending document in a parse failure.
@@ -95,8 +93,7 @@ internal fun sanitizeSupabaseFailure(
     when (error) {
         is RestException -> {
             // RestException carries the PostgREST error body which can echo column values.
-            val diagnostic = error.error ?: "PostgREST error"
-            SupabaseFailure("$operation: $diagnostic")
+            SupabaseFailure("$operation: PostgREST request failed")
         }
 
         is SerializationException -> {
@@ -135,16 +132,23 @@ internal inline fun <reified T> decodeListRecovering(
     logger: ComponentLogger,
     operationName: String,
 ): List<T> {
-    val array = jsonElement.jsonArray
-    return array.mapNotNull { element ->
-        runCatching { supabaseJson.decodeFromJsonElement<T>(element) }
-            .onFailure { error ->
-                logger.warn(
-                    LogCategory.NETWORK,
-                    "Supabase row dropped in $operationName",
-                    data = mapOf("rows_dropped" to 1),
-                    error = sanitizeSupabaseFailure(operationName, error),
-                )
-            }.getOrNull()
+    val array = jsonElement as? JsonArray ?: throw SupabaseFailure("$operationName: expected response array")
+    var dropped = 0
+    val rows = array.mapNotNull { element ->
+        try {
+            supabaseJson.decodeFromJsonElement<T>(element)
+        } catch (_: SerializationException) {
+            dropped++
+            null
+        }
     }
+    if (dropped > 0) {
+        // Even a serialization diagnostic can quote a malformed scalar secret value.
+        logger.warn(
+            LogCategory.NETWORK,
+            "Supabase rows dropped in $operationName",
+            data = mapOf("rows_dropped" to dropped),
+        )
+    }
+    return rows
 }

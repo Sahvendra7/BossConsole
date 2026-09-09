@@ -97,7 +97,7 @@ class SupabaseWiringTest {
             .ifEmpty { fail("no sources under ${sourceDir()}") }
 
     private fun scan(pattern: Regex): List<String> =
-        sources().flatMap { file ->
+        sources().filter { pattern != STRICT_JSON || it.name != "SupabaseJson.kt" }.flatMap { file ->
             file
                 .readLines()
                 .withIndex()
@@ -105,44 +105,37 @@ class SupabaseWiringTest {
                 .map { (i, line) -> "${file.name}:${i + 1}: ${line.trim()}" }
         }
 
-    /** walkTopDown on the entire repository root for repo-wide rules */
-    private fun repoSources(): List<File> {
-        val root =
-            sourceDir()
-                .parentFile.parentFile.parentFile.parentFile.parentFile.parentFile.parentFile.parentFile
-        val srcDirs =
-            listOf(
-                File(root, "composeApp/src/commonMain"),
-                File(root, "composeApp/src/desktopMain"),
-                File(root, "modules"),
-                File(root, "server/src"),
-                File(root, "plugin-platform"),
-            )
-        return srcDirs.filter { it.exists() }.flatMap { dir ->
-            dir
-                .walkTopDown()
-                .filter { it.isFile && it.extension == "kt" }
-                .toList()
+    @Test
+    fun `Supabase consumers throughout the repository avoid default Json decoding`() {
+        val root = generateSequence(sourceDir()) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
+        val consumers = root.walkTopDown()
+            .onEnter { it.name !in setOf("build", ".gradle", ".git", ".worktrees") }
+            .filter { file ->
+                file.isFile && file.extension == "kt" &&
+                    file.relativeTo(root).invariantSeparatorsPath.contains(Regex("/src/[^/]*Main/")) &&
+                    file.readText().contains("import io.github.jan.supabase")
+            }.toList()
+        assertTrue(consumers.any { it.name == "SecretService.kt" }, "guard must find real production consumers")
+        val defaultDecode = Regex("""(?<![A-Za-z0-9_])Json\.(Default\.)?(decodeFrom|parseToJsonElement)""")
+        val violations = consumers.flatMap { file ->
+            file.readLines().mapIndexedNotNull { index, line ->
+                if (defaultDecode.containsMatchIn(line) && !line.trimStart().startsWith("//")) {
+                    "${file.relativeTo(root)}:${index + 1}"
+                } else {
+                    null
+                }
+            }
         }
+        assertEquals(emptyList(), violations, "Supabase consumers must configure their decoder")
     }
-
-    private fun repoWideScan(pattern: Regex): List<String> =
-        repoSources().flatMap { file ->
-            file
-                .readLines()
-                .withIndex()
-                .filter { (_, line) -> pattern.containsMatchIn(line) && !ALLOWED.containsMatchIn(line) }
-                // Exclude test files where we intentionally test the raw Json behavior
-                .filter { !file.name.endsWith("Test.kt") }
-                .map { (i, line) -> "${file.name}:${i + 1}: ${line.trim()}" }
-        }
 
     @Test
     fun `no service decodes with the strict Json default`() {
         assertEquals(
             emptyList(),
-            repoWideScan(STRICT_JSON),
-            "decode payloads through a configured Json instance, never the strict default Json",
+            scan(STRICT_JSON),
+            "decode Supabase payloads through supabaseJson, never a strict Json",
         )
     }
 

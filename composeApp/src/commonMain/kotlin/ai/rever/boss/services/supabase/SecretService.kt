@@ -57,6 +57,9 @@ object SecretService {
     // NETWORK matches NamedSupabaseLogging; these events diagnose RPC failures, not sign-in events.
     private val logger = BossLogger.forComponent("SecretService")
 
+    // Paginated RPCs deliberately decode atomically: the pinned plugin API has no raw
+    // next-offset field, and clients advance by data.size. Dropping rows would repeat or
+    // skip records and can stop a scan early. Recovery needs a cursor contract first.
     private val client
         get() = SupabaseConfig.client
 
@@ -85,7 +88,7 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secrets = decodeListRecovering<SecretEntry>(jsonElement, logger, "getUserSecrets")
+            val secrets = supabaseJson.decodeFromJsonElement<List<SecretEntry>>(jsonElement)
             val hasMore = secrets.size >= limit
 
             Result.success(PaginatedSecrets(data = secrets, hasMore = hasMore))
@@ -127,7 +130,7 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secrets = decodeListRecovering<SecretEntry>(jsonElement, logger, "searchSecrets")
+            val secrets = supabaseJson.decodeFromJsonElement<List<SecretEntry>>(jsonElement)
 
             // Check if there might be more results
             val hasMore = secrets.size >= limit
@@ -328,8 +331,7 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secretsWithSharing =
-                decodeListRecovering<SecretEntryWithSharing>(jsonElement, logger, "getUserSecretsWithShared")
+            val secretsWithSharing = supabaseJson.decodeFromJsonElement<List<SecretEntryWithSharing>>(jsonElement)
             val secrets = secretsWithSharing.map { it.toSecretEntry() }
             val hasMore = secrets.size >= limit
 
@@ -373,12 +375,7 @@ object SecretService {
                 )
 
             val jsonElement = supabaseJson.parseToJsonElement(postgrestResult.data)
-            val secretsWithSharing =
-                decodeListRecovering<SecretEntryWithSharing>(
-                    jsonElement,
-                    logger,
-                    "getUserSecretsWithSharingInfo",
-                )
+            val secretsWithSharing = supabaseJson.decodeFromJsonElement<List<SecretEntryWithSharing>>(jsonElement)
             val hasMore = secretsWithSharing.size >= limit
 
             Result.success(PaginatedSecretsWithSharing(data = secretsWithSharing, hasMore = hasMore))
