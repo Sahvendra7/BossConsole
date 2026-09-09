@@ -4,6 +4,7 @@ import ai.rever.boss.ipc.proto.PluginIntentEnvelope
 import ai.rever.boss.ipc.proto.PluginStateRequest
 import ai.rever.boss.ipc.proto.PluginStateServiceGrpcKt
 import ai.rever.boss.ipc.proto.PluginStateUpdate
+import ai.rever.boss.utils.mergePatch
 import io.grpc.ManagedChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -169,14 +170,39 @@ class PluginStateBridge(
             }
 
             update.hasDeltaState() -> {
-                // TODO: Implement actual JSON Merge Patch for delta state.
-                // For now, request full state since applying raw patch bytes
-                // as a replacement would corrupt state.
-                logger.debug(
-                    "Delta state received for plugin={}, requesting full state instead",
-                    pluginId,
-                )
-                fetchCurrentState()
+                val delta = update.deltaState
+
+                if (delta.baseVersion != _version.value) {
+                    logger.debug(
+                        "Delta state received for plugin={} with mismatched " +
+                            "baseVersion={} (current={}), requesting full state instead",
+                        pluginId,
+                        delta.baseVersion,
+                        _version.value,
+                    )
+                    fetchCurrentState()
+                    return
+                }
+
+                try {
+                    val currentStr = _state.value.decodeToString()
+                    // Allow empty string to fall through to parseToJsonElement which will throw
+                    val currentJson = kotlinx.serialization.json.Json.parseToJsonElement(currentStr)
+                    val patchJson =
+                        kotlinx.serialization.json.Json.parseToJsonElement(
+                            delta.patchBytes.toByteArray().decodeToString(),
+                        )
+
+                    val mergedJson = currentJson.mergePatch(patchJson)
+                    applyState(mergedJson.toString().encodeToByteArray(), delta.newVersion)
+                } catch (e: Exception) {
+                    logger.warn(
+                        "Failed to apply JSON Merge Patch for plugin={}: {}. Requesting full state instead",
+                        pluginId,
+                        e.message,
+                    )
+                    fetchCurrentState()
+                }
             }
 
             update.hasEffect() -> {
