@@ -906,11 +906,11 @@ object CrashHandler {
      *
      * Source 2 is the only thread-affine one, so [scopedPluginId] exists for the
      * caller that must read it on a different thread from the one that resolves the
-     * rest ([recordContained], whose writer runs off the EDT). It defaults to
-     * reading the scope here, which is what every same-thread caller wants; passing
-     * it explicitly does not reorder the ladder, it only moves *where* rank 2 was
-     * sampled. Passing null where no scope was held is indistinguishable from the
-     * default finding none, so there is no third behaviour to reason about.
+     * rest ([recordContained], whose writer runs off the EDT). The default argument
+     * samples the calling thread's scope before this function runs, even when a tag
+     * will answer. Passing it explicitly preserves the ladder and moves only where
+     * rank 2 was sampled. An explicit null skips rank 2 entirely; it never falls
+     * back to the evaluating thread's scope.
      */
     internal fun attributePluginId(
         throwable: Throwable,
