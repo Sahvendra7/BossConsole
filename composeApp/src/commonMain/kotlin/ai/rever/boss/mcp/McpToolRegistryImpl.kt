@@ -811,70 +811,43 @@ internal class McpToolRegistryCore(
             java.util.UUID
                 .randomUUID()
                 .toString()
-        val request =
-            ai.rever.boss.plugin.api
-                .McpExecutionRequest(executionId, tool.definition.name, rawArguments)
+        val request = McpExecutionRequest(executionId, tool.definition.name, rawArguments)
         val currentObservers = observers.toList()
 
         dispatchExecutionStarted(request, currentObservers)
 
         return try {
             val result = withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
-            dispatchExecutionFinished(
-                request = request,
-                outcome =
-                    McpExecutionOutcome
-                        .Success(result),
-                currentObservers = currentObservers,
-            )
+            dispatchExecutionFinished(request, McpExecutionOutcome.Success(result), currentObservers)
             result
         } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
-            val errorDetails =
-                McpExecutionError(
-                    type = t::class.simpleName ?: "Timeout",
-                    message = t.message,
-                )
-            dispatchExecutionFinished(
-                request = request,
-                outcome =
-                    McpExecutionOutcome
-                        .Timeout(errorDetails),
-                currentObservers = currentObservers,
-            )
+            dispatchExceptionOutcome(request, currentObservers, t, McpExecutionOutcome::Timeout)
             McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            val errorDetails =
-                McpExecutionError(
-                    type = cancelled::class.simpleName ?: "Cancelled",
-                    message = cancelled.message,
-                )
-            dispatchExecutionFinished(
-                request = request,
-                outcome =
-                    McpExecutionOutcome
-                        .Cancelled(errorDetails),
-                currentObservers = currentObservers,
-            )
+            dispatchExceptionOutcome(request, currentObservers, cancelled, McpExecutionOutcome::Cancelled)
             throw cancelled
         } catch (failure: Throwable) {
-            val errorDetails =
-                McpExecutionError(
-                    type = failure::class.simpleName ?: "Failure",
-                    message = failure.message,
-                )
-            dispatchExecutionFinished(
-                request = request,
-                outcome =
-                    McpExecutionOutcome
-                        .Failure(errorDetails),
-                currentObservers = currentObservers,
-            )
+            dispatchExceptionOutcome(request, currentObservers, failure, McpExecutionOutcome::Failure)
             val reason =
                 ai.rever.boss.utils.logging.LogSanitizer.sanitizeExceptionMessage(
                     failure.message ?: failure::class.simpleName,
                 )
             McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
         }
+    }
+
+    private fun dispatchExceptionOutcome(
+        request: McpExecutionRequest,
+        currentObservers: List<McpToolExecutionObserver>,
+        e: Throwable,
+        outcomeConstructor: (McpExecutionError) -> McpExecutionOutcome,
+    ) {
+        val errorDetails =
+            McpExecutionError(
+                type = e::class.simpleName ?: "Error",
+                message = e.message,
+            )
+        dispatchExecutionFinished(request, outcomeConstructor(errorDetails), currentObservers)
     }
 
     private fun dispatchExecutionStarted(
