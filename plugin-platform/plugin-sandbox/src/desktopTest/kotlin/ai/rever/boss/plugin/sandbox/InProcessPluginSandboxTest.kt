@@ -441,7 +441,7 @@ class InProcessPluginSandboxTest {
                 val warnings = CopyOnWriteArrayList<LogEntry>()
                 val listener = LogListener { entry -> if (entry.level == LogLevel.WARN) warnings += entry }
                 val restoreLevel = BossLogger.globalLevel
-                BossLogger.globalLevel = LogLevel.WARN
+                BossLogger.setGlobalLevel(LogLevel.WARN)
                 BossLogger.addListener(listener)
 
                 val release = CompletableDeferred<Unit>()
@@ -460,7 +460,7 @@ class InProcessPluginSandboxTest {
                 } finally {
                     release.complete(Unit)
                     BossLogger.removeListener(listener)
-                    BossLogger.globalLevel = restoreLevel
+                    BossLogger.setGlobalLevel(restoreLevel)
                 }
 
                 val expiry =
