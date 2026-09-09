@@ -14,7 +14,6 @@ import com.arkivanov.decompose.ComponentContext
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SplitViewActiveTabsTest {
@@ -22,8 +21,8 @@ class SplitViewActiveTabsTest {
     private lateinit var state: SplitViewState
 
     private object TestTabType : TabTypeInfo {
-        override val typeId = TabTypeId("move-test", "test.plugin")
-        override val displayName = "Move Test"
+        override val typeId = TabTypeId("inventory-test", "test.plugin")
+        override val displayName = "Inventory Test"
         override val icon = Icons.Outlined.Language
     }
 
@@ -60,7 +59,7 @@ class SplitViewActiveTabsTest {
     private fun createTab(id: String) = TestTabInfo(id = id, title = "Title $id")
 
     @Test
-    fun `single panel returns only active tab`() {
+    fun `single panel includes background tabs for search and lookup`() {
         val panel = state.getPanel(state.activePanelId)!!
 
         // Add multiple tabs
@@ -78,12 +77,11 @@ class SplitViewActiveTabsTest {
         state.preserveCurrentState("ws1")
         val activeTabs = state.collectAllActiveTabs(null, "w1")
 
-        assertEquals(1, activeTabs.size, "Should only report the single active tab")
-        assertEquals("tab2", activeTabs[0].tabInfo.id)
+        assertEquals(listOf("tab1", "tab2", "tab3"), activeTabs.map { it.tabInfo.id })
     }
 
     @Test
-    fun `two splits return their respective active tabs`() {
+    fun `two splits return all open tabs regardless of selection`() {
         val leftPanel = state.getPanel(state.activePanelId)!!
 
         // Left pane has tab1 (background) and tab2 (active)
@@ -103,13 +101,13 @@ class SplitViewActiveTabsTest {
         state.preserveCurrentState("ws1")
         val activeTabs = state.collectAllActiveTabs(null, "w1")
 
-        assertEquals(2, activeTabs.size, "Should report exactly one tab per panel")
+        assertEquals(4, activeTabs.size)
 
         val ids = activeTabs.map { it.tabInfo.id }.toSet()
         assertTrue(ids.contains("tab2"), "Left panel's active tab must be included")
         assertTrue(ids.contains("tab4"), "Right panel's active tab must be included")
-        assertFalse(ids.contains("tab1"), "Background tab 1 must not be included")
-        assertFalse(ids.contains("tab3"), "Background tab 3 must not be included")
+        assertTrue(ids.contains("tab1"), "Background tab 1 must remain discoverable")
+        assertTrue(ids.contains("tab3"), "Background tab 3 must remain discoverable")
     }
 
     @Test
@@ -132,30 +130,20 @@ class SplitViewActiveTabsTest {
     }
 
     @Test
-    fun `active-tab switch updates reported tab`() {
+    fun `selection changes keep background tabs discoverable for pop-out return`() {
         val panel = state.getPanel(state.activePanelId)!!
         panel.tabsComponent.addTab(createTab("tab1"))
         panel.tabsComponent.addTab(createTab("tab2"))
-
         state.preserveCurrentState("ws1")
 
         panel.tabsComponent.selectTab(0)
-        assertEquals(
-            "tab1",
-            state
-                .collectAllActiveTabs(null, "w1")
-                .single()
-                .tabInfo.id,
-        )
-
+        val before = state.collectAllActiveTabs(null, "w1")
         panel.tabsComponent.selectTab(1)
-        assertEquals(
-            "tab2",
-            state
-                .collectAllActiveTabs(null, "w1")
-                .single()
-                .tabInfo.id,
-        )
+        assertEquals(before, state.collectAllActiveTabs(null, "w1"))
+
+        val background = state.collectAllActiveTabs(null, "w1").first { it.tabInfo.id == "tab1" }
+        state.selectTabInPanel(background.tabInfo.id, background.panelId)
+        assertEquals("tab1", panel.tabsComponent.tabsState.value.activeTab?.id)
     }
 
     @Test
@@ -163,7 +151,7 @@ class SplitViewActiveTabsTest {
         val leftPanelId = state.activePanelId
         val rightPanelId = state.splitPanel(leftPanelId, SplitOrientation.VERTICAL)
 
-        // In theory this shouldn't happen for active tabs, but we must test the deduplication logic
+        // The same tab ID can be encountered more than once during a tree transition.
         val duplicateTab = createTab("shared-tab")
         state.getPanel(leftPanelId)!!.tabsComponent.addTab(duplicateTab)
         state.getPanel(rightPanelId)!!.tabsComponent.addTab(duplicateTab)
@@ -177,8 +165,6 @@ class SplitViewActiveTabsTest {
 
     @Test
     fun `null active tab contributes nothing`() {
-        val panel = state.getPanel(state.activePanelId)!!
-
         // Do not add any tabs. The active tab is null.
         state.preserveCurrentState("ws1")
         val activeTabs = state.collectAllActiveTabs(null, "w1")
@@ -187,19 +173,27 @@ class SplitViewActiveTabsTest {
     }
 
     @Test
-    fun `background-tab regression test - old behavior would fail`() {
-        val panel = state.getPanel(state.activePanelId)!!
-
-        panel.tabsComponent.addTab(createTab("background"))
-        panel.tabsComponent.addTab(createTab("foreground"))
-        panel.tabsComponent.selectTab(1) // Make foreground active
-
+    fun `preserved workspace inventory survives switching and restoration`() {
         state.preserveCurrentState("ws1")
-        val activeTabs = state.collectAllActiveTabs(null, "w1")
+        val firstPanel = state.getPanel(state.activePanelId)!!
+        firstPanel.tabsComponent.addTab(createTab("old-background"))
+        firstPanel.tabsComponent.addTab(createTab("old-selected"))
+        state.preserveCurrentState("ws2", "First workspace")
+        state.clearAllPanels()
+        val secondPanel = state.getPanel(state.activePanelId)!!
+        secondPanel.tabsComponent.addTab(createTab("new-background"))
+        secondPanel.tabsComponent.addTab(createTab("new-selected"))
 
-        // Under the OLD implementation, this would return 2 (both tabs).
-        // It now correctly returns 1 (only the visible foreground tab).
-        assertEquals(1, activeTabs.size, "OLD implementation would return 2 because it iterated all tabs in the pane")
-        assertEquals("foreground", activeTabs.single().tabInfo.id)
+        val tabs = state.collectAllActiveTabs(null, "w1")
+        assertEquals(4, tabs.size)
+        assertEquals(setOf("old-background", "old-selected"), tabs.filter { it.workspaceId == "ws1" }.map { it.tabInfo.id }.toSet())
+        assertEquals(setOf("new-background", "new-selected"), tabs.filter { it.workspaceId == "ws2" }.map { it.tabInfo.id }.toSet())
+        assertTrue(tabs.all { it.windowId == "w1" && it.panelId == "main" })
+        assertTrue(tabs.filter { it.workspaceId == "ws1" }.all { it.workspaceName == "First workspace" })
+
+        state.preserveCurrentState("ws1", "Second workspace")
+        assertTrue(state.restorePreservedState("ws1"))
+        assertEquals(tabs.map { it.tabInfo.id }.toSet(), state.collectAllActiveTabs(null, "w1").map { it.tabInfo.id }.toSet())
+        assertEquals(4, state.collectAllActiveTabs(null, "w1").size, "Restored tabs must not be duplicated")
     }
 }

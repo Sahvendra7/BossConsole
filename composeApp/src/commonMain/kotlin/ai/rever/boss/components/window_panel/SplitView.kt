@@ -1847,6 +1847,13 @@ class SplitViewState(
         }
     }
 
+    /**
+     * Lists all open tabs in this window's current and preserved workspaces.
+     *
+     * "Active" means running, not selected or visible. Search, Top of Mind, background-tab
+     * metadata lookup and pop-out return all need unselected tabs to remain discoverable.
+     * This inventory is not a visibility signal for browser hibernation.
+     */
     fun collectAllActiveTabs(
         workspaceManager: ai.rever.boss.components.workspaces.WorkspaceManager? = null,
         windowId: String = "unknown",
@@ -1873,18 +1880,19 @@ class SplitViewState(
             val currentTabs = mutableListOf<ActiveTab>()
 
             getAllPanels().forEach { panel ->
-                val activeTab = panel.tabsComponent.tabsState.value.activeTab
-                if (activeTab != null && !seenTabIds.contains(activeTab.id)) {
-                    currentTabs.add(
-                        ActiveTab(
-                            tabInfo = activeTab,
-                            workspaceId = workspaceId,
-                            workspaceName = getWorkspaceName(workspaceId),
-                            panelId = panel.id,
-                            windowId = windowId,
-                        ),
-                    )
-                    seenTabIds.add(activeTab.id)
+                panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
+                    if (!seenTabIds.contains(tab.id)) {
+                        currentTabs.add(
+                            ActiveTab(
+                                tabInfo = tab,
+                                workspaceId = workspaceId,
+                                workspaceName = getWorkspaceName(workspaceId),
+                                panelId = panel.id,
+                                windowId = windowId,
+                            ),
+                        )
+                        seenTabIds.add(tab.id)
+                    }
                 }
             }
 
