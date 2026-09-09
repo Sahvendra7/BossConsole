@@ -185,20 +185,27 @@ object ChromiumAutoDownloader {
         executableNameFile: java.io.File,
         requiredChromium: String,
         installedVersion: String,
-        isMacOverride: Boolean? = null
+        isMacOverride: Boolean? = null,
     ): Boolean {
-        val isMac = isMacOverride ?: System.getProperty("os.name").orEmpty().lowercase().contains("mac")
+        val isMac =
+            isMacOverride ?: System
+                .getProperty("os.name")
+                .orEmpty()
+                .lowercase()
+                .contains("mac")
         if (!isMac) return false
         val execName = executableNameFile.readText().trim()
 
         var isMismatch = false
         if (execName.isNotEmpty()) {
-            val versionsDir = dir.resolve("$execName.app")
-                .resolve("Contents")
-                .resolve("Frameworks")
-                .resolve("Chromium Framework.framework")
-                .resolve("Versions")
-                .toFile()
+            val versionsDir =
+                dir
+                    .resolve("$execName.app")
+                    .resolve("Contents")
+                    .resolve("Frameworks")
+                    .resolve("Chromium Framework.framework")
+                    .resolve("Versions")
+                    .toFile()
 
             if (versionsDir.exists() && !versionsDir.resolve(requiredChromium).isDirectory) {
                 logger.info(
@@ -206,8 +213,8 @@ object ChromiumAutoDownloader {
                     "Chromium build mismatch",
                     mapOf(
                         "required" to requiredChromium,
-                        "installed_engine" to installedVersion
-                    )
+                        "installed_engine" to installedVersion,
+                    ),
                 )
                 isMismatch = true
             }
@@ -241,13 +248,15 @@ object ChromiumAutoDownloader {
                 "Chromium version mismatch",
                 mapOf(
                     "expected" to effectiveVersion,
-                    "installed" to installedVersion
-                )
+                    "installed" to installedVersion,
+                ),
             )
             return false
         }
 
-        val requiredChromium = com.teamdev.jxbrowser.VersionInfo.chromiumVersion()
+        val requiredChromium =
+            com.teamdev.jxbrowser.VersionInfo
+                .chromiumVersion()
         if (isMacFrameworkMismatch(dir, executableNameFile, requiredChromium, installedVersion)) {
             return false
         }

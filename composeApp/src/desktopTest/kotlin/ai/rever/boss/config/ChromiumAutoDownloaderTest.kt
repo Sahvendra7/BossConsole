@@ -261,17 +261,18 @@ class ChromiumAutoDownloaderTest {
                 executableNameFile = File(target, "executable.name"),
                 requiredChromium = "151.0.7922.72",
                 installedVersion = "9.4.0",
-                isMacOverride = false
-            )
+                isMacOverride = false,
+            ),
         )
     }
 
     @Test
     fun `isMacFrameworkMismatch returns true when framework exists but required version is missing`() {
-        val execFile = File(target, "executable.name").apply {
-            parentFile.mkdirs()
-            writeText("BOSS")
-        }
+        val execFile =
+            File(target, "executable.name").apply {
+                parentFile.mkdirs()
+                writeText("BOSS")
+            }
 
         // Setup the framework directory with a DIFFERENT version than required
         val versionsDir = File(target, "BOSS.app/Contents/Frameworks/Chromium Framework.framework/Versions")
@@ -284,18 +285,19 @@ class ChromiumAutoDownloaderTest {
                 executableNameFile = execFile,
                 requiredChromium = "151.0.7922.72",
                 installedVersion = "pinned-version",
-                isMacOverride = true
+                isMacOverride = true,
             ),
-            "Should reject when framework exists but required version is absent"
+            "Should reject when framework exists but required version is absent",
         )
     }
 
     @Test
     fun `isMacFrameworkMismatch returns false when required framework version exists`() {
-        val execFile = File(target, "executable.name").apply {
-            parentFile.mkdirs()
-            writeText("BOSS")
-        }
+        val execFile =
+            File(target, "executable.name").apply {
+                parentFile.mkdirs()
+                writeText("BOSS")
+            }
 
         val requiredChromium = "151.0.7922.72"
         val versionsDir = File(target, "BOSS.app/Contents/Frameworks/Chromium Framework.framework/Versions")
@@ -308,9 +310,9 @@ class ChromiumAutoDownloaderTest {
                 executableNameFile = execFile,
                 requiredChromium = requiredChromium,
                 installedVersion = "9.4.0",
-                isMacOverride = true
+                isMacOverride = true,
             ),
-            "Should accept when the required version directory exists"
+            "Should accept when the required version directory exists",
         )
     }
 }
