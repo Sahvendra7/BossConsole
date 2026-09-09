@@ -292,15 +292,32 @@ object CrashHandler {
             // ~/.boss/crash-reports and sweepOldReports would delete the developer's
             // actual reports — the exact hazard the override exists to prevent.
             val dir = containedReportDir()
+            // The thread's plugin scope is read *here* for the same class of reason,
+            // and it is the one attribution source that cannot survive the hop:
+            // [PluginExecutionBoundary.currentPluginId] is a ThreadLocal, so on the
+            // writer thread it is always null. A fault the host caught while still
+            // inside a plugin call - which is what a contained render fault is - has
+            // no boundary tag either, because nothing escaped a runAttributed frame
+            // to be tagged on the way out. So the whole ladder fell through to the
+            // classloader scan, found only host frames, and every such report read
+            // "(unattributed)". The inline branch below got this right by accident,
+            // which meant one fault attributed differently depending on whether the
+            // process was about to exit.
+            //
+            // Only the scope is captured, not the whole answer: the other two
+            // sources key off the throwable and are correct on any thread, and the
+            // classloader scan is the expensive one this function moved off the EDT
+            // in the first place - see the comment above the signature.
+            val scopedPluginId = PluginExecutionBoundary.currentPluginId()
             // Inline when the caller is about to end the process. The writer is a
             // daemon thread with nothing draining it at shutdown, so a queued task
             // is dropped or killed mid-write by the exit that follows - and the one
             // caller that passes true does so precisely because the record is the
             // justification for that branch existing.
             if (writeInline) {
-                writeContainedReport(dir, signature, throwable)
+                writeContainedReport(dir, signature, throwable, scopedPluginId)
             } else {
-                containedWriter.execute { writeContainedReport(dir, signature, throwable) }
+                containedWriter.execute { writeContainedReport(dir, signature, throwable, scopedPluginId) }
             }
         } catch (e: Exception) {
             // Reporting a contained fault must never itself become a fault.
@@ -313,14 +330,18 @@ object CrashHandler {
         }
     }
 
-    /** Off the EDT — see [containedWriter]. [dir] is resolved by the caller. */
+    /**
+     * Off the EDT — see [containedWriter]. [dir] and [scopedPluginId] are resolved
+     * by the caller, both because this thread cannot resolve them correctly.
+     */
     private fun writeContainedReport(
         dir: File,
         signature: String,
         throwable: Throwable,
+        scopedPluginId: String?,
     ) {
         try {
-            val report = createCrashReport(throwable)
+            val report = createCrashReport(throwable, attributePluginId(throwable, scopedPluginId))
             // Owner-only on the directory *and* the file. Directory perms alone are
             // not enough — 0711 still lets others traverse to a predictable path.
             makeOwnerOnlyDir(dir)
@@ -893,10 +914,21 @@ object CrashHandler {
      *
      * Host crashes return null. Best-effort — attribution must never make crash
      * handling itself fail.
+     *
+     * Source 2 is the only thread-affine one, so [scopedPluginId] exists for the
+     * caller that must read it on a different thread from the one that resolves the
+     * rest ([recordContained], whose writer runs off the EDT). It defaults to
+     * reading the scope here, which is what every same-thread caller wants; passing
+     * it explicitly does not reorder the ladder, it only moves *where* rank 2 was
+     * sampled. Passing null where no scope was held is indistinguishable from the
+     * default finding none, so there is no third behaviour to reason about.
      */
-    internal fun attributePluginId(throwable: Throwable): String? {
+    internal fun attributePluginId(
+        throwable: Throwable,
+        scopedPluginId: String? = PluginExecutionBoundary.currentPluginId(),
+    ): String? {
         PluginExecutionBoundary.attributionFor(throwable)?.let { return it }
-        PluginExecutionBoundary.currentPluginId()?.let { return it }
+        scopedPluginId?.let { return it }
         return try {
             // Root cause first: the crash origin outranks the layers that wrapped it.
             for (cause in throwable.chainOfCauses().asReversed()) {
