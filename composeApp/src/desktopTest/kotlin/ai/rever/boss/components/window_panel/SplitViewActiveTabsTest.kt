@@ -121,6 +121,7 @@ class SplitViewActiveTabsTest {
 
         // Focus left panel
         state.setActivePanel(leftPanelId)
+        assertEquals(leftPanelId, state.activePanelId)
 
         state.preserveCurrentState("ws1")
         val activeTabs = state.collectAllActiveTabs(null, "w1")
@@ -169,12 +170,12 @@ class SplitViewActiveTabsTest {
     }
 
     @Test
-    fun `null active tab contributes nothing`() {
+    fun `empty panel contributes nothing`() {
         // Do not add any tabs. The active tab is null.
         state.preserveCurrentState("ws1")
         val activeTabs = state.collectAllActiveTabs(null, "w1")
 
-        assertTrue(activeTabs.isEmpty(), "Panel with no active tab should contribute nothing")
+        assertTrue(activeTabs.isEmpty(), "An empty panel should contribute nothing")
     }
 
     @Test
@@ -195,11 +196,25 @@ class SplitViewActiveTabsTest {
     }
 
     @Test
+    fun `duplicate tab ids across workspaces prefer the current workspace`() {
+        state.preserveCurrentState("ws1")
+        state.getPanel(state.activePanelId)!!.tabsComponent.addTab(createTab("shared-tab"))
+        state.preserveCurrentState("ws2", "First workspace")
+        state.clearAllPanels()
+        state.getPanel(state.activePanelId)!!.tabsComponent.addTab(createTab("shared-tab"))
+
+        val tab = state.collectAllActiveTabs(null, "w1").single()
+        assertEquals("shared-tab", tab.tabInfo.id)
+        assertEquals("ws2", tab.workspaceId)
+    }
+
+    @Test
     fun `preserved workspace inventory survives switching and restoration`() {
         state.preserveCurrentState("ws1")
         val firstPanel = state.getPanel(state.activePanelId)!!
         firstPanel.tabsComponent.addTab(createTab("old-background"))
         firstPanel.tabsComponent.addTab(createTab("old-selected"))
+        // The name belongs to the outgoing workspace, ws1.
         state.preserveCurrentState("ws2", "First workspace")
         state.clearAllPanels()
         val secondPanel = state.getPanel(state.activePanelId)!!
