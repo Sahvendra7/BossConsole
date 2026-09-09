@@ -40,8 +40,6 @@ import kotlinx.serialization.json.longOrNull
 import java.io.File
 import java.io.IOException
 
-internal const val MAX_MCP_RESULT_CHARS: Int = 150_000
-
 /**
  * Process-wide registry aggregating MCP tools contributed by active plugins.
  *
@@ -168,13 +166,9 @@ object McpToolRegistryImpl : McpToolRegistry {
         permissions: Set<String>,
     ) = core.updateAccess(isAdmin, permissions)
 
-    fun registerExecutionObserver(observer: McpToolExecutionObserver) {
-        core.registerExecutionObserver(observer)
-    }
+    fun registerExecutionObserver(observer: McpToolExecutionObserver) = core.registerExecutionObserver(observer)
 
-    fun unregisterExecutionObserver(observerId: String) {
-        core.unregisterExecutionObserver(observerId)
-    }
+    fun unregisterExecutionObserver(observerId: String) = core.unregisterExecutionObserver(observerId)
 
     override suspend fun invoke(
         toolName: String,
@@ -293,20 +287,49 @@ internal fun mcpToolPermitted(
     }
 
 /**
- * Testable core behind [McpToolRegistryImpl]. Extracted so unit tests can
- * exercise the registration/permission/persistence/dispatch logic against a
- * throwaway instance and a temp file, instead of the process-wide singleton
- * (which resolves a real file under the user's `~/.boss` directory and would
- * make tests mutate live state / interfere with each other).
+ * Hard ceiling, in characters, on what [McpToolRegistryCore.invoke] hands back for one
+ * plugin tool call.
  *
- * [disabledFile] is nullable: passing `null` skips persistence entirely (pure
- * in-memory), which is convenient for tests that don't care about it.
- * [invokeTimeoutMs] defaults to production's 60s but is overridable so tests
- * can exercise the timeout path in milliseconds instead of actually waiting.
- * [onFault] is how a kill-switch persistence failure reaches the operator (the
- * façade turns it into a status-bar message); it is also mirrored into [fault].
+ * **A backstop against catastrophe, not a substitute for per-tool limits.** An MCP result
+ * is re-sent as cached prefix on every later request for the rest of the session, so one
+ * oversized answer is a recurring cost, not a one-off: a single `console_search` was
+ * measured at 234,000 tokens on a real host. Tools are still expected to bound their own
+ * output - page it, summarise it, say what they left out. Returning 149,000 characters
+ * because the cap permits it is a bug in the tool, not compliance with this.
+ *
+ * The number mirrors BossTerm's `mcpMaxAnswerChars` (TerminalSettings, default 150_000),
+ * which is what its private `shorten()` enforces over its own built-in handlers. It is
+ * duplicated rather than read because the host cannot reach that setting: bossterm-compose
+ * is bundled privately inside the terminal-tab plugin's JAR and resolved by that plugin's
+ * classloader, so BossConsole has no compile- or run-time handle on it. Change one and
+ * change the other; two ceilings for one product is worse than either number alone.
  */
+internal const val MAX_MCP_RESULT_CHARS: Int = 150_000
 
+/**
+ * Cut [text] to at most [cap] characters and append a marker saying so.
+ *
+ * A free function next to [mcpToolPermitted], for the same reason: the rule is testable
+ * without constructing the singleton.
+ *
+ * Three things a bare `take(cap)` gets wrong here:
+ * - **Silence.** A cut prefix reads as a complete answer and the agent acts on it, so the
+ *   marker is appended *after* the cut: a truncated result always ends with its own
+ *   explanation.
+ * - **The tool's own trailing note.** Several tools close with something like
+ *   `[504 older matching lines omitted...]`, which is precisely what cutting the tail
+ *   destroys. The marker names that loss rather than leaving a reader to assume the tool
+ *   reported everything it had.
+ * - **Surrogate pairs.** Cutting between a high and a low surrogate leaves a lone
+ *   surrogate, so the boundary backs off one character when the last kept char is a high
+ *   surrogate.
+ *
+ * The return is `<= cap` characters, marker included: the marker is first sized against
+ * its worst case (nothing kept, so the largest digit count its numbers can carry) and that
+ * length reserved out of the budget. The one exception is a [cap] smaller than the marker
+ * itself, which only a test would set - a slightly over-cap explanation still beats an
+ * unexplained blob. A [cap] of zero or less disables the cap, matching `shorten()`.
+ */
 internal fun capMcpResultText(
     text: String,
     cap: Int = MAX_MCP_RESULT_CHARS,
@@ -321,6 +344,10 @@ internal fun capMcpResultText(
     return text.take(keep) + truncationMarker(total = text.length, dropped = text.length - keep, cap = cap)
 }
 
+/**
+ * The note [capMcpResultText] leaves in place of the cut tail. Worded to stand on its own,
+ * because it may be the only thing left where the tool had written its own "omitted" line.
+ */
 private fun truncationMarker(
     total: Int,
     dropped: Int,
@@ -331,6 +358,28 @@ private fun truncationMarker(
         "gone, including any note it appended about content it had already left out. Re-run " +
         "with a narrower query, a filter, or a smaller range to get the rest.]"
 
+/**
+ * Testable core behind [McpToolRegistryImpl]. Extracted so unit tests can
+ * exercise the registration/permission/persistence/dispatch logic against a
+ * throwaway instance and a temp file, instead of the process-wide singleton
+ * (which resolves a real file under the user's `~/.boss` directory and would
+ * make tests mutate live state / interfere with each other).
+ *
+ * [disabledFile] is nullable: passing `null` skips persistence entirely (pure
+ * in-memory), which is convenient for tests that don't care about it.
+ * [invokeTimeoutMs] defaults to production's 60s but is overridable so tests
+ * can exercise the timeout path in milliseconds instead of actually waiting.
+ * [maxResultChars] is the same story for the result-size backstop: production
+ * gets [MAX_MCP_RESULT_CHARS], tests get a number they can overshoot in a line.
+ * [onFault] is how a kill-switch persistence failure reaches the operator (the
+ * façade turns it into a status-bar message); it is also mirrored into [fault].
+ */
+// 7 of these arrived with the governance work (policy engine, approval bus, ledger); this
+// change adds the 8th, `maxResultChars`, purely as a test seam alongside `invokeTimeoutMs`.
+// Suppressed rather than hidden behind mutable state: the count is a real signal that this
+// class wants its collaborators grouped into a config object, and that should stay visible
+// to whoever adds the ninth.
+@Suppress("LongParameterList")
 internal class McpToolRegistryCore(
     private val disabledFile: File?,
     private val invokeTimeoutMs: Long = 60_000L,
@@ -450,11 +499,15 @@ internal class McpToolRegistryCore(
 
     /** Enabled tools = registered minus user-disabled minus permission-denied. This is what the bridge mirrors. */
     private val _tools = MutableStateFlow<List<RegisteredMcpTool>>(emptyList())
-
-    @kotlin.jvm.Volatile
-    private var observers: List<McpToolExecutionObserver> = emptyList()
-
     val tools: StateFlow<List<RegisteredMcpTool>> = _tools.asStateFlow()
+
+    private val executionObservers = McpObserverSubscriptions<McpToolExecutionObserver>()
+
+    fun registerExecutionObserver(observer: McpToolExecutionObserver) {
+        executionObservers.register(observer.observerId, observer)
+    }
+
+    fun unregisterExecutionObserver(observerId: String) = executionObservers.unregister(observerId)
 
     fun registerProvider(provider: McpToolProvider) {
         // Query the plugin's tools() OUTSIDE the lock — see mutationLock KDoc.
@@ -530,20 +583,6 @@ internal class McpToolRegistryCore(
      * [onFault] is invoked after the lock is released, so host UI never runs under
      * the mutation lock (see [mutationLock]).
      */
-    fun registerExecutionObserver(observer: McpToolExecutionObserver) {
-        synchronized(mutationLock) {
-            if (observers.none { it.observerId == observer.observerId }) {
-                observers = observers + observer
-            }
-        }
-    }
-
-    fun unregisterExecutionObserver(observerId: String) {
-        synchronized(mutationLock) {
-            observers = observers.filterNot { it.observerId == observerId }
-        }
-    }
-
     fun setToolEnabled(
         toolName: String,
         enabled: Boolean,
@@ -717,15 +756,15 @@ internal class McpToolRegistryCore(
         toolName: String,
         arguments: String,
     ): McpToolResult {
-        val executionId =
-            java.util.UUID
-                .randomUUID()
-                .toString()
         val tool =
             _tools.value.firstOrNull { it.definition.name == toolName }
                 ?: return McpToolResult("Unknown or disabled MCP tool: $toolName", isError = true)
         val args = parseArgs(arguments)
         val policy = policyEngine.policyFor(toolName)
+        val executionId =
+            java.util.UUID
+                .randomUUID()
+                .toString()
         val startTime = System.nanoTime()
         var disposition = McpApprovalDisposition.AUTO_ALLOWED
         var result: McpToolResult? = null
@@ -751,7 +790,7 @@ internal class McpToolRegistryCore(
                             policyEngine.trustForSession(toolName)
                         }
                         executionStarted = true
-                        executeAuthorized(executionId, tool, args, arguments)
+                        executeAuthorized(executionId, tool, args)
                     }
                 }
             return requireNotNull(result)
@@ -835,6 +874,58 @@ internal class McpToolRegistryCore(
             }
         }
 
+    private suspend fun executeAuthorized(
+        executionId: String,
+        tool: RegisteredMcpTool,
+        args: McpToolArgs,
+    ): McpToolResult {
+        val subscriptions = executionObservers.snapshot()
+        if (subscriptions.isEmpty()) return capResult(tool.definition.name, executeUncapped(tool, args))
+        val request = McpExecutionRequest(executionId, tool.definition.name, McpObservationPreview.sanitize(args.raw))
+        dispatchObservation(subscriptions) { it.onExecutionStarted(request) }
+        var terminal: McpExecutionOutcome? = null
+        val result =
+            capResult(
+                tool.definition.name,
+                executeUncapped(tool, args) { outcome ->
+                    terminal = outcome
+                    if (outcome is McpExecutionOutcome.Cancelled) {
+                        dispatchObservation(subscriptions) { it.onExecutionFinished(request, outcome) }
+                    }
+                },
+            )
+        val outcome =
+            terminal ?: McpExecutionOutcome.Success(
+                result.copy(text = McpObservationPreview.sanitize(result.text, maxResultChars)),
+            )
+        dispatchObservation(subscriptions) { it.onExecutionFinished(request, outcome) }
+        return result
+    }
+
+    private fun dispatchObservation(
+        subscriptions: List<McpObserverSubscriptions.Subscription<McpToolExecutionObserver>>,
+        action: (McpToolExecutionObserver) -> Unit,
+    ) {
+        subscriptions.forEach { subscription ->
+            subscription.dispatch(action)
+        }
+    }
+
+    /**
+     * Bound the text a plugin answers with, whatever it asked to say.
+     *
+     * This sits on the execution path rather than on [invoke] so that every caller is
+     * covered - the MCP server bridge (terminal-tab's `McpDynamicTools`, which hands
+     * `result.text` straight to `TextContent` with no length check of its own), the in-app
+     * voice agent (`BossVoiceToolSource`), and flow-tab's `BossRegistryToolSource`, all of
+     * which are LLM contexts. Placing it here rather than around [invoke] also keeps the
+     * host's own short strings - a policy denial, a revoked-access message - off the path,
+     * and means the ledger records the capped text rather than a megabyte it will never use.
+     *
+     * Errors are capped on the same terms as successes, deliberately: the bridge does not
+     * distinguish them (both become one `TextContent`), and a plugin is perfectly able to
+     * return a megabyte of stack trace or echo back a failed payload.
+     */
     private fun capResult(
         toolName: String,
         result: McpToolResult,
@@ -848,115 +939,26 @@ internal class McpToolRegistryCore(
         return result.copy(text = capMcpResultText(result.text, maxResultChars))
     }
 
-    @Suppress("TooGenericExceptionCaught")
-    // Plugin handlers may throw any implementation-specific exception.
-    private suspend fun executeAuthorized(
-        executionId: String,
+    @Suppress("TooGenericExceptionCaught") // Plugin handlers may throw any implementation-specific exception.
+    private suspend fun executeUncapped(
         tool: RegisteredMcpTool,
         args: McpToolArgs,
-        rawArguments: String,
-    ): McpToolResult {
-        val currentObservers = observers.toList()
-
-        val sanitizedArgsMap = McpArgumentSanitizer.sanitize(McpArgumentSanitizer.parseArguments(rawArguments))
-        val sanitizedArgsString =
-            kotlinx.serialization.json
-                .JsonObject(
-                    sanitizedArgsMap.mapValues {
-                        kotlinx.serialization.json.JsonPrimitive(it.value)
-                    },
-                ).toString()
-        val request = McpExecutionRequest(executionId, tool.definition.name, sanitizedArgsString)
-
-        dispatchExecutionStarted(request, currentObservers)
-
-        val rawResult =
-            try {
-                kotlinx.coroutines.withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
-            } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
-                val result = McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
-                dispatchExceptionOutcome(request, currentObservers, t, McpExecutionOutcome::Timeout)
-                return result
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                dispatchExceptionOutcome(request, currentObservers, cancelled, McpExecutionOutcome::Cancelled)
-                throw cancelled
-            } catch (failure: Throwable) {
-                val reason =
-                    ai.rever.boss.plugin.logging.LogSanitizer
-                        .sanitizeExceptionMessage(failure.message ?: failure::class.simpleName)
-                val result = McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
-                dispatchExceptionOutcome(request, currentObservers, failure, McpExecutionOutcome::Failure)
-                return result
-            }
-
-        val cappedResult = capResult(tool.definition.name, rawResult)
-
-        val sanitizedResultText = McpArgumentSanitizer.sanitizeResult(cappedResult.text)
-        val safeObserverResult = cappedResult.copy(text = sanitizedResultText)
-
-        dispatchExecutionFinished(request, McpExecutionOutcome.Success(safeObserverResult), currentObservers)
-        return cappedResult
-    }
-
-    private fun dispatchExceptionOutcome(
-        request: McpExecutionRequest,
-        currentObservers: List<McpToolExecutionObserver>,
-        e: Throwable,
-        outcomeConstructor: (McpExecutionError) -> McpExecutionOutcome,
-    ) {
-        val rawMessage = e.message ?: e::class.simpleName
-        val sanitizedMessage =
-            ai.rever.boss.plugin.logging.LogSanitizer
-                .sanitizeExceptionMessage(rawMessage)
-        val errorDetails =
-            McpExecutionError(
-                type = e::class.simpleName ?: "Error",
-                message = sanitizedMessage,
-            )
-        dispatchExecutionFinished(request, outcomeConstructor(errorDetails), currentObservers)
-    }
-
-    private fun dispatchExecutionStarted(
-        request: McpExecutionRequest,
-        currentObservers: List<McpToolExecutionObserver>,
-    ) {
-        for (obs in currentObservers) {
-            try {
-                obs.onExecutionStarted(request)
-            } catch (t: Throwable) {
-                logger.warn(
-                    LogCategory.SYSTEM,
-                    "MCP execution observer failed on start",
-                    mapOf(
-                        "observerId" to obs.observerId,
-                        "error" to (t.message ?: t::class.simpleName),
-                    ),
-                )
-            }
+        onTerminal: (McpExecutionOutcome) -> Unit = {},
+    ): McpToolResult =
+        try {
+            withTimeout(invokeTimeoutMs) { tool.definition.handler.call(args) }
+        } catch (_: TimeoutCancellationException) {
+            onTerminal(McpExecutionOutcome.Timeout(McpExecutionError("Timeout", "[OMITTED: exception details]")))
+            McpToolResult("Tool '${tool.definition.name}' timed out after ${invokeTimeoutMs / 1000}s", isError = true)
+        } catch (cancelled: CancellationException) {
+            onTerminal(McpExecutionOutcome.Cancelled(McpExecutionError("Cancelled", "[OMITTED: exception details]")))
+            throw cancelled
+        } catch (failure: Throwable) {
+            onTerminal(McpExecutionOutcome.Failure(McpExecutionError("Failure", "[OMITTED: exception details]")))
+            // The tool caller receives a sanitized failure; never log the raw plugin exception.
+            val reason = LogSanitizer.sanitizeExceptionMessage(failure.message ?: failure::class.simpleName)
+            McpToolResult("Tool '${tool.definition.name}' failed: $reason", isError = true)
         }
-    }
-
-    private fun dispatchExecutionFinished(
-        request: McpExecutionRequest,
-        outcome: McpExecutionOutcome,
-        currentObservers: List<McpToolExecutionObserver>,
-    ) {
-        for (obs in currentObservers) {
-            try {
-                obs.onExecutionFinished(request, outcome)
-            } catch (t: Throwable) {
-                val outcomeName = outcome::class.simpleName
-                logger.warn(
-                    LogCategory.SYSTEM,
-                    "MCP execution observer failed on finish ($outcomeName)",
-                    mapOf(
-                        "observerId" to obs.observerId,
-                        "error" to (t.message ?: t::class.simpleName),
-                    ),
-                )
-            }
-        }
-    }
 
     /**
      * Read the persisted disabled set. "Absent" and "unparseable" are NOT the same

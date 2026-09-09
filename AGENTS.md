@@ -1045,3 +1045,20 @@ no second sandbox prompt. Explicit policies and session trust retain precedence.
 HIGH/CRITICAL names use the mutating default, while unknown names remain allowed
 by default. Risk reasons and sanitized arguments appear together in the existing
 approval dialog. #362 is closed pending extraction into a management plugin.
+
+## MCP execution observation
+
+The observation hook is an ungated plugin read surface over authorized executions.
+Arguments and results are bounded display previews, not replay payloads: malformed,
+oversized or excessively nested JSON is omitted, sensitive fields are redacted,
+and JSON scalar types are preserved. Exception details are omitted from observations;
+plugin callback failures never log plugin-defined exception messages or identifiers.
+Text redaction is best effort and cannot identify arbitrary private prose.
+
+Registration identifiers are process-global; plugins must use unique names. Tracking
+contexts remove registrations on unload. Snapshot handles are deactivated on removal,
+so completion dispatch admitted after removal cannot call the old plugin. An already
+admitted callback may finish; removal does not wait while holding plugin code. Callbacks are synchronous
+and must be non-blocking; no latency isolation from a blocking callback is promised.
+No callback runs under the registration lock. The proposed API
+release must document this contract before this host PR is merge-ready.
