@@ -14,6 +14,7 @@ import com.arkivanov.decompose.ComponentContext
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SplitViewActiveTabsTest {
@@ -173,6 +174,17 @@ class SplitViewActiveTabsTest {
     }
 
     @Test
+    fun `tabs remain discoverable while a panel has no selection`() {
+        val panel = state.getPanel(state.activePanelId)!!
+        panel.tabsComponent.addTab(createTab("background"))
+        panel.tabsComponent.selectTab(-1)
+        state.preserveCurrentState("ws1")
+
+        assertNull(panel.tabsComponent.tabsState.value.activeTab)
+        assertEquals("background", state.collectAllActiveTabs(null, "w1").single().tabInfo.id)
+    }
+
+    @Test
     fun `preserved workspace inventory survives switching and restoration`() {
         state.preserveCurrentState("ws1")
         val firstPanel = state.getPanel(state.activePanelId)!!
@@ -186,14 +198,17 @@ class SplitViewActiveTabsTest {
 
         val tabs = state.collectAllActiveTabs(null, "w1")
         assertEquals(4, tabs.size)
-        assertEquals(setOf("old-background", "old-selected"), tabs.filter { it.workspaceId == "ws1" }.map { it.tabInfo.id }.toSet())
-        assertEquals(setOf("new-background", "new-selected"), tabs.filter { it.workspaceId == "ws2" }.map { it.tabInfo.id }.toSet())
+        val firstWorkspaceTabs = tabs.filter { it.workspaceId == "ws1" }
+        val secondWorkspaceTabs = tabs.filter { it.workspaceId == "ws2" }
+        assertEquals(setOf("old-background", "old-selected"), firstWorkspaceTabs.map { it.tabInfo.id }.toSet())
+        assertEquals(setOf("new-background", "new-selected"), secondWorkspaceTabs.map { it.tabInfo.id }.toSet())
         assertTrue(tabs.all { it.windowId == "w1" && it.panelId == "main" })
-        assertTrue(tabs.filter { it.workspaceId == "ws1" }.all { it.workspaceName == "First workspace" })
+        assertTrue(firstWorkspaceTabs.all { it.workspaceName == "First workspace" })
 
         state.preserveCurrentState("ws1", "Second workspace")
         assertTrue(state.restorePreservedState("ws1"))
-        assertEquals(tabs.map { it.tabInfo.id }.toSet(), state.collectAllActiveTabs(null, "w1").map { it.tabInfo.id }.toSet())
-        assertEquals(4, state.collectAllActiveTabs(null, "w1").size, "Restored tabs must not be duplicated")
+        val restoredTabs = state.collectAllActiveTabs(null, "w1")
+        assertEquals(tabs.map { it.tabInfo.id }.toSet(), restoredTabs.map { it.tabInfo.id }.toSet())
+        assertEquals(4, restoredTabs.size, "Restored tabs must not be duplicated")
     }
 }
