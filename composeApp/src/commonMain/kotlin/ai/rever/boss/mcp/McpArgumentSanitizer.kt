@@ -97,10 +97,61 @@ object McpArgumentSanitizer {
 
     private val sensitiveAssignment =
         Regex(
-            """(?i)(?:password|token|secret|api[_-]?key|authorization|credential)""" +
+            """(?i)"?(?:password|token|secret|api[_-]?key|authorization|credential)"?""" +
                 """\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s&,;}]+)""",
         )
     private val bearer = Regex("""(?i)Bearer\s+[^\s"',;}]+""")
+
+    /**
+     * Sanitizes arbitrary MCP tool results. Attempts to parse as JSON to accurately redact
+     * keys regardless of format. Falls back to plain text regex redaction for malformed
+     * or non-JSON results.
+     */
+    fun sanitizeResult(raw: String): String =
+        try {
+            val element =
+                kotlinx.serialization.json.Json
+                    .parseToJsonElement(raw)
+            sanitizeJsonElement(element, 0).toString()
+        } catch (_: Exception) {
+            sanitizeMessage(raw)
+        }
+
+    private fun sanitizeJsonElement(
+        element: kotlinx.serialization.json.JsonElement,
+        depth: Int,
+    ): kotlinx.serialization.json.JsonElement {
+        if (depth >= 8) return kotlinx.serialization.json.JsonPrimitive("[OMITTED: too deeply nested]")
+        return when (element) {
+            is kotlinx.serialization.json.JsonObject -> {
+                val sanitizedMap =
+                    element.mapValues { (key, value) ->
+                        if (sensitiveKeyWords.any { key.contains(it, ignoreCase = true) } || key.contains("auth", true)) {
+                            kotlinx.serialization.json.JsonPrimitive("[REDACTED]")
+                        } else {
+                            sanitizeJsonElement(value, depth + 1)
+                        }
+                    }
+                kotlinx.serialization.json.JsonObject(sanitizedMap)
+            }
+
+            is kotlinx.serialization.json.JsonArray -> {
+                kotlinx.serialization.json.JsonArray(element.map { sanitizeJsonElement(it, depth + 1) })
+            }
+
+            is kotlinx.serialization.json.JsonPrimitive -> {
+                if (element.isString) {
+                    kotlinx.serialization.json.JsonPrimitive(sanitizeMessage(element.content))
+                } else {
+                    element
+                }
+            }
+
+            else -> {
+                element
+            }
+        }
+    }
 
     fun sanitizeMessage(text: String): String =
         text

@@ -890,7 +890,11 @@ internal class McpToolRegistryCore(
             }
 
         val cappedResult = capResult(tool.definition.name, rawResult)
-        dispatchExecutionFinished(request, McpExecutionOutcome.Success(cappedResult), currentObservers)
+
+        val sanitizedResultText = McpArgumentSanitizer.sanitizeResult(cappedResult.text)
+        val safeObserverResult = cappedResult.copy(text = sanitizedResultText)
+
+        dispatchExecutionFinished(request, McpExecutionOutcome.Success(safeObserverResult), currentObservers)
         return cappedResult
     }
 

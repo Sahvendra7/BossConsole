@@ -1,7 +1,10 @@
 package ai.rever.boss.mcp
 
+import ai.rever.boss.plugin.api.McpExecutionOutcome
+import ai.rever.boss.plugin.api.McpExecutionRequest
 import ai.rever.boss.plugin.api.McpToolArgs
 import ai.rever.boss.plugin.api.McpToolDefinition
+import ai.rever.boss.plugin.api.McpToolExecutionObserver
 import ai.rever.boss.plugin.api.McpToolHandler
 import ai.rever.boss.plugin.api.McpToolProvider
 import ai.rever.boss.plugin.api.McpToolResult
@@ -16,6 +19,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -32,6 +36,212 @@ import kotlin.test.assertTrue
  * [McpKillSwitchPersistenceTest].
  */
 class McpToolRegistryCoreTest {
+    @Test
+    fun `observer receives safely sanitized nested JSON result payload`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            val rawNested =
+                "{\"user\": {\"profile\": {\"name\": \"alice\", \"token\": \"sk-secret-value\"} }, " +
+                    "\"metadata\": {\"nested\": {\"enabled\": true} } }"
+            core.registerProvider(provider("p1", echoTool("test_tool", handler = McpToolHandler { McpToolResult(rawNested) })))
+
+            var capturedOutcome: McpExecutionOutcome? = null
+            val observer =
+                object : McpToolExecutionObserver {
+                    override val observerId = "json-test"
+
+                    override fun onExecutionStarted(request: McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: McpExecutionRequest,
+                        outcome: McpExecutionOutcome,
+                    ) {
+                        capturedOutcome = outcome
+                    }
+                }
+            core.registerExecutionObserver(observer)
+
+            core.invoke("test_tool", "{}")
+
+            val success = capturedOutcome as? McpExecutionOutcome.Success
+            assertNotNull(success)
+
+            val sanitizedText = success.result.text
+            assertTrue(sanitizedText.contains("user"))
+            assertTrue(sanitizedText.contains("alice"))
+            assertTrue(sanitizedText.contains("[REDACTED]"))
+            assertFalse(sanitizedText.contains("sk-secret-value"))
+        }
+
+    @Test
+    fun `observer receives safely sanitized scalar and array JSON results`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            val rawArray =
+                "[{\"name\": \"a\", \"token\": \"sk-secret-a\"}, " +
+                    "{\"name\": \"b\", \"token\": \"sk-secret-b\"}, 123, true, null]"
+            core.registerProvider(provider("p1", echoTool("test_tool", handler = McpToolHandler { McpToolResult(rawArray) })))
+
+            var capturedOutcome: McpExecutionOutcome? = null
+            val observer =
+                object : McpToolExecutionObserver {
+                    override val observerId = "json-array-test"
+
+                    override fun onExecutionStarted(request: McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: McpExecutionRequest,
+                        outcome: McpExecutionOutcome,
+                    ) {
+                        capturedOutcome = outcome
+                    }
+                }
+            core.registerExecutionObserver(observer)
+
+            core.invoke("test_tool", "{}")
+
+            val success = capturedOutcome as? McpExecutionOutcome.Success
+            assertNotNull(success)
+
+            val sanitizedText = success.result.text
+            assertTrue(sanitizedText.contains("name"))
+            assertFalse(sanitizedText.contains("sk-secret-a"))
+            assertFalse(sanitizedText.contains("sk-secret-b"))
+            assertTrue(sanitizedText.contains("[REDACTED]"))
+            assertTrue(sanitizedText.contains("123"))
+            assertTrue(sanitizedText.contains("true"))
+            assertTrue(sanitizedText.contains("null"))
+        }
+
+    @Test
+    fun `observer gracefully handles malformed JSON results`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            val rawMalformed = "{\"user\":{\"token\":\"sk-secret"
+            core.registerProvider(provider("p1", echoTool("test_tool", handler = McpToolHandler { McpToolResult(rawMalformed) })))
+
+            var capturedOutcome: McpExecutionOutcome? = null
+            val observer =
+                object : McpToolExecutionObserver {
+                    override val observerId = "json-malformed-test"
+
+                    override fun onExecutionStarted(request: McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: McpExecutionRequest,
+                        outcome: McpExecutionOutcome,
+                    ) {
+                        capturedOutcome = outcome
+                    }
+                }
+            core.registerExecutionObserver(observer)
+
+            val finalResult = core.invoke("test_tool", "{}")
+
+            val success = capturedOutcome as? McpExecutionOutcome.Success
+            assertNotNull(success)
+
+            val sanitizedText = success.result.text
+            assertFalse(sanitizedText.contains("sk-secret"))
+            assertTrue(sanitizedText.contains("[REDACTED]"))
+
+            assertTrue(finalResult.text.contains("sk-secret"))
+        }
+
+    @Test
+    fun `observer receives capped result before sanitization for oversized JSON`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            val padding = "a".repeat(150_000)
+            val rawOversized = "{\"pad\": \"$padding\", \"token\": \"sk-secret-value-at-end\"}"
+            core.registerProvider(provider("p1", echoTool("test_tool", handler = McpToolHandler { McpToolResult(rawOversized) })))
+
+            var capturedOutcome: McpExecutionOutcome? = null
+            val observer =
+                object : McpToolExecutionObserver {
+                    override val observerId = "json-oversized-test"
+
+                    override fun onExecutionStarted(request: McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: McpExecutionRequest,
+                        outcome: McpExecutionOutcome,
+                    ) {
+                        capturedOutcome = outcome
+                    }
+                }
+            core.registerExecutionObserver(observer)
+
+            core.invoke("test_tool", "{}")
+
+            val success = capturedOutcome as? McpExecutionOutcome.Success
+            assertNotNull(success)
+
+            val sanitizedText = success.result.text
+            assertTrue(sanitizedText.contains("a".repeat(10_000)))
+            assertFalse(sanitizedText.contains("sk-secret-value-at-end"))
+            assertTrue(sanitizedText.contains("[BOSS host cap:"))
+        }
+
+    @Test
+    fun `privacy regression test for arbitrary observer JSON payload`() =
+        runBlocking {
+            val core = McpToolRegistryCore(disabledFile = null)
+            val rawJson =
+                "{\n" +
+                    "    \"user\": \"alice\",\n" +
+                    "    \"nested\": {\n" +
+                    "        \"secrets\": [\n" +
+                    "            \"sk-test-secret\",\n" +
+                    "            {\"password\": \"super-secret\"},\n" +
+                    "            \"api_key=abc123\",\n" +
+                    "            {\"token\": \"secret-token\"},\n" +
+                    "            \"authorization=Bearer secret\"\n" +
+                    "        ]\n" +
+                    "    },\n" +
+                    "    \"safe_value\": \"hello world\",\n" +
+                    "    \"safe_boolean\": true,\n" +
+                    "    \"safe_number\": 42\n" +
+                    "}"
+
+            core.registerProvider(provider("p1", echoTool("test_tool", handler = McpToolHandler { McpToolResult(rawJson) })))
+
+            var capturedOutcome: McpExecutionOutcome? = null
+            val observer =
+                object : McpToolExecutionObserver {
+                    override val observerId = "privacy-test"
+
+                    override fun onExecutionStarted(request: McpExecutionRequest) {}
+
+                    override fun onExecutionFinished(
+                        request: McpExecutionRequest,
+                        outcome: McpExecutionOutcome,
+                    ) {
+                        capturedOutcome = outcome
+                    }
+                }
+            core.registerExecutionObserver(observer)
+
+            core.invoke("test_tool", "{}")
+
+            val success = capturedOutcome as? McpExecutionOutcome.Success
+            assertNotNull(success)
+
+            val sanitizedText = success.result.text
+            assertFalse(sanitizedText.contains("sk-test-secret"))
+            assertFalse(sanitizedText.contains("super-secret"))
+            assertFalse(sanitizedText.contains("abc123"))
+            assertFalse(sanitizedText.contains("secret-token"))
+            assertFalse(sanitizedText.contains("Bearer secret"))
+
+            assertTrue(sanitizedText.contains("[REDACTED]"))
+
+            assertTrue(sanitizedText.contains("alice"))
+            assertTrue(sanitizedText.contains("hello world"))
+            assertTrue(sanitizedText.contains("true"))
+            assertTrue(sanitizedText.contains("42"))
+        }
+
     private val tempFiles = mutableListOf<File>()
 
     /** A throwaway disabled-tools file under the OS temp dir, cleaned up after each test. */
