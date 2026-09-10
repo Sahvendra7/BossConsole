@@ -179,21 +179,14 @@ object WebsiteMatchingUtil {
             }
 
             // Domain contains other (google.com contains google)
-            secretNorm.contains(domainNorm) || domainNorm.contains(secretNorm) -> {
-                MatchScore(0.7f, "domain")
-            }
+            // REMOVED (Issue #460): Unanchored substring matches cause false positives
+            // e.g., snapple.com contains apple.com.
 
             // Partial match (same keywords)
-            else -> {
-                val secretParts = secretNorm.split(".", "-", "_")
-                val domainParts = domainNorm.split(".", "-", "_")
-                val commonParts = secretParts.intersect(domainParts.toSet())
+            // REMOVED (Issue #460): Splitting on TLDs causes every .com site to match.
 
-                if (commonParts.isNotEmpty()) {
-                    MatchScore(0.5f, "partial")
-                } else {
-                    MatchScore(0.0f, "no_match")
-                }
+            else -> {
+                MatchScore(0.0f, "no_match")
             }
         }
     }
@@ -265,7 +258,11 @@ object WebsiteMatchingUtil {
                 // Generic formatting: example-site → Example Site
                 nameWithoutTld
                     .split("-", "_")
-                    .joinToString(" ") { it.replaceFirstChar { c -> if (c.isLowerCase()) c.titlecase() else it } }
+                    .joinToString(" ") {
+                        it.replaceFirstChar { c ->
+                            if (c.isLowerCase()) c.titlecase() else c.toString()
+                        }
+                    }
             }
         }
     }
