@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
@@ -21,6 +22,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -155,6 +157,8 @@ class InProcessPluginSandbox(
      * anything new.
      */
     private inner class SandboxScope : CoroutineScope {
+        private val retiringJobs = ConcurrentHashMap.newKeySet<Job>()
+
         @Volatile
         private var job: CompletableJob = SupervisorJob()
 
@@ -180,23 +184,28 @@ class InProcessPluginSandbox(
 
         /** Cancel everything in flight and re-arm for new work. */
         fun resetJob() {
-            job.cancel()
+            cancelJob()
             install(SupervisorJob())
         }
 
         /**
          * Cancel everything in flight, leaving the scope inert until re-armed.
          *
-         * Returns the cancelled job so the caller can wait for it to actually
+         * Returns all unfinished generations so the caller can wait for them to actually
          * finish. Cancelling only *asks*; the coroutines are still unwinding
          * when this returns. See [awaitScopeCancelled].
          */
-        fun cancelJob(): Job {
+        fun cancelJob(): List<Job> {
             // Read once. [job] is volatile and replaceable, and returning a
             // second read could hand back a job this call never cancelled.
+            // Restarts stay non-blocking, but a later stop must also drain
+            // work still unwinding from those older generations.
             val cancelling = job
+            if (retiringJobs.add(cancelling)) {
+                cancelling.invokeOnCompletion { retiringJobs.remove(cancelling) }
+            }
             cancelling.cancel()
-            return cancelling
+            return retiringJobs.toList()
         }
 
         /**
@@ -238,44 +247,19 @@ class InProcessPluginSandbox(
     }
 
     /**
-     * Wait, boundedly, for a cancelled [retiring] job to actually finish.
+     * Give all cancelled sandbox job generations one shared completion budget.
+     * Executor termination misses their work suspended on another dispatcher.
+     * The host may close the classloader after this returns, so timeout is logged.
+     * Independently created plugin scopes are not covered (including #207's
+     * BossTerm terminal-session scope). Timeout is not proof of quiescence either.
      *
-     * **Cancelling is not waiting, and retiring the pool is not waiting either.**
-     * `job.cancel()` marks the coroutines cancelled and returns; they are still
-     * unwinding their `finally` blocks afterwards. [shutdownExecutor] does not
-     * cover that: `awaitTermination` bounds work that is *running on this
-     * sandbox's pool*, and a plugin coroutine parked at a suspension point off
-     * that pool - inside `withContext(Dispatchers.IO)`, a `delay`, an `await` -
-     * is not a task the pool has ever seen, so the pool terminates instantly
-     * while the coroutine is still alive.
-     *
-     * That gap is what BossConsole#207 is: [stop] returned, the caller closed
-     * the plugin's classloader, and the coroutine then resumed to touch a class
-     * (pty4j, in the report) that could no longer be resolved. The classloader
-     * must not close while coroutines that belong to this sandbox are still
-     * running, and this is where that is made true.
-     *
-     * **Bounded, and the expiry is never silent.** A plugin can decline to be
-     * cancelled - a `NonCancellable` cleanup, a blocking call no cancellation
-     * can interrupt - and hanging an unload on one for ever would be worse than
-     * the fault the classloader's own error reporting already contains. So the
-     * wait gives up, says so, and lets the unload proceed, the same trade
-     * `PluginUiMountRegistry.awaitDisposed` makes on the UI half of this
-     * teardown. The bound is also what keeps a plugin coroutine that re-enters
-     * the host and asks for an unload of itself to a slow answer rather than a
-     * deadlock.
-     *
-     * **The deadline is this class's, not the caller's**, which is why the wait
-     * is hoisted onto [Dispatchers.Default] rather than left in whatever context
-     * called [stop]. A caller carrying a different `Delay` would otherwise
-     * silently change how long a classloader close is held off, with nothing in
-     * the signature saying so - the same rule `BoundedBrowserCall` states for
-     * its own wait.
+     * Dispatchers.Default owns the deadline, independent of the caller's Delay.
+     * The caller shields this and executor cleanup from unload cancellation.
      */
-    private suspend fun awaitScopeCancelled(retiring: Job) {
+    private suspend fun awaitScopeCancelled(retiring: List<Job>) {
         val finished =
             withContext(Dispatchers.Default) {
-                withTimeoutOrNull(SCOPE_JOIN_TIMEOUT_MS) { retiring.join() }
+                withTimeoutOrNull(SCOPE_JOIN_TIMEOUT_MS) { retiring.forEach { it.join() } }
             }
         if (finished != null) return
         logger.warn(
@@ -404,7 +388,7 @@ class InProcessPluginSandbox(
             // could equally cancel the job restart() had just installed, or
             // retire a pool it no longer owns.
             val retiring: ExecutorService
-            val retiringJob: Job
+            val retiringJob: List<Job>
             synchronized(restartLock) {
                 // Cancel everything the plugin has in flight. The scope object
                 // stays, inert, so a later start() can re-arm it in place rather
@@ -433,8 +417,10 @@ class InProcessPluginSandbox(
             // to Dispatchers.IO rather than dropping it, so the unwind still
             // completes and this wait still ends. (The same fallback the
             // SwappableDispatcher note describes.)
-            awaitScopeCancelled(retiringJob)
-            shutdownExecutor(retiring)
+            withContext(NonCancellable) {
+                awaitScopeCancelled(retiringJob)
+                shutdownExecutor(retiring)
+            }
         }
     }
 
@@ -542,7 +528,8 @@ class InProcessPluginSandbox(
             // restart keeps the plugin's classloader open - it swaps the pool
             // underneath the same loader - so a coroutine that resumes late
             // still resolves its own classes, which is the whole hazard the
-            // join in stop() exists for. Waiting here would buy nothing and
+            // join in stop() exists for. Retain unfinished generations so a
+            // later stop can await them. Waiting during restart would
             // cost something real: every statement in this function is
             // non-suspending on purpose, because the sandbox is passing
             // through RESTARTING and must not be able to stop inside it.

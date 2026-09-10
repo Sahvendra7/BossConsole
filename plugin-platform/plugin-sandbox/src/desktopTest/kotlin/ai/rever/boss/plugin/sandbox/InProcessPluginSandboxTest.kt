@@ -349,8 +349,8 @@ class InProcessPluginSandboxTest {
     }
 
     /**
-     * The teardown guarantee BossConsole#207 is about: when [InProcessPluginSandbox.stop] returns,
-     * the plugin's coroutines are not merely *cancelled*, they have finished.
+     * The sandbox-owned portion of teardown: cooperative sandbox coroutines finish
+     * before [InProcessPluginSandbox.stop] returns. Independent plugin scopes are outside this test.
      *
      * The distinction is the bug. `job.cancel()` marks and returns; the coroutines are still
      * unwinding afterwards. Nothing else in `stop()` covered them either - `awaitTermination`
@@ -511,6 +511,82 @@ class InProcessPluginSandboxTest {
                 } finally {
                     release.complete(Unit)
                 }
+            }
+    }
+
+    @Nested
+    inner class RetiredScopeTeardownTests {
+        @Test
+        fun `stop waits for cleanup belonging to a previous restart generation`() =
+            runBlocking {
+                sandbox.start()
+                val parked = CompletableDeferred<Unit>()
+                val cleanupStarted = CompletableDeferred<Unit>()
+                val release = CompletableDeferred<Unit>()
+                val oldJob =
+                    sandbox.sandboxScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                parked.complete(Unit)
+                                awaitCancellation()
+                            }
+                        } finally {
+                            withContext(NonCancellable + Dispatchers.IO) {
+                                cleanupStarted.complete(Unit)
+                                release.await()
+                            }
+                        }
+                    }
+                parked.await()
+                sandbox.restart().getOrThrow()
+                cleanupStarted.await()
+                val stopped = CompletableDeferred<Unit>()
+                val stopping =
+                    launch(Dispatchers.Default) {
+                        sandbox.stop().getOrThrow()
+                        stopped.complete(Unit)
+                    }
+                try {
+                    assertEquals(null, withTimeoutOrNull(300) { stopped.await() })
+                    release.complete(Unit)
+                    assertNotNull(withTimeoutOrNull(5_000) { stopped.await() })
+                    assertTrue(oldJob.isCompleted)
+                } finally {
+                    release.complete(Unit)
+                    stopping.join()
+                    oldJob.join()
+                }
+            }
+
+        @Test
+        fun `cancelled caller still drains sandbox cleanup`() =
+            runBlocking {
+                sandbox.start()
+                val parked = CompletableDeferred<Unit>()
+                val unwound = AtomicBoolean(false)
+                val worker =
+                    sandbox.sandboxScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                parked.complete(Unit)
+                                awaitCancellation()
+                            }
+                        } finally {
+                            withContext(NonCancellable + Dispatchers.IO) {
+                                delay(300)
+                                unwound.set(true)
+                            }
+                        }
+                    }
+                parked.await()
+                val caller =
+                    launch {
+                        coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+                        sandbox.stop()
+                        assertTrue(unwound.get(), "cancelled unload caller skipped the teardown wait")
+                    }
+                caller.join()
+                worker.join()
             }
     }
 

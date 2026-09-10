@@ -1455,6 +1455,8 @@ class DynamicPluginManager(
                             )
                             val trackingContext = trackingContexts.remove(pluginId)
                             trackingContext?.unregisterAll()
+                            // dispose cancels managerScope immediately after this unload loop.
+                            // Complete cleanup before returning, including state-only entries.
                             sandboxManager.removeSandbox(pluginId)
                             removePluginState(pluginId)
                             return@withContext Result.success(Unit)

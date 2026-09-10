@@ -434,36 +434,26 @@ removed. `noticeFor` **groups by replacement**: the function only exists for the
 case, which is exactly the case where two retirements can point at different replacements, and
 taking `first().replacementDisplayName` told the user their panel moved somewhere it did not.
 
-## A classloader close waits for the plugin's coroutines, not just their cancellation
+## Sandbox coroutine teardown
 
-`InProcessPluginSandbox.stop()` cancels the sandbox scope **and boundedly joins it** before it
-returns. Cancelling alone is not a teardown: `job.cancel()` marks and returns while the coroutines
-are still unwinding their `finally` blocks, and the `awaitTermination` beside it does not cover
-them either - it bounds work running on *this sandbox's pool*, and a plugin coroutine parked off
-that pool (`withContext(Dispatchers.IO)`, a `delay`, an `await`) is not a task the pool has ever
-seen, so the pool terminates instantly while the coroutine is alive. That is BossConsole#207: the
-loader closed and the coroutine resumed into classes that no longer resolved.
+`InProcessPluginSandbox.stop()` cancels and boundedly joins jobs owned by
+`PluginContext.pluginScope` before retiring the executor. Executor termination
+alone misses work suspended on another dispatcher. Normal loaded-plugin uninstall
+awaits `removeSandbox` before the loader closes.
 
-**The wait is worthless unless the unload actually waits for it.** `DynamicPluginManager.uninstallPlugin`
-used to `managerScope.launch { sandboxManager.removeSandbox(id) }` immediately before
-`pluginLoader.unloadPlugin` closed the loader, so the two raced by construction. It is awaited now.
-The consequence is deliberate: an uninstall, and therefore `dispose()`/`disposeWindow()`, can spend
-up to `SCOPE_JOIN_TIMEOUT_MS` plus the pool's own bound **per plugin** on a plugin that declines to
-be cancelled. Detached, that teardown was frequently not happening at all - `dispose()` cancels
-`managerScope` immediately afterwards.
+Restart remains non-blocking because it retains the classloader. Unfinished job
+generations are retained until completion so a subsequent stop waits for them too.
+The join has one two-second budget across generations; expiry logs the plugin ID
+and timeout, then permits teardown. The join and executor wait finish under
+`NonCancellable` once cancellation has begun, even if the unload caller is cancelled.
+This is a bounded opportunity to unwind, not proof that no plugin code remains.
 
-**Bounded, and never silent**, the same trade `PluginUiMountRegistry.awaitDisposed` makes on the UI
-half of this teardown: the wait gives up, logs a WARN naming the plugin and the bound it spent, and
-lets the unload proceed. The bound is also what turns a plugin coroutine that re-enters the host and
-asks to unload itself into a slow answer rather than a deadlock. The deadline is hoisted onto
-`Dispatchers.Default` so it belongs to the sandbox rather than to whatever context called `stop()`,
-for the reason `BoundedBrowserCall` gives for its own wait.
-
-**`restart()` deliberately does not join.** A restart swaps the pool underneath the *same*
-classloader, so a coroutine that resumes late still resolves its own classes and there is nothing
-for a wait to protect - and `swapInFreshRuntime` is non-suspending on purpose, because the sandbox
-passes through `RESTARTING`, which `PluginWatchdog` skips, and must not be able to stop inside it.
-`InProcessPluginSandboxTest` pins both halves, the asymmetry included.
+**Scope limit for #207:** independently created plugin/library scopes are not
+children of the sandbox job. BossTerm's `TabController` creates its own
+`SupervisorJob` for terminal sessions. Joining the sandbox does not join those
+sessions, so this change alone does not fix the reported startup terminal orphan.
+That needs terminal-session quiescence or a separately validated startup ordering
+change. The tests here exercise sandbox-owned jobs only.
 
 ## Configuration
 
