@@ -35,7 +35,7 @@ internal object McpObservationPreview {
             if (raw.trimStart().firstOrNull() in listOf('{', '[', '"')) {
                 "[OMITTED: malformed JSON]"
             } else {
-                McpArgumentSanitizer.sanitizeMessage(raw)
+                sanitizeText(raw)
             }
         }
 
@@ -58,10 +58,24 @@ internal object McpObservationPreview {
             }
 
             is JsonPrimitive -> {
-                val sanitized = McpArgumentSanitizer.sanitizeMessage(element.content)
+                val sanitized = sanitizeText(element.content)
                 if (element.isString || sanitized != element.content) JsonPrimitive(sanitized) else element
             }
         }
+
+    // Conservative prose redaction is observation-only: approval commands must stay readable.
+    private val privateKeyBlock =
+        Regex("(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)")
+    private val sensitiveAssignment =
+        Regex(
+            """(?i)"?[A-Za-z0-9_-]*(?:${McpArgumentSanitizer.sensitiveKeyWords.joinToString("|")})[A-Za-z0-9_-]*"?""" +
+                """\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s&,;}]+)""",
+        )
+
+    private fun sanitizeText(raw: String): String =
+        McpArgumentSanitizer.sanitizeMessage(
+            raw.replace(privateKeyBlock, "[REDACTED PRIVATE KEY]").replace(sensitiveAssignment, "[REDACTED]"),
+        )
 
     /** Bound nesting before recursive parsing, while ignoring brackets inside JSON strings. */
     private fun tooDeep(raw: String): Boolean {

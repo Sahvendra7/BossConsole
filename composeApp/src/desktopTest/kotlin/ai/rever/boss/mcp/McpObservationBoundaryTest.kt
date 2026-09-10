@@ -88,4 +88,14 @@ class McpObservationBoundaryTest {
             assertFalse(McpObservationPreview.sanitize(json.toString()).contains("PRIVATE_SENTINEL"))
         }
     }
+
+    @Test
+    fun `conservative observer redaction does not hide operator command arguments`() {
+        val command = "git log --author=jane --keyword=search --sortKey=name --tokenizer=bpe"
+        assertEquals(command, McpArgumentSanitizer.sanitizeMessage(command))
+        assertEquals(command, McpArgumentSanitizer.sanitize(mapOf("command" to command))["command"])
+        val quotedHeader = "ssh reported -----BEGIN OPENSSH PRIVATE KEY----- followed by an ordinary diagnostic"
+        assertEquals(quotedHeader, McpArgumentSanitizer.sanitizeMessage(quotedHeader))
+        assertFalse(McpObservationPreview.sanitize("private_key=PRIVATE_SENTINEL").contains("PRIVATE_SENTINEL"))
+    }
 }
