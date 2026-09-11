@@ -1,7 +1,9 @@
 package ai.rever.boss.components.plugin.providers
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -51,6 +53,29 @@ class PluginStorageProviderImplTest {
 
     private fun tempFilesLeftBehind(): List<File> =
         testDir.listFiles { file -> file.name.startsWith("storage.properties.tmp.") }?.toList().orEmpty()
+
+    /**
+     * Launches a collector that records change events, then yields once so
+     * the subscriber is registered inside collect() before any commit can
+     * emit. The yield is sufficient only because SharedFlow.collect
+     * allocates its subscriber slot synchronously before its first
+     * suspension, which holds while observeChanges() stays an unadorned
+     * asSharedFlow(); an operator that suspends before subscribing (for
+     * example flowOn, buffer, a flow { } re-wrap, or an onStart that
+     * awaits) would silently void the barrier. Operators that do not
+     * suspend before slot allocation (for example a plain map) are safe.
+     */
+    private suspend fun CoroutineScope.launchChangeCollector(
+        provider: PluginStorageProviderImpl,
+        events: MutableList<String>,
+    ): Job {
+        val collector =
+            launch {
+                provider.observeChanges().collect { events += it }
+            }
+        yield()
+        return collector
+    }
 
     @Test
     fun `concurrent puts do not lose updates`() =
@@ -254,18 +279,7 @@ class PluginStorageProviderImplTest {
         runBlocking {
             val provider = PluginStorageProviderImpl("test-plugin", testDir)
             val events = Collections.synchronizedList(mutableListOf<String>())
-            val collector =
-                launch {
-                    provider.observeChanges().collect { events += it }
-                }
-            // yield() re-queues this coroutine behind the collector on the
-            // event loop, so the collector body runs before any commit can
-            // emit. That is sufficient only because SharedFlow.collect
-            // allocates its subscriber slot synchronously before its first
-            // suspension, which holds while observeChanges() stays an
-            // unadorned asSharedFlow(); an operator that suspends before
-            // subscribing would silently void this barrier.
-            yield()
+            val collector = launchChangeCollector(provider, events)
             try {
                 provider.putString("k", "v")
                 val deadline = System.currentTimeMillis() + 10000
@@ -286,18 +300,7 @@ class PluginStorageProviderImplTest {
             assertTrue(blockedParent.createNewFile(), "must be able to create the blocker file")
             val provider = PluginStorageProviderImpl("blocked-plugin", File(blockedParent, "plugin-data"))
             val events = Collections.synchronizedList(mutableListOf<String>())
-            val collector =
-                launch {
-                    provider.observeChanges().collect { events += it }
-                }
-            // yield() re-queues this coroutine behind the collector on the
-            // event loop, so the collector body runs before any commit can
-            // emit. That is sufficient only because SharedFlow.collect
-            // allocates its subscriber slot synchronously before its first
-            // suspension, which holds while observeChanges() stays an
-            // unadorned asSharedFlow(); an operator that suspends before
-            // subscribing would silently void this barrier.
-            yield()
+            val collector = launchChangeCollector(provider, events)
             try {
                 assertFailsWith<IOException> {
                     provider.putString("k", "v")
@@ -314,18 +317,7 @@ class PluginStorageProviderImplTest {
         runBlocking {
             val provider = PluginStorageProviderImpl("test-plugin", testDir)
             val events = Collections.synchronizedList(mutableListOf<String>())
-            val collector =
-                launch {
-                    provider.observeChanges().collect { events += it }
-                }
-            // yield() re-queues this coroutine behind the collector on the
-            // event loop, so the collector body runs before any commit can
-            // emit. That is sufficient only because SharedFlow.collect
-            // allocates its subscriber slot synchronously before its first
-            // suspension, which holds while observeChanges() stays an
-            // unadorned asSharedFlow(); an operator that suspends before
-            // subscribing would silently void this barrier.
-            yield()
+            val collector = launchChangeCollector(provider, events)
             try {
                 // The 4 MB value is load-bearing, not belt-and-braces: it
                 // keeps A holding transactionMutex past B's lock() attempt.
