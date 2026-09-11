@@ -548,7 +548,19 @@ object FullscreenBrowserWindow {
         )
     private val videoFullscreenConfirmationHandler =
         VideoFullscreenConfirmationHandler(
-            onConfirmed = { hasReachedFullscreen = true },
+            onConfirmed = { hasReachedFullscreen = true
+                fullscreenFrame?.let { frame ->
+                    frame.toFront()
+                    frame.requestFocus()
+                    val view = currentBrowserView
+                    if (view != null && !view.requestFocusInWindow()) {
+                        logger.warn(
+                            LogCategory.BROWSER,
+                            "requestFocusInWindow failed after macOS native fullscreen transition"
+                        )
+                    }
+                }
+             },
             onExitedEarly = ::requestPageExit,
         )
     private val overlayCoordinator =
@@ -798,11 +810,13 @@ object FullscreenBrowserWindow {
                 frame.setBounds(screenBounds.x, screenBounds.y, screenBounds.width, screenBounds.height)
                 frame.isVisible = true
                 hasReachedFullscreen = true
-            }
 
-            frame.toFront()
-            frame.requestFocus()
-            browserView.requestFocusInWindow()
+                frame.toFront()
+                frame.requestFocus()
+                if (!browserView.requestFocusInWindow()) {
+                    logger.warn(LogCategory.BROWSER, "requestFocusInWindow failed on Windows/Linux fullscreen entry")
+                }
+            }
 
             logger.info(LogCategory.BROWSER, "Fullscreen window opened", mapOf("tabId" to tabId, "isMacOS" to isMacOS))
         } catch (e: Exception) {
@@ -831,6 +845,18 @@ object FullscreenBrowserWindow {
                     requestPageExit()
                 }
             },
+        )
+
+        frame.addWindowFocusListener(
+            object : WindowAdapter() {
+                override fun windowGainedFocus(e: WindowEvent?) {
+                    if (!isCurrentFrameSession(expectedEpoch, browser, frame) || isExiting) return
+                    val view = currentBrowserView
+                    if (view != null && !view.requestFocusInWindow()) {
+                        logger.warn(LogCategory.BROWSER, "requestFocusInWindow failed on window focus gain")
+                    }
+                }
+            }
         )
 
         // Detect when exiting native fullscreen (green button or ESC).
@@ -974,7 +1000,9 @@ object FullscreenBrowserWindow {
         overlay.frame.setBounds(bounds)
         overlay.frame.isVisible = true
         overlay.frame.toFront()
-        overlay.browserView.requestFocusInWindow()
+        if (!overlay.browserView.requestFocusInWindow()) {
+            logger.warn(LogCategory.BROWSER, "requestFocusInWindow failed in borderless overlay")
+        }
         overlayCoordinator.installFocusBehavior(overlay.frame, currentOwnerWindowId)
         if (watchOwnerExit) {
             overlayCoordinator.watchOwnerExit(currentOwnerWindowId, expectedEpoch)
