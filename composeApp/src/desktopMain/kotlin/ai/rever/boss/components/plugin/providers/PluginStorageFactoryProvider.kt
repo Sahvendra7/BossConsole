@@ -48,14 +48,15 @@ class PluginStorageFactoryImpl private constructor() : PluginStorageFactory {
     private val storageCache = ConcurrentHashMap<String, PluginStorageProviderImpl>()
 
     override fun createStorage(pluginId: String): PluginStorageProvider =
-        storageCache.getOrPut(pluginId) {
-            PluginStorageProviderImpl(pluginId)
-        }
+        storageCache.computeIfAbsent(pluginId) { PluginStorageProviderImpl(pluginId) }
 }
 
 /**
  * Desktop implementation of PluginStorageProvider.
  * Stores data in ~/.boss/plugin-data/{pluginId}/storage.properties
+ *
+ * [storageDirOverride] is a test-only seam; production callers pass null and
+ * use the [BossDirectories] path.
  */
 class PluginStorageProviderImpl(
     private val pluginId: String,
@@ -233,6 +234,12 @@ class PluginStorageProviderImpl(
     // ============ Disk Operations ============
 
     private fun loadFromDisk() {
+        // Sweep temp files orphaned by a JVM killed mid-commit. Safe here:
+        // this provider is the only instance for its plugin id and no commit
+        // of its own can exist yet.
+        storageDir
+            .listFiles { file -> file.name.startsWith("storage.properties.tmp.") }
+            ?.forEach { orphan -> orphan.delete() }
         try {
             if (storageFile.exists()) {
                 val properties = Properties()
@@ -261,6 +268,15 @@ class PluginStorageProviderImpl(
         }
     }
 
+    /**
+     * Atomically replaces the storage file with [properties].
+     *
+     * The unique sibling temp file is fsynced before the rename, so a crash
+     * cannot leave a renamed file pointing at unflushed data. The rename
+     * makes the replacement atomic with respect to the previous committed
+     * state. The directory entry itself is not fsynced, so the very first
+     * commit for a plugin may remain unlinked on a power loss.
+     */
     private suspend fun commitTransaction(
         properties: Properties,
         onSuccess: () -> Unit,
@@ -274,8 +290,9 @@ class PluginStorageProviderImpl(
                 val tempFile = File(storageDir, "storage.properties.tmp.${UUID.randomUUID()}")
 
                 try {
-                    tempFile.outputStream().use {
-                        properties.store(it, "Plugin storage for $pluginId")
+                    tempFile.outputStream().use { out ->
+                        properties.store(out, "Plugin storage for $pluginId")
+                        out.fd.sync()
                     }
 
                     try {
@@ -286,6 +303,10 @@ class PluginStorageProviderImpl(
                             StandardCopyOption.REPLACE_EXISTING,
                         )
                     } catch (_: AtomicMoveNotSupportedException) {
+                        // Unreachable for a sibling temp file on any store the
+                        // default JDK provider handles (same store, atomic
+                        // rename supported); kept as a last resort for exotic
+                        // providers. This fallback is not atomic.
                         Files.move(
                             tempFile.toPath(),
                             storageFile.toPath(),
@@ -297,9 +318,6 @@ class PluginStorageProviderImpl(
                         tempFile.delete()
                     }
                 }
-
-                // Execute onSuccess block ONLY after successful atomic move
-                onSuccess()
             } catch (e: Exception) {
                 logger.error(
                     LogCategory.SYSTEM,
@@ -311,6 +329,10 @@ class PluginStorageProviderImpl(
                 )
                 throw e
             }
+
+            // Publish only after the move succeeded; a publish failure must
+            // not be misreported as a persistence failure.
+            onSuccess()
         }
     }
 }

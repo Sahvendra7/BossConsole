@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.util.Collections
 import java.util.Properties
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -181,8 +182,11 @@ class PluginStorageProviderImplTest {
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     provider.putString("k", "v")
                 }
-            // The body synchronously enters the commit and dispatches the
-            // NonCancellable IO work; cancelling now must not stop it.
+            // Premise: an uncontended Mutex.lock() acquires without
+            // suspending, and withContext(Dispatchers.IO) dispatches to
+            // another thread, so the body reaches the NonCancellable commit
+            // before cancel() below. If either premise changes, this test
+            // dies on the deadline check, which points at that premise.
             job.cancel()
 
             val storageFile = File(testDir, "storage.properties")
@@ -229,4 +233,116 @@ class PluginStorageProviderImplTest {
             assertEquals("yes", second.getString("persisted", null))
             assertEquals("""{"a":1}""", second.getJson("config"))
         }
+
+    @Test
+    fun `concurrent createStorage calls share one provider instance`() =
+        runBlocking {
+            val factory = createPluginStorageFactory()
+            val jobs =
+                (1..16).map {
+                    async(Dispatchers.Default) {
+                        factory.createStorage("shared-instance-plugin")
+                    }
+                }
+            val instances = jobs.awaitAll()
+            assertTrue(instances.distinct().size == 1, "one plugin id must map to one provider instance")
+        }
+
+    @Test
+    fun `a successful put publishes its key on the changes flow`() =
+        runBlocking {
+            val provider = PluginStorageProviderImpl("test-plugin", testDir)
+            val events = Collections.synchronizedList(mutableListOf<String>())
+            val collector =
+                launch {
+                    provider.observeChanges().collect { events += it }
+                }
+            try {
+                provider.putString("k", "v")
+                val deadline = System.currentTimeMillis() + 10000
+                while (events.size < 1) {
+                    check(System.currentTimeMillis() < deadline) { "change event must be published after commit" }
+                    delay(10)
+                }
+                assertEquals(listOf("k"), events, "exactly one event for the committed key")
+            } finally {
+                collector.cancel()
+            }
+        }
+
+    @Test
+    fun `a failed commit publishes no change event`() =
+        runBlocking {
+            val blockedParent = File(testDir, "blocked")
+            assertTrue(blockedParent.createNewFile(), "must be able to create the blocker file")
+            val provider = PluginStorageProviderImpl("blocked-plugin", File(blockedParent, "plugin-data"))
+            val events = Collections.synchronizedList(mutableListOf<String>())
+            val collector =
+                launch {
+                    provider.observeChanges().collect { events += it }
+                }
+            try {
+                assertFailsWith<IOException> {
+                    provider.putString("k", "v")
+                }
+                delay(200)
+                assertTrue(events.isEmpty(), "a failed commit must not publish a change event")
+            } finally {
+                collector.cancel()
+            }
+        }
+
+    @Test
+    fun `cancellation while queued behind the commit lock does not touch storage`() =
+        runBlocking {
+            val provider = PluginStorageProviderImpl("test-plugin", testDir)
+            val events = Collections.synchronizedList(mutableListOf<String>())
+            val collector =
+                launch {
+                    provider.observeChanges().collect { events += it }
+                }
+            try {
+                // A large commit keeps A holding transactionMutex for long
+                // enough that B is provably queued behind it.
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    provider.putString("a", "A".repeat(4 * 1024 * 1024))
+                }
+                val jobB =
+                    launch(start = CoroutineStart.UNDISPATCHED) {
+                        provider.putString("b", "B")
+                    }
+                // B is suspended in transactionMutex.lock() behind A.
+                jobB.cancel()
+                jobB.join()
+                assertFalse(provider.contains("b"), "queued-then-cancelled caller must not mutate the cache")
+
+                val deadline = System.currentTimeMillis() + 30000
+                while (provider.getString("a", null) == null) {
+                    check(System.currentTimeMillis() < deadline) { "A's commit must complete" }
+                    delay(25)
+                }
+                val disk = readDiskProperties()
+                assertEquals(
+                    "A".repeat(4 * 1024 * 1024),
+                    disk.getProperty("a"),
+                    "A's commit must be on disk",
+                )
+                assertFalse(disk.containsKey("b"), "B's cancelled write must not reach disk")
+                assertTrue(events.none { it == "b" }, "no event may be published for a cancelled queued caller")
+            } finally {
+                collector.cancel()
+            }
+        }
+
+    @Test
+    fun `a new provider sweeps orphaned temp files`() {
+        File(testDir, "storage.properties.tmp.orphan").apply {
+            createNewFile()
+            writeText("stale")
+        }
+        val provider = PluginStorageProviderImpl("sweep-plugin", testDir)
+        assertEquals("sweep-plugin", provider.getPluginId())
+        val orphans = testDir.listFiles { file -> file.name.startsWith("storage.properties.tmp.") }
+        assertTrue(orphans.isNullOrEmpty(), "orphaned temp files must be swept on provider construction")
+    }
 }
