@@ -366,4 +366,150 @@ class PluginStorageProviderImplTest {
         val orphans = testDir.listFiles { file -> file.name.startsWith("storage.properties.tmp.") }
         assertTrue(orphans.isNullOrEmpty(), "orphaned temp files must be swept on provider construction")
     }
+
+    @Test
+    fun `failed load does not permit destructive write`() =
+        runBlocking {
+            val seeded = Properties()
+            seeded["k"] = "v"
+            File(testDir, "storage.properties").outputStream().use { seeded.store(it, "seed") }
+
+            var shouldFail = true
+            val provider =
+                PluginStorageProviderImpl("test-plugin", testDir, loadFaultInjector = {
+                    if (shouldFail) throw IOException("Injected fault")
+                })
+
+            // Initial load failed. Attempt putString. Retry fails too because shouldFail is still true.
+            assertFailsWith<IOException> {
+                provider.putString("newK", "newV")
+            }
+
+            // Validate existing disk data is preserved
+            val disk = readDiskProperties()
+            assertEquals("v", disk.getProperty("k"))
+            assertFalse(disk.containsKey("newK"))
+        }
+
+    @Test
+    fun `failed load plus successful retry`() =
+        runBlocking {
+            val seeded = Properties()
+            seeded["k"] = "v"
+            File(testDir, "storage.properties").outputStream().use { seeded.store(it, "seed") }
+
+            var shouldFail = true
+            val provider =
+                PluginStorageProviderImpl("test-plugin", testDir, loadFaultInjector = {
+                    if (shouldFail) throw IOException("Injected fault")
+                })
+
+            // Fix the fault
+            shouldFail = false
+
+            // Retry should succeed during putString
+            provider.putString("newK", "newV")
+
+            // Validate existing disk data is preserved alongside new key
+            val disk = readDiskProperties()
+            assertEquals("v", disk.getProperty("k"))
+            assertEquals("newV", disk.getProperty("newK"))
+
+            // And cache is correct
+            assertEquals("v", provider.getString("k", null))
+        }
+
+    @Test
+    fun `failed retry propagates`() =
+        runBlocking {
+            var shouldFail = true
+            val provider =
+                PluginStorageProviderImpl("test-plugin", testDir, loadFaultInjector = {
+                    if (shouldFail) throw IOException("Injected fault")
+                })
+
+            assertFailsWith<IOException> {
+                provider.putString("k", "v")
+            }
+
+            val disk = readDiskProperties()
+            assertTrue(disk.isEmpty) // Unchanged
+        }
+
+    @Test
+    fun `failed load plus remove`() =
+        runBlocking {
+            val seeded = Properties()
+            seeded["k"] = "v"
+            File(testDir, "storage.properties").outputStream().use { seeded.store(it, "seed") }
+
+            var shouldFail = true
+            val provider =
+                PluginStorageProviderImpl("test-plugin", testDir, loadFaultInjector = {
+                    if (shouldFail) throw IOException("Injected fault")
+                })
+
+            shouldFail = false
+            provider.remove("k")
+
+            val disk = readDiskProperties()
+            assertFalse(disk.containsKey("k"))
+        }
+
+    @Test
+    fun `failed load plus clear`() =
+        runBlocking {
+            val seeded = Properties()
+            seeded["k"] = "v"
+            File(testDir, "storage.properties").outputStream().use { seeded.store(it, "seed") }
+
+            var shouldFail = true
+            val provider =
+                PluginStorageProviderImpl("test-plugin", testDir, loadFaultInjector = {
+                    if (shouldFail) throw IOException("Injected fault")
+                })
+
+            shouldFail = false
+            provider.clear()
+
+            val disk = readDiskProperties()
+            assertTrue(disk.isEmpty)
+        }
+
+    @Test
+    fun `successful empty load remains valid`() =
+        runBlocking {
+            val provider = PluginStorageProviderImpl("test-plugin", testDir)
+            provider.putString("k", "v")
+            val disk = readDiskProperties()
+            assertEquals("v", disk.getProperty("k"))
+        }
+
+    @Test
+    fun `recovery returns provider to normal state`() =
+        runBlocking {
+            val seeded = Properties()
+            seeded["k"] = "v"
+            File(testDir, "storage.properties").outputStream().use { seeded.store(it, "seed") }
+
+            var faultCount = 0
+            val provider =
+                PluginStorageProviderImpl("test-plugin", testDir, loadFaultInjector = {
+                    faultCount++
+                    if (faultCount == 1) throw IOException("Injected fault")
+                })
+
+            // First write triggers recovery
+            provider.putString("k2", "v2")
+
+            // Second write should NOT trigger fault injector again since loadFailed = false
+            provider.putString("k3", "v3")
+
+            assertEquals(2, faultCount, "Fault injector should run on init and first retry only")
+
+            val disk = readDiskProperties()
+            assertEquals("v", disk.getProperty("k"))
+            assertEquals("v2", disk.getProperty("k2"))
+            assertEquals("v3", disk.getProperty("k3"))
+        }
 }

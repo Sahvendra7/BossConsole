@@ -65,6 +65,7 @@ class PluginStorageFactoryImpl private constructor() : PluginStorageFactory {
 internal class PluginStorageProviderImpl(
     private val pluginId: String,
     private val storageDirOverride: File? = null,
+    private val loadFaultInjector: (() -> Unit)? = null,
 ) : PluginStorageProvider {
     companion object {
         private val logger = BossLogger.forComponent("PluginStorage")
@@ -91,6 +92,9 @@ internal class PluginStorageProviderImpl(
     // Serializes read-modify-persist-publish transactions per provider.
     private val transactionMutex = Mutex()
 
+    @Volatile
+    private var loadFailed = false
+
     init {
         // Load existing data on initialization
         loadFromDisk()
@@ -105,6 +109,8 @@ internal class PluginStorageProviderImpl(
         value: String,
     ) {
         transactionMutex.withLock {
+            ensureLoaded()
+
             val properties = Properties()
             cache.forEach { (k, v) -> properties[k] = v }
             properties[key] = value
@@ -194,6 +200,7 @@ internal class PluginStorageProviderImpl(
 
     override suspend fun remove(key: String) {
         transactionMutex.withLock {
+            ensureLoaded()
             if (!cache.containsKey(key)) return@withLock
 
             val properties = Properties()
@@ -211,6 +218,7 @@ internal class PluginStorageProviderImpl(
 
     override suspend fun clear() {
         transactionMutex.withLock {
+            ensureLoaded()
             if (cache.isEmpty()) return@withLock
 
             val properties = Properties()
@@ -245,6 +253,7 @@ internal class PluginStorageProviderImpl(
             .listFiles { file -> file.name.startsWith("storage.properties.tmp.") }
             ?.forEach { orphan -> orphan.delete() }
         try {
+            loadFaultInjector?.invoke()
             if (storageFile.exists()) {
                 val properties = Properties()
                 storageFile.inputStream().use { properties.load(it) }
@@ -260,7 +269,9 @@ internal class PluginStorageProviderImpl(
                     ),
                 )
             }
+            loadFailed = false
         } catch (e: Exception) {
+            loadFailed = true
             logger.error(
                 LogCategory.SYSTEM,
                 "Failed to load plugin storage",
@@ -269,6 +280,43 @@ internal class PluginStorageProviderImpl(
                 ),
                 e,
             )
+        }
+    }
+
+    private suspend fun ensureLoaded() {
+        if (!loadFailed) return
+        withContext(Dispatchers.IO) {
+            if (!loadFailed) return@withContext
+            try {
+                loadFaultInjector?.invoke()
+                val recovered = ConcurrentHashMap<String, String>()
+                if (storageFile.exists()) {
+                    val properties = Properties()
+                    storageFile.inputStream().use { properties.load(it) }
+                    properties.forEach { key, value ->
+                        recovered[key.toString()] = value.toString()
+                    }
+                }
+                cache.clear()
+                cache.putAll(recovered)
+                loadFailed = false
+                logger.debug(
+                    LogCategory.SYSTEM,
+                    "Successfully recovered plugin storage",
+                    mapOf(
+                        "pluginId" to pluginId,
+                        "keyCount" to cache.size,
+                    ),
+                )
+            } catch (e: Exception) {
+                logger.error(
+                    LogCategory.SYSTEM,
+                    "Failed to recover plugin storage",
+                    mapOf("pluginId" to pluginId),
+                    e,
+                )
+                throw e
+            }
         }
     }
 
