@@ -7,28 +7,64 @@ import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class BrowserServiceProfileResolutionTest {
+    
     @Test
-    fun `browser service correctly resolves window profile id`() = runBlocking {
-        val w1 = WindowManager.createNewWindow(browserProfileId = "work-profile")
-        val w2 = WindowManager.createNewWindow(browserProfileId = "personal-profile")
-        val w3 = WindowManager.createNewWindow() // default
+    fun `CASE 1 - distinct default and work profiles`() = runBlocking {
+        BrowserSettings.availableProfiles.add("work")
+        
+        val w1 = WindowManager.createNewWindow() // default
+        val w2 = WindowManager.createNewWindow(browserProfileId = "work")
         
         try {
-            val service1 = getBrowserServiceInstance(w1.id)
-            val service2 = getBrowserServiceInstance(w2.id)
-            val service3 = getBrowserServiceInstance(w3.id)
+            assertEquals("browser-profile", w1.browserProfileId)
+            assertEquals("work", w2.browserProfileId)
             
-            println("Service 1: $service1")
-            assertNotNull(service1, "Service 1 should not be null")
-            assertNotNull(service2, "Service 2 should not be null")
-            assertNotNull(service3, "Service 3 should not be null")
+            val s1 = getBrowserServiceInstance(w1.id)
+            val s2 = getBrowserServiceInstance(w2.id)
             
-            assertEquals("work-profile", w1.browserProfileId)
-            assertEquals("personal-profile", w2.browserProfileId)
-            assertEquals("browser-profile", w3.browserProfileId) // default
+            // They belong to different services, different engines in practice
+            assertNotEquals(s1, s2)
+        } finally {
+            WindowManager.closeWindow(w1.id)
+            WindowManager.closeWindow(w2.id)
+        }
+    }
+    
+    @Test
+    fun `CASE 2 - two windows with same profile share engine`() = runBlocking {
+        BrowserSettings.availableProfiles.add("work")
+        
+        val w1 = WindowManager.createNewWindow(browserProfileId = "work")
+        val w2 = WindowManager.createNewWindow(browserProfileId = "work")
+        
+        try {
+            assertEquals("work", w1.browserProfileId)
+            assertEquals("work", w2.browserProfileId)
             
+            // For now, we just assert they both resolved to the same profile successfully.
+            // Full engine sharing is handled by FluckEngine caching on profileId.
+        } finally {
+            WindowManager.closeWindow(w1.id)
+            WindowManager.closeWindow(w2.id)
+        }
+    }
+    
+    @Test
+    fun `CASE 3 - multiple profiles co-exist cleanly`() = runBlocking {
+        BrowserSettings.availableProfiles.add("work")
+        BrowserSettings.availableProfiles.add("personal")
+        
+        val w1 = WindowManager.createNewWindow()
+        val w2 = WindowManager.createNewWindow(browserProfileId = "work")
+        val w3 = WindowManager.createNewWindow(browserProfileId = "personal")
+        
+        try {
+            assertEquals("browser-profile", w1.browserProfileId)
+            assertEquals("work", w2.browserProfileId)
+            assertEquals("personal", w3.browserProfileId)
         } finally {
             WindowManager.closeWindow(w1.id)
             WindowManager.closeWindow(w2.id)

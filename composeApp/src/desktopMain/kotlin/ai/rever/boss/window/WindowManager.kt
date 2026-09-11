@@ -4,6 +4,7 @@ import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.Project
+import ai.rever.boss.plugin.browser.BrowserSettings
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
@@ -74,6 +75,7 @@ object WindowManager {
         windowType: WindowType = WindowType.MAIN,
         browserProfileId: String = "browser-profile",
     ): BossWindowState {
+        require(BrowserSettings.availableProfiles.contains(browserProfileId)) { "Browser profile '$browserProfileId' does not exist" }
         val windowId = UUID.randomUUID().toString()
 
         // Calculate cascade position if not specified

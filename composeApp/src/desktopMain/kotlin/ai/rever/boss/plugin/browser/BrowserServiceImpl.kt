@@ -875,7 +875,7 @@ object BrowserServiceImpl : BrowserService {
                     inUse.add(fence)
                     val profile =
                         FluckEngine.findProfile(fence, profileId) ?: run {
-                            evictIfNeeded()
+                            evictIfNeeded(profileId)
                             FluckEngine.newRpaProfile(fence, profileId)
                         }
                     ManagedRef(fence, profile, engineProfileId = profileId, ephemeral = false, namedId = namedId, heldMutex = mutex)
@@ -924,7 +924,7 @@ object BrowserServiceImpl : BrowserService {
                     meta[ref.namedId] = m.copy(lastUsedMs = System.currentTimeMillis(), diskBytes = size)
                 }
                 persistMeta()
-                evictIfNeeded()
+                evictIfNeeded(ref.engineProfileId)
             }
         } finally {
             ref.heldMutex?.unlock()
@@ -947,7 +947,7 @@ object BrowserServiceImpl : BrowserService {
             inUse.add(fence)
             val profile =
                 FluckEngine.findProfile(fence, profileId) ?: run {
-                    evictIfNeeded()
+                    evictIfNeeded(profileId)
                     FluckEngine.newRpaProfile(fence, profileId)
                 }
             if (auth != null) {
@@ -1185,7 +1185,7 @@ object BrowserServiceImpl : BrowserService {
      * walks the FS when over cap. A freshly-created profile caches diskBytes=0 until
      * its first dispose refreshes it, so the cap can be transiently exceeded.
      */
-    private suspend fun evictIfNeeded() =
+    private suspend fun evictIfNeeded(profileId: String) =
         withContext(Dispatchers.IO) {
             try {
                 if (meta.values.sumOf { it.diskBytes } <= diskCapBytes) return@withContext
@@ -1202,7 +1202,7 @@ object BrowserServiceImpl : BrowserService {
                         if (!vm.tryLock()) continue
                         try {
                             val m = meta[id] ?: continue
-                            FluckEngine.findProfile(m.name, BrowserSettings.currentProfile)?.let { FluckEngine.deleteRpaProfile(it, BrowserSettings.currentProfile) }
+                            FluckEngine.findProfile(m.name, profileId)?.let { FluckEngine.deleteRpaProfile(it, profileId) }
                             meta.remove(id)
                             logger.info(LogCategory.BROWSER, "Evicted LRU managed profile", mapOf("id" to id))
                         } finally {
