@@ -47,6 +47,10 @@ class PluginStorageFactoryImpl private constructor() : PluginStorageFactory {
     // Cache of storage providers per plugin
     private val storageCache = ConcurrentHashMap<String, PluginStorageProviderImpl>()
 
+    // computeIfAbsent is atomic per key, so one provider instance per
+    // plugin id even under concurrent calls. The mapping function runs the
+    // provider constructor (disk load + temp sweep) inside a CHM bin lock
+    // and must never call back into this factory.
     override fun createStorage(pluginId: String): PluginStorageProvider =
         storageCache.computeIfAbsent(pluginId) { PluginStorageProviderImpl(pluginId) }
 }
@@ -58,7 +62,7 @@ class PluginStorageFactoryImpl private constructor() : PluginStorageFactory {
  * [storageDirOverride] is a test-only seam; production callers pass null and
  * use the [BossDirectories] path.
  */
-class PluginStorageProviderImpl(
+internal class PluginStorageProviderImpl(
     private val pluginId: String,
     private val storageDirOverride: File? = null,
 ) : PluginStorageProvider {
@@ -271,11 +275,12 @@ class PluginStorageProviderImpl(
     /**
      * Atomically replaces the storage file with [properties].
      *
-     * The unique sibling temp file is fsynced before the rename, so a crash
-     * cannot leave a renamed file pointing at unflushed data. The rename
-     * makes the replacement atomic with respect to the previous committed
-     * state. The directory entry itself is not fsynced, so the very first
-     * commit for a plugin may remain unlinked on a power loss.
+     * The unique sibling temp file is fsynced before the rename, so a
+     * process crash cannot leave a renamed file pointing at unflushed data
+     * and committed data is never torn. The rename itself is not fsynced,
+     * so a power loss can lose the most recent rename, reverting to the
+     * previously committed file; for the first commit that means no file
+     * at all.
      */
     private suspend fun commitTransaction(
         properties: Properties,

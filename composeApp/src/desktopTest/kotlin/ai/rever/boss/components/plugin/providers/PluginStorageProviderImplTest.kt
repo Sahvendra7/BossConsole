@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -245,7 +246,7 @@ class PluginStorageProviderImplTest {
                     }
                 }
             val instances = jobs.awaitAll()
-            assertTrue(instances.distinct().size == 1, "one plugin id must map to one provider instance")
+            assertEquals(1, instances.distinct().size, "one plugin id must map to one provider instance")
         }
 
     @Test
@@ -257,6 +258,10 @@ class PluginStorageProviderImplTest {
                 launch {
                     provider.observeChanges().collect { events += it }
                 }
+            // yield() re-queues this coroutine behind the collector on the
+            // event loop, so the subscriber is registered inside collect()
+            // before any commit can emit.
+            yield()
             try {
                 provider.putString("k", "v")
                 val deadline = System.currentTimeMillis() + 10000
@@ -281,6 +286,10 @@ class PluginStorageProviderImplTest {
                 launch {
                     provider.observeChanges().collect { events += it }
                 }
+            // yield() re-queues this coroutine behind the collector on the
+            // event loop, so the subscriber is registered inside collect()
+            // before any commit can emit.
+            yield()
             try {
                 assertFailsWith<IOException> {
                     provider.putString("k", "v")
@@ -301,9 +310,17 @@ class PluginStorageProviderImplTest {
                 launch {
                     provider.observeChanges().collect { events += it }
                 }
+            // yield() re-queues this coroutine behind the collector on the
+            // event loop, so the subscriber is registered inside collect()
+            // before any commit can emit.
+            yield()
             try {
-                // A large commit keeps A holding transactionMutex for long
-                // enough that B is provably queued behind it.
+                // The 4 MB value is load-bearing, not belt-and-braces: it
+                // keeps A holding transactionMutex past B's lock() attempt.
+                // If A ever won that race, B would commit inline and this
+                // test would fail on the contains("b") assertion, which
+                // reads as a production bug - the failure would be
+                // misattributed to the code under test.
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     provider.putString("a", "A".repeat(4 * 1024 * 1024))
                 }
