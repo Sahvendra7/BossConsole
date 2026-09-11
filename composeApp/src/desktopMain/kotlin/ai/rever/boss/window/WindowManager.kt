@@ -85,6 +85,7 @@ object WindowManager {
                 title = "BOSS - Business Operating System + Simulation",
                 position = windowPosition,
                 windowType = windowType,
+                browserProfileId = browserProfileId,
             )
 
         _windows.add(windowState)

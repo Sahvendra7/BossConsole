@@ -446,7 +446,7 @@ actual fun getBrowserState(
     }
 }
 
-actual fun getEngineGeneration(): Long = FluckEngine.currentEngineGeneration(ai.rever.boss.plugin.browser.BrowserSettings.currentProfile)
+actual fun getEngineGeneration(profileId: String?): Long = FluckEngine.currentEngineGeneration(profileId ?: ai.rever.boss.plugin.browser.BrowserSettings.currentProfile)
 
 actual fun isBrowserValid(browser: Any?): Boolean {
     if (browser == null) return false
@@ -477,8 +477,8 @@ actual fun getMaxInitRetries(): Int = BrowserSettings.maxInitRetries
 actual fun getMaxRecoveryAttempts(): Int = BrowserSettings.maxRecoveryAttempts
 
 @Composable
-actual fun collectEngineGeneration(): Long {
-    val generation by FluckEngine.getEngineGenerationFlow(ai.rever.boss.plugin.browser.BrowserSettings.currentProfile).collectAsState()
+actual fun collectEngineGeneration(profileId: String?): Long {
+    val generation by FluckEngine.getEngineGenerationFlow(profileId ?: ai.rever.boss.plugin.browser.BrowserSettings.currentProfile).collectAsState()
     return generation
 }
 

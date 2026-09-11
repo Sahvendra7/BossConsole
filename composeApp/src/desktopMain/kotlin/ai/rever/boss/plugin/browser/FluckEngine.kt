@@ -836,12 +836,12 @@ fun currentEngineGeneration(profileId: String): Long {
     // multiple RPAs with different credentials concurrently.
 
     /** Create a fresh isolated profile for an RPA run. Caller must delete it when done. */
-    fun newRpaProfile(name: String): com.teamdev.jxbrowser.profile.Profile = synchronized(engineLock) { getEngine(BrowserSettings.currentProfile).profiles().newProfile(name) }
+    fun newRpaProfile(name: String, profileId: String): com.teamdev.jxbrowser.profile.Profile = synchronized(engineLock) { getEngine(profileId).profiles().newProfile(name) }
 
     /** Look up an existing profile by name, or null. */
-    fun findProfile(name: String): com.teamdev.jxbrowser.profile.Profile? =
+    fun findProfile(name: String, profileId: String): com.teamdev.jxbrowser.profile.Profile? =
         try {
-            synchronized(engineLock) { getEngine(BrowserSettings.currentProfile).profiles().list().firstOrNull { it.name() == name } }
+            synchronized(engineLock) { getEngine(profileId).profiles().list().firstOrNull { it.name() == name } }
         } catch (e: Exception) {
             logger.debug(
                 LogCategory.BROWSER,
@@ -852,9 +852,9 @@ fun currentEngineGeneration(profileId: String): Long {
         }
 
     /** Delete an RPA profile and its on-disk data. Safe to call if already gone. */
-    fun deleteRpaProfile(profile: com.teamdev.jxbrowser.profile.Profile) {
+    fun deleteRpaProfile(profile: com.teamdev.jxbrowser.profile.Profile, profileId: String) {
         try {
-            synchronized(engineLock) { getEngine(BrowserSettings.currentProfile).profiles().delete(profile) }
+            synchronized(engineLock) { getEngine(profileId).profiles().delete(profile) }
         } catch (e: Exception) {
             logger.debug(LogCategory.BROWSER, "Error deleting RPA profile", mapOf("error" to (e.message ?: "unknown")))
         }
@@ -865,10 +865,10 @@ fun currentEngineGeneration(profileId: String): Long {
      * "rpa-eph-" profiles orphaned by a previous/crashed session). Returns the
      * number removed. Never touches the default profile.
      */
-    fun cleanupOrphanedRpaProfiles(prefix: String): Int =
+    fun cleanupOrphanedRpaProfiles(prefix: String, profileId: String): Int =
         try {
             synchronized(engineLock) {
-                val profiles = getEngine(BrowserSettings.currentProfile).profiles()
+                val profiles = getEngine(profileId).profiles()
                 val orphans = profiles.list().filter { !it.isDefault && it.name().startsWith(prefix) }
                 orphans.forEach { profiles.delete(it) }
                 if (orphans.isNotEmpty()) {

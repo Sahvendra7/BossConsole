@@ -264,7 +264,7 @@ expect suspend fun resetBrowserProfile(profileId: String? = null): Boolean
 
 // Platform-specific engine generation - increments when engine reinitializes
 // Browser tabs can use this to detect when their browser instance is stale
-expect fun getEngineGeneration(): Long
+expect fun getEngineGeneration(profileId: String? = null): Long
 
 // Platform-specific browser validity check - returns true if browser is still open and usable
 // Used to detect when underlying browser instance has been closed (e.g., engine shutdown)
@@ -285,7 +285,7 @@ expect fun getMaxRecoveryAttempts(): Int
 
 // Platform-specific composable to observe engine generation changes
 @Composable
-expect fun collectEngineGeneration(): Long
+expect fun collectEngineGeneration(profileId: String? = null): Long
 
 // Platform-specific browser view state creation
 // Returns null if no valid window is available
