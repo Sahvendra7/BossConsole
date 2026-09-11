@@ -219,12 +219,13 @@ private object WedgeRecovery {
      * @return true when a fresh engine is in place and the creation is worth retrying.
      */
     suspend fun recycleIfWedged(): Boolean {
-        val generation = FluckEngine.currentEngineGeneration
+        val generation = FluckEngine.currentEngineGeneration(profileId = BrowserSettings.currentProfile)
         val shouldRecycle = detector.recordFailure(System.currentTimeMillis(), generation)
         FluckEngine.reportWedgeUnrecoverable(detector.isExhausted)
         if (!shouldRecycle) return false
         return FluckEngine.recycleWedgedEngine(
             "newBrowser() failed repeatedly (auto-recycle #${detector.recycleAttempts})",
+            profileId = BrowserSettings.currentProfile,
         )
     }
 }
@@ -404,7 +405,7 @@ object BrowserServiceImpl : BrowserService {
             // closed-and-recreatable) engine reports available — initialization
             // happens lazily inside createBrowser, whose failure paths callers
             // already surface with retry UI.
-            val initErr = FluckEngine.initError
+            val initErr = FluckEngine.initError(BrowserSettings.currentProfile)
             val available = initErr == null
             if (!available) {
                 logger.warn(
@@ -528,7 +529,7 @@ object BrowserServiceImpl : BrowserService {
         return try {
             // Read as one step: the generation that is current when this browser is created is
             // the only one it can honestly claim. See FluckEngine.engineWithGeneration.
-            val (engine, generation) = FluckEngine.engineWithGeneration()
+            val (engine, generation) = FluckEngine.engineWithGeneration(BrowserSettings.currentProfile)
 
             // Optionally run on an isolated managed profile (ephemeral or named),
             // seeding auth into it first. Null = the engine default profile (tabs).
@@ -564,7 +565,7 @@ object BrowserServiceImpl : BrowserService {
             // Checked before touching the browser at all, since settings() would be the first
             // such call. Ordered after creation for a reason: a check on the way in cannot see
             // a recycle that has not happened yet, which is the whole failure mode.
-            if (FluckEngine.currentEngineGeneration != generation) {
+            if (FluckEngine.currentEngineGeneration(BrowserSettings.currentProfile) != generation) {
                 engineRecycled = true
                 // Best-effort: against a closed engine this is a no-op or a dead-IPC failure,
                 // but the browser is unreachable from any dispose path once we throw, and a

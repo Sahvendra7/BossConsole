@@ -120,12 +120,12 @@ internal actual fun AuthBrandSite(
             // the same lock.
             created =
                 withContext(Dispatchers.IO) {
-                    FluckEngine.engine.newBrowser().also { installBrowserChromeOrClose(it) }
+                    FluckEngine.getEngine(ai.rever.boss.plugin.browser.BrowserSettings.currentProfile).newBrowser().also { installBrowserChromeOrClose(it) }
                 }
-            created.navigation().on(LoadFinished::class.java) {
+            created?.navigation()?.on(LoadFinished::class.java) {
                 scope.launch(Dispatchers.Main) { loaded = true }
             }
-            created.navigation().loadUrl(page)
+            created?.navigation()?.loadUrl(page)
             browser = created
             // Park until cancelled, so the `finally` below is this panel's disposal hook.
             awaitCancellation()

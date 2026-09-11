@@ -72,6 +72,7 @@ object WindowManager {
     fun createNewWindow(
         position: WindowPosition? = null,
         windowType: WindowType = WindowType.MAIN,
+        browserProfileId: String = "browser-profile",
     ): BossWindowState {
         val windowId = UUID.randomUUID().toString()
 
@@ -112,8 +113,9 @@ object WindowManager {
         initialTab: TabInfo,
         position: WindowPosition? = null,
         windowType: WindowType = WindowType.MAIN,
+        browserProfileId: String = "browser-profile",
     ): BossWindowState {
-        val windowState = createNewWindow(position, windowType)
+        val windowState = createNewWindow(position, windowType, browserProfileId)
         // Store the pending tab for this window
         pendingInitialTabs[windowState.id] = initialTab
         logger.debug(LogCategory.UI, "Stored pending tab for new window", mapOf("tab" to initialTab.title, "windowId" to windowState.id))
@@ -143,8 +145,9 @@ object WindowManager {
         project: Project,
         position: WindowPosition? = null,
         windowType: WindowType = WindowType.MAIN,
+        browserProfileId: String = "browser-profile",
     ): BossWindowState {
-        val windowState = createNewWindow(position, windowType)
+        val windowState = createNewWindow(position, windowType, browserProfileId)
         // Store the pending project for this window
         pendingInitialProjects[windowState.id] = project
         logger.debug(
@@ -322,6 +325,7 @@ data class BossWindowState(
     var title: String,
     val position: WindowPosition?,
     val windowType: WindowType = WindowType.MAIN,
+    val browserProfileId: String = "browser-profile",
 ) {
     /**
      * Stream of programmatic resize requests (BossTerm "Fit host to my screen").

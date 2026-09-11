@@ -582,7 +582,7 @@ fun main(args: Array<String>) {
             }
             try {
                 // Close browser engine first to release lock files
-                val engine = ai.rever.boss.plugin.browser.FluckEngine.currentEngine
+                val engine = ai.rever.boss.plugin.browser.FluckEngine.currentEngine(ai.rever.boss.plugin.browser.BrowserSettings.currentProfile)
                 if (engine != null && !engine.isClosed) {
                     engine.close()
                 }

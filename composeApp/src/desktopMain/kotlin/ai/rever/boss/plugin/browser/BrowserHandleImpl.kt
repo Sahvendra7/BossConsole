@@ -2509,7 +2509,7 @@ internal class BrowserHandleImpl(
         get() =
             !disposed.get() &&
                 !connectionDead.get() &&
-                FluckEngine.currentEngineGeneration == engineGeneration &&
+                FluckEngine.currentEngineGeneration(ai.rever.boss.plugin.browser.BrowserSettings.currentProfile) == engineGeneration &&
                 runCatching { !browser.isClosed }.getOrDefault(false)
 
     /**

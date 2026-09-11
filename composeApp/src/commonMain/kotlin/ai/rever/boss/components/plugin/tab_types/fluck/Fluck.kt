@@ -256,11 +256,11 @@ class FluckTabInfo(
 }
 
 // Platform-specific browser creation
-expect fun createBrowser(): Any
+expect fun createBrowser(profileId: String? = null): Any
 
 // Platform-specific browser reset (clears profile, cache, cookies)
 // This is a suspend function to avoid blocking the UI thread during I/O operations
-expect suspend fun resetBrowserProfile(): Boolean
+expect suspend fun resetBrowserProfile(profileId: String? = null): Boolean
 
 // Platform-specific engine generation - increments when engine reinitializes
 // Browser tabs can use this to detect when their browser instance is stale
@@ -318,6 +318,7 @@ expect fun disposeBrowserViewState(browserViewState: Any)
 // This enables event-driven recovery instead of polling
 // window: Optional AWT window to use (from LocalAwtWindow) for correct multi-window support
 expect fun getBrowserState(
+    profileId: String? = null,
     url: String,
     onOpenInNewTab: ((String) -> Unit)? = null,
     onBrowserClosed: (() -> Unit)? = null,
