@@ -276,9 +276,11 @@ internal class PluginStorageProviderImpl(
      * Atomically replaces the storage file with [properties].
      *
      * The unique sibling temp file is fsynced before the rename, so a
-     * process crash cannot leave a renamed file pointing at unflushed data
-     * and committed data is never torn. The rename itself is not fsynced,
-     * so a power loss can lose the most recent rename, reverting to the
+     * process crash cannot leave a renamed file pointing at unflushed
+     * data. On the atomic path committed data is never torn; the
+     * non-atomic [AtomicMoveNotSupportedException] fallback is the only
+     * carve-out. The parent directory is not fsynced after the rename, so
+     * a power loss can lose the most recent rename, reverting to the
      * previously committed file; for the first commit that means no file
      * at all.
      */

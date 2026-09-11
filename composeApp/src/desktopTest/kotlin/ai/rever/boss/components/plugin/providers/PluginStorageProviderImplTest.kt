@@ -259,8 +259,12 @@ class PluginStorageProviderImplTest {
                     provider.observeChanges().collect { events += it }
                 }
             // yield() re-queues this coroutine behind the collector on the
-            // event loop, so the subscriber is registered inside collect()
-            // before any commit can emit.
+            // event loop, so the collector body runs before any commit can
+            // emit. That is sufficient only because SharedFlow.collect
+            // allocates its subscriber slot synchronously before its first
+            // suspension, which holds while observeChanges() stays an
+            // unadorned asSharedFlow(); an operator that suspends before
+            // subscribing would silently void this barrier.
             yield()
             try {
                 provider.putString("k", "v")
@@ -287,8 +291,12 @@ class PluginStorageProviderImplTest {
                     provider.observeChanges().collect { events += it }
                 }
             // yield() re-queues this coroutine behind the collector on the
-            // event loop, so the subscriber is registered inside collect()
-            // before any commit can emit.
+            // event loop, so the collector body runs before any commit can
+            // emit. That is sufficient only because SharedFlow.collect
+            // allocates its subscriber slot synchronously before its first
+            // suspension, which holds while observeChanges() stays an
+            // unadorned asSharedFlow(); an operator that suspends before
+            // subscribing would silently void this barrier.
             yield()
             try {
                 assertFailsWith<IOException> {
@@ -311,8 +319,12 @@ class PluginStorageProviderImplTest {
                     provider.observeChanges().collect { events += it }
                 }
             // yield() re-queues this coroutine behind the collector on the
-            // event loop, so the subscriber is registered inside collect()
-            // before any commit can emit.
+            // event loop, so the collector body runs before any commit can
+            // emit. That is sufficient only because SharedFlow.collect
+            // allocates its subscriber slot synchronously before its first
+            // suspension, which holds while observeChanges() stays an
+            // unadorned asSharedFlow(); an operator that suspends before
+            // subscribing would silently void this barrier.
             yield()
             try {
                 // The 4 MB value is load-bearing, not belt-and-braces: it
