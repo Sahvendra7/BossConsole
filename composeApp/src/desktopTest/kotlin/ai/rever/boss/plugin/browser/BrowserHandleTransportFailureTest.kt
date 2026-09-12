@@ -28,11 +28,12 @@ class BrowserHandleTransportFailureTest {
     @Test
     fun `cause-cycle termination finishes safely and evaluates to false`() {
         val a = RuntimeException("A")
+
         class CyclicException : RuntimeException("B") {
             override val cause: Throwable get() = a
         }
         a.initCause(CyclicException())
-        
+
         assertFalse(isTransportFailure(a))
     }
 
