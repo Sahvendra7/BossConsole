@@ -1,4 +1,3 @@
-@file:Suppress("MaxLineLength", "ForbiddenComment")
 
 package ai.rever.boss.plugin.browser
 
@@ -214,7 +213,8 @@ private object WedgeRecovery {
     /** A browser was created, so the engine is demonstrably fine. */
     fun recordSuccess(profileId: String) {
         getDetector(profileId).recordSuccess()
-        FluckEngine.reportWedgeUnrecoverable(false) // TODO: reportWedgeUnrecoverable should be per profile if needed, but the original was singleton.
+        FluckEngine.reportWedgeUnrecoverable(false)
+        // Note: reportWedgeUnrecoverable should be per profile if needed, but the original was singleton.
     }
 
     /**
@@ -456,7 +456,10 @@ object BrowserServiceImpl : BrowserService {
         config: BrowserConfig,
     ): BrowserHandle? {
         require(windowId.isNotBlank()) { "Browser owner windowId must not be blank" }
-        val profileId = ai.rever.boss.window.WindowManager.getWindow(windowId)?.browserProfileId ?: BrowserSettings.currentProfile
+        val profileId =
+            ai.rever.boss.window.WindowManager
+                .getWindow(windowId)
+                ?.browserProfileId ?: BrowserSettings.currentProfile
         return createBrowserWithRetry(config, ownerWindowId = windowId, profileId = profileId)
     }
 
@@ -841,7 +844,7 @@ object BrowserServiceImpl : BrowserService {
 
     @Volatile private var loaded = false
 
-        /** A handle's managed profile: its fence name, the JxBrowser profile, and (named only) lock + id. */
+    /** A handle's managed profile: its fence name, the JxBrowser profile, and (named only) lock + id. */
     private class ManagedRef(
         val profileName: String,
         val profile: Profile,
@@ -857,7 +860,10 @@ object BrowserServiceImpl : BrowserService {
      * so concurrent creates on the same name serialize. Ephemeral profiles get a
      * fresh generated name, deleted on dispose.
      */
-    private suspend fun acquireManagedProfile(config: BrowserConfig, profileId: String): ManagedRef? {
+    private suspend fun acquireManagedProfile(
+        config: BrowserConfig,
+        profileId: String,
+    ): ManagedRef? {
         // Plain tabs (no profile requested) skip all managed-profile machinery.
         if (!config.ephemeralProfile && config.profileName == null) return null
         ensureLoaded()
@@ -866,7 +872,14 @@ object BrowserServiceImpl : BrowserService {
             config.ephemeralProfile -> {
                 val name = EPHEMERAL_PREFIX + UUID.randomUUID().toString().replace("-", "")
                 inUse.add(name)
-                ManagedRef(name, FluckEngine.newRpaProfile(name, profileId), engineProfileId = profileId, ephemeral = true, namedId = null, heldMutex = null)
+                ManagedRef(
+                    name,
+                    FluckEngine.newRpaProfile(name, profileId),
+                    engineProfileId = profileId,
+                    ephemeral = true,
+                    namedId = null,
+                    heldMutex = null,
+                )
             }
 
             config.profileName != null -> {
@@ -881,7 +894,14 @@ object BrowserServiceImpl : BrowserService {
                             evictIfNeeded(profileId)
                             FluckEngine.newRpaProfile(fence, profileId)
                         }
-                    ManagedRef(fence, profile, engineProfileId = profileId, ephemeral = false, namedId = namedId, heldMutex = mutex)
+                    ManagedRef(
+                        fence,
+                        profile,
+                        engineProfileId = profileId,
+                        ephemeral = false,
+                        namedId = namedId,
+                        heldMutex = mutex,
+                    )
                 } catch (e: Throwable) {
                     inUse.remove(fence)
                     mutex.unlock()
@@ -934,12 +954,17 @@ object BrowserServiceImpl : BrowserService {
         }
     }
 
-    override suspend fun seedProfile(profileName: String, auth: BrowserAuthSpec?) { seedProfile(profileName, auth, BrowserSettings.currentProfile) }
+    override suspend fun seedProfile(
+        profileName: String,
+        auth: BrowserAuthSpec?,
+    ) {
+        seedProfile(profileName, auth, BrowserSettings.currentProfile)
+    }
 
     suspend fun seedProfile(
         profileName: String,
         auth: BrowserAuthSpec?,
-        profileId: String
+        profileId: String,
     ) {
         ensureLoaded()
         require(profileName.isNotBlank()) { "profileName must not be blank" }
@@ -981,10 +1006,14 @@ object BrowserServiceImpl : BrowserService {
         }
     }
 
+    @Suppress("MaxLineLength")
     override fun deleteProfile(profileName: String): Boolean = deleteProfile(profileName, BrowserSettings.currentProfile)
 
     @Suppress("ReturnCount")
-    fun deleteProfile(profileName: String, profileId: String): Boolean {
+    fun deleteProfile(
+        profileName: String,
+        profileId: String,
+    ): Boolean {
         ensureLoaded()
         val fence = NAMED_PREFIX + sanitize(profileName)
         val mutex = mutexFor(profileName)
@@ -1206,7 +1235,9 @@ object BrowserServiceImpl : BrowserService {
                         if (!vm.tryLock()) continue
                         try {
                             val m = meta[id] ?: continue
-                            FluckEngine.findProfile(m.name, profileId)?.let { FluckEngine.deleteRpaProfile(it, profileId) }
+                            FluckEngine.findProfile(m.name, profileId)?.let {
+                                FluckEngine.deleteRpaProfile(it, profileId)
+                            }
                             meta.remove(id)
                             logger.info(LogCategory.BROWSER, "Evicted LRU managed profile", mapOf("id" to id))
                         } finally {

@@ -1,4 +1,3 @@
-@file:Suppress("MaxLineLength")
 
 package ai.rever.boss.window
 
@@ -77,7 +76,9 @@ object WindowManager {
         windowType: WindowType = WindowType.MAIN,
         browserProfileId: String = "browser-profile",
     ): BossWindowState {
-        require(BrowserSettings.availableProfiles.contains(browserProfileId)) { "Browser profile '$browserProfileId' does not exist" }
+        require(BrowserSettings.availableProfiles.contains(browserProfileId)) {
+            "Browser profile '$browserProfileId' does not exist"
+        }
         val windowId = UUID.randomUUID().toString()
 
         // Calculate cascade position if not specified

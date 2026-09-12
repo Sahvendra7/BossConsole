@@ -1,4 +1,3 @@
-@file:Suppress("MaxLineLength")
 
 package ai.rever.boss.components.plugin.tab_types.fluck
 
@@ -268,7 +267,10 @@ private fun configureBrowserPopupHandler(
 }
 
 actual fun createBrowser(profileId: String?): Any {
-    val browser = FluckEngine.getEngine(profileId ?: "browser-profile").newBrowser().also { installBrowserChromeOrClose(it) }
+    val browser =
+        FluckEngine.getEngine(profileId ?: "browser-profile").newBrowser().also {
+            installBrowserChromeOrClose(it)
+        }
     browser.settings().enableOverscrollHistoryNavigation()
     FluckEngine.setupBrowserDownloadHandler(browser as com.teamdev.jxbrowser.browser.Browser)
     FluckEngine.setupCaptureSessionHandler(browser)

@@ -1,4 +1,3 @@
-@file:Suppress("MaxLineLength", "LongMethod")
 
 package ai.rever.boss.components.auth.forms
 

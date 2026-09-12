@@ -1,4 +1,3 @@
-@file:Suppress("MaxLineLength")
 
 package ai.rever.boss.plugin.browser
 
@@ -687,7 +686,10 @@ object FluckEngine {
             attemptCounts[profileId] = 0
             val nextGen = (_engineGenerations[profileId] ?: 0L) + 1L
             _engineGenerations[profileId] = nextGen
-            _engineGenerationFlows.computeIfAbsent(profileId) { kotlinx.coroutines.flow.MutableStateFlow(0L) }.value = nextGen
+            _engineGenerationFlows
+                .computeIfAbsent(profileId) {
+                    kotlinx.coroutines.flow.MutableStateFlow(0L)
+                }.value = nextGen
         }
 
         logger.warn(
@@ -848,7 +850,10 @@ object FluckEngine {
     fun newRpaProfile(
         name: String,
         profileId: String,
-    ): com.teamdev.jxbrowser.profile.Profile = synchronized(engineLock) { getEngine(profileId).profiles().newProfile(name) }
+    ): com.teamdev.jxbrowser.profile.Profile =
+        synchronized(engineLock) {
+            getEngine(profileId).profiles().newProfile(name)
+        }
 
     /** Look up an existing profile by name, or null. */
     fun findProfile(
