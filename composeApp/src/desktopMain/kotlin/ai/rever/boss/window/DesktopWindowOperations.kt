@@ -21,7 +21,10 @@ actual object WindowOperations {
      *
      * @param tabInfo The tab to open in the new window
      */
-    actual fun openTabInNewWindow(tabInfo: TabInfo, browserProfileId: String) {
+    actual fun openTabInNewWindow(
+        tabInfo: TabInfo,
+        browserProfileId: String,
+    ) {
         logger.debug(LogCategory.UI, "Creating new window with tab", mapOf("title" to tabInfo.title))
         WindowManager.createNewWindowWithTab(tabInfo, browserProfileId = browserProfileId)
     }
@@ -61,7 +64,10 @@ actual object WindowOperations {
      *
      * @param project The project to open in the new window
      */
-    actual fun createNewWindowWithProject(project: Project, browserProfileId: String) {
+    actual fun createNewWindowWithProject(
+        project: Project,
+        browserProfileId: String,
+    ) {
         logger.debug(LogCategory.UI, "Creating new window with project", mapOf("name" to project.name))
         WindowManager.createNewWindowWithProject(project, browserProfileId = browserProfileId)
     }

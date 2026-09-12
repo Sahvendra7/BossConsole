@@ -150,25 +150,24 @@ object FluckEngine {
     // Also: non-volatile Long writes aren't guaranteed atomic on the JVM.
     private val _engineGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val _engineGenerationFlows = java.util.concurrent.ConcurrentHashMap<String, MutableStateFlow<Long>>()
-    
-    fun getEngineGenerationFlow(profileId: String): kotlinx.coroutines.flow.StateFlow<Long> {
-        return _engineGenerationFlows.computeIfAbsent(profileId) { MutableStateFlow(0L) }.asStateFlow()
-    }
+
+    fun getEngineGenerationFlow(profileId: String): kotlinx.coroutines.flow.StateFlow<Long> =
+        _engineGenerationFlows
+            .computeIfAbsent(profileId) {
+                MutableStateFlow(0L)
+            }.asStateFlow()
 
     /**
      * Current engine generation. Browsers created before this generation are stale.
      */
-        /**
+
+    /**
      * Classified initialization error for better user feedback.
      * Returns null if no error or engine initialized successfully.
      */
-    fun initError(profileId: String): EngineInitError? {
-        return initializationErrors[profileId]?.let { classifyError(it) }
-    }
+    fun initError(profileId: String): EngineInitError? = initializationErrors[profileId]?.let { classifyError(it) }
 
-fun currentEngineGeneration(profileId: String): Long {
-        return _engineGenerations[profileId] ?: 0L
-    }
+    fun currentEngineGeneration(profileId: String): Long = _engineGenerations[profileId] ?: 0L
 
     /**
      * Classify the initialization error for user-friendly messages.
@@ -462,6 +461,7 @@ fun currentEngineGeneration(profileId: String): Long {
 
     // Expose current engine instance for shutdown purposes
     fun currentEngine(profileId: String): Engine? = _engines[profileId]
+
     fun getAllEngines(): List<Engine> = _engines.values.toList()
 
     /**
@@ -641,7 +641,11 @@ fun currentEngineGeneration(profileId: String): Long {
      * through it throws ObjectClosedException — which is a crash inside whichever plugin made
      * the call, not a recoverable browser error.
      */
-    fun engineWithGeneration(profileId: String): Pair<Engine, Long> = synchronized(engineLock) { getEngine(profileId) to (_engineGenerations[profileId] ?: 0L) }
+    fun engineWithGeneration(profileId: String): Pair<Engine, Long> =
+        synchronized(engineLock) {
+            getEngine(profileId) to
+                (_engineGenerations[profileId] ?: 0L)
+        }
 
     /**
      * Force-replace an engine that is alive but can no longer create browsers.
@@ -656,7 +660,10 @@ fun currentEngineGeneration(profileId: String): Long {
      *
      * @return true if an engine was dropped, false if there was nothing cached to recycle.
      */
-    suspend fun recycleWedgedEngine(reason: String, profileId: String = BrowserSettings.defaultProfile): Boolean {
+    suspend fun recycleWedgedEngine(
+        reason: String,
+        profileId: String = BrowserSettings.defaultProfile,
+    ): Boolean {
         val drain = CountDownLatch(1)
         val doomed: Engine
         val doomedProcesses: List<ProcessHandle>
@@ -836,10 +843,16 @@ fun currentEngineGeneration(profileId: String): Long {
     // multiple RPAs with different credentials concurrently.
 
     /** Create a fresh isolated profile for an RPA run. Caller must delete it when done. */
-    fun newRpaProfile(name: String, profileId: String): com.teamdev.jxbrowser.profile.Profile = synchronized(engineLock) { getEngine(profileId).profiles().newProfile(name) }
+    fun newRpaProfile(
+        name: String,
+        profileId: String,
+    ): com.teamdev.jxbrowser.profile.Profile = synchronized(engineLock) { getEngine(profileId).profiles().newProfile(name) }
 
     /** Look up an existing profile by name, or null. */
-    fun findProfile(name: String, profileId: String): com.teamdev.jxbrowser.profile.Profile? =
+    fun findProfile(
+        name: String,
+        profileId: String,
+    ): com.teamdev.jxbrowser.profile.Profile? =
         try {
             synchronized(engineLock) { getEngine(profileId).profiles().list().firstOrNull { it.name() == name } }
         } catch (e: Exception) {
@@ -852,7 +865,10 @@ fun currentEngineGeneration(profileId: String): Long {
         }
 
     /** Delete an RPA profile and its on-disk data. Safe to call if already gone. */
-    fun deleteRpaProfile(profile: com.teamdev.jxbrowser.profile.Profile, profileId: String) {
+    fun deleteRpaProfile(
+        profile: com.teamdev.jxbrowser.profile.Profile,
+        profileId: String,
+    ) {
         try {
             synchronized(engineLock) { getEngine(profileId).profiles().delete(profile) }
         } catch (e: Exception) {
@@ -865,7 +881,10 @@ fun currentEngineGeneration(profileId: String): Long {
      * "rpa-eph-" profiles orphaned by a previous/crashed session). Returns the
      * number removed. Never touches the default profile.
      */
-    fun cleanupOrphanedRpaProfiles(prefix: String, profileId: String): Int =
+    fun cleanupOrphanedRpaProfiles(
+        prefix: String,
+        profileId: String,
+    ): Int =
         try {
             synchronized(engineLock) {
                 val profiles = getEngine(profileId).profiles()
@@ -1048,7 +1067,10 @@ fun currentEngineGeneration(profileId: String): Long {
      * locked by another instance. The two profile notions intentionally differ —
      * the gate only decides whether the head start happens, never correctness.
      */
-    fun prewarmInBackground(force: Boolean = false, profileId: String = BrowserSettings.currentProfile) {
+    fun prewarmInBackground(
+        force: Boolean = false,
+        profileId: String = BrowserSettings.currentProfile,
+    ) {
         val decision =
             prewarmDecision(
                 prewarmDisabled = configIsFalse(ChromiumFlagKeys.PREWARM),
@@ -1236,7 +1258,10 @@ fun currentEngineGeneration(profileId: String): Long {
      * fails, and nothing is cleared — the correct outcome, since nothing was
      * poisoned in the first place.
      */
-    private fun clearInitStateIfErrorIs(expected: Throwable, profileId: String) {
+    private fun clearInitStateIfErrorIs(
+        expected: Throwable,
+        profileId: String,
+    ) {
         synchronized(engineLock) {
             if (initializationErrors[profileId] === expected) {
                 initializationErrors.remove(profileId)
@@ -1834,7 +1859,10 @@ fun currentEngineGeneration(profileId: String): Long {
         }
     }
 
-    private fun createEngineWithProfile(chromiumDir: java.nio.file.Path, profileId: String): Engine {
+    private fun createEngineWithProfile(
+        chromiumDir: java.nio.file.Path,
+        profileId: String,
+    ): Engine {
         val profileDirPath = BossDirectories.resolve(profileId).toPath()
         profileDirPath.toFile().mkdirs()
 
