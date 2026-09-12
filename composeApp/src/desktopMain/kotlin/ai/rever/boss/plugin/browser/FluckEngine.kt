@@ -1055,7 +1055,7 @@ fun currentEngineGeneration(profileId: String): Long {
                 force = force,
                 engineRunning = { _engines.isNotEmpty() },
                 engineUsable = { hasUsableEngine(cacheIsHealthy()) },
-                profileExists = { BossDirectories.resolve(BrowserSettings.currentProfile).exists() },
+                profileExists = { BossDirectories.resolve(profileId).exists() },
             )
         if (decision != PrewarmDecision.RUN) {
             // The reason, not a guess at it, and as a field rather than interpolated into the
@@ -1835,7 +1835,7 @@ fun currentEngineGeneration(profileId: String): Long {
     }
 
     private fun createEngineWithProfile(chromiumDir: java.nio.file.Path, profileId: String): Engine {
-        val profileDirPath = BossDirectories.resolve(BrowserSettings.currentProfile).toPath()
+        val profileDirPath = BossDirectories.resolve(profileId).toPath()
         profileDirPath.toFile().mkdirs()
 
         return try {
@@ -2423,7 +2423,7 @@ fun currentEngineGeneration(profileId: String): Long {
 
     private fun setupPermissionHandlers(engine: Engine) {
         // Set up permission handler for all browsers created from this engine
-        val profile = getEngine(BrowserSettings.currentProfile).profiles().defaultProfile()
+        val profile = engine.profiles().defaultProfile()
         val permissions = profile.permissions()
 
         permissions.set(
@@ -3488,7 +3488,7 @@ fun currentEngineGeneration(profileId: String): Long {
                 }
 
                 // Step 4: Delete browser profile directory
-                val selectedProfile = BrowserSettings.currentProfile
+                val selectedProfile = profileId
                 val profileDir = BossDirectories.resolve(selectedProfile)
 
                 if (profileDir.exists()) {
