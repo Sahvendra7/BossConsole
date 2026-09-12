@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength", "ForbiddenComment")
+
 package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.config.ConfigLoader
@@ -517,6 +519,7 @@ object BrowserServiceImpl : BrowserService {
         return null
     }
 
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "NestedBlockDepth")
     private suspend fun attemptCreateBrowser(
         config: BrowserConfig,
         ownerWindowId: String,
@@ -980,6 +983,7 @@ object BrowserServiceImpl : BrowserService {
 
     override fun deleteProfile(profileName: String): Boolean = deleteProfile(profileName, BrowserSettings.currentProfile)
 
+    @Suppress("ReturnCount")
     fun deleteProfile(profileName: String, profileId: String): Boolean {
         ensureLoaded()
         val fence = NAMED_PREFIX + sanitize(profileName)

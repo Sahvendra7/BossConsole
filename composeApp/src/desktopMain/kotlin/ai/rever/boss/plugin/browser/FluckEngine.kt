@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.components.plugin.tab_types.fluck.DownloadItem
@@ -2355,6 +2357,7 @@ object FluckEngine {
     /** Pure part of [applyRemoteDebuggingPort], split out so the guard is unit-testable. */
     internal fun parseRemoteDebuggingPort(raw: String?): Int? = raw?.trim()?.toIntOrNull()?.takeIf { it in 1024..65535 }
 
+    @Suppress("CyclomaticComplexMethod")
     private fun createEngineInstance(
         chromiumDir: java.nio.file.Path,
         profileDirPath: java.nio.file.Path,
@@ -3470,6 +3473,7 @@ object FluckEngine {
      *
      * @return ResetResult with detailed status of each step
      */
+    @Suppress("LongMethod")
     suspend fun resetBrowserProfile(profileId: String = BrowserSettings.defaultProfile): ResetResult =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             var engineClosed = false

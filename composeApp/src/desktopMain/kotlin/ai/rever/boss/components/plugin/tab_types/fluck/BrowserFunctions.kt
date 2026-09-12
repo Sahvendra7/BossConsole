@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.plugin.browser.BrowserFindController
@@ -274,7 +276,8 @@ actual fun createBrowser(profileId: String?): Any {
     return browser
 }
 
-actual suspend fun resetBrowserProfile(profileId: String?): Boolean = FluckEngine.resetBrowserProfile(profileId ?: "browser-profile").success
+actual suspend fun resetBrowserProfile(profileId: String?): Boolean =
+    FluckEngine.resetBrowserProfile(profileId ?: "browser-profile").success
 
 actual fun disposeBrowser(browser: Any) {
     try {
@@ -369,6 +372,7 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
     // BrowserViewState doesn't have explicit disposal on JVM
 }
 
+@Suppress("CyclomaticComplexMethod", "ReturnCount")
 actual fun getBrowserState(
     profileId: String?,
     url: String,
@@ -446,7 +450,8 @@ actual fun getBrowserState(
     }
 }
 
-actual fun getEngineGeneration(profileId: String?): Long = FluckEngine.currentEngineGeneration(profileId ?: ai.rever.boss.plugin.browser.BrowserSettings.currentProfile)
+actual fun getEngineGeneration(profileId: String?): Long =
+    FluckEngine.currentEngineGeneration(profileId ?: ai.rever.boss.plugin.browser.BrowserSettings.currentProfile)
 
 actual fun isBrowserValid(browser: Any?): Boolean {
     if (browser == null) return false
@@ -478,7 +483,10 @@ actual fun getMaxRecoveryAttempts(): Int = BrowserSettings.maxRecoveryAttempts
 
 @Composable
 actual fun collectEngineGeneration(profileId: String?): Long {
-    val generation by FluckEngine.getEngineGenerationFlow(profileId ?: ai.rever.boss.plugin.browser.BrowserSettings.currentProfile).collectAsState()
+    val generation by FluckEngine
+        .getEngineGenerationFlow(
+            profileId ?: ai.rever.boss.plugin.browser.BrowserSettings.currentProfile,
+        ).collectAsState()
     return generation
 }
 

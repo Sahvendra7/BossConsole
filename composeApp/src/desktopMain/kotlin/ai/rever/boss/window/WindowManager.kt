@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package ai.rever.boss.window
 
 import ai.rever.boss.plugin.api.TabInfo
