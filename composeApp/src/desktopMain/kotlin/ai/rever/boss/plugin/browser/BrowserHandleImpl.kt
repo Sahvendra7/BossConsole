@@ -2556,8 +2556,16 @@ internal class BrowserHandleImpl(
         // Someone asked for this destination by name (URL bar, bookmark, deep link) rather
         // than clicking through to it. Only these four entry points can say how a navigation
         // started; anything reaching the handler without a hint came from the page.
-        visitTracker.expect(BrowserNavigationType.TYPED)
-        browser.navigation().loadUrl(url)
+        try {
+            visitTracker.expect(BrowserNavigationType.TYPED)
+            browser.navigation().loadUrl(url)
+        } catch (e: Exception) {
+            if (isTransportFailure(e)) {
+                connectionDead.set(true)
+                ActiveBrowserRegistry.republish()
+            }
+            throw e
+        }
     }
 
     override suspend fun loadUrlAndWait(url: String) {
@@ -2575,6 +2583,21 @@ internal class BrowserHandleImpl(
                 browser.navigation().loadUrl(url)
                 // Best-effort: returns null on timeout (no throw); real cancellation still propagates.
                 withTimeoutOrNull(LOAD_TIMEOUT_MS) { done.await() }
+            } catch (e: Exception) {
+                if (isTransportFailure(e)) {
+                    connectionDead.set(true)
+                    ActiveBrowserRegistry.republish()
+                }
+                logger.debug(
+                    LogCategory.BROWSER,
+                    "Browser loadUrlAndWait failed",
+                    mapOf(
+                        "handleId" to id,
+                        "url" to LogSanitizer.maskUriParams(url),
+                        "error" to (e.message ?: e.javaClass.simpleName),
+                    ),
+                )
+                throw e
             } finally {
                 sub.unsubscribe()
             }
@@ -2598,6 +2621,10 @@ internal class BrowserHandleImpl(
         if (!isValid) return null
         return handleCall.call(
             onError = { e ->
+                if (isTransportFailure(e)) {
+                    connectionDead.set(true)
+                    ActiveBrowserRegistry.republish()
+                }
                 logger.warn(
                     LogCategory.BROWSER,
                     "JS execution error",
