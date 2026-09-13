@@ -1,5 +1,3 @@
-@file:Suppress("MatchingDeclarationName")
-
 package ai.rever.boss.components.settings.sections
 
 import ai.rever.boss.components.dialogs.ConfirmationDialog
@@ -27,31 +25,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Settings section for the embedded Chromium engine: shows the installed/default
- * versions and lets the user pick and install a specific published engine version
- * (Supabase primary, GitHub backup). Installs are staged and applied on restart,
- * because the running engine's files can't be replaced in place.
- *
- * The dropdown selection is local UI state; the version pin is persisted only when
- * a staged install succeeds, so browsing the dropdown never changes what the next
- * launch downloads.
- */
+/** Distinguishes a pending read from an absent engine. */
+private data class InstalledVersion(
+    val version: String?,
+)
 
-/**
- * What Settings shows after a staged engine install.
- *
- * A sealed type rather than a message plus a flag: those were two `mutableStateOf`s
- * encoding one outcome, kept consistent only by convention, so "staged but failed"
- * was representable. Here it isn't.
- *
- * [Staged.appliesOnRestart] is the part that matters. `updateSettings` runs
- * `withoutUnusablePin()`, which drops any `selectedVersion` that isn't the bundled
- * version — so staging a *non-default* engine persists no pin, and the next launch
- * promotes it, finds it doesn't match `effectiveVersion`, and re-downloads the
- * default. Offering "Restart BOSS" there would cost the user their session and a
- * several-hundred-MB download to end up exactly where they started.
- */
+/** What Settings shows after staging an engine; only the bundled version can run safely. */
 internal sealed interface StagedInstallOutcome {
     data class Staged(
         val version: String,
@@ -75,7 +54,7 @@ internal fun StagedInstallOutcome.message(defaultVersion: String): String =
                 "Engine $version is staged. It is not in use until BOSS restarts."
             } else {
                 "Engine $version is staged, but this build requires $defaultVersion - " +
-                    "it will be replaced on the next launch."
+                    "it cannot be used by this build."
             }
         }
     }
@@ -105,7 +84,11 @@ internal fun stagedInstallOutcome(
 fun BrowserEngineSettings() {
     val coroutineScope = rememberCoroutineScope()
 
-    var installedVersion by remember { mutableStateOf<String?>(null) }
+    val installedVersionState =
+        produceState<InstalledVersion?>(initialValue = null) {
+            value = withContext(Dispatchers.IO) { InstalledVersion(ChromiumAutoDownloader.installedVersion()) }
+        }
+    val installedVersion = installedVersionState.value?.version
     val pendingStagedVersion by produceState<String?>(initialValue = null) {
         value =
             withContext(Dispatchers.IO) {
@@ -113,26 +96,26 @@ fun BrowserEngineSettings() {
                 if (dir.toFile().exists()) ChromiumAutoDownloader.installedVersionAt(dir) else null
             }
     }
-    val defaultVersion = BrowserEngineSettingsManager.effectiveVersion
+    val defaultVersion = ChromiumAutoDownloader.defaultVersion
+    val targetVersion = BrowserEngineSettingsManager.effectiveVersion
     var installing by remember { mutableStateOf(false) }
     var installProgress by remember { mutableStateOf<ChromiumAutoDownloader.DownloadProgress?>(null) }
     var outcome by remember { mutableStateOf<StagedInstallOutcome?>(null) }
     var confirmingRestart by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        installedVersion = ChromiumAutoDownloader.installedVersion()
-    }
-
-    Column {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         SettingsSection(title = "Embedded Browser Engine") {
             SettingsInfoRow(
                 label = "Installed version",
-                value = installedVersion ?: "Not installed",
+                value = if (installedVersionState.value == null) "…" else installedVersion ?: "Not installed",
             )
 
             SettingsInfoRow(
                 label = "Target version",
-                value = defaultVersion,
+                value = targetVersion,
                 description =
                     """The engine version BOSS will use. Can be overridden for testing
                     |via the boss.browser.engine.version system property.
@@ -180,7 +163,7 @@ fun BrowserEngineSettings() {
             } else {
                 SettingsButtonRow(
                     label = "Download and stage the target version",
-                    buttonText = if (defaultVersion == installedVersion) "Reinstall" else "Install",
+                    buttonText = if (targetVersion == installedVersion) "Reinstall" else "Install",
                     onClick = {
                         outcome = null
                         confirmingRestart = false
@@ -189,7 +172,7 @@ fun BrowserEngineSettings() {
                         coroutineScope.launch {
                             val result =
                                 ChromiumAutoDownloader.downloadChromium(
-                                    version = defaultVersion,
+                                    version = targetVersion,
                                     staged = true,
                                 ) { progress ->
                                     if (!progress.isComplete && progress.error == null) {
@@ -198,7 +181,7 @@ fun BrowserEngineSettings() {
                                 }
                             installProgress = null
                             installing = false
-                            outcome = stagedInstallOutcome(defaultVersion, defaultVersion, result)
+                            outcome = stagedInstallOutcome(targetVersion, defaultVersion, result)
                         }
                     },
                     description =

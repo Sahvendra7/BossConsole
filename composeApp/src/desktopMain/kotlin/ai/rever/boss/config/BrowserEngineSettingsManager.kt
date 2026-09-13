@@ -26,7 +26,7 @@ object BrowserEngineSettingsManager {
      */
     val effectiveVersion: String
         get() {
-            val propertyPin = System.getProperty("boss.browser.engine.version")
+            val propertyPin = System.getProperty("boss.browser.engine.version")?.trim()?.takeIf { it.isNotEmpty() }
             if (propertyPin != null && propertyPin != VersionConstants.JXBROWSER_VERSION) {
                 logger.debug(
                     LogCategory.BROWSER,
