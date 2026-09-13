@@ -15,6 +15,7 @@ class BrowserTransportFailureWiringTest {
     }
 
     @Test
+    @Suppress("LongMethod")
     fun `direct browser calls latch connectionDead on transport failure`() {
         val handle = source("BrowserHandleImpl")
         listOf(
