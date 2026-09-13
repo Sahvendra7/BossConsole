@@ -98,8 +98,8 @@ fun BrowserEngineSettings() {
     }
     val defaultVersion = ChromiumAutoDownloader.defaultVersion
     val targetVersion = BrowserEngineSettingsManager.effectiveVersion
-    var installing by remember { mutableStateOf(false) }
     var installProgress by remember { mutableStateOf<ChromiumAutoDownloader.DownloadProgress?>(null) }
+    val installing = installProgress != null
     var outcome by remember { mutableStateOf<StagedInstallOutcome?>(null) }
     var confirmingRestart by remember { mutableStateOf(false) }
 
@@ -168,7 +168,6 @@ fun BrowserEngineSettings() {
                         outcome = null
                         confirmingRestart = false
                         installProgress = ChromiumAutoDownloader.DownloadProgress(0, 0)
-                        installing = true
                         coroutineScope.launch {
                             val result =
                                 ChromiumAutoDownloader.downloadChromium(
@@ -180,7 +179,6 @@ fun BrowserEngineSettings() {
                                     }
                                 }
                             installProgress = null
-                            installing = false
                             outcome = stagedInstallOutcome(targetVersion, defaultVersion, result)
                         }
                     },

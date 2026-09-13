@@ -3,16 +3,6 @@ package ai.rever.boss.config
 import ai.rever.boss.utils.VersionConstants
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import kotlinx.serialization.Serializable
-
-/**
- * User-facing browser engine preferences.
- * Pinned versions are now handled via system properties instead of being persisted.
- */
-@Serializable
-data class BrowserEngineSettings(
-    val selectedVersion: String? = null,
-)
 
 /**
  * Provides the effective engine version to use.
@@ -37,9 +27,4 @@ object BrowserEngineSettingsManager {
             }
             return VersionConstants.JXBROWSER_VERSION
         }
-
-    // Keep this for ABI compatibility if anything calls it, though it's effectively a no-op
-    suspend fun resetToDefault() {
-        // no-op
-    }
 }

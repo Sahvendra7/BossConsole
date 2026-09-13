@@ -16,6 +16,8 @@ class BrowserEngineSettingsManagerTest {
                 System.setProperty(key, blank)
                 assertEquals(VersionConstants.JXBROWSER_VERSION, BrowserEngineSettingsManager.effectiveVersion)
             }
+            System.setProperty(key, VersionConstants.JXBROWSER_VERSION)
+            assertEquals(VersionConstants.JXBROWSER_VERSION, BrowserEngineSettingsManager.effectiveVersion)
             System.setProperty(key, " 9.3.0 ")
             assertEquals("9.3.0", BrowserEngineSettingsManager.effectiveVersion)
         } finally {
