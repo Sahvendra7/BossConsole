@@ -3448,6 +3448,7 @@ object FluckEngine {
      *
      * @return ResetResult with detailed status of each step
      */
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "MaxLineLength")
     suspend fun resetBrowserProfile(profileId: String = BrowserSettings.currentProfile): ResetResult =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             var engineClosed = false

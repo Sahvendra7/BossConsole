@@ -228,11 +228,12 @@ actual fun BrowserProfilePicker(windowId: String) {
                 ) {
                     Text(
                         "Create",
-                        color = if (newProfileName.trim().isNotBlank()) {
-                        BossTheme.colors.signal
-                    } else {
-                        BossTheme.colors.textSecondary
-                    },
+                        color =
+                            if (newProfileName.trim().isNotBlank()) {
+                                BossTheme.colors.signal
+                            } else {
+                                BossTheme.colors.textSecondary
+                            },
                     )
                 }
             },

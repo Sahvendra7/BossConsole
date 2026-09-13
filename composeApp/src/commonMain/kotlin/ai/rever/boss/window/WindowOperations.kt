@@ -43,7 +43,7 @@ expect object WindowOperations {
      *
      * On desktop: Creates a new window instance
      * On mobile/web: May do nothing
-     * 
+     *
      * @param browserProfileId Optional browser profile to use for the new window
      */
     fun createNewWindow(browserProfileId: String? = null)
