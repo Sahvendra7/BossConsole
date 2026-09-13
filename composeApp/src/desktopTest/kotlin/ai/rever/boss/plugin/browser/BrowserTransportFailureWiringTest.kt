@@ -2,7 +2,6 @@ package ai.rever.boss.plugin.browser
 
 import org.junit.Test
 import java.io.File
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BrowserTransportFailureWiringTest {
@@ -18,6 +17,12 @@ class BrowserTransportFailureWiringTest {
     @Test
     fun `direct browser calls latch connectionDead on transport failure`() {
         val handle = source("BrowserHandleImpl")
+        listOf(
+            "override suspend fun loadUrl(",
+            "override suspend fun loadUrlAndWait(",
+            "override suspend fun executeJavaScript(",
+            "override fun getCurrentUrl()",
+        ).forEach { assertTrue(handle.contains(it), "Missing source boundary: $it") }
 
         val loadUrlBody =
             handle
@@ -48,6 +53,19 @@ class BrowserTransportFailureWiringTest {
             "loadUrlAndWait must latch connectionDead",
         )
         assertTrue(loadUrlAndWaitBody.contains("throw e"), "loadUrlAndWait must rethrow")
+        listOf(loadUrlBody, loadUrlAndWaitBody).forEach { body ->
+            val cancellation = body.indexOf("catch (e: CancellationException)")
+            assertTrue(cancellation >= 0, "cancellation must bypass classification")
+            assertTrue(cancellation < body.indexOf("catch (e: Exception)"))
+        }
+        assertTrue(
+            loadUrlAndWaitBody.indexOf("try {") < loadUrlAndWaitBody.indexOf("val sub ="),
+            "subscription setup must be inside the failure boundary",
+        )
+        assertTrue(
+            loadUrlAndWaitBody.indexOf("sub.unsubscribe()") < loadUrlAndWaitBody.indexOf("isTransportFailure(e)"),
+            "subscription cleanup must be inside the failure boundary",
+        )
 
         val executeJsBody =
             handle
@@ -59,7 +77,11 @@ class BrowserTransportFailureWiringTest {
         )
         assertTrue(
             executeJsBody.contains("isTransportFailure(e)"),
-            "executeJavaScript must check for transport failure in onError",
+            "executeJavaScript must check for transport failure",
+        )
+        assertTrue(
+            executeJsBody.indexOf("isTransportFailure(e)") > executeJsBody.indexOf("browser.mainFrame()"),
+            "native failure must be observed in the worker even after the waiter times out",
         )
         assertTrue(
             executeJsBody.contains("connectionDead.set(true)"),

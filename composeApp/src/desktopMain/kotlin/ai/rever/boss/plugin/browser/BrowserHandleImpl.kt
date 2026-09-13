@@ -2559,6 +2559,8 @@ internal class BrowserHandleImpl(
         try {
             visitTracker.expect(BrowserNavigationType.TYPED)
             browser.navigation().loadUrl(url)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (isTransportFailure(e)) {
                 connectionDead.set(true)
@@ -2576,31 +2578,26 @@ internal class BrowserHandleImpl(
         // Same user action as loadUrl, so the same hint. Missing it here filed every
         // wait-for-load navigation under LINK.
         visitTracker.expect(BrowserNavigationType.TYPED)
-        withContext(Dispatchers.Main) {
-            val done = CompletableDeferred<Boolean>()
-            val sub = browser.navigation().on(LoadFinished::class.java) { done.complete(true) }
-            try {
-                browser.navigation().loadUrl(url)
-                // Best-effort: returns null on timeout (no throw); real cancellation still propagates.
-                withTimeoutOrNull(LOAD_TIMEOUT_MS) { done.await() }
-            } catch (e: Exception) {
-                if (isTransportFailure(e)) {
-                    connectionDead.set(true)
-                    ActiveBrowserRegistry.republish()
+        try {
+            withContext(Dispatchers.Main) {
+                val done = CompletableDeferred<Boolean>()
+                val sub = browser.navigation().on(LoadFinished::class.java) { done.complete(true) }
+                try {
+                    browser.navigation().loadUrl(url)
+                    // Best-effort timeout; caller cancellation still propagates.
+                    withTimeoutOrNull(LOAD_TIMEOUT_MS) { done.await() }
+                } finally {
+                    sub.unsubscribe()
                 }
-                logger.debug(
-                    LogCategory.BROWSER,
-                    "Browser loadUrlAndWait failed",
-                    mapOf(
-                        "handleId" to id,
-                        "url" to LogSanitizer.maskUriParams(url),
-                        "error" to (e.message ?: e.javaClass.simpleName),
-                    ),
-                )
-                throw e
-            } finally {
-                sub.unsubscribe()
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (isTransportFailure(e)) {
+                connectionDead.set(true)
+                ActiveBrowserRegistry.republish()
+            }
+            throw e
         }
     }
 
@@ -2621,10 +2618,6 @@ internal class BrowserHandleImpl(
         if (!isValid) return null
         return handleCall.call(
             onError = { e ->
-                if (isTransportFailure(e)) {
-                    connectionDead.set(true)
-                    ActiveBrowserRegistry.republish()
-                }
                 logger.warn(
                     LogCategory.BROWSER,
                     "JS execution error",
@@ -2632,7 +2625,18 @@ internal class BrowserHandleImpl(
                 )
             },
         ) {
-            browser.mainFrame().map { it.executeJavaScript<Any?>(script) }.orElse(null)
+            // Observe native failure even if the awaiting caller has timed out or cancelled.
+            try {
+                browser.mainFrame().map { it.executeJavaScript<Any?>(script) }.orElse(null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (isTransportFailure(e)) {
+                    connectionDead.set(true)
+                    ActiveBrowserRegistry.republish()
+                }
+                throw e
+            }
         }
     }
 

@@ -25,7 +25,7 @@ class BrowserHandleTransportFailureTest {
         assertTrue(isTransportFailure(layer2))
     }
 
-    @Test
+    @Test(timeout = 5_000)
     fun `cause-cycle termination finishes safely and evaluates to false`() {
         val a = RuntimeException("A")
 
