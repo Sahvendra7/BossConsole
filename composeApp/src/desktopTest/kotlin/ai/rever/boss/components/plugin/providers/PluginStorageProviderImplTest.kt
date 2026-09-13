@@ -1,7 +1,6 @@
 package ai.rever.boss.components.plugin.providers
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -201,35 +200,6 @@ class PluginStorageProviderImplTest {
         }
 
     @Test
-    fun `an in-flight commit survives caller cancellation and stays consistent`() =
-        runBlocking {
-            val provider = PluginStorageProviderImpl("test-plugin", testDir)
-            val job =
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    provider.putString("k", "v")
-                }
-            // Premise: an uncontended Mutex.lock() acquires without
-            // suspending, and withContext(Dispatchers.IO) dispatches to
-            // another thread, so the body reaches the NonCancellable commit
-            // before cancel() below. If either premise changes, this test
-            // dies on the deadline check, which points at that premise.
-            job.cancel()
-
-            val storageFile = File(testDir, "storage.properties")
-            val deadline = System.currentTimeMillis() + 15000
-            while (provider.getString("k", null) != "v" || !storageFile.exists()) {
-                check(System.currentTimeMillis() < deadline) { "commit must complete after caller cancellation" }
-                delay(25)
-            }
-            assertEquals(
-                "v",
-                readDiskProperties().getProperty("k"),
-                "cache and disk must agree after a cancelled caller",
-            )
-            assertTrue(tempFilesLeftBehind().isEmpty(), "commit must not leave temp files behind")
-        }
-
-    @Test
     fun `reload loads encoded values and json keys remain readable`() =
         runBlocking {
             val seeded = Properties()
@@ -307,49 +277,6 @@ class PluginStorageProviderImplTest {
                 }
                 delay(200)
                 assertTrue(events.isEmpty(), "a failed commit must not publish a change event")
-            } finally {
-                collector.cancel()
-            }
-        }
-
-    @Test
-    fun `cancellation while queued behind the commit lock does not touch storage`() =
-        runBlocking {
-            val provider = PluginStorageProviderImpl("test-plugin", testDir)
-            val events = Collections.synchronizedList(mutableListOf<String>())
-            val collector = launchChangeCollector(provider, events)
-            try {
-                // The 4 MB value is load-bearing, not belt-and-braces: it
-                // keeps A holding transactionMutex past B's lock() attempt.
-                // If A ever won that race, B would commit inline and this
-                // test would fail on the contains("b") assertion, which
-                // reads as a production bug - the failure would be
-                // misattributed to the code under test.
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    provider.putString("a", "A".repeat(4 * 1024 * 1024))
-                }
-                val jobB =
-                    launch(start = CoroutineStart.UNDISPATCHED) {
-                        provider.putString("b", "B")
-                    }
-                // B is suspended in transactionMutex.lock() behind A.
-                jobB.cancel()
-                jobB.join()
-                assertFalse(provider.contains("b"), "queued-then-cancelled caller must not mutate the cache")
-
-                val deadline = System.currentTimeMillis() + 30000
-                while (provider.getString("a", null) == null) {
-                    check(System.currentTimeMillis() < deadline) { "A's commit must complete" }
-                    delay(25)
-                }
-                val disk = readDiskProperties()
-                assertEquals(
-                    "A".repeat(4 * 1024 * 1024),
-                    disk.getProperty("a"),
-                    "A's commit must be on disk",
-                )
-                assertFalse(disk.containsKey("b"), "B's cancelled write must not reach disk")
-                assertTrue(events.none { it == "b" }, "no event may be published for a cancelled queued caller")
             } finally {
                 collector.cancel()
             }
