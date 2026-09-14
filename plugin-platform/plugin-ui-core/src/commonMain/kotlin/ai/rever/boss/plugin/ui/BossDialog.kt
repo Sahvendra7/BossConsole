@@ -472,11 +472,11 @@ fun BossPopup(
     }
     val heavyweight =
         (LocalForceHeavyweightPopups.current && renderer != null && LocalHeavyweightOverlays.current) ||
-        shouldRouteHeavyweight(
-            useHeavyweightOverlays = BossOverlayHost.useHeavyweightOverlays,
-            hasRenderer = renderer != null,
-            hostNeedsHeavyweight = LocalHeavyweightOverlays.current,
-        )
+            shouldRouteHeavyweight(
+                useHeavyweightOverlays = BossOverlayHost.useHeavyweightOverlays,
+                hasRenderer = renderer != null,
+                hostNeedsHeavyweight = LocalHeavyweightOverlays.current,
+            )
     // A zero-size probe that reports where this popup sits in the window, so
     // BossPopupAnchoring.AnchorBounds has something real to anchor to. Measured here rather than
     // asked of the caller: a caller cannot convert its own layout position into window space without
