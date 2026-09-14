@@ -63,6 +63,15 @@ import kotlin.math.roundToInt
 val LocalHeavyweightOverlays = staticCompositionLocalOf { false }
 
 /**
+ * Forces popups in this composition tree to route through the heavyweight host renderer
+ * regardless of the global [BossOverlayHost.useHeavyweightOverlays] setting.
+ *
+ * Used by dynamic plugin hosts (like SidePanel) to ensure their popups can layer
+ * above adjacent AWT browser panes.
+ */
+val LocalForceHeavyweightPopups = staticCompositionLocalOf { false }
+
+/**
  * The routing decision for any overlay that can escape into its own window, as a pure function so
  * it can be pinned by a test.
  *
@@ -441,6 +450,11 @@ fun BossAlertDialog(
  * the parameter is already here, so a renderer that learns true window-space anchoring needs no api
  * change. Do not rely on cursor placement.
  *
+ * AWT popup window CANNOT observe clicks on other windows in its own app without an AWT event
+ * listener that would also capture clicks meant for other applications. The heavyweight path uses a
+ * `WindowEvent.WINDOW_DEACTIVATED` listener instead, which fires whenever the popup window loses
+ * focus to ANY click outside itself.
+ *
  * @param onDismissRequest Called on a click outside, on Escape, or when focus leaves the
  *   application - subject to the `focusable = false` caveat above on the lightweight path.
  */
@@ -457,6 +471,7 @@ fun BossPopup(
         SideEffect { BossOverlayHost.reportMissingPopupRenderer() }
     }
     val heavyweight =
+        (LocalForceHeavyweightPopups.current && renderer != null && LocalHeavyweightOverlays.current) ||
         shouldRouteHeavyweight(
             useHeavyweightOverlays = BossOverlayHost.useHeavyweightOverlays,
             hasRenderer = renderer != null,

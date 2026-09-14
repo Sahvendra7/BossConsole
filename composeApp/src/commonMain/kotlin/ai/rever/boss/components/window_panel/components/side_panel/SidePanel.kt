@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Divider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -149,34 +150,36 @@ internal fun RenderPanelContent(
     if (sandbox != null) {
         val scope = rememberCoroutineScope()
         val logger = remember { BossLogger.forComponent("SidePanel") }
-        PluginErrorBoundary(
-            pluginId = sandbox.pluginId,
-            sandbox = sandbox,
-            onRestart = {
-                // Through the manager, never sandbox.restart() directly: only
-                // the manager notifies the listener that re-runs register(),
-                // and without that the plugin comes back with every
-                // subscription it opened there still closed.
-                scope.launch {
-                    val restarted = DynamicPluginManager.restartOwning(sandbox)
-                    if (!restarted) {
-                        logger.error(
-                            LogCategory.UI,
-                            "Failed to restart plugin",
-                            mapOf(
-                                "pluginId" to sandbox.pluginId,
-                            ),
-                        )
-                        // Show status message to user about failure
-                        StatusMessageManager.showMessage(
-                            "Failed to restart plugin: ${sandbox.pluginId}",
-                            durationMs = 5000,
-                        )
+        CompositionLocalProvider(ai.rever.boss.plugin.ui.LocalForceHeavyweightPopups provides true) {
+            PluginErrorBoundary(
+                pluginId = sandbox.pluginId,
+                sandbox = sandbox,
+                onRestart = {
+                    // Through the manager, never sandbox.restart() directly: only
+                    // the manager notifies the listener that re-runs register(),
+                    // and without that the plugin comes back with every
+                    // subscription it opened there still closed.
+                    scope.launch {
+                        val restarted = DynamicPluginManager.restartOwning(sandbox)
+                        if (!restarted) {
+                            logger.error(
+                                LogCategory.UI,
+                                "Failed to restart plugin",
+                                mapOf(
+                                    "pluginId" to sandbox.pluginId,
+                                ),
+                            )
+                            // Show status message to user about failure
+                            StatusMessageManager.showMessage(
+                                "Failed to restart plugin: ${sandbox.pluginId}",
+                                durationMs = 5000,
+                            )
+                        }
                     }
-                }
-            },
-        ) {
-            component.Content()
+                },
+            ) {
+                component.Content()
+            }
         }
     } else {
         // No sandbox - render directly (backwards compatibility)
