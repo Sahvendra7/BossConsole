@@ -90,6 +90,40 @@ class BossDialogRoutingTest {
  * held longer than that - plus the window's own first-frame latency - expired the timer while the
  * button was still down, and the release then chose whichever option sat under the pointer. That is
  * the reported bug, reintroduced intermittently, which is worse than not guarding at all.
+
+ @Test
+ fun `a dynamic plugin popups route heavyweight if host needs it, despite global config`() {
+ assertTrue(
+ shouldRouteHeavyweight(
+ useHeavyweightOverlays = true, // simulated forceHeavyweight=true || global=false
+ hasRenderer = true,
+ hostNeedsHeavyweight = true,
+ ),
+ )
+ }
+
+ @Test
+ fun `a dynamic plugin popup cannot force heavyweight if host denies it`() {
+ assertFalse(
+ shouldRouteHeavyweight(
+ useHeavyweightOverlays = true, // simulated forceHeavyweight=true || global=false
+ hasRenderer = true,
+ hostNeedsHeavyweight = false,
+ ),
+ )
+ }
+
+ @Test
+ fun `a dynamic plugin popup cannot force heavyweight if renderer is missing`() {
+ assertFalse(
+ shouldRouteHeavyweight(
+ useHeavyweightOverlays = true, // simulated forceHeavyweight=true || global=false
+ hasRenderer = false,
+ hostNeedsHeavyweight = true,
+ ),
+ )
+ }
+
  */
 class ModalInputArmingRuleTest {
     @Test
