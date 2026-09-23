@@ -110,6 +110,32 @@ class GitProviderWritesToRepoTest {
     }
 
     @Test
+    fun unstageRenameWithArrowInOriginalPath(
+        @TempDir tmp: File,
+    ) = runTest {
+        val dir = repo(tmp)
+        File(dir, "old -> name.txt").writeText("hello\n")
+        git(dir, "add", ".")
+        git(dir, "commit", "-q", "-m", "add file")
+
+        git(dir, "mv", "old -> name.txt", "new -> dest.txt")
+        
+        // Assert it is staged rename
+        val porcelain = git(dir, "status", "--porcelain=v1")
+        assertTrue(
+            porcelain.contains("R  \"old -> name.txt\" -> \"new -> dest.txt\"") ||
+                porcelain.contains("R  old -> name.txt -> new -> dest.txt"),
+        )
+
+        provider(dir).unstage("new -> dest.txt")
+
+        val after = git(dir, "status", "--porcelain=v1")
+        // Unstaging a rename turns it into unstaged deletion of old and untracked new
+        assertTrue(after.contains(" D \"old -> name.txt\"") || after.contains(" D old -> name.txt"))
+        assertTrue(after.contains("?? \"new -> dest.txt\"") || after.contains("?? new -> dest.txt"))
+    }
+
+    @Test
     fun discardRestoresTheFileOnDisk(
         @TempDir tmp: File,
     ) = runTest {

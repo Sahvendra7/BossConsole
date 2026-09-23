@@ -24,6 +24,12 @@ import kotlin.test.assertTrue
 class GitPorcelainParserTest {
     // ==================== parseStatusChar ====================
 
+
+    private fun parseSingleStatus(input: String): GitFileStatus? {
+        val output = if (input.isEmpty()) "" else input + "\u0000"
+        return GitService.parseStatusOutput(output, keepIgnored = true).firstOrNull()
+    }
+
     @Test
     fun `parseStatusChar maps every documented porcelain code`() {
         assertEquals(GitFileStatusType.MODIFIED, GitService.parseStatusChar('M'))
@@ -56,7 +62,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `staged modification - index M, clean worktree`() {
-        val status = GitService.parseStatusLine("M  src/App.kt")
+        val status = parseSingleStatus("M  src/App.kt")
         assertNotNull(status)
         assertEquals("src/App.kt", status.path)
         assertEquals(GitFileStatusType.MODIFIED, status.indexStatus)
@@ -68,7 +74,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `unstaged modification - clean index, worktree M`() {
-        val status = GitService.parseStatusLine(" M src/App.kt")
+        val status = parseSingleStatus(" M src/App.kt")
         assertNotNull(status)
         assertEquals("src/App.kt", status.path)
         assertNull(status.indexStatus)
@@ -79,7 +85,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `staged plus unstaged combo - MM`() {
-        val status = GitService.parseStatusLine("MM src/App.kt")
+        val status = parseSingleStatus("MM src/App.kt")
         assertNotNull(status)
         assertEquals(GitFileStatusType.MODIFIED, status.indexStatus)
         assertEquals(GitFileStatusType.MODIFIED, status.workTreeStatus)
@@ -89,7 +95,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `staged add then modified in worktree - AM`() {
-        val status = GitService.parseStatusLine("AM new-file.txt")
+        val status = parseSingleStatus("AM new-file.txt")
         assertNotNull(status)
         assertEquals(GitFileStatusType.ADDED, status.indexStatus)
         assertEquals(GitFileStatusType.MODIFIED, status.workTreeStatus)
@@ -99,7 +105,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `staged deletion - D in index`() {
-        val status = GitService.parseStatusLine("D  gone.txt")
+        val status = parseSingleStatus("D  gone.txt")
         assertNotNull(status)
         assertEquals(GitFileStatusType.DELETED, status.indexStatus)
         assertNull(status.workTreeStatus)
@@ -109,7 +115,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `untracked file - question marks`() {
-        val status = GitService.parseStatusLine("?? notes.md")
+        val status = parseSingleStatus("?? notes.md")
         assertNotNull(status)
         assertEquals("notes.md", status.path)
         assertEquals(GitFileStatusType.UNTRACKED, status.indexStatus)
@@ -121,7 +127,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `ignored file - exclamation marks parse to IGNORED`() {
-        val status = GitService.parseStatusLine("!! build/")
+        val status = parseSingleStatus("!! build/")
         assertNotNull(status)
         assertEquals("build/", status.path)
         assertEquals(GitFileStatusType.IGNORED, status.indexStatus)
@@ -130,7 +136,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `ignored file is not staged`() {
-        val status = GitService.parseStatusLine("!! build/")
+        val status = parseSingleStatus("!! build/")
         assertNotNull(status)
         // IGNORED, like UNTRACKED, fills the index column ("!!") but is never staged.
         assertFalse(status.isStaged)
@@ -145,7 +151,7 @@ class GitPorcelainParserTest {
     fun `unmerged index status is still staged - a conflicted path has index entries`() {
         // UNTRACKED and IGNORED are the only codes carved out of isStaged: 'U' means the
         // path holds conflict stages in the index, so it is not a "never staged" code.
-        val status = GitService.parseStatusLine("UD theirs-deleted.txt")
+        val status = parseSingleStatus("UD theirs-deleted.txt")
         assertNotNull(status)
         assertTrue(status.isStaged)
     }
@@ -159,14 +165,7 @@ class GitPorcelainParserTest {
     @Test
     fun `parseStatusOutput drops ignored entries entirely, not just their staged flag`() {
         val statuses =
-            GitService.parseStatusOutput(
-                """
-                M  src/App.kt
-                !! build/
-                ?? notes.md
-                !! .gradle/caches/
-                """.trimIndent(),
-            )
+            GitService.parseStatusOutput("M  src/App.kt\u0000!! build/\u0000?? notes.md\u0000!! .gradle/caches/\u0000")
         assertEquals(listOf("src/App.kt", "notes.md"), statuses.map { it.path })
         // Nothing IGNORED survives in either column, so neither the commit dialog's
         // staged list (isStaged) nor its unstaged list (isUnstaged || indexStatus ==
@@ -179,12 +178,7 @@ class GitPorcelainParserTest {
     fun `parseStatusOutput keeps every non-ignored entry with its flags intact`() {
         val statuses =
             GitService.parseStatusOutput(
-                """
-                M  staged.kt
-                 M unstaged.kt
-                UU conflict.kt
-                R  old.kt -> new.kt
-                """.trimIndent(),
+                "M  staged.kt\u0000 M unstaged.kt\u0000UU conflict.kt\u0000R  new.kt\u0000old.kt\u0000",
             )
         assertEquals(4, statuses.size)
         assertTrue(statuses.single { it.path == "staged.kt" }.isStaged)
@@ -196,21 +190,21 @@ class GitPorcelainParserTest {
     @Test
     fun `parseStatusOutput skips blank lines and unparseable lines`() {
         val statuses =
-            GitService.parseStatusOutput("M  a.kt\n\n   \nM\n M b.kt\n")
+            GitService.parseStatusOutput("M  a.kt\u0000\u0000M\u0000 M b.kt\u0000")
         assertEquals(listOf("a.kt", "b.kt"), statuses.map { it.path })
     }
 
     @Test
     fun `parseStatusOutput of empty output is empty`() {
         assertTrue(GitService.parseStatusOutput("").isEmpty())
-        assertTrue(GitService.parseStatusOutput("\n\n").isEmpty())
+        assertTrue(GitService.parseStatusOutput("\u0000\u0000").isEmpty())
     }
 
     // ==================== parseStatusLine: renames and copies ====================
 
     @Test
     fun `staged rename with arrow keeps both paths`() {
-        val status = GitService.parseStatusLine("R  old/name.kt -> new/name.kt")
+        val status = parseSingleStatus("R  new/name.kt\u0000old/name.kt")
         assertNotNull(status)
         assertEquals("new/name.kt", status.path)
         assertEquals("old/name.kt", status.originalPath)
@@ -222,7 +216,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `staged copy with arrow keeps both paths`() {
-        val status = GitService.parseStatusLine("C  src/a.kt -> src/b.kt")
+        val status = parseSingleStatus("C  src/b.kt\u0000src/a.kt")
         assertNotNull(status)
         assertEquals("src/b.kt", status.path)
         assertEquals("src/a.kt", status.originalPath)
@@ -231,7 +225,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `rename then modified in worktree - RM`() {
-        val status = GitService.parseStatusLine("RM old.txt -> new.txt")
+        val status = parseSingleStatus("RM new.txt\u0000old.txt")
         assertNotNull(status)
         assertEquals("new.txt", status.path)
         assertEquals("old.txt", status.originalPath)
@@ -246,7 +240,7 @@ class GitPorcelainParserTest {
     @Test
     fun `path with spaces passes through verbatim`() {
         // porcelain v1 does not quote paths for spaces.
-        val status = GitService.parseStatusLine(" M My Documents/read me.txt")
+        val status = parseSingleStatus(" M My Documents/read me.txt")
         assertNotNull(status)
         assertEquals("My Documents/read me.txt", status.path)
     }
@@ -254,7 +248,7 @@ class GitPorcelainParserTest {
     @Test
     fun `unicode path passes through verbatim`() {
         // With core.quotePath=false git emits raw UTF-8; the parser must not mangle it.
-        val status = GitService.parseStatusLine("A  docs/日本語 déjà ✨.md")
+        val status = parseSingleStatus("A  docs/日本語 déjà ✨.md")
         assertNotNull(status)
         assertEquals("docs/日本語 déjà ✨.md", status.path)
         assertEquals(GitFileStatusType.ADDED, status.indexStatus)
@@ -266,7 +260,7 @@ class GitPorcelainParserTest {
         // in it: "a\"b.txt". The parser undoes that, because the panel hands
         // the result straight back to git as a pathspec - the quoted token would
         // match no file.
-        val status = GitService.parseStatusLine("M  \"a\\\"b.txt\"")
+        val status = parseSingleStatus("M  a\"b.txt")
         assertNotNull(status)
         assertEquals("a\"b.txt", status.path)
     }
@@ -277,14 +271,15 @@ class GitPorcelainParserTest {
         // byte form for é under core.quotePath, and the parsed path must come
         // back as the file ACTUALLY is named, or the pathspec matches nothing.
         // \303\251 is the two-byte UTF-8 encoding of é.
-        val status = GitService.parseStatusLine(" M \"docs/caf\\303\\251.txt\"")
+        val status = parseSingleStatus(" M docs/café.txt")
         assertNotNull(status)
         assertEquals("docs/café.txt", status.path)
     }
 
     @Test
     fun `C-quoted rename unquotes both sides`() {
-        val status = GitService.parseStatusLine("R  \"old/a\\303\\251.txt\" -> \"new/b\\303\\251.txt\"")
+        // -z does not C-quote, so raw bytes or unicode chars are kept intact
+        val status = parseSingleStatus("R  new/b\u00e9.txt\u0000old/a\u00e9.txt")
         assertNotNull(status)
         assertEquals("new/bé.txt", status.path)
         assertEquals("old/aé.txt", status.originalPath)
@@ -293,7 +288,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `rename of path with spaces on both sides`() {
-        val status = GitService.parseStatusLine("R  old dir/a file.txt -> new dir/a file.txt")
+        val status = parseSingleStatus("R  new dir/a file.txt\u0000old dir/a file.txt")
         assertNotNull(status)
         assertEquals("new dir/a file.txt", status.path)
         assertEquals("old dir/a file.txt", status.originalPath)
@@ -306,7 +301,7 @@ class GitPorcelainParserTest {
         // ORIG and PATH. The split must stop at the first arrow (limit = 2) or
         // the parsed path is only the chunk between the first two arrows - a
         // path that matches nothing when the panel hands it back as a pathspec.
-        val status = GitService.parseStatusLine("R  old -> a -> b -> c")
+        val status = parseSingleStatus("R  a -> b -> c\u0000old")
         assertNotNull(status)
         assertEquals("a -> b -> c", status.path)
         assertEquals("old", status.originalPath)
@@ -320,7 +315,7 @@ class GitPorcelainParserTest {
     fun `unstaged rename whose new path contains an arrow keeps the full new path`() {
         // The worktree column carries the same shape: everything after the
         // first arrow is the new path, whatever arrows it itself contains.
-        val status = GitService.parseStatusLine(" R old -> a -> b -> c")
+        val status = parseSingleStatus(" R a -> b -> c\u0000old")
         assertNotNull(status)
         assertEquals("a -> b -> c", status.path)
         assertEquals("old", status.originalPath)
@@ -334,12 +329,12 @@ class GitPorcelainParserTest {
     fun `single-arrow rename and arrow-free lines parse unchanged`() {
         // The limit only governs extra arrows: the classic one-arrow rename
         // and plain status lines must keep parsing exactly as they always did.
-        val renamed = GitService.parseStatusLine("R  old -> new")
+        val renamed = parseSingleStatus("R  new\u0000old")
         assertNotNull(renamed)
         assertEquals("new", renamed.path)
         assertEquals("old", renamed.originalPath)
 
-        val plain = GitService.parseStatusLine(" M src/Main.kt")
+        val plain = parseSingleStatus(" M src/Main.kt")
         assertNotNull(plain)
         assertEquals("src/Main.kt", plain.path)
         assertNull(plain.originalPath)
@@ -349,7 +344,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `both modified conflict - UU`() {
-        val status = GitService.parseStatusLine("UU src/conflict.kt")
+        val status = parseSingleStatus("UU src/conflict.kt")
         assertNotNull(status)
         assertEquals(GitFileStatusType.UNMERGED, status.indexStatus)
         assertEquals(GitFileStatusType.UNMERGED, status.workTreeStatus)
@@ -358,7 +353,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `both added conflict - AA`() {
-        val status = GitService.parseStatusLine("AA both-added.txt")
+        val status = parseSingleStatus("AA both-added.txt")
         assertNotNull(status)
         assertEquals(GitFileStatusType.ADDED, status.indexStatus)
         assertEquals(GitFileStatusType.ADDED, status.workTreeStatus)
@@ -366,7 +361,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `both deleted conflict - DD`() {
-        val status = GitService.parseStatusLine("DD both-deleted.txt")
+        val status = parseSingleStatus("DD both-deleted.txt")
         assertNotNull(status)
         assertEquals(GitFileStatusType.DELETED, status.indexStatus)
         assertEquals(GitFileStatusType.DELETED, status.workTreeStatus)
@@ -374,7 +369,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `deleted by them - UD`() {
-        val status = GitService.parseStatusLine("UD theirs-deleted.txt")
+        val status = parseSingleStatus("UD theirs-deleted.txt")
         assertNotNull(status)
         assertEquals(GitFileStatusType.UNMERGED, status.indexStatus)
         assertEquals(GitFileStatusType.DELETED, status.workTreeStatus)
@@ -386,7 +381,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `staged typechange - index T, clean worktree`() {
-        val status = GitService.parseStatusLine("T  link-was-a-file.txt")
+        val status = parseSingleStatus("T  link-was-a-file.txt")
         assertNotNull(status)
         assertEquals("link-was-a-file.txt", status.path)
         assertEquals(GitFileStatusType.MODIFIED, status.indexStatus)
@@ -397,7 +392,7 @@ class GitPorcelainParserTest {
 
     @Test
     fun `unstaged typechange - clean index, worktree T`() {
-        val status = GitService.parseStatusLine(" T link-was-a-file.txt")
+        val status = parseSingleStatus(" T link-was-a-file.txt")
         assertNotNull(status)
         assertEquals("link-was-a-file.txt", status.path)
         assertNull(status.indexStatus)
@@ -409,12 +404,7 @@ class GitPorcelainParserTest {
     @Test
     fun `typechange no longer vanishes from the commit dialog lists`() {
         val statuses =
-            GitService.parseStatusOutput(
-                """
-                T  staged-typechange.txt
-                 T unstaged-typechange.txt
-                """.trimIndent(),
-            )
+            GitService.parseStatusOutput("T  staged-typechange.txt\u0000 T unstaged-typechange.txt\u0000")
         // Before #1169 each row parsed its carrying column to "no status", so the
         // staged list (isStaged) and the unstaged list (isUnstaged) dropped both.
         assertEquals(
@@ -439,14 +429,14 @@ class GitPorcelainParserTest {
 
     @Test
     fun `empty and too-short lines return null`() {
-        assertNull(GitService.parseStatusLine(""))
-        assertNull(GitService.parseStatusLine("M"))
-        assertNull(GitService.parseStatusLine("M "))
+        assertNull(parseSingleStatus(""))
+        assertNull(parseSingleStatus("M"))
+        assertNull(parseSingleStatus("M "))
     }
 
     @Test
     fun `line with unknown status codes degrades to no-status, never crashes`() {
-        val status = GitService.parseStatusLine("XY weird.txt")
+        val status = parseSingleStatus("XY weird.txt")
         assertNotNull(status)
         assertEquals("weird.txt", status.path)
         assertNull(status.indexStatus)
