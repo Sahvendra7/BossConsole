@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
  * Locks down [GitService]'s pure git-porcelain parsers, which every git panel
  * (status list, commit log, stash list, PR-link building) renders from:
  *
- * - [GitService.parseStatusLine] / [GitService.parseStatusChar] — `git status --porcelain=v1`
+ * - [GitService.parseStatusOutput] / [GitService.parseStatusChar] — `git status --porcelain=v1`
  * - [GitService.statusTypeFromCode] — `git diff --name-status` (the staged/unstaged diff tabs)
  * - [GitService.parseCommitLine] — `git log --format=%H%x00%h%x00…` (NUL-separated)
  * - [GitService.parseStashLine] — `git stash list`
@@ -23,7 +23,6 @@ import kotlin.test.assertTrue
  */
 class GitPorcelainParserTest {
     // ==================== parseStatusChar ====================
-
 
     private fun parseSingleStatus(input: String): GitFileStatus? {
         val output = if (input.isEmpty()) "" else input + "\u0000"
@@ -58,7 +57,7 @@ class GitPorcelainParserTest {
         assertNull(GitService.parseStatusChar('z'))
     }
 
-    // ==================== parseStatusLine: normal statuses ====================
+    // ==================== parseSingleStatus: normal statuses ====================
 
     @Test
     fun `staged modification - index M, clean worktree`() {
@@ -200,7 +199,7 @@ class GitPorcelainParserTest {
         assertTrue(GitService.parseStatusOutput("\u0000\u0000").isEmpty())
     }
 
-    // ==================== parseStatusLine: renames and copies ====================
+    // ==================== parseSingleStatus: renames and copies ====================
 
     @Test
     fun `staged rename with arrow keeps both paths`() {
@@ -235,7 +234,7 @@ class GitPorcelainParserTest {
         assertTrue(status.isUnstaged)
     }
 
-    // ==================== parseStatusLine: path shapes ====================
+    // ==================== parseSingleStatus: path shapes ====================
 
     @Test
     fun `path with spaces passes through verbatim`() {
@@ -340,7 +339,7 @@ class GitPorcelainParserTest {
         assertNull(plain.originalPath)
     }
 
-    // ==================== parseStatusLine: merge conflicts ====================
+    // ==================== parseSingleStatus: merge conflicts ====================
 
     @Test
     fun `both modified conflict - UU`() {
@@ -375,9 +374,9 @@ class GitPorcelainParserTest {
         assertEquals(GitFileStatusType.DELETED, status.workTreeStatus)
     }
 
-    // ==================== parseStatusLine: empty and malformed ====================
+    // ==================== parseSingleStatus: empty and malformed ====================
 
-    // ==================== parseStatusLine: typechange (T) ====================
+    // ==================== parseSingleStatus: typechange (T) ====================
 
     @Test
     fun `staged typechange - index T, clean worktree`() {

@@ -505,11 +505,14 @@ actual object GitService {
      * bridge forwards. Fixing only one of the two booleans would just move such an entry
      * from the staged list to the unstaged one.
      *
-     * [parseStatusLine] itself stays faithful to porcelain and still reports IGNORED, so
+     * The parser itself stays faithful to porcelain and still supports IGNORED, so
      * a future caller that deliberately passes `--ignored` can parse those lines — it
-     * just has to opt in here rather than inherit them silently.
+     * just has to pass `keepIgnored = true` here rather than inherit them silently.
      */
-    internal fun parseStatusOutput(output: String, keepIgnored: Boolean = false): List<GitFileStatus> {
+    internal fun parseStatusOutput(
+        output: String,
+        keepIgnored: Boolean = false,
+    ): List<GitFileStatus> {
         val statuses = mutableListOf<GitFileStatus>()
         val tokens = output.split('\u0000')
         var i = 0
@@ -523,13 +526,14 @@ actual object GitService {
             val workTreeChar = token[1]
             val isRenameOrCopy = indexChar in "RC" || workTreeChar in "RC"
             val path = token.substring(3)
-            val originalPath = if (isRenameOrCopy && i + 1 < tokens.size - 1) {
-                val orig = tokens[i + 1]
-                i++
-                orig
-            } else {
-                null
-            }
+            val originalPath =
+                if (isRenameOrCopy && i + 1 < tokens.size - 1) {
+                    val orig = tokens[i + 1]
+                    i++
+                    orig
+                } else {
+                    null
+                }
             val indexStatus = parseStatusChar(indexChar)
             val workTreeStatus = parseStatusChar(workTreeChar)
             val isStaged = indexStatus != null && indexStatus !in NEVER_STAGED

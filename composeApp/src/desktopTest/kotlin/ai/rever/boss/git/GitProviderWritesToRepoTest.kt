@@ -5,6 +5,7 @@ import ai.rever.boss.plugin.git.GitOperationResult
 import ai.rever.boss.window.WindowGitState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -113,13 +114,17 @@ class GitProviderWritesToRepoTest {
     fun unstageRenameWithArrowInOriginalPath(
         @TempDir tmp: File,
     ) = runTest {
+        assumeTrue(
+            !System.getProperty("os.name").lowercase().contains("win"),
+            "The regression path contains '>', which Windows does not allow in filenames.",
+        )
         val dir = repo(tmp)
         File(dir, "old -> name.txt").writeText("hello\n")
         git(dir, "add", ".")
         git(dir, "commit", "-q", "-m", "add file")
 
         git(dir, "mv", "old -> name.txt", "new -> dest.txt")
-        
+
         // Assert it is staged rename
         val porcelain = git(dir, "status", "--porcelain=v1")
         assertTrue(
