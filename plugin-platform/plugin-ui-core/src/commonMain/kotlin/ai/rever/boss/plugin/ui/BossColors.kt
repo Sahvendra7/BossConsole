@@ -28,6 +28,7 @@ object BossColors {
 
     // Accent colors
     val darkAccent: Color get() = c.signal // primary / live / active
+    val accentText: Color get() = c.signal
     val darkSecondary: Color get() = c.data // links / data
 
     // Status colors

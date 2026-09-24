@@ -64,7 +64,33 @@ data class BrowserContextMenuInfo(
     val formFieldInfo: FormFieldInfo? = null,
     /** Menu context token, used to route editor commands to the exact clicked frame */
     val menuContext: BrowserMenuContext? = null,
-)
+) {
+    @Deprecated("For binary compatibility only", level = DeprecationLevel.HIDDEN)
+    constructor(
+        linkUrl: String? = null,
+        selectedText: String? = null,
+        isEditable: Boolean = false,
+        hasVideo: Boolean = false,
+        hasImage: Boolean = false,
+        imageUrl: String? = null,
+        pageUrl: String = "",
+        pageTitle: String = "",
+        formFieldInfo: FormFieldInfo? = null
+    ) : this(linkUrl, selectedText, isEditable, hasVideo, hasImage, imageUrl, pageUrl, pageTitle, formFieldInfo, null)
+
+    @Deprecated("For binary compatibility only", level = DeprecationLevel.HIDDEN)
+    fun copy(
+        linkUrl: String? = this.linkUrl,
+        selectedText: String? = this.selectedText,
+        isEditable: Boolean = this.isEditable,
+        hasVideo: Boolean = this.hasVideo,
+        hasImage: Boolean = this.hasImage,
+        imageUrl: String? = this.imageUrl,
+        pageUrl: String = this.pageUrl,
+        pageTitle: String = this.pageTitle,
+        formFieldInfo: FormFieldInfo? = this.formFieldInfo
+    ): BrowserContextMenuInfo = copy(linkUrl, selectedText, isEditable, hasVideo, hasImage, imageUrl, pageUrl, pageTitle, formFieldInfo, this.menuContext)
+}
 
 /**
  * Callback for handling context menu requests from the browser.
@@ -540,6 +566,9 @@ interface BrowserHandle {
     // CLIPBOARD OPERATIONS
     // ============================================================
 
+    @Deprecated("For binary compatibility only", level = DeprecationLevel.HIDDEN)
+    fun copySelection() = copySelection(null)
+
     /**
      * Copy the currently selected text to the clipboard.
      *
@@ -548,28 +577,37 @@ interface BrowserHandle {
      *   focused-frame / main-frame resolution. A menu context is NOT global state and does not
      *   affect later ordinary commands.
      */
-    fun copySelection(menuContext: BrowserMenuContext? = null)
+    fun copySelection(menuContext: BrowserMenuContext? = null) { copySelection() }
+
+    @Deprecated("For binary compatibility only", level = DeprecationLevel.HIDDEN)
+    fun paste() = paste(null)
 
     /**
      * Paste text from the clipboard at the current cursor position.
      *
      * @param menuContext See [copySelection].
      */
-    fun paste(menuContext: BrowserMenuContext? = null)
+    fun paste(menuContext: BrowserMenuContext? = null) { paste() }
+
+    @Deprecated("For binary compatibility only", level = DeprecationLevel.HIDDEN)
+    fun cut() = cut(null)
 
     /**
      * Cut the currently selected text to the clipboard.
      *
      * @param menuContext See [copySelection].
      */
-    fun cut(menuContext: BrowserMenuContext? = null)
+    fun cut(menuContext: BrowserMenuContext? = null) { cut() }
+
+    @Deprecated("For binary compatibility only", level = DeprecationLevel.HIDDEN)
+    fun selectAll() = selectAll(null)
 
     /**
      * Select all text on the page.
      *
      * @param menuContext See [copySelection].
      */
-    fun selectAll(menuContext: BrowserMenuContext? = null)
+    fun selectAll(menuContext: BrowserMenuContext? = null) { selectAll() }
 
     // ============================================================
     // POPUP AND NEW TAB HANDLING
