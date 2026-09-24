@@ -4,7 +4,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -17,7 +16,6 @@ import kotlin.test.assertTrue
 
 class PluginStorageConcurrencyTest {
     private val directory = createTempDirectory("plugin-storage-concurrency").toFile()
-    private val file = File(directory, "storage.properties")
 
     @AfterTest
     fun cleanUp() {

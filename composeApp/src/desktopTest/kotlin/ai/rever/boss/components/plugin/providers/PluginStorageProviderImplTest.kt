@@ -50,8 +50,10 @@ class PluginStorageProviderImplTest {
         return props
     }
 
-    private fun tempFilesLeftBehind(): List<File> =
-        testDir.listFiles { file -> file.name.startsWith("storage.properties.tmp.") }?.toList().orEmpty()
+    private fun tempFilesLeftBehind(): List<File> {
+        val prefix = tempPrefixFor(File(testDir, "storage.properties"))
+        return testDir.listFiles { file -> file.name.startsWith(prefix) }?.toList().orEmpty()
+    }
 
     /**
      * Launches a collector that records change events, then yields once so
@@ -284,13 +286,14 @@ class PluginStorageProviderImplTest {
 
     @Test
     fun `a new provider sweeps orphaned temp files`() {
-        File(testDir, "storage.properties.tmp.orphan").apply {
+        File(testDir, "${tempPrefixFor(File(testDir, "storage.properties"))}orphan").apply {
             createNewFile()
             writeText("stale")
         }
         val provider = PluginStorageProviderImpl("sweep-plugin", testDir)
         assertEquals("sweep-plugin", provider.getPluginId())
-        val orphans = testDir.listFiles { file -> file.name.startsWith("storage.properties.tmp.") }
+        val prefix = tempPrefixFor(File(testDir, "storage.properties"))
+        val orphans = testDir.listFiles { file -> file.name.startsWith(prefix) }
         assertTrue(orphans.isNullOrEmpty(), "orphaned temp files must be swept on provider construction")
     }
 }

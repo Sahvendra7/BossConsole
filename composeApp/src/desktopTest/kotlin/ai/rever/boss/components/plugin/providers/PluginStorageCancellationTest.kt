@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempDirectory
@@ -17,7 +16,6 @@ import kotlin.test.assertTrue
 
 class PluginStorageCancellationTest {
     private val directory = createTempDirectory("plugin-storage-cancellation").toFile()
-    private val file = File(directory, "storage.properties")
     private val entered = CountDownLatch(1)
     private val release = CountDownLatch(1)
 

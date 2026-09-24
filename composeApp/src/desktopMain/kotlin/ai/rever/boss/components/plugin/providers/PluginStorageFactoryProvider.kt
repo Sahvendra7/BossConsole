@@ -207,8 +207,9 @@ internal class PluginStorageProviderImpl(
 
     private fun loadFromDisk() {
         // computeIfAbsent constructs one provider per id, before any of its writes can start.
+        val tempPrefix = tempPrefixFor(storageFile)
         storageDir
-            .listFiles { file -> file.name.startsWith("storage.properties.tmp.") }
+            .listFiles { file -> file.name.startsWith(tempPrefix) }
             ?.forEach { orphan -> orphan.delete() }
         try {
             if (storageFile.exists()) {
@@ -291,13 +292,15 @@ internal class PluginStorageProviderImpl(
  * synced, so power loss can lose the rename itself; the shared move helper's non-atomic fallback
  * cannot promise atomic replacement. A process crash does not lose the kernel's page cache.
  */
+internal fun tempPrefixFor(file: File) = "${file.name}.tmp."
+
 internal fun writePluginProperties(
     file: File,
     properties: Properties,
 ) {
     val target = file.absoluteFile
     target.parentFile.mkdirs()
-    val temporary = Files.createTempFile(target.parentFile.toPath(), "${target.name}.tmp.", ".tmp").toFile()
+    val temporary = Files.createTempFile(target.parentFile.toPath(), tempPrefixFor(target), ".tmp").toFile()
     try {
         // Keep OutputStream encoding: Properties.load(InputStream) expects Latin-1 with escaped
         // Unicode, not the unescaped Unicode emitted by Properties.store(Writer).
