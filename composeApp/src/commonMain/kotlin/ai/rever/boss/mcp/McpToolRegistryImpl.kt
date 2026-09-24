@@ -123,6 +123,13 @@ object McpToolRegistryImpl : McpToolRegistry {
             ledger = ledger,
         )
 
+    init {
+        registerProvider(WorkspaceMcpToolProvider)
+        registerProvider(SnippetMcpToolProvider)
+        registerProvider(NotificationMcpToolProvider)
+        registerProvider(IntrospectionMcpToolProvider)
+    }
+
     override val allTools: StateFlow<List<RegisteredMcpTool>> get() = core.allTools
     override val disabledToolNames: StateFlow<Set<String>> get() = core.disabledToolNames
     override val tools: StateFlow<List<RegisteredMcpTool>> get() = core.tools
@@ -166,6 +173,15 @@ object McpToolRegistryImpl : McpToolRegistry {
         toolName: String,
         arguments: String,
     ): McpToolResult = core.invoke(toolName, arguments)
+
+    /** See [McpPolicyEngine.yoloMode]. */
+    val yoloMode: StateFlow<Boolean> get() = core.policyEngine.yoloMode
+
+    /** False when the deployment refuses YOLO mode ([McpYoloGate]); both entry points hide. */
+    val yoloAvailable: Boolean get() = core.yoloAvailable
+
+    /** See `Core.setYoloMode`. The only way UI should switch YOLO mode. */
+    suspend fun setYoloMode(enabled: Boolean): Boolean = core.setYoloMode(enabled)
 }
 
 /**
@@ -380,8 +396,42 @@ internal class McpToolRegistryCore(
     val policyEngine: McpPolicyEngine = McpPolicyEngine(),
     val approvalBus: McpApprovalBus = McpApprovalBus(),
     val ledger: McpOperationLedger = McpOperationLedger(),
+    /** Injected so tests need not set process env; production reads [McpYoloGate]. */
+    val yoloAvailable: Boolean = !McpYoloGate.disabledByDeployment,
 ) {
     private val logger = BossLogger.forComponent("McpToolRegistry")
+
+    /**
+     * Switch YOLO mode, and record the switch in the ledger. Returns false (and changes nothing)
+     * when turning it on is refused by the deployment ([yoloAvailable]); turning it off is never
+     * refused. A no-op switch writes nothing, so the ledger holds one marker per real transition.
+     *
+     * The flag flips before the ledger write so "off" takes effect immediately even if the disk
+     * is slow; the write runs on [Dispatchers.IO] because the ledger does synchronous file I/O.
+     */
+    @Suppress("ReturnCount") // Refused, no-op and switched are three distinct outcomes.
+    suspend fun setYoloMode(enabled: Boolean): Boolean {
+        if (enabled && !yoloAvailable) {
+            logger.warn(LogCategory.SYSTEM, "MCP YOLO mode refused: disabled by deployment")
+            return false
+        }
+        if (policyEngine.yoloMode.value == enabled) return true
+        policyEngine.setYoloMode(enabled)
+        withContext(NonCancellable + Dispatchers.IO) {
+            ledger.record(
+                toolName = McpYoloMode.LEDGER_TOOL_NAME,
+                providerId = McpYoloMode.LEDGER_PROVIDER_ID,
+                policyApplied = McpPolicyAction.ASK,
+                approvalDisposition =
+                    if (enabled) McpApprovalDisposition.YOLO_ENABLED else McpApprovalDisposition.YOLO_DISABLED,
+                durationMs = 0L,
+                isError = false,
+                rawArgs = emptyMap(),
+                countsAsCall = false,
+            )
+        }
+        return true
+    }
 
     /**
      * Serializes all mutations + recomputes (see [McpToolRegistryImpl] KDoc).
@@ -744,8 +794,12 @@ internal class McpToolRegistryCore(
             _tools.value.firstOrNull { it.definition.name == toolName }
                 ?: return McpToolResult("Unknown or disabled MCP tool: $toolName", isError = true)
         val args = parseArgs(arguments)
-        val revocation = policyEngine.revocationVersion(toolName)
-        val policy = policyEngine.policyFor(toolName)
+        val revocation = policyEngine.revocationVersion(toolName, tool.providerId)
+        // The definition's own readOnly declaration rides along on every policy consult for
+        // this invocation: a tool that declared side effects classifies as mutating whatever
+        // its name says (#804), so it gets the mutating default - ASK under the factory
+        // config - rather than being auto-allowed for avoiding the catalog's name patterns.
+        val policy = policyEngine.policyFor(toolName, tool.providerId, tool.definition.readOnly)
         val startTime = System.nanoTime()
         var disposition = McpApprovalDisposition.AUTO_ALLOWED
         var result: McpToolResult? = null
@@ -813,7 +867,9 @@ internal class McpToolRegistryCore(
                 policyEngine.confirmInvocation(
                     tool.definition.name,
                     revocation,
-                    grantSessionTrust = disposition == McpApprovalDisposition.SESSION_TRUSTED,
+                    grantSessionTrust = disposition.grantsSessionTrust,
+                    providerId = tool.providerId,
+                    declaredReadOnly = tool.definition.readOnly,
                 )
         }
 
@@ -828,8 +884,8 @@ internal class McpToolRegistryCore(
             if (authorization.second != null) return@withContext authorization
             val toolName = tool.definition.name
             if (!isAvailable(tool) ||
-                policyEngine.revocationVersion(toolName) != revocation ||
-                policyEngine.policyFor(toolName) == McpPolicyAction.DENY
+                policyEngine.revocationVersion(toolName, tool.providerId) != revocation ||
+                policyEngine.policyFor(toolName, tool.providerId, tool.definition.readOnly) == McpPolicyAction.DENY
             ) {
                 return@withContext McpApprovalDisposition.POLICY_DENIED to
                     "MCP tool access revoked while awaiting approval"
@@ -840,13 +896,14 @@ internal class McpToolRegistryCore(
                     McpPolicyAction.ALLOW,
                     preserveDeny = true,
                     expectedRevocation = revocation,
+                    providerId = tool.providerId,
                 )
             ) {
                 return@withContext authorization
             }
             val disposition =
-                if (policyEngine.revocationVersion(toolName) != revocation ||
-                    policyEngine.policyFor(toolName) == McpPolicyAction.DENY
+                if (policyEngine.revocationVersion(toolName, tool.providerId) != revocation ||
+                    policyEngine.policyFor(toolName, tool.providerId, tool.definition.readOnly) == McpPolicyAction.DENY
                 ) {
                     McpApprovalDisposition.POLICY_DENIED
                 } else {
@@ -855,11 +912,56 @@ internal class McpToolRegistryCore(
             disposition to "MCP persistent approval was not saved; tool execution withheld"
         }
 
+    // Each approval scope (provider-wide, persistent, session/once) owns its own outcome.
+    @Suppress("ReturnCount")
     private suspend fun approvedAuthorization(
         tool: RegisteredMcpTool,
         decision: McpApprovalDecision.Approved,
         revocation: Long,
     ): Pair<McpApprovalDisposition, String?> {
+        if (decision.trustProvider) {
+            val toolName = tool.definition.name
+            // Same pre-check validateApproval does for the per-tool path: a revoke or DENY
+            // landing while this dialog was open must refuse the write outright, not fall back
+            // to running the call. Mirrored again inside setProviderPolicy's own lock below,
+            // since this check alone is not atomic with the write that follows it.
+            if (!isAvailable(tool) ||
+                policyEngine.revocationVersion(toolName, tool.providerId) != revocation ||
+                policyEngine.policyFor(toolName, tool.providerId, tool.definition.readOnly) == McpPolicyAction.DENY
+            ) {
+                return McpApprovalDisposition.POLICY_DENIED to
+                    "MCP tool access revoked while awaiting approval"
+            }
+            // Off the calling coroutine's own dispatcher: this is a synchronous disk write
+            // (docs/THREADING.md), and it must not run on whatever dispatcher delivered this
+            // MCP call.
+            val persisted =
+                withContext(Dispatchers.IO) {
+                    policyEngine.setProviderPolicy(
+                        tool.providerId,
+                        McpPolicyAction.ALLOW,
+                        preserveDeny = true,
+                        expectedRevocation = revocation,
+                        toolName = toolName,
+                    )
+                }
+            if (persisted) {
+                return McpApprovalDisposition.PROVIDER_TRUSTED to null
+            }
+            // setProviderPolicy can return false for two different reasons: its own in-lock
+            // guard refused a now-stale write (a revoke or DENY landed between the pre-check
+            // above and the lock), or the write genuinely failed on disk. Only the latter falls
+            // back to running the call with session trust for this one tool
+            // (PROVIDER_TRUST_PERSIST_FAILED) - the former must not run at all, exactly the
+            // disambiguation validateApproval already does for the per-tool path.
+            return if (policyEngine.revocationVersion(toolName, tool.providerId) != revocation ||
+                policyEngine.policyFor(toolName, tool.providerId, tool.definition.readOnly) == McpPolicyAction.DENY
+            ) {
+                McpApprovalDisposition.POLICY_DENIED to "MCP tool access revoked while awaiting approval"
+            } else {
+                McpApprovalDisposition.PROVIDER_TRUST_PERSIST_FAILED to null
+            }
+        }
         if (decision.persistPolicy) {
             return validateApproval(tool, McpApprovalDisposition.PERSISTENTLY_ALLOWED to null, revocation)
         }
@@ -873,13 +975,20 @@ internal class McpToolRegistryCore(
     }
 
     private suspend fun persistentDenialDisposition(
-        toolName: String,
+        tool: RegisteredMcpTool,
         revocation: Long,
     ): McpApprovalDisposition =
         withContext(Dispatchers.IO) {
-            if (policyEngine.setToolPolicy(toolName, McpPolicyAction.DENY, expectedRevocation = revocation)) {
+            val toolName = tool.definition.name
+            if (policyEngine.setToolPolicy(
+                    toolName,
+                    McpPolicyAction.DENY,
+                    expectedRevocation = revocation,
+                    providerId = tool.providerId,
+                )
+            ) {
                 McpApprovalDisposition.PERSISTENTLY_DENIED
-            } else if (policyEngine.revocationVersion(toolName) != revocation) {
+            } else if (policyEngine.revocationVersion(toolName, tool.providerId) != revocation) {
                 McpApprovalDisposition.POLICY_DENIED
             } else {
                 McpApprovalDisposition.POLICY_PERSIST_FAILED
@@ -901,6 +1010,12 @@ internal class McpToolRegistryCore(
                 McpApprovalDisposition.AUTO_ALLOWED to null
             }
 
+            // YOLO answers the prompt, and only the prompt: DENY above, the kill switch and RBAC
+            // are all decided before this branch is reached.
+            McpPolicyAction.ASK if policyEngine.yoloMode.value -> {
+                McpApprovalDisposition.YOLO_ALLOWED to null
+            }
+
             McpPolicyAction.ASK -> {
                 when (
                     val decision =
@@ -909,6 +1024,9 @@ internal class McpToolRegistryCore(
                             tool.providerId,
                             McpArgumentSanitizer.parseArguments(args.raw),
                             riskAssessment = DefaultMcpRiskEvaluator().evaluateRisk(tool.definition.name, args),
+                            declaredReadOnly = tool.definition.readOnly,
+                            toolDescription = tool.definition.description,
+                            policy = policy,
                         )
                 ) {
                     is McpApprovalDecision.Approved -> {
@@ -918,7 +1036,7 @@ internal class McpToolRegistryCore(
                     is McpApprovalDecision.Denied -> {
                         val disposition =
                             if (decision.persistPolicy) {
-                                persistentDenialDisposition(tool.definition.name, revocation)
+                                persistentDenialDisposition(tool, revocation)
                             } else {
                                 McpApprovalDisposition.DENIED_BY_OPERATOR
                             }
@@ -935,6 +1053,19 @@ internal class McpToolRegistryCore(
                 }
             }
         }
+
+    /**
+     * Whether this disposition should also grant session trust for the tool in hand.
+     *
+     * [McpApprovalDisposition.SESSION_TRUSTED] is the obvious case; PROVIDER_TRUST_PERSIST_FAILED
+     * needs it too - the durable, provider-wide grant did not save, but the call the operator
+     * already approved past should not be blocked by that disk fault, so it falls back to at
+     * least trusting this one tool for the rest of the session.
+     */
+    private val McpApprovalDisposition.grantsSessionTrust: Boolean
+        get() =
+            this == McpApprovalDisposition.SESSION_TRUSTED ||
+                this == McpApprovalDisposition.PROVIDER_TRUST_PERSIST_FAILED
 
     private suspend fun executeAuthorized(
         tool: RegisteredMcpTool,

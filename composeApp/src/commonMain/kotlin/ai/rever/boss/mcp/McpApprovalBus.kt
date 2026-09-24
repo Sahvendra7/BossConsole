@@ -29,6 +29,11 @@ sealed interface McpApprovalDecision {
          * `trustForSession` when this is true.
          */
         val persistPolicy: Boolean = false,
+        /**
+         * "Trust this plugin": persist ALLOW for every tool [McpApprovalRequest.providerId]
+         * contributes, not just this one tool or this one call.
+         */
+        val trustProvider: Boolean = false,
     ) : McpApprovalDecision
 
     data class Denied(
@@ -52,9 +57,30 @@ data class McpApprovalRequest(
     val arguments: Map<String, Any?>,
     val timeoutMs: Long,
     val riskAssessment: McpRiskAssessment? = null,
+    /**
+     * The tool's own [ai.rever.boss.plugin.api.McpToolDefinition.readOnly] declaration, captured
+     * at invocation so the dialog's mutating-vs-read labeling cannot be spoofed by an innocent
+     * tool name the way the policy gate could before #804. Null when no definition was in hand
+     * when the request was raised, which leaves the name-only catalog to label it.
+     */
+    val declaredReadOnly: Boolean? = null,
+    /**
+     * The tool's declared description, captured at invocation so the operator approves with
+     * sight of what the tool claims to do rather than a bare name. Null only when the request
+     * was raised without the definition in hand.
+     */
+    val toolDescription: String? = null,
+    /** The policy action that suspended this call - ASK today; carried so the dialog can say why. */
+    val policy: McpPolicyAction? = null,
     val requestedAt: Long = System.currentTimeMillis(),
     val deferred: CompletableDeferred<McpApprovalDecision> = CompletableDeferred(),
-)
+) {
+    /**
+     * Milliseconds left before this request auto-denies, relative to [requestedAt].
+     * The dialog renders the snapshot it took at open; nothing here ticks.
+     */
+    fun remainingTimeoutMs(): Long = (timeoutMs - (System.currentTimeMillis() - requestedAt)).coerceAtLeast(0)
+}
 
 /**
  * Central event bus for routing interactive tool approval requests to the UI.
@@ -82,13 +108,18 @@ open class McpApprovalBus(
      * Suspends the calling coroutine until the operator answers via the UI
      * or [timeoutMs] elapses (in which case it fails closed).
      */
-    @Suppress("ReturnCount") // Both active and delivery queues must reject overflow before awaiting an answer.
+    // Queue overflow needs its own returns; the request carries the tool's full approval
+    // context, from name and provider to its own read-only declaration.
+    @Suppress("ReturnCount", "LongParameterList")
     suspend fun requestApproval(
         toolName: String,
         providerId: String,
         arguments: Map<String, Any?>,
         timeoutMs: Long = defaultTimeoutMs,
         riskAssessment: McpRiskAssessment? = null,
+        declaredReadOnly: Boolean? = null,
+        toolDescription: String? = null,
+        policy: McpPolicyAction? = null,
     ): McpApprovalDecision {
         val request =
             McpApprovalRequest(
@@ -97,6 +128,9 @@ open class McpApprovalBus(
                 arguments = McpArgumentSanitizer.sanitize(arguments),
                 timeoutMs = timeoutMs,
                 riskAssessment = riskAssessment,
+                declaredReadOnly = declaredReadOnly,
+                toolDescription = toolDescription,
+                policy = policy,
             )
 
         synchronized(lock) {
@@ -157,14 +191,23 @@ open class McpApprovalBus(
         requestId: String,
         trustForSession: Boolean = false,
         persistPolicy: Boolean = false,
+        trustProvider: Boolean = false,
     ): Boolean {
         val req = activeRequests[requestId] ?: return false
-        val completed = req.deferred.complete(McpApprovalDecision.Approved(trustForSession, persistPolicy))
+        val completed =
+            req.deferred.complete(
+                McpApprovalDecision.Approved(trustForSession, persistPolicy, trustProvider),
+            )
         if (completed) {
             logger.info(
                 LogCategory.SYSTEM,
                 "Operator approved tool execution",
-                mapOf("tool" to req.toolName, "trustForSession" to trustForSession, "persistPolicy" to persistPolicy),
+                mapOf(
+                    "tool" to req.toolName,
+                    "trustForSession" to trustForSession,
+                    "persistPolicy" to persistPolicy,
+                    "trustProvider" to trustProvider,
+                ),
             )
         }
         return completed
@@ -188,6 +231,33 @@ open class McpApprovalBus(
             )
         }
         return completed
+    }
+
+    /**
+     * Reject every request that is pending at the instant this method takes its snapshot.
+     *
+     * New requests may arrive immediately afterwards and are deliberately left alone: this is an
+     * operator response to the queue they can see, not a hidden global kill-switch. The snapshot
+     * is taken under the same lock that admits requests so a request cannot be half-registered
+     * while the bulk decision is assembled. Each caller still removes its own request from
+     * [pendingList] in [requestApproval]'s `finally` block, preserving the single cleanup path.
+     *
+     * Bulk rejection never persists a policy. A burst of unrelated calls must not turn one click
+     * into a durable DENY for multiple tools or providers.
+     *
+     * @return the number of callers whose still-pending decision was completed by this call.
+     */
+    fun denyAllPending(reason: String = "Operator rejected all pending actions"): Int {
+        val pending = synchronized(lock) { activeRequests.values.toList() }
+        val denied = pending.count { it.deferred.complete(McpApprovalDecision.Denied(reason)) }
+        if (denied > 0) {
+            logger.info(
+                LogCategory.SYSTEM,
+                "Operator denied all pending MCP tool executions",
+                mapOf("count" to denied),
+            )
+        }
+        return denied
     }
 }
 

@@ -3,6 +3,7 @@ package ai.rever.boss.window
 import ai.rever.boss.BossAppWithAuth
 import ai.rever.boss.components.bars.ChromeBar
 import ai.rever.boss.components.bars.displayName
+import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.bars.isBarVisible
 import ai.rever.boss.components.bars.withBarVisible
 import ai.rever.boss.components.dialogs.CLIInstallationDialog
@@ -14,6 +15,8 @@ import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.menu.MenuShortcutBridge
 import ai.rever.boss.keymap.model.KeymapActions
+import ai.rever.boss.mcp.McpToolRegistryImpl
+import ai.rever.boss.mcp.McpYoloPrompt
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.browser.ActiveBrowserRegistry
 import ai.rever.boss.plugin.browser.FluckEngine
@@ -25,6 +28,7 @@ import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.plugin.ui.BossThemeController
 import ai.rever.boss.plugin.ui.LocalHeavyweightOverlays
 import ai.rever.boss.services.editor.EditorAPIAccess
+import ai.rever.boss.services.importer.BookmarkExport
 import ai.rever.boss.services.terminal.TerminalAPIAccess
 import ai.rever.boss.settings.MicrokernelModePreference
 import ai.rever.boss.settings.microkernelModeMenuLabel
@@ -296,6 +300,7 @@ fun ApplicationScope.BossWindow(
         // State for CLI installation dialog
         var showCLIInstallDialog by remember { mutableStateOf(false) }
         var isCliInstalled by remember { mutableStateOf<Boolean>(CLIInstaller.isInstalled()) }
+        val mcpYolo by McpToolRegistryImpl.yoloMode.collectAsState()
 
         // State for Reset Browser dialog
         var showResetBrowserDialog by remember { mutableStateOf(false) }
@@ -304,9 +309,6 @@ fun ApplicationScope.BossWindow(
         // State for Reset Terminal dialog
         var showResetTerminalDialog by remember { mutableStateOf(false) }
         var resetTerminalResult by remember { mutableStateOf<Boolean?>(null) }
-
-        // State for Welcome Wizard dialog
-        var showWelcomeWizard by remember { mutableStateOf(false) }
 
         // State for the password/bookmark import dialog
         var showImportDialog by remember { mutableStateOf(false) }
@@ -400,6 +402,7 @@ fun ApplicationScope.BossWindow(
         MenuBar {
             // File Menu
             Menu("File") {
+                Item("Go Home", onClick = { MenuActionsHandler.triggerGoHome(windowState.id) })
                 Item(
                     "New Tab",
                     shortcut = shortcutBridge.getKeyShortcut(KeymapActions.TAB_NEW),
@@ -464,7 +467,7 @@ fun ApplicationScope.BossWindow(
                 Separator()
 
                 // Workspace submenu
-                Menu("Select Workspace") {
+                Menu("Select Space") {
                     workspaces.forEach { workspace ->
                         Item(
                             text = workspace.name,
@@ -477,7 +480,7 @@ fun ApplicationScope.BossWindow(
 
                     if (workspaces.isEmpty()) {
                         Item(
-                            text = "(No workspaces available)",
+                            text = "(No spaces available)",
                             onClick = { },
                             enabled = false,
                         )
@@ -485,7 +488,8 @@ fun ApplicationScope.BossWindow(
 
                     Separator()
 
-                    // Access TopOfMindDialog for workspace switching and quick navigation
+                    // Raises Top of Mind's quick switcher, which is where switching between
+                    // every window's tabs lives now.
                     Item(
                         "Top of the Mind",
                         shortcut = shortcutBridge.getKeyShortcut(KeymapActions.QUICK_SWITCHER_OPEN),
@@ -498,7 +502,7 @@ fun ApplicationScope.BossWindow(
                 Separator()
 
                 Item(
-                    "Save Workspace",
+                    "Save Space",
                     shortcut = shortcutBridge.getKeyShortcut(KeymapActions.WORKSPACE_SAVE),
                     onClick = {
                         MenuActionsHandler.triggerSaveWorkspace(windowState.id)
@@ -542,6 +546,14 @@ fun ApplicationScope.BossWindow(
                     },
                 )
 
+                Separator()
+
+                Item(
+                    "Print...",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.BROWSER_PRINT),
+                    enabled = hasBrowser,
+                    onClick = { MenuActionsHandler.triggerPrintBrowser(windowState.id) },
+                )
                 Separator()
 
                 Item(
@@ -726,6 +738,11 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerActualSize(windowState.id)
                     },
+                    // Their bindings are BROWSER-context: AWTKeyboardInterceptor declines them
+                    // outside a browser tab, so the menu must not out-broaden the interceptor.
+                    // Un-gated, a now-live Ctrl accelerator (Windows/Linux) would fire these
+                    // from a terminal or editor tab. Back/Forward/DevTools already gate this way.
+                    enabled = hasBrowser,
                 )
                 Item(
                     "Zoom In",
@@ -733,6 +750,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerZoomIn(windowState.id)
                     },
+                    enabled = hasBrowser,
                 )
                 Item(
                     "Zoom Out",
@@ -740,6 +758,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerZoomOut(windowState.id)
                     },
+                    enabled = hasBrowser,
                 )
                 Item(
                     "Reload",
@@ -747,6 +766,7 @@ fun ApplicationScope.BossWindow(
                     onClick = {
                         MenuActionsHandler.triggerReloadBrowser(windowState.id)
                     },
+                    enabled = hasBrowser,
                 )
                 Item(
                     "Back",
@@ -893,6 +913,26 @@ fun ApplicationScope.BossWindow(
                         showCLIInstallDialog = true
                     },
                 )
+
+                // YOLO mode's second door, and the one that survives a hidden bottom bar (Focus
+                // mode hides it by default): the checkmark is its indicator, unchecking is its off
+                // switch. Checking only ASKS - the shared confirmation in BossAppDialogs - so the
+                // mark reflects the engine, never the click. Hidden when the deployment refuses
+                // the mode, unless it is somehow on, so it can always be turned off.
+                if (McpToolRegistryImpl.yoloAvailable || mcpYolo) {
+                    Separator()
+                    CheckboxItem(
+                        "MCP YOLO Mode",
+                        checked = mcpYolo,
+                        onCheckedChange = { on ->
+                            if (on) {
+                                McpYoloPrompt.request(windowState.id)
+                            } else {
+                                menuScope.launch { McpToolRegistryImpl.setYoloMode(false) }
+                            }
+                        },
+                    )
+                }
             }
 
             // Window Menu
@@ -969,7 +1009,15 @@ fun ApplicationScope.BossWindow(
                 Item(
                     "Welcome Wizard...",
                     onClick = {
-                        showWelcomeWizard = true
+                        requestTerminalWelcomeWizard(
+                            providerAvailable = TerminalAPIAccess.getProvider() != null,
+                            onOpen = { MenuActionsHandler.triggerShowTerminalOnboarding(windowState.id) },
+                            onUnavailable = {
+                                StatusMessageManager.showMessage(
+                                    "BOSS Term setup is unavailable. Update or reload Terminal Tab, then try again.",
+                                )
+                            },
+                        )
                     },
                 )
 
@@ -1001,6 +1049,13 @@ fun ApplicationScope.BossWindow(
                     "Import Passwords & Bookmarks...",
                     onClick = {
                         showImportDialog = true
+                    },
+                )
+
+                Item(
+                    "Export Bookmarks...",
+                    onClick = {
+                        menuScope.launch { BookmarkExport.runFromMenu() }
                     },
                 )
 
@@ -1381,18 +1436,11 @@ fun ApplicationScope.BossWindow(
                 )
             }
 
-            // Welcome Wizard Dialog
-            if (showWelcomeWizard) {
-                TerminalAPIAccess.TerminalOnboardingWizard(
-                    onDismiss = { showWelcomeWizard = false },
-                    onComplete = { showWelcomeWizard = false },
-                )
-            }
-
             // Screen Capture Picker Dialog
             val captureRequest by ScreenCaptureNotifier.captureRequest.collectAsState()
             captureRequest?.let { request ->
                 ScreenCapturePickerDialog(
+                    requestId = request.requestId,
                     screens = request.screens,
                     windows = request.windows,
                     browsers = request.browsers,
@@ -1426,6 +1474,15 @@ fun ApplicationScope.BossWindow(
             }
         }
     }
+}
+
+internal fun requestTerminalWelcomeWizard(
+    providerAvailable: Boolean,
+    onOpen: () -> Unit,
+    onUnavailable: () -> Unit,
+): Boolean {
+    if (providerAvailable) onOpen() else onUnavailable()
+    return providerAvailable
 }
 
 /**
