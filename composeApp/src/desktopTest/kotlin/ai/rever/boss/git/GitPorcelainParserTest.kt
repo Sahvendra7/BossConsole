@@ -202,7 +202,7 @@ class GitPorcelainParserTest {
     // ==================== parseSingleStatus: renames and copies ====================
 
     @Test
-    fun `staged rename with arrow keeps both paths`() {
+    fun `staged rename keeps both paths`() {
         val status = parseSingleStatus("R  new/name.kt\u0000old/name.kt")
         assertNotNull(status)
         assertEquals("new/name.kt", status.path)
@@ -214,7 +214,7 @@ class GitPorcelainParserTest {
     }
 
     @Test
-    fun `staged copy with arrow keeps both paths`() {
+    fun `staged copy keeps both paths`() {
         val status = parseSingleStatus("C  src/b.kt\u0000src/a.kt")
         assertNotNull(status)
         assertEquals("src/b.kt", status.path)
@@ -232,6 +232,30 @@ class GitPorcelainParserTest {
         assertEquals(GitFileStatusType.MODIFIED, status.workTreeStatus)
         assertTrue(status.isStaged)
         assertTrue(status.isUnstaged)
+    }
+
+    @Test
+    fun `rename whose original path contains an arrow keeps the whole original path`() {
+        val status = parseSingleStatus("R  c.txt\u0000a -> b.txt")
+        assertNotNull(status)
+        assertEquals("c.txt", status.path)
+        assertEquals("a -> b.txt", status.originalPath)
+    }
+
+    @Test
+    fun `rename consumes its original path without shifting the following record`() {
+        val statuses =
+            GitService.parseStatusOutput(
+                "R  c.txt\u0000a.txt\u0000?? after.txt\u0000",
+            )
+
+        assertEquals(2, statuses.size)
+
+        assertEquals("c.txt", statuses[0].path)
+        assertEquals("a.txt", statuses[0].originalPath)
+
+        assertEquals("after.txt", statuses[1].path)
+        assertNull(statuses[1].originalPath)
     }
 
     // ==================== parseSingleStatus: path shapes ====================
@@ -295,11 +319,8 @@ class GitPorcelainParserTest {
 
     @Test
     fun `staged rename whose new path contains an arrow keeps the full new path`() {
-        // porcelain v1 does not C-quote plain-ASCII paths, so a file literally
-        // named "a -> b -> c" is emitted with the same arrow git uses between
-        // ORIG and PATH. The split must stop at the first arrow (limit = 2) or
-        // the parsed path is only the chunk between the first two arrows - a
-        // path that matches nothing when the panel hands it back as a pathspec.
+        // porcelain v1 -z separates the two paths with a NUL byte rather than an arrow.
+        // Even if the new path literally contains " -> ", the parser correctly assigns it.
         val status = parseSingleStatus("R  a -> b -> c\u0000old")
         assertNotNull(status)
         assertEquals("a -> b -> c", status.path)
@@ -312,8 +333,8 @@ class GitPorcelainParserTest {
 
     @Test
     fun `unstaged rename whose new path contains an arrow keeps the full new path`() {
-        // The worktree column carries the same shape: everything after the
-        // first arrow is the new path, whatever arrows it itself contains.
+        // The worktree column behaves identically: the NUL separation ensures the
+        // new path is unambiguous, whatever arrows it itself contains.
         val status = parseSingleStatus(" R a -> b -> c\u0000old")
         assertNotNull(status)
         assertEquals("a -> b -> c", status.path)
@@ -325,9 +346,8 @@ class GitPorcelainParserTest {
     }
 
     @Test
-    fun `single-arrow rename and arrow-free lines parse unchanged`() {
-        // The limit only governs extra arrows: the classic one-arrow rename
-        // and plain status lines must keep parsing exactly as they always did.
+    fun `plain renames and standard lines parse unchanged`() {
+        // Standard renames and normal statuses without original paths parse flawlessly.
         val renamed = parseSingleStatus("R  new\u0000old")
         assertNotNull(renamed)
         assertEquals("new", renamed.path)
