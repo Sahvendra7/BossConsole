@@ -159,8 +159,8 @@ object McpArgumentSanitizer {
     private val npmAuthToken = Regex("""(?i)(_auth[_-]?token)[ \t]*[:= ][ \t]*$VALUE""")
 
     /**
-     * A credential handed to a command-line client as basic auth, `curl -u admin:hunter2` or
-     * `--user admin:hunter2`. The value has no sensitive key, is not an assignment and has no
+     * A credential handed to a command-line client as basic auth, `curl -u username:password` or
+     * `--user username:password`. The value has no sensitive key, is not an assignment and has no
      * vendor prefix, so nothing above sees it. The value must carry the `user:password` colon:
      * `-u` is also `git push -u origin` and `python -u`, and an operator has to be able to read
      * those. A URL after `-u` (`redis-cli -u redis://...`) is not basic auth either: its userinfo
@@ -195,7 +195,7 @@ object McpArgumentSanitizer {
 
     /**
      * Ordered so each rule sees the text the ones before it produced. The URI userinfo pass runs
-     * first: `postgres://admin:hunter2@host` is the commonest way a real credential reaches a
+     * first: `postgres://username:password@host` is the commonest way a real credential reaches a
      * terminal command, and it is neither an assignment nor a known shape. #640 added the helper
      * for the logging path; the MCP path is where the same value reaches the approval dialog and
      * the ledger on disk (#886).
